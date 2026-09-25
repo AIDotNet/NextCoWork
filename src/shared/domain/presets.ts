@@ -882,6 +882,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'probed'
   },
   {
+    id: 'requesty',
+    name: 'Requesty',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://router.requesty.ai/v1', true, true),
+      resp('https://router.requesty.ai/v1', true),
+      anth('https://router.requesty.ai')
+    ],
+    docsUrl: 'https://docs.requesty.ai',
+    apiKeyUrl: 'https://app.requesty.ai/api-keys',
+    suggestedModels: ['claude-fable-5.1', 'kimi-k3', 'glm-5.3'],
+    notes:
+      '模型 ID 可用 vendor/model 形式(如 openai/gpt-4o-mini),也可用托管路由的短名(如 claude-fable-5.1)。' +
+      '模型列表免鉴权就能拉,没填 key 也能先看有哪些模型。' +
+      '欧盟区把地址换成 router.eu.requesty.ai 即可,同一个 key 通用。',
+    verification: 'probed'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
