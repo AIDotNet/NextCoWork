@@ -46,7 +46,7 @@ export function joinUpstreamUrl(baseUrl: string, path: string): string {
  *
  * | 形状 | 厂商 |
  * |---|---|
- * | `/v1` | OpenAI、Moonshot、MiniMax、混元、StepFun、百川、Mistral、xAI、Together、硅基流动 |
+ * | `/v1` | OpenAI、Moonshot、MiniMax、混元、StepFun、百川、Mistral、xAI、Together、硅基流动、Requesty |
  * | 别的前缀 | Groq `/openai/v1`、Fireworks `/inference/v1`、**DeepInfra `/v1/openai`**、OpenRouter `/api/v1`、**智谱 `/api/paas/v4`**、**火山 `/api/v3`**、百炼 `/compatible-mode/v1`、**千帆 `/v2`**、Cohere `/compatibility/v1` |
  * | 尾斜杠 | **Gemini `/v1beta/openai/`** |
  *

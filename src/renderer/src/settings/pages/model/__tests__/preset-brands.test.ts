@@ -1,9 +1,9 @@
 /**
- * 47 个内置预设各自该显示**谁**的 logo —— 一张钉死的对照表。
+ * 48 个内置预设各自该显示**谁**的 logo —— 一张钉死的对照表。
  *
  * **为什么值得单独一个文件:** `brands.test.ts` 守的是规则表本身自洽
  * (每个牌子有样本、顺序不打架),但它不知道「添加供应商」目录里到底摆着
- * 哪 47 个名字。而两张表是**分开演进**的:presets.ts 加一家、或者给某家改个
+ * 哪 48 个名字。而两张表是**分开演进**的:presets.ts 加一家、或者给某家改个
  * 更好听的名字,`brands.ts` 一个字都不用动就能悄悄错掉一个 logo。
  *
  * ★★ 这不是假想。这张表第一次跑出来时,43 家里 **13 家没有图标、3 家挂着
@@ -24,8 +24,8 @@ import { resolveBrand, type Brand } from '../../../../components/brand/brands'
 
 /**
  * `null` = 我们**故意**不给它图标,退回首字母。
- * 三家都是 lobehub 根本没收字形的(逐个在 `@lobehub/icons-static-svg/icons/`
- * 下找过):OhMyGPT、LocalAI,以及 llama.cpp —— 最后这个是 ggerganov 的
+ * 四家都是 lobehub 根本没收字形的(逐个在 `@lobehub/icons-static-svg/icons/`
+ * 下找过):Requesty、OhMyGPT、LocalAI,以及 llama.cpp —— 最后这个是 ggerganov 的
  * 独立项目,不是 Meta 的东西。
  *
  * ★ 编一个「差不多的」图标比没有图标更糟:用户看见 Meta 的 ∞ 会以为
@@ -82,6 +82,7 @@ const EXPECTED: Readonly<Record<string, Brand | null>> = {
   // `brands.ts` 的 `^routin(-plan)?$` 是给用户改名之后兜底的第二条路。
   'routin-plan': 'routin',
   openrouter: 'openrouter',
+  requesty: null,
   siliconflow: 'siliconcloud',
   'siliconflow-intl': 'siliconcloud',
   together: 'together',
@@ -124,10 +125,10 @@ describe('内置预设的品牌图标', () => {
    * 「null 只有这么几家」:某天规则表改窄了让一堆家一起掉进 null,
    * 这里会红,而界面上只会安静地多出几个字母。
    */
-  it('没有图标的就是这三家,不多不少', () => {
+  it('没有图标的就是这四家,不多不少', () => {
     const blank = PROVIDER_PRESETS.filter((p) => resolveBrand(p.name, p.id) === null).map(
       (p) => p.id
     )
-    expect(blank).toEqual(['ohmygpt', 'llamacpp', 'localai'])
+    expect(blank).toEqual(['requesty', 'ohmygpt', 'llamacpp', 'localai'])
   })
 })
