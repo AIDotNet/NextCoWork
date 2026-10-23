@@ -949,6 +949,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'documented'
   },
   {
+    id: 'cheaperinference',
+    name: 'Cheaper Inference',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.cheaperinference.com/v1', true),
+      resp('https://api.cheaperinference.com/v1', true),
+      anth('https://api.cheaperinference.com')
+    ],
+    docsUrl: 'https://cheaperinference.com/docs',
+    apiKeyUrl: 'https://cheaperinference.com/signup',
+    suggestedModels: ['gpt-5.4-mini', 'claude-sonnet-5', 'deepseek-v4-flash'],
+    notes:
+      '模型 ID 用不带厂商前缀的短名(如 gpt-5.4-mini、claude-sonnet-5),用模型列表返回的完整 ID 即可。' +
+      '模型列表要先填 key 才能拉。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'probed'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
