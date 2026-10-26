@@ -14,6 +14,7 @@ import { prefixedId } from '../../shared/util/id'
 import { store } from '../state/store'
 import { findLocalWorkspaceByRoot } from '../state/workspace-root'
 import { windows } from '../window/registry'
+import { terminalHost } from '../terminal-host'
 import { IpcError } from './errors'
 
 function announce(): void {
@@ -78,6 +79,7 @@ export function updateWorkspace(req: {
  * 外层 Tab 的开关纯粹是窗口状态,不经过这里。
  */
 export function closeWorkspace(id: string): void {
+  terminalHost.killWorkspace(id)
   store.removeWorkspace(id)
   announce()
 }

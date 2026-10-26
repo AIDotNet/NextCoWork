@@ -313,6 +313,12 @@ export class TerminalHost {
     this.sessions.delete(id)
   }
 
+  /** 工作区被删除时,收掉它名下所有终端(含还在创建/等待审批的)。 */
+  killWorkspace(workspaceId: string): void {
+    for (const [id, pending] of this.creating) if (pending.workspaceId === workspaceId) this.kill(id)
+    for (const [id, session] of [...this.sessions]) if (session.info.workspaceId === workspaceId) this.kill(id)
+  }
+
   shutdown(): void {
     for (const pending of this.creating.values()) pending.controller.abort()
     for (const pending of this.preparing.values()) pending.controller.abort()

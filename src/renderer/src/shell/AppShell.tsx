@@ -34,6 +34,7 @@ import { IS_MAC } from "../lib/platform";
 import { useI18n } from "../i18n";
 import { usePresence } from "../lib/usePresence";
 import { closeWorkspace, pickWorkspace } from "../services/app";
+import { killTerminal, listTerminals } from "../services/terminal";
 import { deleteSession, listSessions } from "../services/sessions";
 import { on } from "../services/ipc";
 import { onScheduledChanged } from "../services/scheduled";
@@ -411,7 +412,13 @@ export function AppShell({
       if (!(await confirmDocumentChanges(target.ref.workspaceId))) return;
     }
     await win.close(id);
-    if (target?.kind === 'workspace' && !useWindowStore.getState().outer.some((tab) => tab.id === id)) useDocumentsStore.getState().release(target.ref.workspaceId);
+    if (target?.kind === 'workspace' && !useWindowStore.getState().outer.some((tab) => tab.id === id)) {
+      useDocumentsStore.getState().release(target.ref.workspaceId);
+      // 关掉工作区 Tab 后终端不会再有界面可看,留着只会变成后台孤儿进程。
+      void listTerminals(target.ref.workspaceId)
+        .then((terminals) => Promise.all(terminals.map((terminal) => killTerminal(terminal.id))))
+        .catch(() => undefined);
+    }
   };
 
   /**

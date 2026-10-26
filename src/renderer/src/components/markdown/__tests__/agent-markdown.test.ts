@@ -86,6 +86,13 @@ describe('Agent Markdown', () => {
     expect(html).not.toContain('<script')
   })
 
+  it('renders LaTeX-style \\(…\\) and \\[…\\] delimiters but leaves code untouched', () => {
+    const html = render('Inline \\(3 \\times 4\\).\n\n\\[\n\\frac{1}{2}\n\\]\n\n`\\(x\\)`')
+    expect(html).toContain('class="katex"')
+    expect(html).toContain('class="katex-display"')
+    expect(html).toContain('\\(x\\)')
+  })
+
   it('keeps heading and footnote IDs unique across messages and localizes footnotes', () => {
     const content = '# Summary\n\n# Summary\n\n[Jump](#summary)\n\nNote[^1] again[^1].\n\n[^1]: Supporting evidence.'
     const html = renderToStaticMarkup(createElement(I18nProvider, { initialLocale: 'zh-CN', children:

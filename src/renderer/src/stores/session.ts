@@ -1553,6 +1553,31 @@ export function adoptActiveSubagents(entries: readonly ActiveSubagentIndexEntry[
   }
 }
 
+/**
+ * 用户点子代理卡片的停止时,主进程可能早就没有这个 run 了(它已跑完/被回收),
+ * 此时 `agent:abort` 是无声的空操作,而父会话里那张卡片因为漏了结束事件还停在「运行中」。
+ * 这里按主进程的实际状态把卡片收口:还在跑就什么都不动(真正的 run_end 会自己到),
+ * 已经结束或查不到了就补一条结束。
+ */
+export async function settleSubagent(childRunId: string): Promise<void> {
+  const owner = [...stores.values()].find((store) => Object.values(store.getState().transcript.subagents)
+    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running'))
+  if (owner === undefined) return
+  let status: 'done' | 'error' | 'aborted' = 'aborted'
+  try {
+    const entry = Object.values(owner.getState().transcript.subagents).find((subagent) => subagent.childRunId === childRunId)
+    const snap = await attachRun(childRunId, entry?.childSeq ?? 0)
+    owner.getState().applyChildEvents(childRunId, snap.events, snap.seq - snap.events.length + 1)
+    if (snap.status === 'running') return
+    status = snap.status
+  } catch {
+    // 查不到 = 已被回收,即已结束
+  }
+  const stuck = Object.values(owner.getState().transcript.subagents)
+    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running')
+  if (stuck) owner.getState().applyChildEvents(childRunId, [{ type: 'run_end', status, at: Date.now() }])
+}
+
 async function restoreChildSnapshot(entry: ActiveSubagentIndexEntry): Promise<void> {
   try {
     const store = stores.get(entry.sessionId)

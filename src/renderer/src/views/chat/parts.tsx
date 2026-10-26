@@ -41,6 +41,7 @@ import { previewOf } from "./interaction-preview";
 import { MAX_PARTIAL_JSON_CHARS, parsePartialJson } from "./partial-json";
 import { ToolIcon, type ToolViewStatus } from "./ToolIcon";
 import { abortRun, backgroundSubagent } from "../../services/agent";
+import { settleSubagent } from "../../stores/session";
 import { getLastAssistantMessage } from "../../services/sessions";
 import { visibleText } from "../../../../shared/agent/message";
 import { useOpenSubagent } from "./subagent-open";
@@ -598,7 +599,10 @@ export function SubagentNode({
         : undefined;
   const color = status === 'error' ? undefined : agentColorHex(state?.color);
   const stop = (): void => {
-    if (state?.childRunId !== undefined) void abortRun(state.childRunId, true)
+    const childRunId = state?.childRunId
+    if (childRunId === undefined) return
+    // abort 对已结束的 run 是空操作 —— 随后按主进程的实际状态把卡片收口,不让它卡在「运行中」。
+    void abortRun(childRunId, true).catch(() => {}).then(() => settleSubagent(childRunId)).catch(() => {})
   }
   /*
     需求:前台子代理跑得比预想久时,让主代理先接着干别的 —— 子代理不停,
