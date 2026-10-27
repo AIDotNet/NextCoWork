@@ -29,6 +29,7 @@ import { widgetZh, widgetEn } from './widget';
 import { migrationZh, migrationEn } from './migration';
 import { accountMenuZh, accountMenuEn } from './account-menu';
 import { pluginUiZh, pluginUiEn } from './plugin-ui';
+import { gatewayZh, gatewayEn } from './gateway';
 import {
   pluginMessages,
   pluginMessagesVersion,
@@ -50,6 +51,7 @@ export type Messages = Record<string, MessageValue>;
  * translated here.
  */
 const ZH: Messages = {
+  ...gatewayZh,
   ...sshZh,
   ...workspaceZh,
   ...goalZh,
@@ -2022,6 +2024,7 @@ const ZH: Messages = {
 };
 
 const EN: Messages = {
+  ...gatewayEn,
   ...sshEn,
   ...workspaceEn,
   ...goalEn,

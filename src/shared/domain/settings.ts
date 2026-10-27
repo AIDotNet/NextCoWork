@@ -341,6 +341,8 @@ export interface AppSettings {
   /** 本地模型网关 —— ★ 默认关闭(方案 §5.4 第 1 条) */
   gateway: {
     enabled: boolean
+    /** 需求：远程服务可显式启用 LAN 监听；旧设置缺席时仍只绑定 loopback。 */
+    allowRemote?: boolean
     /** 19836 被占时动态选;这里存的是**期望**端口 */
     preferredPort: number
     failover: boolean

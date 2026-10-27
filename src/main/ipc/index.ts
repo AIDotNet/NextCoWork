@@ -78,6 +78,7 @@ import { getBrowserAutomationBridge } from '../browser/runtime'
 import { getEnvironments } from '../runtime'
 import { getTools, installChildRunLauncher, setCredentialChangeListener, setReviewChangeListener, setSessionChangeListener } from '../runtime'
 import { NotImplementedError, toAgentError } from './errors'
+import { getGatewayAddresses, getGatewayKey, getGatewayStatus, resetGatewayHealth, setGatewayEnabled } from './gateway'
 import {
   fetchModels,
   getCredentialInfo,
@@ -657,9 +658,11 @@ const handlers: HandlerMap = {
     store.refreshUsageRollup()
     return store.getUsageActivityStats()
   },
-  'gateway:getStatus': todo('gateway:getStatus', '步骤 13'),
-  'gateway:setEnabled': todo('gateway:setEnabled', '步骤 13'),
-  'gateway:resetHealth': todo('gateway:resetHealth', '步骤 13')
+  'gateway:getStatus': () => getGatewayStatus(),
+  'gateway:getKey': () => getGatewayKey(),
+  'gateway:getAddresses': () => getGatewayAddresses(),
+  'gateway:setEnabled': ({ enabled }) => setGatewayEnabled(enabled),
+  'gateway:resetHealth': ({ providerId }) => resetGatewayHealth(providerId)
 }
 
 // ═══════════════════════════════════════════════════════════════

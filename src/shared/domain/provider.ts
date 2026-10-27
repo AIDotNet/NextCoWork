@@ -394,8 +394,8 @@ export interface GatewayStatus {
   enabled: boolean
   /** ★ 实际端口(19836 被占时会动态选)经这里回传渲染层(方案 §5.4 第 5 条) */
   port: number | null
-  /** 永远是字面量 127.0.0.1 —— 不是 0.0.0.0,也不写 localhost */
-  host: '127.0.0.1'
+  /** 原先固定 loopback 以免意外暴露；现在仅显式 allowRemote 才绑定 0.0.0.0。 */
+  host: '127.0.0.1' | '0.0.0.0'
   /** 网关 key 是**必需的**,不是可选的;这里只报告有没有 */
   hasKey: boolean
   failover: boolean

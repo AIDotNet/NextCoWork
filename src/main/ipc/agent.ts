@@ -157,14 +157,30 @@ export type RunDriver = (handle: RunHandle, req: RunRequest) => void | Promise<v
  * 而那时首批事件早发完了。
  */
 export function startRun(req: RunRequest, ctx: WindowContext, driver: RunDriver = runAgent): void {
+  prepareRun(req)
+  windows.subscribe(runTopic(req.runId), ctx.sender)
+  launch(req, driver)
+}
+
+/** 需求：HTTP 没有 webContents，但必须与桌面经过同一启动闸门和事件泵。 */
+export function startExternalRun(req: RunRequest, driver: RunDriver = runAgent): RunHandle {
+  prepareRun(req)
+  return launch(req, driver)
+}
+
+function prepareRun(req: RunRequest): void {
   updateService.configure()
   if (!updateService.canStartNewRuns()) throw new IpcError('unknown', '必须安装客户端更新后才能开始新的任务')
   if (req.inputGoalId !== undefined && getActiveGoal(req.sessionId)?.id !== req.inputGoalId) {
     throw new IpcError('unknown', 'The goal was cleared or replaced before this input was sent.')
   }
+  // 需求：HTTP 与窗口可以同时发送，渲染层的单会话守卫已不足以防止转录交错。
+  // 校验放在导入脱离之前，拒绝的请求不能改变导入会话的同步状态。
+  if (runs.runningIn(req.workspaceId).some((handle) => handle.sessionId === req.sessionId
+    && handle.depth === 0 && handle.parentRunId === undefined)) {
+    throw new IpcError('conflict', 'Session already has an active run', 409)
+  }
   detachImportedSession(req)
-  windows.subscribe(runTopic(req.runId), ctx.sender)
-  launch(req, driver)
 }
 
 /**

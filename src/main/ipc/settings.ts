@@ -12,6 +12,7 @@ import { windows } from '../window/registry'
 import { applyThemePreference } from './app'
 import { notifyPluginsThemeChanged } from './plugins'
 import { profileSettings, syncLegacyProfile } from './theme'
+import { reconcileGateway } from './gateway'
 
 export function getSettings(): AppSettings {
   return store.getSettings()
@@ -44,6 +45,8 @@ export function updateSettings(patch: AppSettingsPatch): AppSettings {
     void applyProxy(next.proxy)
   }
 
+  // 需求：网关开关/监听范围/端口变更立即生效，串行装配负责快速连续修改的竞态。
+  if (patch.gateway !== undefined) void reconcileGateway()
   windows.emitToAll('settings:changed', next)
   return next
 }

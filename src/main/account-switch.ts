@@ -51,6 +51,12 @@ import { broadcastThemeLibrary } from './ipc/theme'
 import { listSearchProviders } from './ipc/websearch'
 
 let switchInFlight = false
+let gatewayReconciler: (() => Promise<void>) | undefined
+
+/** 需求：账户模块不反向加载 HTTP/Agent IPC；应用装配时注入监听设置的刷新口。 */
+export function setAccountGatewayReconciler(reconcile: () => Promise<void>): void {
+  gatewayReconciler = reconcile
+}
 
 /** 切换正在进行中。IPC 层用它把「正在登录/正在切」的按钮按下去。 */
 export function isAccountSwitchInFlight(): boolean {
@@ -122,6 +128,8 @@ export async function prepareAccountSwitch(accountId: string | null): Promise<vo
 
     broadcastScopeChanged()
   } finally {
+    // 需求：HTTP 在切换期间拒绝新请求；完成后采用当前账户的监听设置，不能沿用旧账户的远程开关。
+    await gatewayReconciler?.()
     switchInFlight = false
   }
 }
@@ -156,6 +164,8 @@ export async function importLocalConfigIntoCurrentAccount(): Promise<void> {
     browserManager.resetForConfigScopeChange()
     broadcastScopeChanged()
   } finally {
+    // 需求：导入本地配置也会替换网关设置，监听范围必须与恢复后的设置一致。
+    await gatewayReconciler?.()
     switchInFlight = false
   }
 }

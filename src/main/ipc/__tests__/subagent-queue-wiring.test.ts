@@ -151,8 +151,9 @@ const req = (over: Partial<RunRequest> = {}): RunRequest => ({
  * 占位者是一条货真价实的、`parentRunId` 不为空的 running run —— 队列数的就是这个。
  */
 function occupy(id: string): () => void {
-  runs.create(req({ runId: `${id}-owner` }))
-  const child = runs.create(req({ runId: id, parentRunId: `${id}-owner`, depth: 1 }))
+  // 需求：占的是别的会话的全局名额，不能与待测父 run 共用转录并绕过单会话闸门。
+  runs.create(req({ runId: `${id}-owner`, sessionId: `${id}-owner-session` }))
+  const child = runs.create(req({ runId: id, sessionId: `${id}-child-session`, parentRunId: `${id}-owner`, depth: 1 }))
   return () => child.finish('done')
 }
 

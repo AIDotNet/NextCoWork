@@ -311,8 +311,9 @@ describe('agent:run 走默认驱动 · 真 session + 内置演示上游', () => 
   it('两个 run 并行不串台:各自的事件只推给各自的订阅者', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
-    const ra = req()
-    const rb = req()
+    // 需求：跨入口启动后，同一会话不允许并行；此用例验证不同会话的订阅隔离。
+    const ra = req({ sessionId: 'parallel-a' })
+    const rb = req({ sessionId: 'parallel-b' })
 
     startRun(ra, a.ctx)
     startRun(rb, b.ctx)
