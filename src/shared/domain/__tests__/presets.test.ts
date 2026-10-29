@@ -257,6 +257,7 @@ describe('预设表 × joinUpstreamUrl:拼出来的 URL 没有畸形', () => {
     ['requesty', 'anthropic', 'https://router.requesty.ai/v1/messages'],
     ['atlascloud', 'anthropic', 'https://api.atlascloud.ai/v1/messages'],
     ['cheaperinference', 'anthropic', 'https://api.cheaperinference.com/v1/messages'],
+    ['llmbuzz', 'anthropic', 'https://api.llm.buzz/api/v1/messages'],
     ['opper', 'openai-chat', 'https://api.opper.ai/v3/compat/chat/completions'],
     ['opper', 'anthropic', 'https://api.opper.ai/v3/compat/v1/messages'],
     ['kimi-coding', 'anthropic', 'https://api.kimi.com/coding/v1/messages'],
