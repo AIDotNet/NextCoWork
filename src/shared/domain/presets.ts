@@ -967,6 +967,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'probed'
   },
   {
+    id: 'runcrate',
+    name: 'Runcrate',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.runcrate.ai/v1', true, true),
+      resp('https://api.runcrate.ai/v1', true),
+      anth('https://api.runcrate.ai')
+    ],
+    docsUrl: 'https://www.runcrate.ai/docs/models/overview',
+    apiKeyUrl: 'https://www.runcrate.ai/dashboard/api-keys',
+    suggestedModels: ['deepseek-ai/DeepSeek-V4.1-Flash', 'zai-org/GLM-5.3', 'moonshotai/Kimi-K2.6'],
+    notes:
+      '模型 ID 带厂商前缀且区分大小写(如 deepseek-ai/DeepSeek-V4.1-Flash),请使用模型列表返回的完整 ID。' +
+      '模型列表免鉴权就能拉,没填 key 也能先看有哪些模型(因此列表能拉到不代表 key 有效)。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'probed'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
