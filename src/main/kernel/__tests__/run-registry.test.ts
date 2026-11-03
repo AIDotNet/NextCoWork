@@ -460,3 +460,45 @@ describe('RunRegistry · 回收已结束的 run', () => {
     expect(reg.get('pinned')).toBeDefined()
   })
 })
+
+describe('RunRegistry · 删除会话前的活体检查', () => {
+  it('按真实状态分类:在跑 / 已中断未收尾 / 收尾中 / 历史操作', () => {
+    const reg = new RunRegistry()
+    const live = reg.create(req({ runId: 'live', sessionId: 's-live' }))
+    const stopping = reg.create(req({ runId: 'stopping', sessionId: 's-stopping' }))
+    stopping.abort({ by: 'user' })
+    const ended = reg.create(req({ runId: 'ended', sessionId: 's-ended' }))
+    reg.retainSessionForRun(ended)
+    ended.finish('done')
+    reg.acquireSessionOperation('s-compact')
+
+    const activity = reg.sessionActivity(['s-live', 's-stopping', 's-ended', 's-compact', 'other'])
+    expect(activity.live).toEqual([live])
+    expect(activity.stopping).toEqual([stopping])
+    expect(activity.finalizing).toEqual(['s-ended'])
+    expect(activity.operations).toEqual(['s-compact'])
+  })
+
+  it('只看传进来的会话,别的会话在跑不算', () => {
+    const reg = new RunRegistry()
+    reg.create(req({ runId: 'elsewhere', sessionId: 's-other' }))
+    expect(reg.sessionActivity(['s-target'])).toEqual({ live: [], stopping: [], finalizing: [], operations: [] })
+  })
+
+  it('★ 强制收尾:卡死的 run 判 aborted、残留互斥放掉,会话不再 busy', () => {
+    const reg = new RunRegistry()
+    const stuck = reg.create(req({ runId: 'stuck', sessionId: 's1' }))
+    const release = reg.retainSessionForRun(stuck)
+    stuck.abort({ by: 'user' }) // abort() 不改 status —— 驱动卡住时它就永远停在 running
+    expect(reg.isSessionBusy('s1')).toBe(true)
+
+    expect(reg.forceSettleSessions(['s1'])).toBe(2)
+    expect(stuck.status).toBe('aborted')
+    expect(reg.isSessionBusy('s1')).toBe(false)
+    // 卡住的驱动后来醒了:它的 release 不能误伤之后的新互斥
+    const next = reg.create(req({ runId: 'next', sessionId: 's1' }))
+    reg.retainSessionForRun(next)
+    release()
+    expect(reg.isSessionBusy('s1')).toBe(true)
+  })
+})

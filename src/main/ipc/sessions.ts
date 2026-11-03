@@ -17,7 +17,7 @@ import { normalizeModeId } from '../../shared/domain/mode'
 import { extOfMime, mimeOfExt } from '../../shared/domain/attachment'
 import { convertInlineImages, type InlineImageDeps } from '../inline-images'
 import { ulid } from '../../shared/util/id'
-import { runs } from '../kernel/run-registry'
+import { runs, type SessionActivity } from '../kernel/run-registry'
 import { windows } from '../window/registry'
 import { store } from '../state/store'
 import { putDraftAttachment } from '../db/repo'
@@ -466,22 +466,45 @@ function extractionRefused(messageKey: string, message: string): IpcError {
   return new IpcError('conflict', message, undefined, { messageKey })
 }
 
-export function deleteSession(req: { sessionId: string }): void {
+/** 渲染层据此认出「删除被运行中的 Agent 挡住」,改弹「停止并删除」确认框 */
+export const SESSION_DELETE_RUNNING_KEY = 'session.deleteRunningMessage'
+/** 「停止并删除」:中断之后等驱动自己收尾的上限。过了还没收尾就判它卡死,强制清掉 */
+export const DELETE_STOP_GRACE_MS = 3_000
+/** 没有真在跑的 run、只有残留条目(停止中 / 收尾中)时,给它们自己收尾的宽限 */
+export const DELETE_STALE_GRACE_MS = 1_500
+const DELETE_POLL_MS = 25
+
+export async function deleteSession(req: { sessionId: string; stopRunning?: boolean }): Promise<void> {
   /*
-    ★ 只有「正在运行的这个会话自己」能挡住删除,别的会话在跑不算。
+    ★ 只有「待删子树里的 run」能挡住删除,别的会话在跑不算。
 
     删除是整棵子树级联(子代理转录跟着走),所以运行中的 run 只要落在这棵子树里
-    就必须拦 —— 否则那个 run 还在往已删除的 sessionId 上写消息。
-    但**别的会话**的 run 和这次删除互不相干:曾经这里是「任何一个 Agent 在跑就全局禁止」,
-    表现为 A 会话在跑,B 会话连删都删不掉,用户只能先停下来再删,再手动重启任务。
-    渲染层会在删除前先用同样的条件弹警告(见 Sidebar),这里只是兜底,错误信息
-    用户最终会在 toast 里看到。
+    就必须处理 —— 否则那个 run 还在往已删除的 sessionId 上写消息。
+    但**别的会话**的 run 和这次删除互不相干。
+
+    ★ 判据是**真实的 run 状态**,不是「注册表里有没有这一条」(`isSessionBusy`)。
+    曾经这里只看后者,于是一条按过停止却没收尾的 run、一把收尾时没放掉的会话互斥,
+    或者父 run 结束后还挂着的后台子代理(渲染层的运行中角标不数子 run,用户看到的
+    是「空闲」),都会让删除永远失败 —— 表现为「删不掉,重启后就能删」。现在:
+    - 真在跑(`live`)/ 手动压缩中:不静默失败,抛一个带 messageKey 的 conflict,
+      渲染层弹「停止并删除 / 取消」;用户选了停止,`stopRunning` 带着再来一次;
+    - 只剩残留(`stopping` / `finalizing`):等一小段宽限让它自己收尾,还不收就强制清掉,照删。
   */
-  const activeSessionIds = new Set(
-    runs.activeRunIds().map((id) => runs.get(id)?.sessionId).filter((id): id is string => id !== undefined)
-  )
-  if (runsInDeletionSubtree(req.sessionId, activeSessionIds)) {
-    throw new Error('该会话有运行中的 Agent，请先停止任务后再删除')
+  const subtree = store.sessionSubtreeIds(req.sessionId)
+  const activity = runs.sessionActivity(subtree)
+  const genuinelyBusy = activity.live.length > 0 || activity.operations.length > 0
+  if (genuinelyBusy && req.stopRunning !== true) {
+    throw new IpcError('conflict', '该会话有运行中的 Agent，请先停止任务后再删除', undefined, {
+      messageKey: SESSION_DELETE_RUNNING_KEY
+    })
+  }
+  if (genuinelyBusy) {
+    for (const handle of activity.live) runs.abort(handle.runId, true, { by: 'user' })
+  }
+  if (genuinelyBusy || hasLeftovers(activity)) {
+    await waitForSessionsIdle(subtree, genuinelyBusy ? DELETE_STOP_GRACE_MS : DELETE_STALE_GRACE_MS)
+    const forced = runs.forceSettleSessions(subtree)
+    if (forced > 0) console.warn(`[sessions] 删除 ${req.sessionId}:强制清掉 ${forced} 条未收尾的 run / 会话互斥`)
   }
   // Capture paths before the database cascade removes their rows.  The
   // storage helper re-checks remaining references after deletion, so a file
@@ -514,13 +537,16 @@ function requireSessionAttachmentPaths(sessionId: string): string[] {
   return store.sessionAttachmentPaths(sessionId)
 }
 
-/**
- * 待删会话的级联子树里是否有正在运行的 run。子代理 run 的 sessionId 是子会话
- * 自己的 id,但删除父会话时会连它一起删掉,所以必须检查完整的递归子树。
- */
-function runsInDeletionSubtree(rootSessionId: string, activeSessionIds: ReadonlySet<string>): boolean {
-  const subtree = store.sessionSubtreeIds(rootSessionId)
-  return subtree.some((sessionId) => activeSessionIds.has(sessionId) || runs.isSessionBusy(sessionId))
+function hasLeftovers(activity: SessionActivity): boolean {
+  return activity.live.length + activity.stopping.length + activity.finalizing.length + activity.operations.length > 0
+}
+
+/** 等子树里的 run 与会话互斥自己收尾,最多 `timeoutMs`。到点不抛 —— 剩下的由调用方强制清 */
+async function waitForSessionsIdle(sessionIds: readonly string[], timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (hasLeftovers(runs.sessionActivity(sessionIds)) && Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, DELETE_POLL_MS))
+  }
 }
 
 export function searchAll(req: { q: string; workspaceId?: string; limit: number }) {

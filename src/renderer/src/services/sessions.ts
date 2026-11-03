@@ -1,7 +1,7 @@
 import type { Session, SessionDetail, SessionListItem, SessionPage, SearchHit } from '../../../shared/domain/session'
 import type { AgentMessage } from '../../../shared/agent/message'
 import type { SessionMode } from '../../../shared/agent/run-request'
-import { invoke } from './ipc'
+import { AgentErrorException, invoke } from './ipc'
 
 export function listSessions(workspaceId: string, archived?: boolean): Promise<SessionListItem[]> {
   return invoke('sessions:list', archived === undefined ? { workspaceId } : { workspaceId, archived })
@@ -92,8 +92,22 @@ export function setFavorited(sessionId: string, favorited: boolean): Promise<voi
   return invoke('sessions:setFavorited', { sessionId, favorited })
 }
 
-export function deleteSession(sessionId: string): Promise<void> {
-  return invoke('sessions:delete', { sessionId })
+/**
+ * 删除会话。待删子树里有真在跑的 Agent 时主进程抛 conflict(见 `isSessionDeleteRunningError`);
+ * 用户确认「停止并删除」后带 `stopRunning: true` 再调一次。
+ */
+export function deleteSession(sessionId: string, options: { stopRunning?: boolean } = {}): Promise<void> {
+  return invoke('sessions:delete', options.stopRunning === true ? { sessionId, stopRunning: true } : { sessionId })
+}
+
+/** 主进程 `deleteSession` 抛的那条 conflict 的 messageKey —— 与 `main/ipc/sessions.ts` 保持一致 */
+const SESSION_DELETE_RUNNING_KEY = 'session.deleteRunningMessage'
+
+/** 删除是不是被「会话里有运行中的 Agent」挡下的(而不是别的失败) */
+export function isSessionDeleteRunningError(error: unknown): boolean {
+  return error instanceof AgentErrorException
+    && error.error.code === 'conflict'
+    && error.error.messageKey === SESSION_DELETE_RUNNING_KEY
 }
 
 export function searchAll(q: string, workspaceId?: string, limit = 50): Promise<SearchHit[]> {

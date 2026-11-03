@@ -50,6 +50,7 @@ import { openPluginWebApp } from '../services/plugins'
 import { pluginSidebarEntries } from './plugin-sidebar-entries'
 import { useWindowStore } from '../stores/window'
 import { skillExtractionErrorKey, startSkillExtraction } from '../views/skills/skill-extraction'
+import { requestSessionDelete, useRunningSessionDelete, type DeleteSessionFn } from './session-delete'
 
 const NAV_FEATURES: readonly FeatureKind[] = ['scheduled', 'browser', 'git', 'extensions']
 
@@ -89,7 +90,7 @@ export function Sidebar({
   /** 打开设置浮层。**页码是可选的** —— 账户菜单的「余额」要直接落到钱包页 */
   onOpenSettings: (page?: SettingsPageId) => void
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
   onCollapse: () => void
   auth: ClientAuthState
 }): ReactNode {
@@ -372,7 +373,7 @@ function SessionGroupList({
   activeSessionId: string | null
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
   /** 右键「提炼为 Skill」。失败提示由提供方负责。 */
   onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
@@ -490,7 +491,7 @@ function SessionGroupBlock({
   activeSessionId: string | null
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
   /** 右键「提炼为 Skill」。见 `Sidebar` 里 `extractSkill` 的说明。 */
   onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
@@ -510,12 +511,10 @@ function SessionGroupBlock({
   const [dialog, setDialog] = useState<{ kind: 'rename'; session: SessionListItem } | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   /*
-    ★ 删除被运行中的 Agent 挡下时要弹窗,不能只让菜单悄悄合上。
-
-    曾经这里的兜底是主进程直接抛错,而 `run()` 只 console.error —— 用户点了
-    「确认删除」却什么都没发生,也不知道自己被什么挡住了。
+    ★ 删除被运行中的 Agent 挡下时要弹窗,不能只让菜单悄悄合上 —— 而且要给出路:
+    「停止并删除」。是否在跑由主进程按真实 run 状态判定(见 `session-delete.tsx`)。
   */
-  const [runningBlocked, setRunningBlocked] = useState(false)
+  const runningDelete = useRunningSessionDelete(onDeleteSession, t)
   const [renameDraft, setRenameDraft] = useState('')
   const run = async (action: () => Promise<void>): Promise<void> => {
     try { await action() } catch (error) { console.error('[sessions] 操作失败', error) }
@@ -623,18 +622,9 @@ function SessionGroupBlock({
                     setConfirmingDeleteId(menu.session.id)
                     return
                   }
-                  if (runningSessionIds.has(menu.session.id)) {
-                    setMenu(null)
-                    setConfirmingDeleteId(null)
-                    setRunningBlocked(true)
-                    return
-                  }
+                  const sessionId = menu.session.id
                   void run(async () => {
-                    try { await onDeleteSession(menu.session.id) } catch (error) {
-                      // 主进程的兜底守卫(会话子树里有运行中的 run)在这里变成用户可见的提示。
-                      toast.error(error instanceof Error ? error.message : String(error), 'session-delete')
-                      throw error
-                    }
+                    if (await requestSessionDelete(onDeleteSession, sessionId) === 'running') runningDelete.askStopAndDelete(sessionId)
                   })
                 }}
               />
@@ -642,15 +632,7 @@ function SessionGroupBlock({
           )}
         </ContextMenu>
       )}
-      <Dialog
-        open={runningBlocked}
-        onClose={() => setRunningBlocked(false)}
-        title={t('session.deleteRunningTitle')}
-        width={420}
-        footer={<Button type="button" size="sm" variant="primary" onClick={() => setRunningBlocked(false)}>{t('common.close')}</Button>}
-      >
-        <p className="text-[12.5px] text-fg-muted">{t('session.deleteRunningMessage')}</p>
-      </Dialog>
+      {runningDelete.dialog}
       <Dialog
         open={dialog?.kind === 'rename'}
         onClose={() => setDialog(null)}
@@ -699,14 +681,14 @@ function ArchivedSessionItem({
   /** 和 SessionGroupBlock 同一份运行中集合 —— 归档会话也可能挂着正在跑的 run。 */
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
   /** 归档的会话同样可以提炼 —— 做完归档正是「这段经验该沉淀了」的时刻。 */
   onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
 }): ReactNode {
   const [menu, setMenu] = useState<ContextMenuPosition | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [runningBlocked, setRunningBlocked] = useState(false)
+  const runningDelete = useRunningSessionDelete(onDeleteSession, t)
   const run = async (action: () => Promise<void>): Promise<void> => {
     try { await action() } catch (error) { console.error('[sessions] 操作失败', error) }
     setMenu(null)
@@ -755,17 +737,8 @@ function ArchivedSessionItem({
                     setConfirmingDelete(true)
                     return
                   }
-                  if (runningSessionIds.has(session.id)) {
-                    setMenu(null)
-                    setConfirmingDelete(false)
-                    setRunningBlocked(true)
-                    return
-                  }
                   void run(async () => {
-                    try { await onDeleteSession(session.id) } catch (error) {
-                      toast.error(error instanceof Error ? error.message : String(error), 'session-delete')
-                      throw error
-                    }
+                    if (await requestSessionDelete(onDeleteSession, session.id) === 'running') runningDelete.askStopAndDelete(session.id)
                   })
                 }}
               />
@@ -773,15 +746,7 @@ function ArchivedSessionItem({
           )}
         </ContextMenu>
       )}
-      <Dialog
-        open={runningBlocked}
-        onClose={() => setRunningBlocked(false)}
-        title={t('session.deleteRunningTitle')}
-        width={420}
-        footer={<Button type="button" size="sm" variant="primary" onClick={() => setRunningBlocked(false)}>{t('common.close')}</Button>}
-      >
-        <p className="text-[12.5px] text-fg-muted">{t('session.deleteRunningMessage')}</p>
-      </Dialog>
+      {runningDelete.dialog}
     </li>
   )
 }
