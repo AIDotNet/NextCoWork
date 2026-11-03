@@ -468,7 +468,14 @@ function launch(req: RunRequest, driver: RunDriver): RunHandle {
     ★ 续跑的入口是**释放互斥之后**,不是 `run_end`:后者比收尾落盘早,
     在那之后立刻起下一轮只会撞上 `SessionBusyError`。
   */
+  let settled = false
+  let abandonTimer: ReturnType<typeof setTimeout> | undefined
   const settle = (): void => {
+    if (abandonTimer !== undefined) clearTimeout(abandonTimer)
+    handle.signal.removeEventListener('abort', watchAbort)
+    // ★ 只收一次:被强行收口过的 run,驱动日后真醒过来也不能再放一次别人的锁、再续一次队列
+    if (settled) return
+    settled = true
     release()
     try { sessionRuntime.runSettled(handle) } catch (error) { console.warn(`[session] settle failed: ${handle.runId}`, error) }
     reapFinishedRuns()
@@ -477,11 +484,37 @@ function launch(req: RunRequest, driver: RunDriver): RunHandle {
     if (handle.signal.aborted) handle.finish('aborted')
     else handle.finish('error', toAgentError(error))
   }
+  /*
+    ★ 停止的兜底(#187)。正常路径上 abort 之后驱动几毫秒内就会自己 `finish('aborted')`
+    并收尾;但只要驱动里有**任何一处**不认 signal 的 await 卡住,run 就永远停在
+    `running` —— 界面计时一直走、停止按钮按了没反应、会话互斥也一直攥着,排队的话
+    永远发不出去。宽限期一过还没收到 `run_end`,就由这里替它收口:发 run_end、放锁。
+    驱动那边置 `abandoned`,醒过来之后的迟到写入由 runtime 丢弃。
+  */
+  function watchAbort(): void {
+    abandonTimer = setTimeout(() => {
+      abandonTimer = undefined
+      if (settled || handle.status !== 'running') return
+      console.warn(`[run] ${handle.runId} 停止后 ${String(ABORT_SETTLE_GRACE_MS / 1000)} 秒仍未收尾,强制结束`)
+      handle.abandoned = true
+      handle.finish('aborted')
+      settle()
+    }, ABORT_SETTLE_GRACE_MS)
+    abandonTimer.unref?.()
+  }
+  if (handle.signal.aborted) watchAbort()
+  else handle.signal.addEventListener('abort', watchAbort, { once: true })
   ensureReapTimer()
   try { void Promise.resolve(driver(handle, req)).catch(failed).finally(settle) }
   catch (error) { try { failed(error) } finally { settle() } }
   return handle
 }
+
+/**
+ * 按了停止之后,给驱动自己收尾的时间。正常收尾是毫秒级的(工具、上游、等待都挂着
+ * 同一个 signal);超过它就说明某处的 await 不认 signal,由 `launch` 强行收口。
+ */
+export const ABORT_SETTLE_GRACE_MS = 5_000
 
 /** 定期回收的间隔。TTL 是 2 分钟,半分钟扫一次足够,且扫描本身只是遍历一张小表 */
 const REAP_INTERVAL_MS = 30_000

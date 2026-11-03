@@ -2970,6 +2970,8 @@ export async function runAgent(
       acceptsGoalInput: (goalId) => primary && getActiveGoal(req.sessionId)?.id === goalId,
       prepareMessage: (message) => primary ? prepareGoalMessage(req.sessionId, message) : message,
       onMessageCommit: (message) => {
+        // 停止后被强行收口的 run(#187):会话可能已经属于下一轮,迟到的消息不再落盘
+        if (handle.abandoned) return
         // ★ 带上 runId:重启之后逐轮用量全靠这一跳把消息接回 `usage_records`
         // (那张表一直有 run_id,缺的一直是反向的归属)。
         store.commitMessage(req.sessionId, message, req.runId)
@@ -3187,6 +3189,8 @@ export async function runAgent(
      */
     let writtenSkills: string[] = []
     try {
+      // 停止后被强行收口的 run(#187):库里的历史可能已经被下一轮续写,这份过期快照不能整份覆盖它
+      if (handle.abandoned) return
       const latest = store.getHistory(req.sessionId)
       store.setHistory(req.sessionId, mergeGoalStatusHistory(mergeLatestSubagentReceipts(agentSession.history, latest), latest))
       store.setRunRecord(req.runId, req.sessionId, handle.status, startedAt, getHost().clock.now())

@@ -362,7 +362,11 @@ function createSessionStore(sessionId: string): SessionStore {
       if (runId === null) return
       // 状态不在这里改 —— 等 run_end 事件回来。中断路径上主进程还要做收尾
       // (方案 §4.8 的五件事),UI 抢先置成 idle 就看不到那个过程了。
-      await abortRun(runId, true)
+      try {
+        await abortRun(runId, true)
+      } finally {
+        settleAfterStop(sessionId, runId)
+      }
     },
 
     async compactContext() {
@@ -1503,6 +1507,31 @@ async function settleMissedRun(sessionId: string, runId: string): Promise<void> 
   }))
   // 事件补不回来时,库里那份已提交的转录就是最完整的版本。
   void hydrateHistory(sessionId, true)
+}
+
+/**
+ * 按了停止之后多久还没等到 `run_end`,就去主进程问一次实情。
+ *
+ * ★ 比主进程那边的强制收口(`ABORT_SETTLE_GRACE_MS` = 5s)略长:那边收口时会发
+ * run_end,正常情况下它先到,这里什么都不用做。
+ */
+const STOP_SETTLE_GRACE_MS = 7_000
+
+/**
+ * 停止的渲染层兜底(#187)。
+ *
+ * 症状是「计时一直走、停止按了没反应」:主进程那个 run 早就结束(甚至已被回收),
+ * 而这个窗口漏了它的 `run_end` —— 此时 `agent:abort` 是无声的空操作,界面会一直
+ * 等一条永远不会来的事件。宽限期一过还停在这个 run 上,就 attach 一次:主进程说
+ * 已结束就把尾巴补上并离开运行态;说查不到(已回收)就从库里重读(见 `resync`)。
+ * 主进程说仍在跑就不动 —— 真正的 run_end 会自己到。
+ */
+function settleAfterStop(sessionId: string, runId: string): void {
+  setTimeout(() => {
+    const store = stores.get(sessionId)
+    if (store === undefined || store.getState().activeRunId !== runId) return
+    void resync(sessionId, runId, store.getState().lastSeq)
+  }, STOP_SETTLE_GRACE_MS)
 }
 
 export interface ActiveSubagentIndexEntry {
