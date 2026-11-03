@@ -967,6 +967,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'probed'
   },
   {
+    id: 'llmbuzz',
+    name: 'llm.buzz',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.llm.buzz/api/v1', true),
+      resp('https://api.llm.buzz/api/v1', true),
+      anth('https://api.llm.buzz/api')
+    ],
+    docsUrl: 'https://llm.buzz',
+    apiKeyUrl: 'https://app.llm.buzz',
+    suggestedModels: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4.1-flash'],
+    notes:
+      '模型 ID 带厂商前缀(如 openai/gpt-5.4-mini、anthropic/claude-sonnet-5),用模型列表返回的完整 ID 即可。' +
+      '模型列表要先填 key 才能拉。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'documented'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
