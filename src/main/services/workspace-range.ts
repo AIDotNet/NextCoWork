@@ -32,7 +32,7 @@ export interface WorkspaceRange {
 export function readWorkspaceRange(req: WorkspaceRangeRequest): WorkspaceRange {
   let fd: number | null = null
   try {
-    const target = checkedPath(workspaceRoot(req.workspaceId), req.path)
+    const target = checkedPath(workspaceRoot(req.workspaceId), req.path, false, 'follow-dirs')
     // O_NOFOLLOW:围栏检查之后路径被换成符号链接时不跟随(POSIX;Windows 无此标志则为 0)。
     fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
     const stat = fstatSync(fd)
