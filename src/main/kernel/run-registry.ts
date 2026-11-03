@@ -83,6 +83,14 @@ export class RunHandle {
   readonly depth: number
   /** Metadata of a detached Task run, kept with its authoritative run handle. */
   backgroundTask?: { type: string; description: string }
+  /**
+   * 用户按了停止,驱动却在宽限期内一直没收尾,被 `launch` 强行收口了(#187)。
+   *
+   * ★ 置位之后这个 run 在注册表里已经是 `aborted`、会话互斥也已放开 —— 下一轮可能
+   * 已经开跑。驱动哪天自己醒过来,它手里那份转录是**过期的**:不能再逐条落盘,
+   * 也不能在收尾时整份覆盖库里的历史(那会抹掉下一轮的消息)。
+   */
+  abandoned = false
 
   status: RunStatus = 'running'
   readonly startedAt = Date.now()

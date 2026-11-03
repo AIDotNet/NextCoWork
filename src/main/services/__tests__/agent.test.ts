@@ -29,6 +29,8 @@ import { installHost, resetRuntimeForTest, shutdownEnvironments, shutdownMcp } f
 vi.mock('electron', () => { throw new Error('Agent service imported Electron') })
 
 import {
+  ABORT_SETTLE_GRACE_MS,
+  abortRun,
   activeRunIndex,
   broadcastActiveRuns,
   flushRun,
@@ -285,6 +287,43 @@ describe('服务在纯 Node 里直接可用', () => {
     shutdownRuns()
     expect(flush).toHaveBeenCalledTimes(1)
     flush.mockRestore()
+  })
+
+  it('★ 停止后驱动一直不收尾:宽限期一过强制结束并放开会话(#187)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const request = req({ runId: 'svc-stuck', sessionId: 'svc-stuck' })
+      // 一个不认 signal、永远不 settle 的驱动 —— 卡在某处没挂 signal 的 await 上
+      expect(startAgentRun(request, () => new Promise<void>(() => {})).started).toBe(true)
+      abortRun(request.runId, true)
+
+      vi.advanceTimersByTime(ABORT_SETTLE_GRACE_MS - 1)
+      expect(runHandle(request.runId)?.status).toBe('running')
+      expect(runs.isSessionBusy(request.sessionId)).toBe(true)
+
+      vi.advanceTimersByTime(1)
+      const handle = runHandle(request.runId)
+      expect(handle?.status).toBe('aborted')
+      expect(handle?.abandoned).toBe(true)
+      expect(runs.isSessionBusy(request.sessionId)).toBe(false)
+      expect(activeRunIndex().find((e) => e.runId === request.runId)).toBeUndefined()
+    } finally {
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('停止后驱动按时收尾:不触发强制收口', async () => {
+    const request = req({ runId: 'svc-stop-ok', sessionId: 'svc-stop-ok' })
+    const driver = (handle: RunHandle): Promise<void> => new Promise<void>((resolve) => {
+      handle.signal.addEventListener('abort', () => { handle.finish('aborted'); resolve() }, { once: true })
+    })
+    expect(startAgentRun(request, driver).started).toBe(true)
+    abortRun(request.runId, true)
+    await vi.waitFor(() => expect(runs.isSessionBusy(request.sessionId)).toBe(false))
+    expect(runHandle(request.runId)?.status).toBe('aborted')
+    expect(runHandle(request.runId)?.abandoned).toBe(false)
   })
 
   it('run 的闸门仍然在:同一会话忙的时候再发一句先进队列', async () => {
