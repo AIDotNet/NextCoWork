@@ -367,6 +367,14 @@ export class RunHandle {
   }
 }
 
+/** 见 `RunRegistry.sessionActivity` */
+export interface SessionActivity {
+  live: RunHandle[]
+  stopping: RunHandle[]
+  finalizing: string[]
+  operations: string[]
+}
+
 export class SessionBusyError extends Error {
   constructor(readonly sessionId: string) {
     super(`会话 ${sessionId} 有运行中的 Agent 或历史操作，请等待完成后再试`)
@@ -422,6 +430,65 @@ export class RunRegistry {
       if (handle.sessionId === sessionId && handle.depth === 0 && handle.status === 'running') return handle
     }
     return undefined
+  }
+
+  /**
+   * 这几条会话此刻「到底谁占着」—— 删除会话前的**活体检查**,按真实 run 状态分类,
+   * 而不是只看 `isSessionBusy` 那一个布尔值。
+   *
+   * 需求:删除被「会话忙」挡住时,要分得清是真的有 Agent 在跑(该问用户要不要停),
+   * 还是注册表里残留的条目(该清掉、照删)。只有一个布尔值的时候,一条中断了却没
+   * 收尾的 run、或一把收尾时没放掉的互斥,会把删除永久挡住 —— 表现为「删不掉,
+   * 重启后就能删」(重启清空的正是这张进程内的表)。
+   *
+   * - `live`:status 是 running,且没被中断 —— 真在跑;
+   * - `stopping`:已经按过停止(signal 已 abort),status 却还停在 running ——
+   *   驱动要么正在退,要么卡死了(`abort()` 不改 status,只有 `finish()` 改);
+   * - `finalizing`:互斥被一个**已经结束**(或已不在表里)的 run 占着 —— 驱动收尾落盘中,
+   *   正常是毫秒级,长时间不放就是漏了;
+   * - `operations`:没有 run 的历史操作(手动压缩)占着会话。
+   */
+  sessionActivity(sessionIds: Iterable<string>): SessionActivity {
+    const ids = new Set(sessionIds)
+    const activity: SessionActivity = { live: [], stopping: [], finalizing: [], operations: [] }
+    for (const handle of this.runs.values()) {
+      if (!ids.has(handle.sessionId) || handle.status !== 'running') continue
+      if (handle.signal.aborted) activity.stopping.push(handle)
+      else activity.live.push(handle)
+    }
+    for (const [sessionId, reservation] of this.sessionOperations) {
+      if (!ids.has(sessionId)) continue
+      if (reservation.runId === undefined) {
+        activity.operations.push(sessionId)
+        continue
+      }
+      const owner = this.runs.get(reservation.runId)
+      if (owner === undefined || owner.status !== 'running') activity.finalizing.push(sessionId)
+    }
+    return activity
+  }
+
+  /**
+   * 删除会话的最后一步:把这些会话名下还挂着的 run 强制判成 `aborted`、互斥强制放掉。
+   *
+   * ★ 只在「已经中断过、等过一段宽限期仍没收尾」之后调用(见 `ipc/sessions.ts` 的
+   * `deleteSession`)。被强制收掉的驱动如果之后还醒过来:`emit` 会丢掉迟到事件,
+   * 收尾写库撞上已删除的会话会抛并在它自己的 catch 里记日志,`release()` 的 token
+   * 已经对不上、是空操作 —— 都不会把会话复活。
+   */
+  forceSettleSessions(sessionIds: Iterable<string>): number {
+    const ids = new Set(sessionIds)
+    let n = 0
+    for (const handle of [...this.runs.values()]) {
+      if (!ids.has(handle.sessionId) || handle.status !== 'running') continue
+      handle.abort({ by: 'user' })
+      handle.finish('aborted')
+      n++
+    }
+    for (const sessionId of ids) {
+      if (this.sessionOperations.delete(sessionId)) n++
+    }
+    return n
   }
 
   hasSessionOperations(): boolean {

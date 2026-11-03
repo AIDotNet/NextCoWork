@@ -664,7 +664,12 @@ export interface IpcInvokeMap {
   'sessions:setModel': { req: { sessionId: string; model: string; modelProviderId?: string }; res: void }
   'sessions:setArchived': { req: { sessionId: string; archived: boolean }; res: void }
   'sessions:setFavorited': { req: { sessionId: string; favorited: boolean }; res: void }
-  'sessions:delete': { req: { sessionId: string }; res: void }
+  /**
+   * 删除会话(级联子代理转录)。待删子树里有真在跑的 Agent 时抛 `conflict`
+   * (messageKey `session.deleteRunningMessage`);`stopRunning: true` = 用户已确认
+   * 「停止并删除」:先中断(连同子代理)、等它收尾,卡住的强制清掉,再删。
+   */
+  'sessions:delete': { req: { sessionId: string; stopRunning?: boolean }; res: void }
   /** 全局入口,但结果可按工作区筛(同「定时任务」页那个筛选器) */
   'conversations:searchAll': {
     req: { q: string; workspaceId?: string; limit: number }
