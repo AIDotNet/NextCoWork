@@ -22,15 +22,19 @@ import { WORKSPACE_IMAGE_LIMIT, WORKSPACE_TEXT_LIMIT } from '../../../shared/dom
 const mocks = vi.hoisted(() => ({
   root: '',
   trash: vi.fn<(path: string) => Promise<void>>(),
-  reveal: vi.fn()
+  reveal: vi.fn(),
+  clipboard: vi.fn()
 }))
 
-vi.mock('electron', () => ({ shell: { trashItem: mocks.trash, showItemInFolder: mocks.reveal } }))
+vi.mock('electron', () => ({
+  shell: { trashItem: mocks.trash, showItemInFolder: mocks.reveal },
+  clipboard: { writeText: mocks.clipboard }
+}))
 vi.mock('../../state/store', () => ({
   store: { getWorkspace: (id: string) => id === 'workspace' ? { rootPath: mocks.root } : undefined }
 }))
 
-import { mutateWorkspaceFile, readWorkspaceFile, revealWorkspaceFile, writeWorkspaceFile } from '../workspace-files'
+import { copyWorkspacePath, mutateWorkspaceFile, readWorkspaceFile, revealWorkspaceFile, writeWorkspaceFile } from '../workspace-files'
 import { toAgentError } from '../errors'
 
 let temporary = ''
@@ -46,6 +50,7 @@ beforeEach(() => {
   mocks.root = realpathSync.native(mocks.root)
   mocks.trash.mockReset()
   mocks.reveal.mockReset()
+  mocks.clipboard.mockReset()
   mocks.trash.mockImplementation(async (path: string) => {
     renameSync(path, join(outside, 'trashed'))
   })
@@ -304,15 +309,55 @@ describe('workspace file management and path boundaries', () => {
     expect(() => readWorkspaceFile(request(join(outside, 'link.txt')))).toThrow('workspace_file:symlink')
   })
 
-  it('refuses mutations and reads through internal and external symbolic links', async () => {
+  it('refuses mutations through internal and external symbolic links', async () => {
     mkdirSync(join(mocks.root, 'real'))
     writeFileSync(join(mocks.root, 'real/file.txt'), 'keep')
     symlinkSync(join(mocks.root, 'real'), join(mocks.root, 'internal'))
     symlinkSync(outside, join(mocks.root, 'external'))
-    expect(() => readWorkspaceFile(request('internal/file.txt'))).toThrow('workspace_file:symlink')
-    await expect(mutateWorkspaceFile({ ...request('external/file.txt'), operation: 'create-file' })).rejects.toThrow()
+    await expect(mutateWorkspaceFile({ ...request('external/file.txt'), operation: 'create-file' })).rejects.toThrow('workspace_file:symlink')
+    await expect(mutateWorkspaceFile({ ...request('internal/file.txt'), operation: 'delete' })).rejects.toThrow('workspace_file:symlink')
     await expect(mutateWorkspaceFile({ ...request('internal'), operation: 'delete' })).rejects.toThrow('workspace_file:symlink')
     expect(mocks.trash).not.toHaveBeenCalled()
+  })
+
+  /**
+   * #182:工作区是一个装满 `ln -s` 的目录,每条链指向一个项目(可能在别的盘)。
+   * 经链接目录进来的文件要能打开、保存、复制路径 —— 复制出的是工作区里的逻辑路径。
+   */
+  describe('files reached through a linked directory inside the workspace (#182)', () => {
+    beforeEach(() => {
+      mkdirSync(join(outside, 'project/src'), { recursive: true })
+      writeFileSync(join(outside, 'project/src/main.ts'), 'linked')
+      symlinkSync(join(outside, 'project'), join(mocks.root, 'project'), 'dir')
+    })
+
+    it('reads and saves a file under the linked directory', () => {
+      const file = readWorkspaceFile(request('project/src/main.ts'))
+      expect(file).toMatchObject({ kind: 'text', content: 'linked' })
+      if (file.kind !== 'text') throw new Error('expected text')
+      writeWorkspaceFile({ ...request('project/src/main.ts'), content: 'edited', revision: file.revision })
+      expect(readFileSync(join(outside, 'project/src/main.ts'), 'utf8')).toBe('edited')
+      // 链本身没被替换成普通文件
+      expect(readdirSync(mocks.root)).toEqual(['project'])
+    })
+
+    it('copies the logical in-workspace path, for the link itself and for files under it', async () => {
+      await expect(copyWorkspacePath({ ...request('project/src/main.ts'), kind: 'relative' })).resolves.toBe('project/src/main.ts')
+      await expect(copyWorkspacePath({ ...request('project/src/main.ts'), kind: 'absolute' }))
+        .resolves.toBe(join(mocks.root, 'project', 'src', 'main.ts'))
+      await expect(copyWorkspacePath({ ...request('project'), kind: 'relative' })).resolves.toBe('project')
+      expect(mocks.clipboard).toHaveBeenLastCalledWith('project')
+    })
+
+    it('still rejects a file that is itself a link, and any `..` escape', async () => {
+      symlinkSync(join(outside, 'project/src/main.ts'), join(mocks.root, 'project-main.ts'))
+      expect(() => readWorkspaceFile(request('project-main.ts'))).toThrow('workspace_file:symlink')
+      for (const path of ['project/../../outside/project/src/main.ts', 'project/src/../../../outside/project/src/main.ts', '../outside/project/src/main.ts']) {
+        expect(() => readWorkspaceFile(request(path))).toThrow('workspace_file:invalid-path')
+        await expect(copyWorkspacePath({ ...request(path), kind: 'absolute' })).rejects.toThrow('workspace_file:invalid-path')
+      }
+      expect(mocks.clipboard).not.toHaveBeenCalled()
+    })
   })
 
   it('refuses broken links, including an existing broken-link destination', async () => {

@@ -106,8 +106,17 @@ export function statIfPresent(path: string): Stats | undefined {
  *    ★ 这种形态**只检查最后一段**不是软链,不逐段审计祖先:macOS 上 `/tmp` 本身就是
  *    指向 `/private/tmp` 的软链,逐段审计会把 `/tmp/x` 这类完全正常的路径判成 `symlink`。
  *    「编辑不会写穿一条链」这个性质对目标文件本身仍然成立。
+ *
+ * `links`(只影响相对路径):#182 —— 用户在工作区里 `ln -s`(Windows 上是软链/junction,
+ * lstat 同样报 `isSymbolicLink`)进多个项目目录联调,文件树能列出来,打开/复制路径却报 `symlink`。
+ * - `'reject'`(默认):逐段拒软链。新建/重命名/移动/复制/删除走这个,不改链背后的东西。
+ * - `'follow-dirs'`:祖先目录可以是链,最后一段自身是链仍拒(编辑不写穿链)。读、保存走这个 ——
+ *   和绝对路径那一支同一条规矩。
+ * - `'follow'`:任何一段都可以是链。只给复制路径、打开方式、在文件夹中显示这类不碰内容的入口。
+ * 三种模式都先在**词法上**拒掉 `..`/`.`/空段,所以入口一定是工作区里的那条链,`..` 逃不出去。
  */
-export function checkedPath(root: string, path: string, allowRoot = false): string {
+export type LinkPolicy = 'reject' | 'follow-dirs' | 'follow'
+export function checkedPath(root: string, path: string, allowRoot = false, links: LinkPolicy = 'reject'): string {
   if (typeof path !== 'string' || path.includes('\0')) fail('invalid-path')
   if (path === '' && allowRoot) return root
 
@@ -129,7 +138,7 @@ export function checkedPath(root: string, path: string, allowRoot = false): stri
   for (let index = 1; index <= segments.length; index++) {
     const component = resolve(root, ...segments.slice(0, index))
     const stat = statIfPresent(component)
-    if (stat?.isSymbolicLink()) fail('symlink')
+    if (stat?.isSymbolicLink() && (links === 'reject' || (links === 'follow-dirs' && index === segments.length))) fail('symlink')
     if (!stat) break
   }
   return target
@@ -162,7 +171,7 @@ function readBounded(path: string, limit: number): { bytes?: Buffer; stat: Stats
 }
 
 function readFileAt(root: string, path: string): WorkspaceFile {
-  const target = checkedPath(root, path)
+  const target = checkedPath(root, path, false, 'follow-dirs')
   const extension = extname(path).toLowerCase()
   const { bytes, stat } = readBounded(target, workspaceReadLimit(extension))
   return classifyWorkspaceFile(path, extension, bytes, stat)
@@ -209,7 +218,7 @@ export function readWorkspaceFile(req: WorkspaceFileRequest): WorkspaceFile {
 export function writeWorkspaceFile(req: WorkspaceFileWriteRequest): WorkspaceFile {
   try {
     const root = workspaceRoot(req.workspaceId)
-    const target = checkedPath(root, req.path)
+    const target = checkedPath(root, req.path, false, 'follow-dirs')
     if (typeof req.content !== 'string' || typeof req.revision !== 'string') fail('invalid-encoding')
     /*
       需求:图片编辑类自定义编辑器要把编辑后的字节写回原文件。文本支线的
@@ -239,7 +248,7 @@ export function writeWorkspaceFile(req: WorkspaceFileWriteRequest): WorkspaceFil
       } finally {
         closeSync(fd)
       }
-      checkedPath(root, req.path)
+      checkedPath(root, req.path, false, 'follow-dirs')
       if (readFileAt(root, req.path).revision !== req.revision) fail('conflict')
       renameSync(temporary, target)
       created = false
@@ -291,7 +300,7 @@ function writeBase64File(root: string, req: WorkspaceFileWriteRequest, target: s
     } finally {
       closeSync(fd)
     }
-    checkedPath(root, req.path)
+    checkedPath(root, req.path, false, 'follow-dirs')
     if (readFileAt(root, req.path).revision !== req.revision) fail('conflict')
     renameSync(temporary, target)
     created = false

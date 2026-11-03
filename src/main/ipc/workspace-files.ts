@@ -1,6 +1,6 @@
 import { app, clipboard, dialog, shell } from 'electron'
 import { copyFileSync, lstatSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { DEFAULT_APP_TARGET_ID, REVEAL_TARGET_ID, type OpenTarget, type WorkspacePathKind } from '../../shared/domain/open-target'
 import { type WorkspaceFileRequest } from '../../shared/domain/workspace-file'
 import { IpcError } from './errors'
@@ -92,7 +92,7 @@ export async function revealWorkspaceDocument(req: WorkspaceFileRequest): Promis
 
 export function revealWorkspaceFile(req: WorkspaceFileRequest): void {
   try {
-    const target = checkedPath(workspaceRoot(req.workspaceId), req.path, true)
+    const target = checkedPath(workspaceRoot(req.workspaceId), req.path, true, 'follow')
     lstatSync(target)
     shell.showItemInFolder(target)
   } catch (error) {
@@ -133,7 +133,7 @@ export function listOpenTargets(): OpenTarget[] {
 export async function openWorkspaceFileWith(req: { workspaceId: string; path: string; targetId: string }): Promise<void> {
   let target: string
   try {
-    target = checkedPath(workspaceRoot(req.workspaceId), req.path, true)
+    target = checkedPath(workspaceRoot(req.workspaceId), req.path, true, 'follow')
     lstatSync(target)
   } catch {
     return
@@ -172,7 +172,7 @@ export async function openWorkspaceFileWith(req: { workspaceId: string; path: st
 export async function saveWorkspaceFileAs(req: { workspaceId: string; path: string }): Promise<boolean> {
   let source: string
   try {
-    source = checkedPath(workspaceRoot(req.workspaceId), req.path)
+    source = checkedPath(workspaceRoot(req.workspaceId), req.path, false, 'follow-dirs')
     if (!lstatSync(source).isFile()) fail('not-file')
   } catch (error) {
     translateError(error)
@@ -203,9 +203,17 @@ export async function saveWorkspaceFileAs(req: { workspaceId: string; path: stri
  */
 export async function copyWorkspacePath(req: { workspaceId: string; path: string; kind: WorkspacePathKind }): Promise<string> {
   const root = workspaceRoot(req.workspaceId)
-  const target = checkedPath(root, req.path, true)
+  const target = checkedPath(root, req.path, true, 'follow')
   lstatSync(target)
-  const text = req.kind === 'relative' ? displayPath(root, target) : target
+  /*
+    ★ 工作区相对路径(文件树给的)复制**逻辑路径**,不复制 realpath:经软链目录进来的文件
+    (#182)realpath 落在工作区外,`displayPath` 会把它算成一条外部绝对路径,
+    「复制相对路径」于是拿不到相对路径。`checkedPath` 已在词法上拒掉 `..`,原样用即可。
+  */
+  const logical = req.path !== '' && !isAbsolute(req.path)
+  const text = req.kind === 'relative'
+    ? (logical ? req.path : displayPath(root, target))
+    : (logical ? join(root, req.path) : target)
   clipboard.writeText(text)
   return text
 }
