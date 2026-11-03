@@ -58,6 +58,7 @@ import { useI18n, type Translate } from '../i18n'
 import { AccountPage } from './pages/AccountPage'
 import { WalletPage } from './pages/wallet/WalletPage'
 import { Dialog } from '../components/ui/Dialog'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { themeDraftDirty, useThemeProfiles } from '../stores/themeProfiles'
 
 
@@ -252,14 +253,17 @@ export function SettingsOverlay({
             {searching ? (
               <SearchResults rows={rows} pages={pages.map((p) => p.id)} onPick={goto} />
             ) : (
-              <PageBody
-                page={visiblePage}
-                sub={activeSub}
-                settings={settings}
-                versions={versions}
-                auth={auth}
-                patch={patch}
-              />
+              /* ★ 某一页渲染期抛错只坏这一页,不能让整个窗口白屏;切页即复位 */
+              <ErrorBoundary label={`settings:${visiblePage}`} resetKey={`${visiblePage}/${activeSub}`}>
+                <PageBody
+                  page={visiblePage}
+                  sub={activeSub}
+                  settings={settings}
+                  versions={versions}
+                  auth={auth}
+                  patch={patch}
+                />
+              </ErrorBoundary>
             )}
           </div>
 

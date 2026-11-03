@@ -10,7 +10,9 @@ import {
   authorizationWarning,
   draftOf,
   emptyDraft,
+  formatArgs,
   hasErrors,
+  normalizeMcpConfig,
   parseArgs,
   parseSecretLines,
   secretValues,
@@ -383,5 +385,81 @@ describe('draftOf', () => {
     expect(d.description).toBe('')
     expect(d.cwd).toBe('')
     expect(d.secretsText).toBe('')
+  })
+})
+
+/**
+ * ★ 白屏回归。库里的 JSON 原样存取、不校验形状,而编辑弹窗以前直接
+ * `cfg.envNames.map` / `cfg.args.join` —— 任何一条缺字段的配置点「编辑」
+ * 就是渲染期 TypeError,整个窗口白屏。这些形状都必须能打开。
+ */
+describe('draftOf 面对非规范形状', () => {
+  const shapes: Record<string, unknown> = {
+    '缺 envNames': { id: 'a', name: 'A', enabled: true, transport: 'stdio', command: 'npx', args: [] },
+    '缺 args': { id: 'a', name: 'A', enabled: true, transport: 'stdio', command: 'npx', envNames: [] },
+    'env 是对象': { id: 'a', name: 'A', enabled: true, transport: 'stdio', command: 'npx', args: [], env: { X: '1' } },
+    '缺 headerNames': { id: 'a', name: 'A', enabled: true, transport: 'sse', url: 'https://x' },
+    "transport 是 'http'、headers 是对象": { id: 'a', name: 'A', enabled: true, transport: 'http', url: 'https://x', headers: { A: 'b' } },
+    '没有 transport、只有 url': { id: 'a', name: 'A', url: 'https://x' },
+    'command 是数组': { id: 'a', name: 'A', command: ['npx', '-y', 'pkg'] },
+    '缺 command': { id: 'a', name: 'A', transport: 'stdio' },
+    '缺 name': { id: 'a', transport: 'stdio', command: 'x' },
+    '完全不是对象': null
+  }
+  for (const [label, shape] of Object.entries(shapes)) {
+    it(label, () => {
+      expect(() => draftOf(shape as McpServerConfig)).not.toThrow()
+    })
+  }
+
+  it('对象形式的 env / headers 只取键名,值(可能是明文 token)丢掉', () => {
+    expect(draftOf(shapes['env 是对象'] as McpServerConfig).secretsText).toBe('X=')
+    const http = draftOf(shapes["transport 是 'http'、headers 是对象"] as McpServerConfig)
+    expect(http.transport).toBe('streamable-http')
+    expect(http.secretsText).toBe('A=')
+  })
+
+  it('command 数组拆成命令 + 参数', () => {
+    const d = draftOf(shapes['command 是数组'] as McpServerConfig)
+    expect(d.transport).toBe('stdio')
+    expect(d.command).toBe('npx')
+    expect(d.argsText).toBe('-y pkg')
+  })
+
+  it('没有 transport 时按有没有 url 判断', () => {
+    expect(draftOf(shapes['没有 transport、只有 url'] as McpServerConfig).url).toBe('https://x')
+  })
+
+  it('缺 name 时用 id 顶上', () => {
+    expect(draftOf(shapes['缺 name'] as McpServerConfig).name).toBe('a')
+  })
+})
+
+describe('normalizeMcpConfig', () => {
+  it('规范形状原样返回', () => {
+    const cfg: McpServerConfig = {
+      id: 'x',
+      name: 'X',
+      enabled: false,
+      workspaceId: 'w1',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['a'],
+      envNames: ['K'],
+      cwd: '/tmp'
+    }
+    expect(normalizeMcpConfig(cfg)).toEqual(cfg)
+  })
+
+  it('enabled 缺省视为开', () => {
+    expect(normalizeMcpConfig({ id: 'x', name: 'X', transport: 'stdio', command: 'c' }).enabled).toBe(true)
+  })
+})
+
+describe('formatArgs', () => {
+  /** 症状:打开编辑什么都不改直接保存,带空格的路径被切成两个参数 */
+  it('带空白的参数加引号,和 parseArgs 往返一致', () => {
+    const args = ['--root', '/Users/me/My Docs', '', `{"a":1}`, "it's"]
+    expect(parseArgs(formatArgs(args))).toEqual(args)
   })
 })

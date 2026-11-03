@@ -98,8 +98,9 @@ export function McpServerDialog({
       .then((info) => {
         if (alive)
           setStored({
-            names: info.storedNames,
-            encryptionAvailable: info.encryptionAvailable,
+            // 远端设备可能是别的版本,回程形状不能完全信 —— 这里渲染期会 `.length`
+            names: Array.isArray(info?.storedNames) ? info.storedNames : [],
+            encryptionAvailable: info?.encryptionAvailable !== false,
           });
       })
       .catch((e: unknown) => console.error("[mcp] 读取密钥状态失败", e));
@@ -133,7 +134,7 @@ export function McpServerDialog({
     setFailure(null);
     const config: McpServerConfig = toConfig(
       draft,
-      editing?.config.enabled ?? true,
+      editing?.config.enabled !== false,
     );
     config.workspaceId = workspaceId || undefined;
 
