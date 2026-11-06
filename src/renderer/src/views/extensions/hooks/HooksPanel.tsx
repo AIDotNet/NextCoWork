@@ -195,7 +195,7 @@ export function HooksPanel(): ReactNode {
   */
   const promptModelOptions = [
     { value: '', label: t('models.followConversation') },
-    ...modelOptions(models.filter((m) => m.enabled !== false), providers)
+    ...modelOptions(models, providers, currentModelKey)
   ]
   /*
     ★ 文件里那一对**未必**还在这张候选表里(钉的那家被停用 / 被删,或者只写了别名

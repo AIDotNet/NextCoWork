@@ -27,6 +27,7 @@ import { providerAccountsZh, providerAccountsEn } from './provider-accounts';
 import { searchZh, searchEn } from './search';
 import { builtinSearchZh, builtinSearchEn } from './builtin-search';
 import { goalZh, goalEn } from './goal';
+import { modelPickerZh, modelPickerEn } from './model-picker';
 import { openWithZh, openWithEn } from './open-with';
 import { pluginSkillsZh, pluginSkillsEn } from './plugin-skills';
 import { chatNavigationZh, chatNavigationEn } from './chat-navigation';
@@ -70,6 +71,7 @@ const ZH: Messages = {
   ...sshZh,
   ...workspaceZh,
   ...goalZh,
+  ...modelPickerZh,
   ...openWithZh,
   ...pluginSkillsZh,
   ...extensionsZh,
@@ -2120,6 +2122,7 @@ const EN: Messages = {
   ...sshEn,
   ...workspaceEn,
   ...goalEn,
+  ...modelPickerEn,
   ...openWithEn,
   ...pluginSkillsEn,
   ...extensionsEn,

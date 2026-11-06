@@ -8,9 +8,9 @@
  */
 import { isChatModelAlias, type ModelAlias, type UpstreamProvider } from '../../../../../shared/domain/provider'
 import {
-  modelSelectionKey,
   selectModelBinding
 } from '../../../../../shared/domain/model-selection'
+import { modelBindingOptions, providerModelGroups } from '../../../../../shared/domain/model-groups'
 
 export interface ProviderEntry {
   provider: UpstreamProvider
@@ -38,8 +38,8 @@ export function providerEntries(
   defaultModel: string,
   defaultModelProviderId?: string
 ): ProviderEntry[] {
-  return providers.map((provider) => {
-    const aliases = models.filter((m) => m.providerId === provider.id)
+  // ★ 和所有模型选择器同一个数据源;设置页要「全部」,所以 includeUnavailable
+  return providerModelGroups(providers, models, { includeUnavailable: true }).map(({ provider, models: aliases }) => {
     return {
       provider,
       aliases,
@@ -71,28 +71,15 @@ export function providerEntries(
  */
 export function modelOptions(
   models: readonly ModelAlias[],
-  providers: readonly UpstreamProvider[] = []
+  providers: readonly UpstreamProvider[] = [],
+  keepKey?: string
 ): { value: string; label: string }[] {
   /*
-    ★ 需求:这个构建器的调用方**全是对话语境**(默认模型/子代理/审核/目标判定/
-    工作区默认模型/Hooks),选择器一律只列文本模型 —— 图片模型选中了也发不出
-    对话请求,它出现在这个下拉里就是一个选了就废的选项。判据收口在
-    `isChatModelAlias`,别在调用点再写一份。
+    ★ 需求:这个构建器的调用方**全是对话语境**(审核/目标判定/工作区默认模型/Hooks),
+    只列文本模型。可用性判据与标签格式统一在 `modelBindingOptions`
+    (`shared/domain/model-groups.ts`),调用方不要再自己预过滤 `enabled`。
   */
-  const chatModels = models.filter(isChatModelAlias)
-  const shared = new Set<string>()
-  const seen = new Set<string>()
-  for (const model of chatModels) {
-    if (seen.has(model.alias)) shared.add(model.alias)
-    seen.add(model.alias)
-  }
-  return chatModels.map((model) => {
-    const providerName = providers.find((p) => p.id === model.providerId)?.name ?? model.providerId
-    return {
-      value: modelSelectionKey(model.providerId, model.alias),
-      label: shared.has(model.alias) ? `${model.alias} · ${providerName}` : model.alias
-    }
-  })
+  return modelBindingOptions(providers, models, { filter: isChatModelAlias, keepKey, providerLabel: 'onConflict' })
 }
 
 /**
@@ -122,45 +109,6 @@ export function avatarInitial(name: string): string {
   拆成两级之后:第一级永远把那一半摆在明面上,第二级的候选天然被压到那一家
   提供的别名 —— 于是「A 家的别名 + B 家的锁」这个形状在界面上根本拼不出来。
 */
-
-/**
- * 第一级的候选。
- *
- * ★ 过滤条件必须和 `modelBindingsFor` 一致(启用的供应商 + 至少一条启用的别名):
- * 列出一家挑不出模型的供应商,用户选中它之后第二级是空的,那一步就成了死路。
- *
- * @param keep 当前已经存着的那一家。**即使它已经不可选也要留在列表里** ——
- *   供应商被停用/别名被删之后,把它从下拉里抹掉会让那一格显示成空白,
- *   用户看见的是「我没配过」,而设置里其实还钉着它。留着才有得改。
- */
-export function selectableProviders(
-  models: readonly ModelAlias[],
-  providers: readonly UpstreamProvider[],
-  keep: string
-): UpstreamProvider[] {
-  return providers.filter(
-    (p) =>
-      p.id === keep ||
-      (p.enabled && models.some((m) => m.providerId === p.id && m.enabled !== false))
-  )
-}
-
-/**
- * 第二级的候选:这一家提供的别名。
- *
- * ★ `value` 是**裸别名**,不是 `providerId/alias` —— 供应商已经由第一级钉死了,
- * 再编一次码只会让两级之间多一处要对齐的约定。同一家里别名不重复
- * (`(provider_id, alias)` 是主键),所以裸别名在这一级天然唯一。
- */
-export function providerAliasOptions(
-  models: readonly ModelAlias[],
-  providerId: string
-): { value: string; label: string }[] {
-  if (providerId === '') return []
-  return models
-    .filter((m) => m.providerId === providerId && m.enabled !== false)
-    .map((m) => ({ value: m.alias, label: m.alias }))
-}
 
 /**
  * 存着的那一对 `(别名, 供应商)` 在两级下拉里各显示成什么。

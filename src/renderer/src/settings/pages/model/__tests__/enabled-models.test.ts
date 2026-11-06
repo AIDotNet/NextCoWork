@@ -8,11 +8,10 @@ import {
 import {
   avatarInitial,
   modelOptions,
-  providerAliasOptions,
   providerEntries,
-  roleModelChoice,
-  selectableProviders
+  roleModelChoice
 } from '../enabled-models'
+import { providerModelGroups } from '../../../../../../shared/domain/model-groups'
 import { parseModelSelectionKey } from '../../../../../../shared/domain/model-selection'
 
 const prov = (id: string, name = id): UpstreamProvider => ({
@@ -140,7 +139,7 @@ describe('modelOptions', () => {
   })
 
   it('value 唯一 —— 这正是去重曾经要解决的那个问题', () => {
-    const options = modelOptions([alias('gpt-6-astra', 'a'), alias('gpt-6-astra', 'b')])
+    const options = modelOptions([alias('gpt-6-astra', 'a'), alias('gpt-6-astra', 'b')], [prov('a'), prov('b'), prov('p1'), prov('p2')])
     expect(new Set(options.map((o) => o.value)).size).toBe(options.length)
   })
 
@@ -150,18 +149,18 @@ describe('modelOptions', () => {
   })
 
   it('不同别名一个都不少', () => {
-    const options = modelOptions([alias('x', 'a'), alias('y', 'a'), alias('z', 'b')])
+    const options = modelOptions([alias('x', 'a'), alias('y', 'a'), alias('z', 'b')], [prov('a'), prov('b'), prov('p1'), prov('p2')])
     expect(options.map((o) => o.value)).toEqual(['a/x', 'a/y', 'b/z'])
   })
 
   /** 上游已按「供应商顺序 → priority」排好,这里不重排 */
   it('保序', () => {
-    const options = modelOptions([alias('b', 'p1'), alias('a', 'p1'), alias('b', 'p2')])
+    const options = modelOptions([alias('b', 'p1'), alias('a', 'p1'), alias('b', 'p2')], [prov('a'), prov('b'), prov('p1'), prov('p2')])
     expect(options.map((o) => o.value)).toEqual(['p1/b', 'p1/a', 'p2/b'])
   })
 
   it('别名里的斜杠不会把 value 切错', () => {
-    const [option] = modelOptions([alias('openrouter/claude-sonnet-4', 'p1')])
+    const [option] = modelOptions([alias('openrouter/claude-sonnet-4', 'p1')], [prov('a'), prov('b'), prov('p1'), prov('p2')])
     expect(parseModelSelectionKey(option!.value))
       .toEqual({ modelProviderId: 'p1', alias: 'openrouter/claude-sonnet-4' })
   })
@@ -177,8 +176,26 @@ describe('modelOptions', () => {
       ...alias('seedream-4', 'a'),
       capabilities: { ...alias('seedream-4', 'a').capabilities, imageOutput: true }
     }
-    expect(modelOptions([alias('gpt-6-astra', 'a'), imageByModality, imageByCapability]).map((o) => o.value))
+    expect(modelOptions([alias('gpt-6-astra', 'a'), imageByModality, imageByCapability], [prov('a'), prov('b'), prov('p1'), prov('p2')]).map((o) => o.value))
       .toEqual(['a/gpt-6-astra'])
+  })
+
+  it('★ 停用的供应商 / 停用的别名都不进下拉 —— 和路由器同一条判据', () => {
+    const options = modelOptions(
+      [alias('x', 'a'), { ...alias('y', 'a'), enabled: false }, alias('z', 'b')],
+      [prov('a'), { ...prov('b'), enabled: false }]
+    )
+    expect(options.map((o) => o.value)).toEqual(['a/x'])
+  })
+
+  it('★ 当前存着的那一对即使不可用也留着(keepKey),否则下拉显示空白', () => {
+    const options = modelOptions([alias('x', 'a'), alias('z', 'b')], [prov('a'), { ...prov('b'), enabled: false }], 'b/z')
+    expect(options.map((o) => o.value)).toEqual(['a/x', 'b/z'])
+  })
+
+  it('有展示名时标签用展示名', () => {
+    expect(modelOptions([{ ...alias('ds-v4', 'a'), displayName: 'DeepSeek V4' }], [prov('a')]))
+      .toEqual([{ value: 'a/ds-v4', label: 'DeepSeek V4' }])
   })
 })
 
@@ -210,34 +227,50 @@ describe('两级下拉:先供应商,再它的模型', () => {
   const b = prov('b', 'B 家')
   const models = [alias('m1', 'a'), alias('m2', 'a'), alias('m1', 'b')]
 
+  const ids = (groups: ReturnType<typeof providerModelGroups>): string[] => groups.map((g) => g.provider.id)
+  const aliasesOf = (groups: ReturnType<typeof providerModelGroups>, id: string): string[] =>
+    groups.find((g) => g.provider.id === id)?.models.map((m) => m.alias) ?? []
+
   it('只列出挑得出模型的供应商 —— 空的那家点进去是死路', () => {
-    expect(selectableProviders(models, [a, b, prov('c')], '').map((p) => p.id)).toEqual(['a', 'b'])
+    expect(ids(providerModelGroups([a, b, prov('c')], models))).toEqual(['a', 'b'])
   })
 
-  it('停用的供应商不进第一级', () => {
-    expect(selectableProviders(models, [a, { ...b, enabled: false }], '').map((p) => p.id))
-      .toEqual(['a'])
+  it('停用的供应商不进选择器', () => {
+    expect(ids(providerModelGroups([a, { ...b, enabled: false }], models))).toEqual(['a'])
   })
 
   it('★ 已经存着的那一家即使不可选也留着 —— 抹掉它那一格会显示成「没配过」', () => {
     const gone = { ...b, enabled: false }
-    expect(selectableProviders(models, [a, gone], 'b').map((p) => p.id)).toEqual(['a', 'b'])
+    const groups = providerModelGroups([a, gone], models, { keepProviderId: 'b' })
+    expect(ids(groups)).toEqual(['a', 'b'])
+    expect(groups[1]?.available).toBe(false)
   })
 
-  it('第二级只给这一家的别名,且是裸别名', () => {
-    expect(providerAliasOptions(models, 'a')).toEqual([
-      { value: 'm1', label: 'm1' },
-      { value: 'm2', label: 'm2' }
-    ])
+  it('每家只带自己的别名,保序', () => {
+    expect(aliasesOf(providerModelGroups([a, b], models), 'a')).toEqual(['m1', 'm2'])
   })
 
-  it('没选供应商时第二级为空', () => {
-    expect(providerAliasOptions(models, '')).toEqual([])
+  it('停用的别名不进选择器 —— 和 modelBindingsFor 的过滤保持一致', () => {
+    const groups = providerModelGroups([a], [alias('m1', 'a'), { ...alias('m2', 'a'), enabled: false }])
+    expect(aliasesOf(groups, 'a')).toEqual(['m1'])
   })
 
-  it('停用的别名不进第二级 —— 和 modelBindingsFor 的过滤保持一致', () => {
-    expect(providerAliasOptions([alias('m1', 'a'), { ...alias('m2', 'a'), enabled: false }], 'a'))
-      .toEqual([{ value: 'm1', label: 'm1' }])
+  it('★ 设置页(includeUnavailable)列出全部供应商与全部别名,同一个数据源', () => {
+    const groups = providerModelGroups(
+      [a, { ...b, enabled: false }, prov('c')],
+      [alias('m1', 'a'), { ...alias('m2', 'a'), enabled: false }, alias('m1', 'b')],
+      { includeUnavailable: true }
+    )
+    expect(ids(groups)).toEqual(['a', 'b', 'c'])
+    expect(aliasesOf(groups, 'a')).toEqual(['m1', 'm2'])
+    expect(groups.map((g) => g.available)).toEqual([true, false, false])
+  })
+
+  it('模态过滤只影响模型,不影响供应商顺序', () => {
+    const img = { ...alias('img', 'b'), modality: 'image' as const }
+    const groups = providerModelGroups([a, b], [...models, img], { filter: (m) => m.modality === 'image' })
+    expect(ids(groups)).toEqual(['b'])
+    expect(aliasesOf(groups, 'b')).toEqual(['img'])
   })
 
   it('钉住了供应商时两级各显示各的', () => {

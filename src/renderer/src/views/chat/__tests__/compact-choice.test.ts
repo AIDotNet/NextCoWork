@@ -9,6 +9,7 @@
  * - 只写别名不写 providerId → 「新别名 + 旧供应商」,候选集为空。
  */
 import { describe, expect, it } from 'vitest'
+import type { ModelAlias, UpstreamProvider } from '../../../../../shared/domain/provider'
 import {
   compactModelOptions,
   compactModelPatch,
@@ -56,19 +57,19 @@ describe('compactModelPatch', () => {
 })
 
 describe('compactModelOptions', () => {
-  const models = [
-    { alias: 'a', providerId: 'p1' },
-    { alias: 'b', providerId: 'p2', enabled: false },
-    { alias: 'c', providerId: 'p3' }
-  ]
-  const providers = [
-    { id: 'p1', name: 'Alpha' },
-    { id: 'p2', name: 'Beta' },
-    { id: 'p3', name: 'Gamma', enabled: false }
-  ]
+  const caps = { tools: true, vision: false, thinking: false, caching: false }
+  const m = (alias: string, providerId: string, enabled?: boolean): ModelAlias => ({
+    alias, providerId, upstreamModel: alias, capabilities: caps, contextWindow: 200_000, maxOutputTokens: 8192,
+    ...(enabled === undefined ? {} : { enabled })
+  })
+  const p = (id: string, name: string, enabled = true): UpstreamProvider => ({
+    id, name, protocol: 'openai-chat', baseUrl: 'https://x', credentialRef: `cred:${id}`, priority: 0, enabled
+  })
+  const models = [m('a', 'p1'), m('b', 'p2', false), m('c', 'p3'), m('d', 'gone')]
+  const providers = [p('p1', 'Alpha'), p('p2', 'Beta'), p('p3', 'Gamma', false)]
 
   it('lists one option per usable binding and skips disabled ones', () => {
-    // 画出来的每个控件都是一次会失败的承诺 —— 停用的绑定不列。
+    // 画出来的每个控件都是一次会失败的承诺 —— 停用的绑定、供应商已删的绑定都不列。
     expect(compactModelOptions(models, providers)).toEqual([{ value: 'p1/a', label: 'a · Alpha' }])
   })
 })

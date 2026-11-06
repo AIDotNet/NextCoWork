@@ -13,6 +13,7 @@
  */
 import type { ModelAlias, UpstreamProvider } from './provider'
 import { isChatModelAlias } from './provider'
+import { availableBindings, isBindingAvailable } from './model-groups'
 
 /**
  * ★ 第四个参数是**必填**的(值可以是 `undefined`)。
@@ -35,12 +36,12 @@ export function modelBindingsFor(
   const byId = new Map(providers.map((p) => [p.id, p]))
   const list: { model: ModelAlias; priority: number }[] = []
   for (const model of models) {
-    if (model.alias !== alias || model.enabled === false) continue
+    if (model.alias !== alias) continue
     // ★ 钉住时**不做任何回退**:那家没了就是空数组,而不是「换一家给你」。
     //   静默换家正是用户报的这个 bug —— 他选了 Codex,请求发给了 RoutinAI。
     if (modelProviderId !== undefined && model.providerId !== modelProviderId) continue
     const provider = byId.get(model.providerId)
-    if (provider?.enabled !== true) continue
+    if (provider === undefined || !isBindingAvailable(model, provider)) continue
     list.push({ model, priority: provider.priority })
   }
   // 与 `upstream/router.ts` 的 `candidates()` 逐字一致:只按 priority 升序,
@@ -145,14 +146,7 @@ export function firstChatModelAlias(
   models: readonly ModelAlias[],
   providers: readonly UpstreamProvider[]
 ): ModelAlias | null {
-  const enabled = new Set(providers.filter((p) => p.enabled === true).map((p) => p.id))
-  for (const model of models) {
-    if (model.enabled === false) continue
-    if (!enabled.has(model.providerId)) continue
-    if (!isChatModelAlias(model)) continue
-    return model
-  }
-  return null
+  return availableBindings(providers, models, isChatModelAlias)[0] ?? null
 }
 
 /**

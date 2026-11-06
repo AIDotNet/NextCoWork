@@ -191,13 +191,11 @@ describe('VideoModelPage · 自定义视频供应商', () => {
     expect(aliases[1]?.video?.profileId).toBe('xai-video-classic')
     expect(container.querySelector('input[type="password"]')).toBeNull()
 
-    // 模型选择器是 Radix 的下拉菜单:触发器在 pointerdown 上开,先点供应商、再在子菜单里点模型
-    await act(async () => {
-      button('Model for video generation in chat').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
-    })
-    const providerItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.includes('Internal relay'))!
-    await act(async () => providerItem.click())
-    const modelItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.title === 'my-private-model')!
+    // 模型选择器(`ModelPickerMenu`):点触发器打开,点供应商页签,再点模型行
+    await act(async () => button('Model for video generation in chat').click())
+    const providerTab = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((item) => item.getAttribute('aria-label') === 'Internal relay')!
+    await act(async () => providerTab.click())
+    const modelItem = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.title === 'my-private-model')!
     await act(async () => modelItem.click())
     expect(patch).toHaveBeenCalledWith({ videoModel: 'my-private-model', videoModelProviderId: saved.id })
   })
