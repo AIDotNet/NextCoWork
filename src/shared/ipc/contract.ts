@@ -1242,6 +1242,8 @@ export interface IpcInvokeMap {
 
   // ── 本地网关 ──
   'gateway:getStatus': { req: void; res: GatewayStatus }
+  'gateway:getKey': { req: void; res: string }
+  'gateway:getAddresses': { req: void; res: string[] }
   'gateway:setEnabled': { req: { enabled: boolean }; res: GatewayStatus }
   'gateway:resetHealth': { req: { providerId?: string }; res: GatewayStatus }
 
@@ -2022,6 +2024,8 @@ export const INVOKE_CHANNELS = {
   'usage:getDailySeries': 1,
   'usage:getActivityStats': 1,
   'gateway:getStatus': 1,
+  'gateway:getKey': 1,
+  'gateway:getAddresses': 1,
   'gateway:setEnabled': 1,
   'gateway:resetHealth': 1,
   'storage:getStats': 1,

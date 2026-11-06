@@ -333,6 +333,8 @@ export const INVOKE_BOUNDARIES = {
   'usage:getDailySeries': 'device',
   'usage:getActivityStats': 'device',
   'gateway:getStatus': 'device',
+  'gateway:getKey': 'device',
+  'gateway:getAddresses': 'device',
   'gateway:setEnabled': 'device',
   'gateway:resetHealth': 'device',
   'storage:getStats': 'device',

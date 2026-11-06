@@ -23,7 +23,7 @@ import type { PermissionMode } from '../../shared/agent/permission'
 import { interactions } from '../kernel/interaction-gate'
 import { agentShells } from '../agent-shells'
 import { IpcError } from './errors'
-import type { RunHandle } from '../kernel/run-registry'
+import { runs, SessionBusyError, type RunHandle } from '../kernel/run-registry'
 import { detachForegroundSubagent, runAgent } from '../runtime'
 import { store } from '../state/store'
 import { windows, type WindowContext } from '../window/registry'
@@ -106,6 +106,29 @@ installAgentStartGuard(() => {
  */
 export function startRun(req: RunRequest, ctx: WindowContext, driver: RunDriver = runAgent): AgentRunStart {
   return startAgentRun(req, driver, () => { windows.subscribe(runTopic(req.runId), ctx.sender) })
+}
+
+/**
+ * HTTP 网关起的顶层 run。没有 webContents,但与桌面走同一个启动闸门和事件泵。
+ *
+ * ★ 与 `startRun` 的区别:会话忙时**不入队**,而是直接以 `conflict` 拒绝(网关映射成 409)。
+ * 外部调用方拿的是 runId 去订阅事件,一句被悄悄排进队列的话它永远等不到对应的 run。
+ * 忙判断与 `startAgentRun` 在同一个同步块里,中间插不进别的启动。
+ */
+export function startExternalRun(req: RunRequest, driver: RunDriver = runAgent): RunHandle {
+  if (runs.activeTopLevelRun(req.sessionId) !== undefined) {
+    throw new IpcError('conflict', 'Session already has an active run', 409)
+  }
+  let result: AgentRunStart
+  try {
+    result = startAgentRun(req, driver)
+  } catch (err) {
+    if (err instanceof SessionBusyError) throw new IpcError('conflict', err.message, 409)
+    throw err
+  }
+  const handle = result.started ? runs.get(req.runId) : undefined
+  if (handle === undefined) throw new IpcError('conflict', 'Session already has an active run', 409)
+  return handle
 }
 
 /**

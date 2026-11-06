@@ -71,7 +71,7 @@ import { installUserAgent } from './kernel/user-agent'
 import { installBundledSkills } from './kernel/skill/bundled'
 import { SKILLS_DIR } from './kernel/skill/load'
 import { store } from './state/store'
-import { isAccountSwitchInFlight } from './account-switch'
+import { isAccountSwitchInFlight, setAccountGatewayReconciler } from './account-switch'
 import { initTray, destroyTray } from './tray'
 import { windows } from './window/registry'
 import { QuitFlow } from './quit-flow'
@@ -82,6 +82,7 @@ import { titleBarOptions, watchMaximized } from './window/title-bar'
 import { applyThemePreference, resolveTheme, setQuitRequester, setSessionWindowOpener } from './ipc/app'
 import { updateService } from './update/update-service'
 import { reconcileScheduler, startScheduler, stopScheduler } from './scheduled/scheduler'
+import { reconcileGateway, shutdownGateway } from './ipc/gateway'
 import type { WindowKind } from '../shared/domain/tab'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -899,6 +900,9 @@ void app
     之前 —— 那等于让渲染层对着还没登记的 handler 握手,正是这次要修的那个错误。
   */
   announceIpcReady()
+  // 需求：数据库、运行时及 IPC 广播接线齐备后才接受外部 Agent 请求。
+  setAccountGatewayReconciler(reconcileGateway)
+  void reconcileGateway()
   powerMonitor.on('suspend', () => { void shutdownEnvironments() })
   /*
     ★ 唤醒补扫。休眠两小时回来,30 秒定时器只会补触发一次,而这两小时里
@@ -1051,6 +1055,8 @@ quitFlow = new QuitFlow({
     stopImportSync()
     stopUsageRollup()
     stopScheduler()
+    // 需求：先停止接受外部请求，再中断 run，避免退出期间启动新的任务。
+    shutdownGateway()
     // 同理:登录态刷新(5 分钟)与配置同步(5 秒)都是 unref 过的 interval,
     // 停不掉就会在封库之后继续摸库。
     shutdownClientAuth()

@@ -43,6 +43,7 @@ import { imageGenZh, imageGenEn } from './image-gen';
 import { videoGenZh, videoGenEn } from './video-gen';
 import { skillifyZh, skillifyEn } from './skillify';
 import { deviceZh, deviceEn } from './device';
+import { gatewayZh, gatewayEn } from './gateway';
 import {
   pluginMessages,
   pluginMessagesVersion,
@@ -65,6 +66,7 @@ export type Messages = Record<string, MessageValue>;
  */
 const ZH: Messages = {
   ...deviceZh,
+  ...gatewayZh,
   ...sshZh,
   ...workspaceZh,
   ...goalZh,
@@ -2114,6 +2116,7 @@ const ZH: Messages = {
 
 const EN: Messages = {
   ...deviceEn,
+  ...gatewayEn,
   ...sshEn,
   ...workspaceEn,
   ...goalEn,
