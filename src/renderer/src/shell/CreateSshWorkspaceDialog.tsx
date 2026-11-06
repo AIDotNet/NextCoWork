@@ -2,7 +2,7 @@ import { ArrowUp, ChevronRight, Folder, RefreshCw, Server } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ConnectionProfile, RemoteDirectory } from '../../../shared/domain/environment'
 import type { Workspace } from '../../../shared/domain/workspace'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Dialog } from '../components/ui/Dialog'
 import { IconButton } from '../components/ui/IconButton'
 import { TextInput } from '../components/ui/TextInput'
@@ -75,17 +75,17 @@ export function CreateSshWorkspaceDialog({ hidden, onClose, onCreated }: { hidde
   }
   const entries = directory?.entries.filter((entry) => showHidden || !entry.name.startsWith('.')) ?? []
   return <Dialog open={!hidden} width={600} title={t('ssh.create')} onClose={onClose} footer={<>
-    <Button size="sm" onClick={onClose}>{t('common.cancel')}</Button>
-    <Button size="sm" variant="accent" disabled={busy || (directory === null && (!selected || !allowed))} icon={busy ? <Spinner size="sm" /> : <Server size={13} />}
-      onClick={() => { if (directory) void create(); else void loadDirectory() }}>{t(directory ? 'ssh.useDirectory' : 'ssh.connect')}</Button>
+    <Button variant="secondary" type="button" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+    <Button type="button" size="sm" variant="primary" disabled={busy || (directory === null && (!selected || !allowed))}
+      onClick={() => { if (directory) void create(); else void loadDirectory() }}>{busy ? <Spinner size="sm" /> : <Server size={13} />}{t(directory ? 'ssh.useDirectory' : 'ssh.connect')}</Button>
   </>}>
     <div className="flex flex-col gap-3">
       <div className="flex min-w-0 items-center gap-2">
-        <select value={selected} aria-label={t('ssh.selectServer')} disabled={busy} className="h-8 min-w-0 flex-1 rounded-[6px] border border-border bg-canvas px-2 text-[12px] text-fg" onChange={(event) => {
+        <select value={selected} aria-label={t('ssh.selectServer')} disabled={busy} className="apple-field h-8 min-w-0 flex-1 rounded-[6px] border border-border bg-canvas px-2 text-[12px] text-fg" onChange={(event) => {
           if (browseId.current) void closeBrowse(browseId.current).catch(() => {})
           browseId.current = null; setSelected(event.target.value); setDirectory(null); setAllowed(false)
         }}><option value="" disabled>{t('ssh.selectServer')}</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.target.host}</option>)}</select>
-        <Button size="sm" onClick={() => useWindowStore.getState().openSettings('connection')}>{t('ssh.manage')}</Button>
+        <Button variant="secondary" type="button" size="sm" onClick={() => useWindowStore.getState().openSettings('connection')}>{t('ssh.manage')}</Button>
       </div>
       {directory === null ? <label className="flex items-start gap-2 text-[12px] leading-relaxed text-fg-muted"><input type="checkbox" className="mt-1 shrink-0" checked={allowed} onChange={(event) => setAllowed(event.target.checked)} />{t('ssh.native.risk')}</label> : <>
         <div className="break-all text-[12px] text-fg-muted">{directory.facts.username}@{directory.facts.hostname} · {directory.facts.os}</div>
@@ -96,10 +96,10 @@ export function CreateSshWorkspaceDialog({ hidden, onClose, onCreated }: { hidde
           </span>)}
         </nav>
         <div className="flex min-w-0 items-center gap-2">
-          {directory.facts.os === 'win32' && directory.roots.length > 0 && <select aria-label={t('ssh.volume')} value={directory.roots.find((root) => directory.path.toLowerCase().startsWith(root.toLowerCase())) ?? ''} disabled={busy} className="h-8 max-w-24 rounded-[6px] border border-border bg-canvas px-1 text-[12px]" onChange={(event) => { void loadDirectory(event.target.value) }}><option value="" disabled>{t('ssh.volume')}</option>{directory.roots.map((root) => <option key={root} value={root}>{root}</option>)}</select>}
+          {directory.facts.os === 'win32' && directory.roots.length > 0 && <select aria-label={t('ssh.volume')} value={directory.roots.find((root) => directory.path.toLowerCase().startsWith(root.toLowerCase())) ?? ''} disabled={busy} className="apple-field h-8 max-w-24 text-[12px]" onChange={(event) => { void loadDirectory(event.target.value) }}><option value="" disabled>{t('ssh.volume')}</option>{directory.roots.map((root) => <option key={root} value={root}>{root}</option>)}</select>}
           <IconButton label={t('ssh.parent')} disabled={busy || directory.parent === directory.path} onClick={() => { void loadDirectory(directory.parent) }}><ArrowUp size={14} /></IconButton>
           <div className="min-w-0 flex-1" onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !busy) void loadDirectory(path) }}><TextInput value={path} onChange={setPath} ariaLabel={t('ssh.path')} /></div>
-          <Button size="sm" disabled={busy} onClick={() => { void loadDirectory(path) }}>{t('ssh.go')}</Button>
+          <Button variant="secondary" type="button" size="sm" disabled={busy} onClick={() => { void loadDirectory(path) }}>{t('ssh.go')}</Button>
           <IconButton label={t('common.refresh')} disabled={busy} onClick={() => { void loadDirectory(directory.path) }}><RefreshCw size={14} /></IconButton>
         </div>
         <label className="flex items-center gap-2 text-[12px] text-fg-muted"><input type="checkbox" checked={showHidden} onChange={(event) => setShowHidden(event.target.checked)} />{t('ssh.hidden')}</label>

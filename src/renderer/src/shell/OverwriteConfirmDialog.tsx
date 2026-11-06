@@ -3,7 +3,7 @@
  * 之后就被重排、被移到另一格,对话框跟着它走的话会被一起卸载,Promise 就挂住了。
  */
 import type { ReactNode } from 'react'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Dialog } from '../components/ui/Dialog'
 import { useI18n } from '../i18n'
 import { settleOverwrite, useOverwriteConfirmStore } from './overwrite-confirm'
@@ -24,9 +24,9 @@ export function OverwriteConfirmDialog(): ReactNode {
       onClose={() => settleOverwrite(false)}
       footer={
         <>
-          <Button onClick={() => settleOverwrite(false)}>{t('common.cancel')}</Button>
+          <Button type="button" variant="secondary" onClick={() => settleOverwrite(false)}>{t('common.cancel')}</Button>
           {/* danger:被覆盖的那份会离开原地,即便还能从废纸篓捞回来 */}
-          <Button variant="danger" onClick={() => settleOverwrite(true)}>{t('nav.overwrite')}</Button>
+          <Button type="button" variant="danger" onClick={() => settleOverwrite(true)}>{t('nav.overwrite')}</Button>
         </>
       }
     >

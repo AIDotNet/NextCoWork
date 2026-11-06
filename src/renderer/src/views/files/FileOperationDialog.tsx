@@ -2,7 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isLocalEnvironment } from '../../../../shared/domain/environment'
 import type { WorkspaceFileMutationRequest } from '../../../../shared/domain/workspace-file'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { TextInput } from '../../components/ui/TextInput'
 import { useI18n, type TranslationKey } from '../../i18n'
@@ -86,16 +86,17 @@ export function FileOperationDialog({
       width={460}
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>
             {t('common.cancel')}
           </Button>
           <Button
+            type="button"
             size="sm"
-            variant={isDelete ? 'danger' : 'accent'}
+            variant={isDelete ? 'danger' : 'primary'}
             onClick={submit}
             disabled={busy || (!isDelete && value.trim() === '')}
-            icon={busy ? <Spinner size="sm" /> : undefined}
           >
+            {busy ? <Spinner size="sm" /> : undefined}
             {t(busy ? 'files.manage.working' : actionKeys[target.operation])}
           </Button>
         </>

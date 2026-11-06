@@ -37,8 +37,8 @@ import {
   swatchOf,
   type ColorTheme,
 } from "../../../../shared/domain/theme";
-import { Button } from "../../components/ui/Button";
-import { Segmented } from "../../components/ui/Segmented";
+import { Button } from "../../components/arc/button/button";
+import SegmentedControl from "../../components/arc/segmented-control/segmented-control";
 import { TextArea } from "../../components/ui/TextArea";
 import { TextInput } from "../../components/ui/TextInput";
 import { useDraft } from "../../components/ui/useDraft";
@@ -111,7 +111,7 @@ export function ThemePane({
           description={t("preference.appearanceHint")}
           wide
         >
-          <Segmented<ThemePreference>
+          <SegmentedControl
             label={t("preference.appearance")}
             value={settings.theme}
             options={[
@@ -119,7 +119,7 @@ export function ThemePane({
               { value: "light", label: t("preference.light") },
               { value: "dark", label: t("preference.dark") },
             ]}
-            onChange={(theme) => patch({ theme })}
+            onValueChange={(theme) => patch({ theme: theme as ThemePreference })}
           />
         </SettingRow>
 
@@ -172,15 +172,14 @@ export function ThemePane({
                 imageId === null && "pointer-events-none opacity-40",
               )}
             >
-              <Segmented<ImageRender>
+              <SegmentedControl
                 label={t("preference.renderMode")}
-                size="sm"
                 value={settings.imageTheme.render}
                 options={[
                   { value: "blur", label: t("preference.blur") },
                   { value: "overlay", label: t("preference.overlay") },
                 ]}
-                onChange={(render) => patch({ imageTheme: { render } })}
+                onValueChange={(render) => patch({ imageTheme: { render: render as ImageRender } })}
               />
             </div>
 
@@ -193,12 +192,13 @@ export function ThemePane({
                   {importError}
                 </span>
               )}
-              <Button
-                size="sm"
-                icon={<Upload size={13} />}
+              <Button size="sm"
+                type="button"
+                variant="secondary"
                 disabled={importing}
                 onClick={() => void upload()}
               >
+                <Upload size={13} />
                 {/* 选文件框 + 读盘 + 解码取色,大图能到一两秒 —— 这几百毫秒里
                     按钮必须说话,否则用户会再点一次 */}
                 {importing

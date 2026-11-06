@@ -22,7 +22,7 @@ import type { PluginConfigurationProperty } from '../../../../../shared/plugin/m
 import type { InstalledPlugin } from '../../../../../shared/plugin/state'
 import { Select } from '../../../components/ui/Select'
 import { TextInput } from '../../../components/ui/TextInput'
-import { Toggle } from '../../../components/ui/Toggle'
+import { Switch } from '../../../components/arc/switch/switch'
 import { useI18n, type TranslationKey } from '../../../i18n'
 import { invoke } from '../../../services/ipc'
 
@@ -92,7 +92,7 @@ function Row({
         <div className="truncate font-mono text-[10.5px] text-fg-faint">{name}</div>
       </div>
       {property.type === 'boolean' ? (
-        <Toggle checked={value === true} onChange={() => onChange(value !== true)} label={label} />
+        <Switch checked={value === true} onCheckedChange={() => onChange(value !== true)} aria-label={label} />
       ) : property.type === 'enum' ? (
         <Select
           className="w-[160px]"

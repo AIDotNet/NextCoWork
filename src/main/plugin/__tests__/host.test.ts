@@ -227,6 +227,8 @@ async function makeManager(
     // 用到 scm 的测试自己用 depOverrides 换掉它 —— 静默的空状态会让断言在「没接上」时依然是绿的
     scmFor: () => { throw new Error('scm adapter is not wired in this test') },
     openTab,
+    // 插件终端:缺省放行,要验参数门/远程拒绝的测试用 depOverrides 或返回值覆盖
+    launchTerminal: () => ({ opened: true }),
     requestInteraction,
     emitProgress,
     emitChanged: () => {},
@@ -436,6 +438,20 @@ describe('PluginManager · 授权上界', () => {
 })
 
 describe('PluginManager · 激活', () => {
+  it('在装配工具前唤醒 onTool 插件，而不唤醒仅提供命令的插件', async () => {
+    const { manager, runtime } = await makeManager({
+      activationEvents: ['onTool:read_export'],
+      contributes: { tools: [{ name: 'read_export', title: '%tool.read%' }] }
+    })
+    manager.grant('acme.demo', ['storage'])
+    await manager.setEnabled('acme.demo', true)
+    await manager.prepareContributedTools()
+    expect(runtime.spawned).toEqual(['acme.demo'])
+    expect(runtime.invocations).toContain('activate')
+    await manager.prepareContributedTools()
+    expect(runtime.spawned).toHaveLength(1)
+  })
+
   it('命令触发激活,并把 activate 与 command.run 各发一次', async () => {
     const { manager, runtime } = await makeManager()
     manager.grant('acme.demo', ['storage'])
@@ -1066,5 +1082,76 @@ describe('PluginManager · 宿主崩溃后自愈', () => {
     await manager.runCommand('acme.demo', 'demo.hello')
     await manager.runCommand('acme.demo', 'demo.hello')
     expect(spawned).toEqual(['acme.demo']) // 活着 → 只 spawn 一次
+  })
+})
+
+describe('PluginManager · tabs.openTerminal 的清单级参数门', () => {
+  const terminalManifest = {
+    ...MANIFEST,
+    permissions: ['process'],
+    allowedCommands: ['claude']
+  }
+
+  function launchStub() {
+    return vi.fn((_pluginId: string, _spec: { workspaceId: string; command: string; args: string[]; env: Record<string, string>; title?: string }) => ({ opened: true as const }))
+  }
+
+  async function readyWithLaunch(): Promise<{ made: Awaited<ReturnType<typeof makeManager>>; launchTerminal: ReturnType<typeof launchStub> }> {
+    const launchTerminal = launchStub()
+    const made = await makeManager(terminalManifest, { launchTerminal })
+    made.manager.grant('acme.demo', ['process'])
+    await made.manager.setEnabled('acme.demo', true)
+    return { made, launchTerminal }
+  }
+
+  it('★ 白名单内的命令把收窄后的 spec 交给 launchTerminal —— workspaceId/env 原样透传', async () => {
+    const { made, launchTerminal } = await readyWithLaunch()
+    const response = await made.manager.handleRequest('acme.demo', {
+      id: 1,
+      method: 'tabs.openTerminal',
+      params: { workspaceId: 'ws-1', command: 'claude', args: ['-m', 'sonnet'], env: { ANTHROPIC_BASE_URL: 'https://relay' }, title: '%cmd.launch%' }
+    })
+    expect(response.ok).toBe(true)
+    if (response.ok) expect(response.data).toEqual({ opened: true })
+    expect(launchTerminal).toHaveBeenCalledTimes(1)
+    expect(launchTerminal.mock.calls[0]?.[0]).toBe('acme.demo')
+    expect(launchTerminal.mock.calls[0]?.[1]).toEqual({
+      workspaceId: 'ws-1',
+      command: 'claude',
+      args: ['-m', 'sonnet'],
+      env: { ANTHROPIC_BASE_URL: 'https://relay' },
+      title: '%cmd.launch%'
+    })
+  })
+
+  it('★ 白名单外的命令在参数门被拒 —— 不碰 launchTerminal,返回 opened:false 而不是抛错', async () => {
+    const { made, launchTerminal } = await readyWithLaunch()
+    const response = await made.manager.handleRequest('acme.demo', {
+      id: 1,
+      method: 'tabs.openTerminal',
+      params: { workspaceId: 'ws-1', command: 'rm', args: ['-rf', '/'] }
+    })
+    expect(response.ok).toBe(true)
+    if (response.ok) expect(response.data).toEqual({ opened: false, reason: 'declined' })
+    expect(launchTerminal).not.toHaveBeenCalled()
+  })
+
+  it('env 的键数与键名有上限 —— 借环境变量夹带的 spec 被整体拒绝', async () => {
+    const { made, launchTerminal } = await readyWithLaunch()
+    const many: Record<string, string> = {}
+    for (let i = 0; i < 17; i++) many[`V${i}`] = 'x'
+    const response = await made.manager.handleRequest('acme.demo', {
+      id: 1,
+      method: 'tabs.openTerminal',
+      params: { workspaceId: 'ws-1', command: 'claude', env: many }
+    })
+    if (response.ok) expect(response.data).toEqual({ opened: false, reason: 'declined' })
+    const badKey = await made.manager.handleRequest('acme.demo', {
+      id: 2,
+      method: 'tabs.openTerminal',
+      params: { workspaceId: 'ws-1', command: 'claude', env: { 'A=B': 'x' } }
+    })
+    if (badKey.ok) expect(badKey.data).toEqual({ opened: false, reason: 'declined' })
+    expect(launchTerminal).not.toHaveBeenCalled()
   })
 })

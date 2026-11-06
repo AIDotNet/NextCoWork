@@ -11,6 +11,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronRight, Undo2, Redo2 } from 'lucide-react'
 import type { ReviewChangeSet, ReviewFileEntry, ReviewMutationResult } from '../../../../shared/domain/review'
+import { isLocalEnvironment } from '../../../../shared/domain/environment'
+import { OpenWithMenu, OpenWithChevron } from '../../components/OpenWithMenu'
 import {
   getReviewChangeSet,
   precheckReviewUndo,
@@ -19,6 +21,7 @@ import {
 } from '../../services/review'
 import { on } from '../../services/ipc'
 import { useTabsStore } from '../../stores/tabs'
+import { useWindowStore } from '../../stores/window'
 import { useI18n } from '../../i18n'
 import { motionScale, useMotionLevel } from '../../theme/useMotionLevel'
 import { cn } from '../../lib/cn'
@@ -113,6 +116,24 @@ export function TurnChangeReview({
     const timer = setTimeout(() => setConfirmUndo(false), CONFIRM_TIMEOUT_MS)
     return () => clearTimeout(timer)
   }, [confirmUndo])
+
+  /*
+    本机工作区才有「用别的程序打开」—— SSH 工作区里的文件不在本机磁盘上,
+    列出来的 IDE 一个也打不开,所以那半颗按钮根本不画(AGENTS.md 的不做防御式 UI)。
+    判据和工作区文件树、浏览器那几处同一条(`workspaceTargets` + `isLocalEnvironment`)。
+
+    ★ 这个 hook 必须排在下面那次「没改过文件就不占位」的提前 return **之前**。
+    Hooks 不能被条件语句挡住 —— 挡在 return 后面时,一轮改动集从空到有内容
+    (或反过来)会让本次渲染比上次多/少调用这一个 hook,React 报
+    "Rendered more hooks than during the previous render" 并整卡崩溃。
+    `workspaceId` 此刻可能还是 `undefined`(早于下面的判空),selector 里
+    用它当 key 只会查到 undefined,不会抛错。
+  */
+  const local = useWindowStore((state) => {
+    if (workspaceId === undefined) return false
+    const workspace = state.workspaceTargets[workspaceId]
+    return workspace !== undefined && isLocalEnvironment(workspace.environment)
+  })
 
   // 这一轮没改过文件(或还没加载出来)—— 整卡不占位。
   if (runId === undefined || workspaceId === undefined || set === null || set.files.length === 0) return null
@@ -237,6 +258,8 @@ export function TurnChangeReview({
                 <FileRow
                   key={file.path}
                   file={file}
+                  local={local && file.changeKind !== 'deleted'}
+                  workspaceId={workspaceId}
                   onReview={() => openReviewTab(file.path)}
                   onOpen={() => openFile(file.path)}
                   t={t}
@@ -254,11 +277,17 @@ function FileRow({
   file,
   onReview,
   onOpen,
+  local,
+  workspaceId,
   t
 }: {
   file: ReviewFileEntry
   onReview: () => void
   onOpen: () => void
+  /** 本机工作区才有「用别的程序打开」—— 远端那半由调用点判好再传进来 */
+  local: boolean
+  /** 只给「打开方式」用:它要按工作区把路径交给主进程 */
+  workspaceId: string
   t: ReturnType<typeof useI18n>['t']
 }): ReactNode {
   const { dir, name } = splitPath(file.path)
@@ -292,13 +321,39 @@ function FileRow({
       >
         {t('chat.review.review')}
       </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="shrink-0 rounded-[6px] border border-stroke px-2 py-0.5 text-fg-muted hover:text-fg"
-      >
-        {t('chat.review.open')}
-      </button>
+      {/*
+        「打开」与它右边的 ▾ 是**两颗按钮**:左半沿用既有的「在右侧工作台开一个
+        文档 Tab」(那条路会走插件的自定义编辑器分派),右半是「交给本机的别的程序」。
+        合成一颗的话,点「打开」到底开在哪儿就取决于上次点了哪一半 —— 而这两件事
+        用户的预期完全不同(一个是继续在我们里面看,一个是离开我们)。
+
+        ★ 远端工作区不画这一半:那些文件不在本机磁盘上,列出来的 IDE 一个也打不开
+        (见 `services/open-with.ts` 头上那条)。
+      */}
+      <div className="flex shrink-0 items-center">
+        <button
+          type="button"
+          onClick={onOpen}
+          // 没有右半(远端工作区 / 已删除的文件)时它自己就是一颗完整的按钮,
+          // 留着左侧的直角会让它看起来像是少了半截
+          className={cn(
+            'border border-stroke px-2 py-0.5 text-fg-muted hover:text-fg',
+            local ? 'rounded-l-[6px]' : 'rounded-[6px]'
+          )}
+        >
+          {t('chat.review.open')}
+        </button>
+        {local && (
+          <OpenWithMenu
+            workspaceId={workspaceId}
+            path={file.path}
+            align="end"
+            className="shrink-0"
+            trigger={<OpenWithChevron />}
+            triggerClassName="flex items-center justify-center rounded-r-[6px] border border-l-0 border-stroke px-1 py-0.5 text-fg-muted hover:text-fg"
+          />
+        )}
+      </div>
     </div>
   )
 }

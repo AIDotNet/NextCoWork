@@ -34,7 +34,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { UpdateInfo, UpdateState } from '../../../shared/domain/update'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { IconButton } from '../components/ui/IconButton'
 import { Spinner } from '../components/ui/Spinner'
 import { useI18n } from '../i18n'
@@ -231,7 +231,7 @@ export function UpdateIndicator(): ReactNode {
               style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, width: CARD_WIDTH }}
               // z-150:portal 到 body 的浮层那一档,见 theme.css 末尾 z 轴那段。
               // 和 `Tooltip` 同档 —— 它俩不会同时出现在同一个位置上。
-              className="app-no-drag fixed z-[150] rounded-card border border-stroke bg-surface-raised p-3 text-fg shadow-lg"
+              className="app-no-drag fixed z-[150] rounded-[14px] bg-surface-menu p-3 text-fg shadow-menu"
             >
               <div className="text-[12.5px] font-medium">
                 {t('about.updates.banner', { version: info.version })}
@@ -284,11 +284,11 @@ export function UpdateIndicator(): ReactNode {
               {!downloading && !installing && (
                 <div className="mt-3 flex justify-end">
                   {ready ? (
-                    <Button size="sm" variant="accent" disabled={busy} onClick={() => void run(updateInstall)()}>
+                    <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => void run(updateInstall)()}>
                       {t('about.updates.restartAndInstall')}
                     </Button>
                   ) : (
-                    <Button size="sm" variant="accent" disabled={busy} onClick={() => void run(updateDownload)()}>
+                    <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => void run(updateDownload)()}>
                       {failed
                         ? t('about.updates.retry')
                         : t('about.updates.download', { version: info.version })}

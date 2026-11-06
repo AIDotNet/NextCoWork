@@ -31,7 +31,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { THEME_TOKENS } from '../../../shared/domain/theme'
 import { cn } from '../lib/cn'
-import { readWorkspaceFile, writeWorkspaceFile } from '../services/workspace-files'
+import { readWorkspaceFile } from '../services/workspace-files'
+import { saveDocumentFile } from '../actions/workspace-files'
 import { setCustomEditorDirty } from '../services/plugins'
 
 export interface PluginViewFrameProps {
@@ -46,6 +47,13 @@ export interface PluginViewFrameProps {
    * 并用 `ncw:doc:save` 存回去 —— 见下面「文档通道」那一段。
    */
   document?: { workspaceId: string; path: string }
+  /**
+   * 额外的报文通道(文档引擎画布用,见 `views/plugins/DocumentEngineFrame.tsx`)。
+   * 挂载时调用一次,拿到 `post`(已锁定这个 iframe 与它的 origin);来源核对过的每条报文交给
+   * 返回值的 `handle`,卸载时 `dispose`。★ 引用要稳定(调用方用 useCallback),
+   * 每次渲染换一个就会每次渲染重开一次文档会话。
+   */
+  channel?: (post: (message: unknown, transfer?: Transferable[]) => void) => { handle: (data: unknown) => void; dispose: () => void }
 }
 
 /**
@@ -62,7 +70,7 @@ type DocumentMessage =
   | { type: 'ncw:doc:save'; data: string; encoding?: 'base64' }
   | { type: 'ncw:doc:dirty'; dirty: boolean }
 
-export function PluginViewFrame({ pluginId, path, label, className, document: bound }: PluginViewFrameProps): ReactNode {
+export function PluginViewFrame({ pluginId, path, label, className, document: bound, channel }: PluginViewFrameProps): ReactNode {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const origin = `ncw-plugin://${pluginId}`
   const src = `${origin}/${path.replace(/^\.?\//, '')}`
@@ -167,7 +175,7 @@ export function PluginViewFrame({ pluginId, path, label, className, document: bo
           `encoding: 'base64'` 是图片编辑器的存回支线:主进程按 base64 解码并
           只允许覆写已分类为 image 的文件。缺省不送该字段 = 文本,行为不变。
         */
-        void writeWorkspaceFile({
+        void saveDocumentFile({
           workspaceId: bound.workspaceId,
           path: bound.path,
           content: message.data,
@@ -205,6 +213,25 @@ export function PluginViewFrame({ pluginId, path, label, className, document: bo
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }
   }, [origin, pluginId, bound?.workspaceId, bound?.path])
+
+  /*
+    额外通道(文档引擎画布)。来源核对与文档通道同一条 ★:只认这个 iframe、这个 origin。
+    `post` 同样写死 targetOrigin,并支持转移缓冲(tile 像素不拷贝)。
+  */
+  useEffect(() => {
+    const frame = frameRef.current
+    if (frame === null || channel === undefined) return
+    const instance = channel((message, transfer) => { frame.contentWindow?.postMessage(message, origin, transfer ?? []) })
+    const onMessage = (event: MessageEvent): void => {
+      if (event.source !== frame.contentWindow || event.origin !== origin) return
+      instance.handle(event.data)
+    }
+    window.addEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      instance.dispose()
+    }
+  }, [origin, channel])
 
   return (
     <iframe

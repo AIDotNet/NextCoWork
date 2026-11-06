@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScheduledRun, ScheduledTask, ScheduledTaskInput } from '../../../shared/domain/scheduled'
 import { normalizeScheduledTaskInput, SCHEDULED_AGENT_LIMITS } from '../../../shared/domain/scheduled'
 
@@ -47,16 +47,9 @@ vi.mock('../../state/store', () => ({
     }
   }
 }))
-vi.mock('../../window/registry', () => ({
-  windows: { emitToAll: (_channel: string, payload: unknown) => state.emitted.push(payload) }
-}))
-vi.mock('../scheduler', () => ({
-  refreshScheduler: () => {
-    state.refreshed += 1
-  }
-}))
 
-import { schedulingBridgeFor } from '../bridge'
+import { schedulingBridgeFor, setScheduledChangeListener } from '../bridge'
+import { resetSchedulerRefreshForTest, setSchedulerRefresh } from '../refresh'
 
 function bridge(overrides: Partial<Parameters<typeof schedulingBridgeFor>[0]> = {}) {
   return schedulingBridgeFor({
@@ -98,6 +91,14 @@ beforeEach(() => {
   state.refreshed = 0
   state.emitted = []
   state.nextId = 0
+  setSchedulerRefresh(() => { state.refreshed += 1 })
+  // 广播口由 ipc 层装;这里用同一个插槽捕获事件(`bridge` 不再直接认识 windows)
+  setScheduledChangeListener((change) => state.emitted.push(change))
+})
+
+afterEach(() => {
+  resetSchedulerRefreshForTest()
+  setScheduledChangeListener()
 })
 
 describe('schedulingBridgeFor · 创建', () => {
@@ -117,6 +118,15 @@ describe('schedulingBridgeFor · 创建', () => {
     await bridge().create(DAILY)
     expect(state.refreshed).toBe(1)
     expect(state.emitted).toEqual([{ kind: 'task', taskId: 'task_1' }])
+  })
+
+  it('★ 广播抛错不让创建变成失败 —— 任务已经落库,报失败会让模型再建一遍', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setScheduledChangeListener(() => { throw new Error('窗口已销毁') })
+    const created = await bridge().create(DAILY)
+    expect(state.tasks.has(created.id)).toBe(true)
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('模型别名查不到就拒,并指回「省略它就继承当前模型」', async () => {

@@ -20,25 +20,26 @@ import type {
   UsageWindow
 } from '../../../../../../shared/domain/usage'
 import { localDayOf } from '../../../../../../shared/domain/usage-activity'
-import { EmptyState } from '../../../../components/ui/EmptyState'
-import { Segmented } from '../../../../components/ui/Segmented'
+import { EmptyState } from '../../../../components/arc/empty-state/empty-state'
+import SegmentedControl from '../../../../components/arc/segmented-control/segmented-control'
 import { useI18n } from '../../../../i18n'
 import { getUsageActivityStats, getUsageDailySeries } from '../../../../services/usage'
 import { formatCompactNumber } from '../usage-format'
 import {
-  applyGranularity,
   buildHeatmap,
-  fillDayGaps,
+  OTHERS_KEY,
   toCostBreakdown,
   toDayTotals,
   toModelShares,
   totalsOf,
   type UsageGranularity
 } from '../usage-overview'
+import { toModelTrend } from '../usage-model-trend'
 import { ActivityHeatmap } from './ActivityHeatmap'
+import { colorOf, modelColorMap } from './colors'
 import { CostByModel } from './CostByModel'
 import { DailyTrendChart } from './DailyTrendChart'
-import { ModelUsageDonut } from './ModelUsageDonut'
+import { ModelUsageDonut, type DonutItem } from './ModelUsageDonut'
 import { OverviewCards } from './OverviewCards'
 
 const GRANULARITIES: readonly UsageGranularity[] = ['daily', 'weekly', 'cumulative']
@@ -101,14 +102,30 @@ export function UsageOverview({ usageWindow }: { usageWindow: UsageWindow }): Re
   const shares = useMemo(() => toModelShares(buckets), [buckets])
   const costs = useMemo(() => toCostBreakdown(buckets), [buckets])
 
+  // 需求:同一个模型在环形图、趋势图、费用表里是同一个颜色。颜色只在这里按
+  // token 排名分配一次,三块图都查这张表 —— 各自按序号取色就会对不上。
+  const colors = useMemo(() => modelColorMap(shares.map((s) => s.key), OTHERS_KEY), [shares])
+  const items = useMemo<DonutItem[]>(
+    () =>
+      shares.map((share) => ({
+        key: share.key,
+        label: share.key === OTHERS_KEY ? t('usage.models.others') : share.label,
+        color: colorOf(colors, share.key),
+        tokens: share.tokens,
+        requests: share.requests,
+        share: share.share
+      })),
+    [shares, colors, t]
+  )
+
   // 趋势图先补空洞再按粒度再聚合:没有用量的日子必须是一个 0 点,否则折线会从
-  // 前一天直接斜到后一天,把「歇了三天」画成「缓慢下降」。
-  const trend = useMemo(() => {
-    const days = toDayTotals(buckets)
-    if (days.length === 0) return []
-    const filled = fillDayGaps(days, days[0]!.day, days[days.length - 1]!.day)
-    return applyGranularity(filled, granularity)
-  }, [buckets, granularity])
+  // 前一天直接斜到后一天,把「歇了三天」画成「缓慢下降」。补洞与聚合原先在这里
+  // 直接调 `fillDayGaps` + `applyGranularity`;现在趋势图要按模型堆叠,改由
+  // `toModelTrend` 在内部调同样两步,口径不变。
+  const trend = useMemo(
+    () => toModelTrend(buckets, shares.map((s) => s.key), OTHERS_KEY, granularity),
+    [buckets, shares, granularity]
+  )
 
   const heatmap = useMemo(
     () => buildHeatmap(toDayTotals(allBuckets), localDayOf(usageWindow.to - 1)),
@@ -118,51 +135,59 @@ export function UsageOverview({ usageWindow }: { usageWindow: UsageWindow }): Re
   const empty = !loading && buckets.length === 0
 
   return (
-    <div className="space-y-3">
+    // ★ `@container`:下面的栅格按**这块内容区自己的宽度**折行,而不是按视口。
+    // 这一页住在设置浮层里,内容区只有视口一半左右 —— 原先用 `min-[900px]:` 这类
+    // 视口断点,视口一宽就强行两栏 / 六栏,面板被挤到三百来像素,模型名全被截断。
+    <div className="@container space-y-3">
+      {/* 需求:概览合并了其它设备同步来的数据、下方请求日志只含本机,两处数字会对不上 ——
+          不把口径说出来,用户只会以为统计算错了。没有其它设备时不画 */}
+      {activity !== null && activity.syncedDevices > 0 && (
+        <p className="px-1 text-[11px] leading-[1.6] text-fg-faint">
+          {t('usage.sync.merged', { count: activity.syncedDevices })}
+        </p>
+      )}
       <OverviewCards totals={totals} activity={activity} loading={loading} />
 
-      <Panel
-        title={t('usage.activity.title')}
-        actions={
-          <Segmented
-            value={granularity}
-            options={GRANULARITIES.map((item) => ({
-              value: item,
-              label: t(`usage.granularity.${item}` as never)
-            }))}
-            onChange={setGranularity}
-            size="sm"
-            shape="pill"
-            label={t('usage.granularityLabel')}
-          />
-        }
-      >
+      {/* 热力图固定看最近一年、不受粒度影响,所以这里不放粒度切换 ——
+          原先切换器挂在这块面板上,实际只改下面的趋势图,点了热力图纹丝不动 */}
+      <Panel title={t('usage.activity.title')}>
         <ActivityHeatmap grid={heatmap} />
       </Panel>
 
       {empty ? (
         <Panel title={t('usage.overview.title')}>
-          <EmptyState title={t('usage.overview.empty')} />
+          <EmptyState title={t('usage.overview.empty')} description="" />
         </Panel>
       ) : (
         <>
           <Panel
             title={t('usage.trend.title')}
             actions={
-              <span className="text-[10.5px] tabular-nums text-fg-faint">
-                {formatCompactNumber(totals.tokens, locale)}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10.5px] tabular-nums text-fg-faint">
+                  {formatCompactNumber(totals.tokens, locale)}
+                </span>
+                <SegmentedControl
+                  value={granularity}
+                  options={GRANULARITIES.map((item) => ({
+                    value: item,
+                    label: t(`usage.granularity.${item}` as never)
+                  }))}
+                  onValueChange={(v) => setGranularity(v as UsageGranularity)}
+                  label={t('usage.granularityLabel')}
+                />
+              </div>
             }
           >
-            <DailyTrendChart totals={trend} />
+            <DailyTrendChart points={trend} series={items} />
           </Panel>
 
-          <div className="grid gap-3 min-[900px]:grid-cols-2">
+          <div className="grid gap-3 @min-[980px]:grid-cols-2">
             <Panel title={t('usage.models.title')}>
-              <ModelUsageDonut shares={shares} totalTokens={totals.tokens} />
+              <ModelUsageDonut items={items} totalTokens={totals.tokens} />
             </Panel>
             <Panel title={t('usage.cost.title')}>
-              <CostByModel breakdown={costs} />
+              <CostByModel breakdown={costs} colors={colors} />
             </Panel>
           </div>
         </>

@@ -11,20 +11,22 @@
  * `.app-no-drag`**,否则 OS 吞掉 pointer 事件,表现是「Tab 拖不动,整个窗口跟着鼠标跑」。
  * 留给窗口拖动的只有 Tab **之间和右侧**的空白。
  */
-import { Check, ChevronDown, Folder, PanelBottom, PanelRight, Pencil, Pin, PinOff, Plus, Server, X } from "lucide-react";
+import { ChevronDown, Folder, PanelBottom, PanelRight, Pencil, Pin, PinOff, Plus, Server, X } from "lucide-react";
 import { isLocalEnvironment } from '../../../shared/domain/environment';
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { FeatureKind, OuterTab } from "../../../shared/domain/tab";
 import type { Workspace } from "../../../shared/domain/workspace";
 import { ContextMenu, type ContextMenuPosition } from "../components/ui/ContextMenu";
 import { IconButton } from "../components/ui/IconButton";
-import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu";
+import { Menu, MenuItem } from "../components/ui/Menu";
 import { cn } from "../lib/cn";
 import { FEATURE_ICON } from "./icons";
 import { useDragReorder } from "./useDragReorder";
 import { TabRenameInput } from "./TabRenameInput";
 import { useI18n, type Translate } from "../i18n";
 import { Spinner } from '../components/ui/Spinner'
+import { Tabs } from "radix-ui";
+import { WorkspacePickerDialog } from './WorkspacePickerDialog'
 
 function featureLabel(t: Translate, feature: FeatureKind): string {
   return t(`view.feature.${feature}` as Parameters<Translate>[0]);
@@ -33,6 +35,8 @@ function featureLabel(t: Translate, feature: FeatureKind): string {
 export function OuterTabBar({
   tabs,
   activeId,
+  activeWorkspaceId,
+  compact = false,
   workspaces,
   runningWorkspaceIds,
   onActivate,
@@ -53,6 +57,10 @@ export function OuterTabBar({
 }: {
   tabs: readonly OuterTab[];
   activeId: string | null;
+  /** 当前工作区，即使当前激活的是功能 Tab 也要让切换弹窗标出它。 */
+  activeWorkspaceId?: string | null;
+  /** 专注会话窗口只展示当前项目，不渲染工作区 Tab 列表与切换入口。 */
+  compact?: boolean;
   workspaces: readonly Workspace[];
   /** 有 run 在跑的工作区 —— Tab 上那个小圆点。数据源是 RunRegistry 聚合,不是任何 UI 状态 */
   runningWorkspaceIds: ReadonlySet<string>;
@@ -71,7 +79,7 @@ export function OuterTabBar({
    */
   onRenameWorkspace?: (workspaceId: string, name: string) => void;
   onOpenWorkspace: (workspaceId: string) => void;
-  /** 「+」菜单里每个工作区行悬停出现的铅笔 —— 打开 `EditWorkspaceDialog`（名称/默认模型/删除）。 */
+  /** 工作区切换弹窗里每个卡片悬停出现的铅笔 —— 打开 `EditWorkspaceDialog`（名称/默认模型/删除）。 */
   onEditWorkspace: (workspaceId: string) => void;
   onPickWorkspace: () => void;
   onCreateWorkspace: () => void;
@@ -94,6 +102,7 @@ export function OuterTabBar({
   const { dragging, onPointerDown, styleFor } = useDragReorder(onMove);
   const [contextMenu, setContextMenu] = useState<{ tabId: string; position: ContextMenuPosition } | null>(null);
   const [hiddenTabIds, setHiddenTabIds] = useState<readonly string[]>([]);
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const stripRef = useRef<HTMLDivElement>(null);
   const contextTab = contextMenu === null ? undefined : tabs.find((tab) => tab.id === contextMenu.tabId);
 
@@ -138,6 +147,11 @@ export function OuterTabBar({
   /* 编辑态提升到条这一层:同一时刻只有一个 Tab 在改名(同 InnerTabBar) */
   const [editingId, setEditingId] = useState<string | null>(null);
   const canRename = (tab: OuterTab): boolean => onRenameWorkspace !== undefined && tab.kind === "workspace";
+  const compactWorkspace = activeWorkspaceId === null || activeWorkspaceId === undefined
+    ? undefined
+    : workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  const CompactIcon = compactWorkspace === undefined || isLocalEnvironment(compactWorkspace.environment) ? Folder : Server;
+  const compactLabel = compactWorkspace?.name ?? t("nav.unknownWorkspace");
 
   return (
     /*
@@ -152,13 +166,36 @@ export function OuterTabBar({
       和以前逐像素相同),只有 `self-center` 的那一组挪回真正的条心。
     */
     <div className="flex min-w-0 flex-1 self-stretch items-end gap-0.5">
+      {compact ? (
+        <div
+          className="flex h-[30px] max-w-[55%] min-w-0 items-center gap-2 self-center px-2 text-[13px] text-fg"
+          title={compactWorkspace?.rootPath ?? compactLabel}
+        >
+          <CompactIcon size={13} className="shrink-0 text-icon" />
+          <span className="min-w-0 truncate">{compactLabel}</span>
+        </div>
+      ) : (
+        <>
       {/*
         Keep the + trigger outside the scrollable tab list. Previously it shared the
         same non-wrapping flex row as every tab, so a full strip let the last tab's
         close button overlap the trigger. The list can now scroll while + always has
         its own fixed hit target.
       */}
-      <div ref={stripRef} className="app-no-drag tab-strip-scroll flex w-max min-w-0 max-w-full flex-initial items-end gap-0.5 overflow-x-auto overflow-y-hidden">
+      {/*
+        ★ 键盘操作交给 Radix 的 Tabs(只用 Root / List / Trigger,不用 Content):
+        tablist 语义、只有一个 Tab 在 Tab 键序里(roving tabindex)、←/→/Home/End 移动焦点,
+        都是它的。`activationMode="manual"`:方向键只挪焦点,Enter / 空格才切过去 ——
+        自动激活的话,用方向键扫过一排工作区就会依次把它们全部打开一遍。
+        Delete 关闭、F2 改名、菜单键开右键菜单是这里补的(`onTabKeyDown`)。
+      */}
+      <Tabs.Root asChild value={activeId ?? ""} onValueChange={onActivate} activationMode="manual">
+      <div className="flex min-w-0 flex-initial">
+      <Tabs.List
+        ref={stripRef}
+        aria-label={t("nav.allTabs")}
+        className="app-no-drag tab-strip-scroll flex w-max min-w-0 max-w-full flex-initial items-end gap-0.5 overflow-x-auto overflow-y-hidden"
+      >
         {tabs.map((tab, i) => {
         const active = tab.id === activeId;
         const running =
@@ -174,10 +211,21 @@ export function OuterTabBar({
             : featureLabel(t, tab.ref.feature);
         const Icon =
           tab.kind === "workspace" ? (isLocalEnvironment(ws?.environment) ? Folder : Server) : FEATURE_ICON[tab.ref.feature];
+        // 分隔线只画在两张未激活的 Tab 之间:挨着激活的那张时,舌头自己就是分界
+        const separator = !active && i < tabs.length - 1 && tabs[i + 1]?.id !== activeId;
+        const close = (): void => {
+          onClose(tab.id);
+          // 键盘关掉之后焦点别掉回 body:落到原位置上的那张(没有就是前一张)
+          requestAnimationFrame(() => {
+            const remaining = stripRef.current?.querySelectorAll<HTMLElement>("[data-outer-tab-id]");
+            if (remaining === undefined || remaining.length === 0) return;
+            remaining[Math.min(i, remaining.length - 1)]?.focus();
+          });
+        };
 
           return (
+          <Tabs.Trigger key={tab.id} value={tab.id} asChild>
           <div
-            key={tab.id}
             data-outer-tab-id={tab.id}
             style={styleFor(i)}
             onPointerDown={(e) => {
@@ -191,20 +239,59 @@ export function OuterTabBar({
               // `e.detail >= 2` 判双击,理由同 InnerTabBar(不用计时器消歧)
               if (e.detail >= 2 && canRename(tab)) setEditingId(tab.id);
             }}
+            onKeyDown={(e) => {
+              // 改名输入框里的按键会冒泡上来,那些不归这里管
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Delete" || e.key === "Backspace") {
+                e.preventDefault();
+                close();
+              } else if (e.key === "F2" && canRename(tab)) {
+                e.preventDefault();
+                setEditingId(tab.id);
+              } else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+                e.preventDefault();
+                const box = e.currentTarget.getBoundingClientRect();
+                setContextMenu({ tabId: tab.id, position: { x: box.left, y: box.bottom } });
+              }
+            }}
             onContextMenu={(event) => {
               event.preventDefault();
               setContextMenu({ tabId: tab.id, position: { x: event.clientX, y: event.clientY } });
             }}
-            role="tab"
-            aria-selected={active}
             title={ws?.rootPath ?? label}
             className={cn(
               "app-no-drag group relative flex h-[30px] max-w-[200px] min-w-0 shrink-0 items-center",
-              "gap-1.5 rounded-t-[10px] pr-1.5 pl-3 text-[13px] select-none",
+              "gap-1.5 rounded-t-[10px] text-[13px] select-none",
+              // Tab 在横向滚动的容器里,上下会被裁:键盘焦点框往里收,不然只剩两条竖边
+              "[--focus-outline-offset:-2px]",
               !dragging && "transition-[transform,background-color]",
+              /*
+                `--tab-bg` 是这张 Tab 此刻**不透明**的底色。悬停出现的关闭按钮压在文字尾巴上,
+                它左侧那段渐隐要渐到这个颜色才看不出接缝 —— 所以悬停色不能直接用
+                半透明的 `tint-hover/60`,而是先和条底 `chrome` 混成实色。
+              */
               active
-                ? "bg-canvas text-fg"
-                : "text-fg-muted hover:bg-tint-hover/60 hover:text-fg",
+                ? "bg-canvas pr-1.5 pl-3 text-fg [--tab-bg:var(--color-canvas)]"
+                : cn(
+                    "px-3 text-fg-muted [--tab-bg:var(--color-chrome)] hover:text-fg",
+                    "hover:bg-(--tab-bg) hover:[--tab-bg:color-mix(in_oklab,var(--color-tint-hover)_60%,var(--color-chrome))]",
+                  ),
+              /*
+                激活 Tab 底部两侧的反向圆角:舌头往两边弯出去,和下面的画布连成一体,
+                而不是一个方块直直插进内容区。用画布色的径向渐变挖出四分之一圆。
+              */
+              active && [
+                "before:pointer-events-none before:absolute before:bottom-0 before:-left-2.5 before:size-2.5",
+                "before:bg-[radial-gradient(circle_at_0_0,transparent_10px,var(--color-canvas)_10.5px)]",
+                "after:pointer-events-none after:absolute after:-right-2.5 after:bottom-0 after:size-2.5",
+                "after:bg-[radial-gradient(circle_at_100%_0,transparent_10px,var(--color-canvas)_10.5px)]",
+              ],
+              separator && [
+                "after:pointer-events-none after:absolute after:top-1/2 after:right-[-2px] after:h-3.5 after:w-px",
+                "after:-translate-y-1/2 after:bg-hairline after:transition-opacity",
+                // 自己或右边那张被悬停时,它的底色就是分界,竖线收掉
+                "hover:after:opacity-0 [&:has(+*:hover)]:after:opacity-0",
+              ],
             )}
           >
             {/*
@@ -231,29 +318,55 @@ export function OuterTabBar({
             ) : (
               <span className="min-w-0 flex-1 truncate">{label}</span>
             )}
-            {running && (
-              <Spinner size="xs" label={t('chat.taskChecklistRunning')} className="text-accent" />
+            {/*
+              尾部只有一个槽,不再给「运行中」和「关闭」各留一格:
+                - 激活的 Tab:槽常驻,平时是 ×,运行中是转圈,悬停 / 聚焦时转圈换成 ×;
+                - 未激活的 Tab:不留槽(原来那 18px 平时是空白)。运行中的转圈照常排在
+                  文字后面;× 只在悬停 / 聚焦时**压**在尾部,左边一段渐隐盖住文字尾巴。
+              × 不进 Tab 键序:键盘上关闭是 Delete,同一个动作没必要停两次。
+            */}
+            {active ? (
+              <span className="relative flex size-[18px] shrink-0 items-center justify-center">
+                {running && (
+                  <Spinner
+                    size="xs"
+                    label={t("chat.taskChecklistRunning")}
+                    className="text-accent transition-opacity group-focus-within:opacity-0 group-hover:opacity-0"
+                  />
+                )}
+                <TabCloseButton
+                  label={t("nav.closeTab", { label })}
+                  onClose={close}
+                  className={running ? "absolute inset-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" : undefined}
+                />
+              </span>
+            ) : (
+              <>
+                {running && (
+                  <Spinner size="xs" label={t("chat.taskChecklistRunning")} className="text-accent" />
+                )}
+                <span
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-tr-[10px] pr-1.5 pl-5",
+                    "bg-linear-to-r from-transparent to-(--tab-bg) to-45%",
+                    "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+                  )}
+                >
+                  <TabCloseButton
+                    label={t("nav.closeTab", { label })}
+                    onClose={close}
+                    className="pointer-events-auto"
+                  />
+                </span>
+              </>
             )}
-            <button
-              type="button"
-              aria-label={t("nav.closeTab", { label })}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose(tab.id);
-              }}
-              className={cn(
-                "app-no-drag flex size-[18px] shrink-0 items-center justify-center rounded-[5px]",
-                "text-fg-faint opacity-0 transition-opacity group-hover:opacity-100",
-                "hover:bg-tint-strong hover:text-fg focus-visible:opacity-100",
-              )}
-            >
-              <X size={12} />
-            </button>
           </div>
+          </Tabs.Trigger>
           );
         })}
+      </Tabs.List>
       </div>
+      </Tabs.Root>
 
       {hiddenTabIds.length > 0 && (
         <Menu
@@ -292,87 +405,32 @@ export function OuterTabBar({
         </Menu>
       )}
 
-      <Menu
-        label={t("nav.openWorkspace")}
-        width={300}
-        className="mb-0.5 ml-0.5 shrink-0"
-        trigger={<Plus size={15} />}
-        triggerClassName="flex size-[26px] items-center justify-center rounded-[8px] text-icon transition-colors hover:bg-tint-hover hover:text-fg"
-      >
-        {(close) => (
-          <>
-            {workspaces.map((w) => {
-              const opened = tabs.some((t) => t.kind === "workspace" && t.ref.workspaceId === w.id);
-              return (
-                /*
-                  需求：每一行要同时容纳「点了就打开」和「悬停出现的编辑按钮」两个
-                  独立的可点区域 —— MenuItem 本身整行就是一个 <button>，装不下第二个
-                  嵌套按钮（无效 HTML，且两个 onClick 会互相抢事件）。所以这里改用
-                  普通 <div> 当布局容器，两个动作各自是 role="menuitem" 的 <button>，
-                  和 OuterTabBar 自己的外层 Tab 行（激活区 + 独立关闭键）同一个模式。
-                */
-                <div
-                  key={w.id}
-                  className="group/wsrow flex items-center gap-1 rounded-[7px] transition-colors hover:bg-tint-strong"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onOpenWorkspace(w.id);
-                      close();
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-left text-[13px] text-fg"
-                  >
-                    <span className="shrink-0 text-accent-soft">
-                      {isLocalEnvironment(w.environment) ? <Folder size={14} /> : <Server size={14} />}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{w.name}</span>
-                      <span className="mt-0.5 block truncate text-[11px] text-fg-faint">{w.rootPath}</span>
-                    </span>
-                    <Check size={14} className={cn("shrink-0 text-accent", !opened && "invisible")} />
-                  </button>
-                  <IconButton
-                    label={t("workspace.edit")}
-                    size={26}
-                    className={cn(
-                      "mr-1 shrink-0 opacity-0 transition-opacity",
-                      "group-hover/wsrow:opacity-100 focus-visible:opacity-100",
-                    )}
-                    onClick={() => {
-                      onEditWorkspace(w.id);
-                      close();
-                    }}
-                  >
-                    <Pencil size={13} />
-                  </IconButton>
-                </div>
-              );
-            })}
-            <MenuSeparator />
-            <MenuItem
-              icon={<Folder size={14} />}
-              onSelect={() => {
-                onPickWorkspace();
-                close();
-              }}
-            >
-              {t("nav.openFolder")}
-            </MenuItem>
-            <MenuItem
-              icon={<Plus size={14} />}
-              onSelect={() => {
-                onCreateWorkspace();
-                close();
-              }}
-            >
-              {t("nav.createWorkspace")}
-            </MenuItem>
-            <MenuItem icon={<Server size={14} />} onSelect={() => { onCreateSshWorkspace(); close(); }}>{t('nav.createSshWorkspace')}</MenuItem>
-          </>
-        )}
-      </Menu>
+      {!compact && (
+        <>
+          <IconButton
+            label={t("nav.openWorkspace")}
+            size={28}
+            className="mb-0.5 ml-0.5 shrink-0"
+            onClick={() => setWorkspacePickerOpen(true)}
+          >
+            <Plus size={15} />
+          </IconButton>
+          <WorkspacePickerDialog
+            open={workspacePickerOpen}
+            onClose={() => setWorkspacePickerOpen(false)}
+            workspaces={workspaces}
+            tabs={tabs}
+            activeWorkspaceId={activeWorkspaceId}
+            onOpenWorkspace={onOpenWorkspace}
+            onEditWorkspace={onEditWorkspace}
+            onPickWorkspace={onPickWorkspace}
+            onCreateWorkspace={onCreateWorkspace}
+            onCreateSshWorkspace={onCreateSshWorkspace}
+          />
+        </>
+      )}
+        </>
+      )}
 
       {/* ★ 这块弹性空白是**故意**留给窗口拖动的 —— 整条 Tab 区唯一没有 no-drag 的地方 */}
       <div className="h-[30px] min-w-6 flex-1" />
@@ -456,5 +514,40 @@ export function OuterTabBar({
         </ContextMenu>
       )}
     </div>
+  );
+}
+
+/**
+ * Tab 尾部的 ×。按下时拦住冒泡:不拦的话 pointerdown 会先触发外层的拖排序,
+ * click 会先激活这张 Tab 再关掉它。
+ */
+function TabCloseButton({
+  label,
+  onClose,
+  className,
+}: {
+  label: string;
+  onClose: () => void;
+  className?: string;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={label}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      className={cn(
+        "app-no-drag flex size-[18px] shrink-0 items-center justify-center rounded-[5px]",
+        "text-fg-faint transition-opacity hover:bg-tint-strong hover:text-fg",
+        className,
+      )}
+    >
+      <X size={12} />
+    </button>
   );
 }

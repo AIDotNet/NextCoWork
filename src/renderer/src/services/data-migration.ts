@@ -1,9 +1,9 @@
 /**
  * 启动迁移闸门的渲染层入口。
  *
- * ★ 这是**唯一可以在首屏之前调用**的 service —— 闸门存在的那段时间里数据库
- * 还没打开,别的 service 调了都会失败。所以它不依赖 `app:getBootstrap`,
- * 也不需要 `window:ready` 先到。
+ * ★ 除无状态的窗口控制外，这是**唯一可以在首屏之前调用**的业务 service ——
+ * 闸门存在的那段时间里数据库还没打开,别的 service 调了都会失败。所以它不依赖
+ * `app:getBootstrap`,也不需要 `window:ready` 先到。
  *
  * ★ 五个函数都用 `invoke`(失败抛 `AgentErrorException`)而不是 `tryInvoke`。
  * 闸门期间的失败**没有「正常结果的失败分支」** —— 拿不到状态就是拿不到,

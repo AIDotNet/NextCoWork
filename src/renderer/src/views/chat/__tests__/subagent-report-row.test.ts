@@ -12,14 +12,14 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assistantMessage, userMessage } from '../../../../../shared/agent/message'
+import { assistantMessage } from '../../../../../shared/agent/message'
 import type { SubagentState } from '../../../../../shared/agent/transcript'
 import { I18nProvider } from '../../../i18n'
 import { SubagentReportRow } from '../parts'
 
 vi.mock('../../../services/agent', () => ({ abortRun: vi.fn() }))
-vi.mock('../../../services/sessions', () => ({ getSession: vi.fn() }))
-import { getSession } from '../../../services/sessions'
+vi.mock('../../../services/sessions', () => ({ getLastAssistantMessage: vi.fn() }))
+import { getLastAssistantMessage } from '../../../services/sessions'
 
 const CHILD_SESSION = 'parent:sub:child-run'
 /** 主进程切完之后剩下的那一截 —— 注意它断在半个标识符上 */
@@ -79,20 +79,15 @@ const expand = async (container: HTMLElement): Promise<void> => {
 
 describe('后台汇报行 · 展开取全文', () => {
   it('★★ 展开后显示的是子会话里的全文,不是那 240 字的摘要', async () => {
-    vi.mocked(getSession).mockResolvedValue({
-      session: { id: CHILD_SESSION } as never,
-      messages: [
-        userMessage('u', [{ type: 'text', text: '去改那八个文件' }], 0),
-        assistantMessage('a', [{ type: 'text', text: FULL }], 1)
-      ]
-    })
+    // ★ 只取子会话最后一条助手消息,不读整段子转录
+    vi.mocked(getLastAssistantMessage).mockResolvedValue(assistantMessage('a', [{ type: 'text', text: FULL }], 1))
     const container = await renderRow(subagent())
     // 收着的时候不发请求 —— 大部分汇报行用户根本不会点开
-    expect(getSession).not.toHaveBeenCalled()
+    expect(getLastAssistantMessage).not.toHaveBeenCalled()
 
     await expand(container)
 
-    expect(getSession).toHaveBeenCalledWith(CHILD_SESSION)
+    expect(getLastAssistantMessage).toHaveBeenCalledWith(CHILD_SESSION)
     // ★ 断在 `ModelStatusC` 之后的那一截,只有全文里才有
     expect(container.textContent).toContain('ache 字段')
     expect(container.textContent).toContain('值得知道的环境异常')
@@ -100,7 +95,7 @@ describe('后台汇报行 · 展开取全文', () => {
   })
 
   it('★★ 取不到全文时明说,而不是默默摆着断掉的摘要', async () => {
-    vi.mocked(getSession).mockRejectedValue(new Error('会话已删除'))
+    vi.mocked(getLastAssistantMessage).mockRejectedValue(new Error('会话已删除'))
     const container = await renderRow(subagent())
     await expand(container)
 
@@ -114,7 +109,7 @@ describe('后台汇报行 · 展开取全文', () => {
     const container = await renderRow(subagent({ childSessionId: undefined }))
     await expand(container)
 
-    expect(getSession).not.toHaveBeenCalled()
+    expect(getLastAssistantMessage).not.toHaveBeenCalled()
     expect(container.querySelector('[data-testid="subagent-report-truncated"]')?.textContent)
       .toContain('旧版本')
   })

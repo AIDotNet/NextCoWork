@@ -17,14 +17,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chatKey } from '../../../../shared/domain/tab'
 import type { InnerTab } from '../../../../shared/domain/tab'
 
-const persistSessionInput = vi.fn()
+const persistSessionDraft = vi.fn()
 
 vi.mock('../../services/app', () => ({
   getInnerTabs: vi.fn(async () => ({ tabs: [], activeTabId: null })),
   persistInnerTabs: vi.fn(),
   persistOuterTabs: vi.fn(),
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: (...args: unknown[]) => persistSessionInput(...args)
+  persistSessionDraft: (...args: unknown[]) => persistSessionDraft(...args)
 }))
 
 vi.mock('../../services/agent', () => ({
@@ -38,6 +38,9 @@ const createSession = vi.fn(async () => undefined)
 vi.mock('../../services/sessions', () => ({
   createSession: (...args: unknown[]) => createSession(...(args as [])),
   getSession: vi.fn(async () => {
+    throw new Error('会话不存在')
+  }),
+  getSessionPage: vi.fn(async () => {
     throw new Error('会话不存在')
   })
 }))
@@ -102,11 +105,7 @@ describe('草稿对话', () => {
 
     expect(sessionStore(sessionId).getState().draft).toBe('写了一半')
     // 旧存档要立即清掉,否则下一个复用这个 tabId 的草稿会把它捡回来
-    expect(persistSessionInput).toHaveBeenCalledWith(
-      tab.id,
-      expect.objectContaining({ draft: '', queued: [] }),
-      true
-    )
+    expect(persistSessionDraft).toHaveBeenCalledWith(tab.id, '', true)
   })
 
   it('已绑定的 Tab 再点「新建对话」才真的开第二个', () => {

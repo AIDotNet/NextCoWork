@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ModelAlias, UpstreamProvider } from '../../../shared/domain/provider'
+import type { ModelAlias, ProviderVideoGeneration, UpstreamProvider } from '../../../shared/domain/provider'
 import { anthropicCacheTtlOf, IMPORTED_ALIAS_DEFAULTS } from '../../../shared/domain/provider'
 import { serializeCredential } from '../../../shared/domain/credential'
 import { closeDatabase, openDatabase } from '../../db/index'
@@ -33,6 +33,7 @@ import {
   renameModel,
   setAliases,
   setCredential,
+  updateModel,
   upsertProvider
 } from '../provider'
 import { BUILTIN_PROVIDER_ID, CLIENT_PROVIDER_ID } from '../../../shared/domain/presets'
@@ -529,6 +530,39 @@ describe('锁定了供应商的设置项在别名表变动后怎么修', () => {
       goalEvaluatorModel: 'shared', goalEvaluatorModelProviderId: 'routin'
     })
   })
+
+  it('改名:输入框补全的两个模型锁定的正是这一家时跟着改', () => {
+    bothOffer('shared')
+    store.updateSettings({
+      completionModel: 'shared', completionModelProviderId: 'codex',
+      inlineCompletionModel: 'shared', inlineCompletionModelProviderId: 'codex'
+    })
+
+    renameModel('codex', 'shared', 'shared-v2')
+
+    expect(store.getSettings()).toMatchObject({
+      completionModel: 'shared-v2', completionModelProviderId: 'codex',
+      inlineCompletionModel: 'shared-v2', inlineCompletionModelProviderId: 'codex'
+    })
+  })
+
+  it('★ 删掉锁定的那家:建议模型解锁回同名别名,续写模型清空整对(不静默换家)', () => {
+    bothOffer('shared')
+    store.updateSettings({
+      completionModel: 'shared', completionModelProviderId: 'codex',
+      inlineCompletionModel: 'shared', inlineCompletionModelProviderId: 'codex'
+    })
+
+    removeProvider('codex')
+
+    const after = store.getSettings()
+    // 建议模型同判定模型:别名在别处还在 → 只解锁
+    expect(after.completionModel).toBe('shared')
+    expect(after.completionModelProviderId).toBeUndefined()
+    // 续写每次停顿都发请求,同视频:绑定失效就回到「未选择」
+    expect(after.inlineCompletionModel).toBe('')
+    expect(after.inlineCompletionModelProviderId).toBeUndefined()
+  })
 })
 
 describe('供应商 id 的字符约束', () => {
@@ -590,6 +624,45 @@ describe('内置 NextCoWork 供应商:哪些能改,哪些不能', () => {
       // 托管字段被挡住,不该连带把用户真正改的那个也丢掉
       protocol: 'anthropic'
     })
+  })
+
+  it('★ 传入的视频路由不被采信 —— 平台 token 不能被指去任意地址', () => {
+    seedClient()
+
+    upsertProvider({
+      ...draft(),
+      id: CLIENT_PROVIDER_ID,
+      name: 'NextCoWork',
+      baseUrl: PLATFORM_URL,
+      videoGeneration: { adapter: 'google-veo', baseUrl: 'https://evil.invalid/veo' }
+    })
+
+    const after = client()
+    expect(after?.videoGeneration).toBeUndefined()
+    expect(after).toMatchObject({ baseUrl: PLATFORM_URL, credentialRef: 'nextcowork:client-access-token' })
+  })
+
+  it('托管那条已有的视频配置不会被用户更新冲掉或替换', () => {
+    store.putProvider({
+      id: CLIENT_PROVIDER_ID,
+      name: 'NextCoWork',
+      protocol: 'openai-chat',
+      baseUrl: PLATFORM_URL,
+      credentialRef: 'nextcowork:client-access-token',
+      priority: 1,
+      enabled: true,
+      videoGeneration: { adapter: 'google-omni', baseUrl: 'https://nextco.work/video' }
+    })
+
+    upsertProvider({
+      ...draft(),
+      id: CLIENT_PROVIDER_ID,
+      name: 'NextCoWork',
+      baseUrl: PLATFORM_URL,
+      videoGeneration: { adapter: 'google-veo', baseUrl: 'https://evil.invalid/veo' }
+    })
+
+    expect(client()?.videoGeneration).toEqual({ adapter: 'google-omni', baseUrl: 'https://nextco.work/video' })
   })
 
   it('模型列表能整表替换,也能逐条删', () => {
@@ -721,5 +794,206 @@ describe('OpenCode Go · 协议按模型钉', () => {
     resetRuntimeForTest()
 
     expect(protocolsOf(GO)).toEqual({ 'muse-spark-1.3-contributor': undefined })
+  })
+})
+
+/**
+ * `provider.videoGeneration` 是「视频密钥发往哪个地址」的描述,和聊天 baseUrl
+ * 是两个字段。这里守的是写入面:非法值当场合不上库(而不是发请求时才炸),
+ * 旧调用省略字段不清配置,托管那条不许被它绕过地址锁。
+ */
+describe('provider.videoGeneration 视频连接配置', () => {
+  const VEO: ProviderVideoGeneration = {
+    adapter: 'google-veo',
+    baseUrl: 'https://generativelanguage.googleapis.com'
+  }
+
+  const videoDraft = (video: unknown): UpstreamProvider =>
+    ({ ...draft(), videoGeneration: video as ProviderVideoGeneration })
+
+  it('★ 新建时真实持久化;baseUrl 去空白、去尾斜杠', () => {
+    const saved = upsertProvider(draft({
+      videoGeneration: { adapter: 'google-veo', baseUrl: '  https://generativelanguage.googleapis.com/  ' }
+    }))
+    const expected = { adapter: 'google-veo', baseUrl: 'https://generativelanguage.googleapis.com' }
+    expect(saved.videoGeneration).toEqual(expected)
+    // 不是只修了返回值 —— 库里那条(重新 listProviders 读出)也是规范后的
+    expect(listProviders().find((p) => p.id === 'acme')?.videoGeneration).toEqual(expected)
+  })
+
+  it('旧版更新省略 videoGeneration 时保留;显式 undefined 同样保留', () => {
+    upsertProvider(draft({ videoGeneration: VEO }))
+
+    const renamed = upsertProvider(draft({ name: 'Acme 2' }))
+    expect(renamed.videoGeneration).toEqual(VEO)
+
+    const explicitUndefined = upsertProvider(draft({ videoGeneration: undefined }))
+    expect(explicitUndefined.videoGeneration).toEqual(VEO)
+  })
+
+  it('更新视频地址/适配器不改变 credentialRef —— 派生与保留语义照旧', () => {
+    upsertProvider(draft({ videoGeneration: VEO }))
+
+    const updated = upsertProvider(draft({
+      name: 'Acme 3',
+      baseUrl: 'https://v3.acme.invalid',
+      credentialRef: 'provider:hijack',
+      videoGeneration: { adapter: 'ark-video', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/' }
+    }))
+
+    expect(updated.credentialRef).toBe('provider:acme')
+    expect(updated.videoGeneration).toEqual({
+      adapter: 'ark-video',
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3'
+    })
+  })
+
+  it('未知字段不采信;trim 后为空的可选段不落库;全对象更新替换 region/s3', () => {
+    const first = upsertProvider(videoDraft({
+      adapter: 'dashscope-video',
+      baseUrl: 'https://dashscope.aliyuncs.com',
+      region: '  cn-beijing  ',
+      s3: { bucket: 'bucket-a', prefix: '   ' },
+      secret: 'sk-should-not-persist'
+    }))
+    expect(first.videoGeneration).toEqual({
+      adapter: 'dashscope-video',
+      baseUrl: 'https://dashscope.aliyuncs.com',
+      region: 'cn-beijing',
+      s3: { bucket: 'bucket-a' }
+    })
+
+    // 不带 region/s3 的整对象更新 = 明确替换,可选段清掉
+    const replaced = upsertProvider(draft({
+      videoGeneration: { adapter: 'dashscope-video', baseUrl: 'https://dashscope.aliyuncs.com' }
+    }))
+    expect(replaced.videoGeneration).toEqual({
+      adapter: 'dashscope-video',
+      baseUrl: 'https://dashscope.aliyuncs.com'
+    })
+  })
+
+  it('非法视频配置逐项被拒,库里那条原样保留', () => {
+    upsertProvider(draft({ videoGeneration: VEO }))
+
+    const rejects = (video: unknown, pattern: RegExp): void =>
+      expect(() => upsertProvider(videoDraft(video))).toThrow(pattern)
+
+    rejects({ adapter: 'nope-video', baseUrl: 'https://x.invalid' }, /适配器/)
+    rejects({ adapter: 'google-veo', baseUrl: 'file:///etc/passwd' }, /http/)
+    rejects({ adapter: 'google-veo', baseUrl: 'not a url' }, /合法/)
+    rejects({ adapter: 'google-veo', baseUrl: 42 }, /必须是字符串/)
+    rejects(null, /videoGeneration 必须是一个对象/u)
+    rejects([VEO], /videoGeneration 必须是一个对象/u)
+    rejects({ adapter: 'google-veo', baseUrl: 'https://x.invalid', region: 42 }, /地域/)
+    rejects({ adapter: 'aws-bedrock-video', baseUrl: 'https://x.invalid', s3: 'bucket-a' }, /s3 必须是一个对象/u)
+    rejects({ adapter: 'aws-bedrock-video', baseUrl: 'https://x.invalid', s3: { bucket: 7 } }, /bucket/)
+    rejects({ adapter: 'aws-bedrock-video', baseUrl: 'https://x.invalid', s3: { bucket: 'b', prefix: 7 } }, /prefix/)
+    rejects({ adapter: 'aws-bedrock-video', baseUrl: 'https://x.invalid', s3: { bucket: 'b', region: 7 } }, /s3\.region 必须是字符串/u)
+
+    expect(listProviders().find((p) => p.id === 'acme')?.videoGeneration).toEqual(VEO)
+  })
+
+  it('s3 的完整合法值与空桶都放行 —— 内置 AWS 预设先存空桶', () => {
+    const full = upsertProvider(draft({
+      videoGeneration: {
+        adapter: 'aws-bedrock-video',
+        baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com/',
+        region: '  us-east-1  ',
+        s3: { bucket: 'my-bucket', prefix: '  nova-videos/  ', region: 'us-east-1' }
+      }
+    }))
+    expect(full.videoGeneration).toEqual({
+      adapter: 'aws-bedrock-video',
+      baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
+      region: 'us-east-1',
+      s3: { bucket: 'my-bucket', prefix: 'nova-videos/', region: 'us-east-1' }
+    })
+
+    const emptyBucket = upsertProvider(draft({
+      id: 'aws-preset',
+      name: 'AWS',
+      baseUrl: 'https://bedrock.us-east-1.amazonaws.com',
+      videoGeneration: {
+        adapter: 'aws-bedrock-video',
+        baseUrl: 'https://bedrock.us-east-1.amazonaws.com',
+        s3: { bucket: '' }
+      }
+    }))
+    expect(emptyBucket.videoGeneration).toEqual({
+      adapter: 'aws-bedrock-video',
+      baseUrl: 'https://bedrock.us-east-1.amazonaws.com',
+      s3: { bucket: '' }
+    })
+  })
+
+  it('自由模型 ID + 视频档案:upsertProvider → setAliases → updateModel 全链路落库', () => {
+    upsertProvider(draft({ videoGeneration: VEO }))
+    setAliases('acme', ['my-own-veo'])
+    const created = listModels('acme')[0]!
+    expect(created.video).toBeUndefined()
+
+    const bound = updateModel({
+      ...created,
+      video: { profileId: 'google-veo-3.1', endpointId: 'models/veo-3.1-generate-preview' }
+    })
+    expect(bound.video).toEqual({ profileId: 'google-veo-3.1', endpointId: 'models/veo-3.1-generate-preview' })
+    // 别名侧的档案和供应商侧的连接同时就位
+    expect(listModels('acme')[0]?.video).toEqual({
+      profileId: 'google-veo-3.1', endpointId: 'models/veo-3.1-generate-preview'
+    })
+    expect(listProviders().find((p) => p.id === 'acme')?.videoGeneration).toEqual(VEO)
+  })
+})
+
+/**
+ * 视频按秒/分辨率计费,静默换家的代价比对话模型更大,而且视频出网还要看供应商
+ * 自己的 `videoGeneration` 配置 —— 同名别名挂在别家多半出不了网。所以锁定的
+ * 视频绑定失效时只有「清空」一个方向:**一次都不做跨供应商回退**。
+ */
+describe('视频模型配对在别名表变动后不许跨供应商回退', () => {
+  /** 两家都提供同一条视频模型 —— 「不换另一家同名模型」要防的就是这个场景 */
+  const bothOfferVideo = (): void => {
+    for (const [id, priority] of [['veo-a', 1], ['veo-b', 2]] as const) {
+      upsertProvider(draft({ id, name: id, baseUrl: `https://${id}.invalid`, priority }))
+      store.putAlias({
+        alias: 'shared-veo', providerId: id, upstreamModel: 'shared-veo',
+        capabilities: { tools: true, vision: false, thinking: false, caching: false },
+        contextWindow: 1000, maxOutputTokens: 100
+      })
+    }
+  }
+
+  it('★ 删掉锁定的那家:清空整对,不解锁、也不换另一家同名模型', () => {
+    bothOfferVideo()
+    store.updateSettings({ videoModel: 'shared-veo', videoModelProviderId: 'veo-b' })
+
+    removeProvider('veo-b')
+
+    const after = store.getSettings()
+    expect(after.videoModel).toBe('')
+    expect(after.videoModelProviderId).toBeUndefined()
+  })
+
+  it('★ 删掉那条视频模型本身:同样清空,不跨供应商回退', () => {
+    bothOfferVideo()
+    store.updateSettings({ videoModel: 'shared-veo', videoModelProviderId: 'veo-b' })
+
+    removeModel('veo-b', 'shared-veo')
+
+    const after = store.getSettings()
+    expect(after.videoModel).toBe('')
+    expect(after.videoModelProviderId).toBeUndefined()
+  })
+
+  it('删的是没锁定的那家时,视频配对一个字不动', () => {
+    bothOfferVideo()
+    store.updateSettings({ videoModel: 'shared-veo', videoModelProviderId: 'veo-a' })
+
+    removeProvider('veo-b')
+
+    expect(store.getSettings()).toMatchObject({
+      videoModel: 'shared-veo', videoModelProviderId: 'veo-a'
+    })
   })
 })

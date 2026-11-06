@@ -97,7 +97,7 @@ describe('selectCatalogPricing', () => {
       ['mimo-v2.5-pro', undefined, 0.435, 'USD'],
       ['step-3.7-flash', undefined, 1.35, 'CNY'],
       ['Baichuan-M3-Plus', undefined, 5, 'CNY'],
-      ['doubao-seed-2-1-pro-260628', 'doubao-seed-2.1-pro', 6, 'CNY'],
+      ['doubao-seed-2-1-pro-260915', 'doubao-seed-2.1-pro', 3, 'CNY'],
       ['ernie-5.1', undefined, 4, 'CNY'],
       ['hy4-preview', undefined, 6, 'CNY'],
       ['SenseNova-V6-5-Pro', undefined, 3, 'CNY'],
@@ -345,7 +345,7 @@ describe('matchPricing', () => {
   it('命中 modelId / 显示名 / providerId', () => {
     expect(matchPricing(PRICING_SEED, 'claude-fable').length).toBeGreaterThan(0)
     const deepseek = matchPricing(PRICING_SEED, 'deepseek')
-    expect(deepseek).toHaveLength(3)
+    expect(deepseek).toHaveLength(5)
     expect(deepseek.every((p) => p.providerId === null)).toBe(true)
   })
 

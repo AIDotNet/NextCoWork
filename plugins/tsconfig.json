@@ -1,0 +1,25 @@
+{
+  /*
+    第一方插件(办公编辑器)的类型检查,由 `npm run typecheck:plugins` 跑。
+    视图 import 的 `nextcowork/view` / `nextcowork/ui` 是宿主经 import map 下发的,
+    类型取仓库里对外发布的那两份声明(插件作者拿到的就是它们),而不是宿主源码。
+  */
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": [
+    "*/src/**/*.ts",
+    "*/view/**/*.ts",
+    "*/view/**/*.tsx",
+    "office-common/**/*.tsx",
+    "../packages/plugin-api/nextcowork-view.d.ts"
+  ]
+}

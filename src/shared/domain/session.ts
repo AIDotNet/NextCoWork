@@ -3,7 +3,6 @@
  */
 import type { AgentMessage } from '../agent/message'
 import type { SessionMode, ThinkingLevel } from '../agent/run-request'
-import type { ContextCheckpoint } from '../agent/context-management'
 import type { RunUsage } from '../agent/transcript'
 
 export type SessionChange = {
@@ -31,6 +30,18 @@ export interface Session {
   parentSessionId?: string
   /** Session created by the scheduler; it is opened from the task history instead of chat navigation. */
   origin?: 'chat' | 'scheduled'
+  /**
+   * 非 undefined = 这是一条「从会话提炼 Skill」的会话,值指向源会话。
+   *
+   * 需求:提炼会话的**每一个** run(包括用户追问的后续轮次)都要看到源会话的摘要,
+   * 所以它必须挂在会话上,而不是像 `planExecution` 那样只挂在某一次 RunRequest 上 ——
+   * 挂在 run 上的症状是第二轮追问时 agent 忽然「忘了」要提炼的是哪段对话。
+   *
+   * ★ 只活在 json 里,没有提列 —— 照 `titleSource` / `modelProviderId` 的先例
+   * (它不参与任何 WHERE / 级联)。源会话被删掉之后这里**不清理**:
+   * 注入侧(`kernel/skill/extraction.ts`)会把它渲染成「源会话已删除」。
+   */
+  skillSource?: { sessionId: string }
   title: string
   /** Stored in session JSON; absent on older exports. Manual names are never auto-replaced. */
   titleSource?: 'default' | 'generated' | 'manual'
@@ -83,12 +94,17 @@ export interface SessionListItem {
    * 它由 `agent:activeRuns` 广播维持,run 一结束就收。
    */
   running: boolean
+  /**
+   * 这一条本身是提炼会话(`Session.skillSource` 有值)。
+   * 需求:侧边栏据此**不画**「提炼为 Skill」菜单项 —— 主进程会拒绝「提炼的提炼」,
+   * 画出来就是一个必然失败的按钮。
+   */
+  skillExtraction?: true
 }
 
 export interface SessionDetail {
   session: Session
   messages: AgentMessage[]
-  contextCheckpoints?: ContextCheckpoint[]
   /**
    * 消息 → 产出它的 run。只有第 12 条迁移之后落盘的消息有归属,老对话这张表是空的。
    */
@@ -109,6 +125,20 @@ export interface SessionDetail {
    * (`SendOptions.model`),进程一没就没了,重启后只能靠这张表找回来。
    */
   runModel?: Record<string, string>
+}
+
+/**
+ * 转录的**一页**:最近的那段(或某条消息之前的那段),从一轮的开头切起。
+ *
+ * 需求:打开一条长会话不该把整段历史 —— 连同每一次工具输出和截图 —— 一次性读进渲染层。
+ * 显示从最近的一页开始,往上翻时再按页往前取。改写转录(编辑 / 删除 / 重跑)按消息 id
+ * 在主进程的完整历史上做,所以渲染层手里只有一页也不会误删页外的消息。
+ *
+ * `messageRuns` 只覆盖本页的消息;`runUsage` / `runModel` 是整段会话的汇总(很小)。
+ */
+export interface SessionPage extends SessionDetail {
+  /** 这一页之前还有更早的消息 */
+  hasMore: boolean
 }
 
 /** conversations:searchAll 的命中项。FTS5 给出的 snippet 带高亮标记。 */

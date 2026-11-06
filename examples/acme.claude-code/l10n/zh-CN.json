@@ -1,0 +1,7 @@
+{
+  "cmd.launch": "Claude Code",
+  "config.title": "Claude Code 接入配置",
+  "config.baseUrl": "Base URL（可选，如 https://api.routin.ai）",
+  "config.model": "模型（可选，如 claude-sonnet-4-5）",
+  "config.apiKey": "API Key（可选，中转站的鉴权密钥）"
+}

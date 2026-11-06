@@ -105,6 +105,24 @@ beforeEach(() => {
 })
 
 describe('NextCoWork 渠道的协议钉定', () => {
+  it('1017 模型只有上游 id 时也能补齐视觉、工具能力、窗口与 Anthropic 协议', async () => {
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ id: 'deepseek-v4.1-flash-1017' }] })
+    })
+
+    await readAuthState()
+
+    expect(aliasOf('deepseek-v4.1-flash-1017')).toMatchObject({
+      displayName: 'DeepSeek V4.1 Flash 1017',
+      contextWindow: 1_000_000,
+      maxOutputTokens: 384_000,
+      capabilities: { visionInput: true, tools: true, thinking: true, caching: true },
+      thinkingConfig: { mode: 'effort', reasoningReplay: 'text-required' },
+      protocolOverride: 'anthropic',
+    })
+  })
+
   it('首次同步:claude 钉 anthropic,未登记的厂商跟随供应商', async () => {
     mocks.fetch.mockResolvedValue(modelList(['claude-fable-5-1', 'gpt-5.6-sol']))
 

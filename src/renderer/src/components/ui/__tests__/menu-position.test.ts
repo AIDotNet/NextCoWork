@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeMenu, type TriggerRect } from '../menu-position'
+import { placeMenu, placeSubmenu, type TriggerRect } from '../menu-position'
 
 /**
  * 这一组守的是方案 §7 第 1 条修掉的那个 bug:菜单原来是 `absolute`,
@@ -153,5 +153,38 @@ describe('placeMenu · 夹在自己那块面里', () => {
         placeMenu(middle, 200, 280, align, vp, full)
       )
     }
+  })
+})
+
+/** 文件树右键「打开方式 ›」的二级菜单。它常常就贴着窗口右缘(文件树在右侧面板)。 */
+describe('placeSubmenu', () => {
+  const row: TriggerRect = { top: 300, bottom: 328, left: 600, right: 820 }
+
+  it('右边放得下时贴着那一行右侧弹出,第一项与那一行对齐(减去面板内边距)', () => {
+    const p = placeSubmenu(row, 200, 220, vp)
+    expect(p.flipped).toBe(false)
+    expect(p.left).toBe(820 + 4)
+    expect(p.top).toBe(300 - 4)
+  })
+
+  it('★ 右边放不下时翻到父菜单左侧 —— 参考截图里正是这种情况', () => {
+    const nearEdge: TriggerRect = { top: 300, bottom: 328, left: 1200, right: 1420 }
+    const p = placeSubmenu(nearEdge, 200, 220, vp)
+    expect(p.flipped).toBe(true)
+    expect(p.left + 220).toBe(1200 - 4)
+  })
+
+  it('靠近底边时整体往上推,而不是长出视口', () => {
+    const low: TriggerRect = { top: 860, bottom: 888, left: 600, right: 820 }
+    const p = placeSubmenu(low, 300, 220, vp)
+    expect(p.top + 300).toBeLessThanOrEqual(900 - 8)
+  })
+
+  it('窗口窄到两边都放不下时夹回视口,宁可盖住父菜单也不出屏', () => {
+    const narrow = { width: 360, height: 900 }
+    const wide: TriggerRect = { top: 300, bottom: 328, left: 20, right: 340 }
+    const p = placeSubmenu(wide, 200, 220, narrow)
+    expect(p.left).toBeGreaterThanOrEqual(8)
+    expect(p.left + 220).toBeLessThanOrEqual(360 - 8)
   })
 })

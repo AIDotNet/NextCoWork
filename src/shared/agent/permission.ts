@@ -56,7 +56,12 @@ export interface PermissionQuery {
   mode: PermissionMode
   readOnly: boolean
   destructive: boolean
-  /** 网络类工具:即使 full 档,webSearch=false 时也一律拒绝 */
+  /**
+   * 受「联网搜索」开关管的工具:即使 full 档,webSearch=false 时也一律拒绝。
+   * ★ 调用方按 `permission-gate.ts` 的 `NETWORK_SWITCH_TOOLS` 名单填(目前只有
+   * WebFetch / web_search),**不是** `ToolInfo.needsNetwork` —— 字段名沿用旧名,
+   * 语义已随开关收窄(见那张名单的注释)。
+   */
   needsNetwork?: boolean
   webSearch: boolean
 }

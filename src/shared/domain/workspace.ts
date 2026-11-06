@@ -7,6 +7,7 @@
 import type { PermissionMode } from '../agent/permission'
 import type { SessionMode, ThinkingLevel } from '../agent/run-request'
 import type { EnvironmentRef } from './environment'
+import type { SubagentThinking } from './subagent-thinking'
 
 export interface Workspace {
   id: string
@@ -38,6 +39,33 @@ export interface WorkspaceSettings {
    * 是裸 `JSON.parse`,不铺默认值),声明成必填会让类型在运行时说谎。读的地方一律 `=== true`。
    */
   maxContext?: boolean
+  /**
+   * 这个工作区的上下文压缩用哪个模型 —— 覆盖设置里那一栏(圆环菜单里的「压缩模型」)。
+   *
+   * 三态,**三个值互不相同的含义**:
+   * - 缺席(`undefined`)或空串 = 跟随全局设置(出厂)
+   * - `null` = **显式**跟随会话模型 —— 用来在这个工作区反盖全局配的压缩模型
+   * - 非空字符串 = 用这个别名
+   *
+   * ★ 缺席和空串同义,是因为工作区设置的合并是 `{ ...cur.settings, ...patch }`
+   *   (`ipc/workspace.ts` 的 `updateWorkspace`):**省略一个键清不掉旧值**,
+   *   所以「改回跟随全局」只能写一个空串进去。
+   * ★ 用 `null` 而不是某个哨兵字符串:别名是用户可写的任意串(`openrouter/xxx` 这种都有),
+   *   任何哨兵都可能真的撞上一个别名。三档取值规则在 `domain/compaction-model.ts`。
+   * ★ 和 `maxContext` 同样**可选**:旧库里的工作区 JSON 没有这一项,声明成必填
+   *   会让类型在运行时说谎。
+   */
+  compactModel?: string | null
+  /** 与 `compactModel` 成对;`compactModel` 不是非空字符串时这一项无意义。 */
+  compactModelProviderId?: string
+  /**
+   * 这个工作区的压缩思考档位。
+   * - 缺席或 `null` = 跟随全局设置(出厂)。`null` 正是「改回跟随全局」写进来的值,
+   *   理由同上面那条空串:浅合并省略一个键**清不掉旧值**。
+   * - `'inherit'` = 跟随会话本轮档位
+   * - 其余 = 显式档位
+   */
+  compactThinking?: SubagentThinking | null
   /** 按工作区单独启用的 Skill(界面:「Skill 工作区选装模式」) */
   activeSkillIds: string[]
   /** 空清单的含义；缺省兼容旧数据并表示全部可用。 */

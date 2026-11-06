@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { assistantMessage, toolResultMessage } from '../../../../../shared/agent/message'
 import { nodeHost } from '../../../host'
 import type { ToolContext } from '../../registry'
 import { TODO_LIMITS, todoWriteTool } from '../todo'
@@ -218,6 +219,71 @@ describe('TodoWrite · 回显', () => {
     expect(r.output.content).toContain('check it against what actually happened')
     expect(r.output.content).toContain('stay unfinished')
     expect(r.output.content).not.toContain('All listed tasks are complete')
+  })
+})
+
+describe('TodoWrite · 回执里的增量', () => {
+  /**
+   * 需求:模型每轮发的是**完整清单**,它看不见自己改了什么 —— 尤其是**丢掉一项**:
+   * 前后两份各自都自洽,而用户看到的是任务凭空消失。回执里那次「上次→这次」的
+   * 回显是它收尾前核对清单的依据,所以这里钉的是「上一份从哪儿来」与「丢项怎么点名」。
+   */
+  it('★ 上一次那份来自本 run 的转录(ctx.messages),据此报出改了什么', async () => {
+    const before = assistantMessage('a-before', [
+      { type: 'tool_call', callId: 'before', name: 'TodoWrite', input: { todos: [todo('读代码', 'pending')] } }
+    ], 0)
+    const beforeResult = toolResultMessage('r-before', [
+      { type: 'tool_result', callId: 'before', output: { content: 'ok' }, isError: false }
+    ], 0)
+
+    const r = await todoWriteTool.execute(
+      { todos: [todo('读代码', 'completed'), todo('跑测试', 'pending')] },
+      { ...ctx(), messages: [before, beforeResult], todoToolName: 'TodoWrite' }
+    )
+
+    expect(r.output.content).toContain('1 completed · 1 added')
+  })
+
+  it('★ 丢掉的项点名回显 —— 否则「任务凭空消失」只能靠用户自己发现', async () => {
+    const before = assistantMessage('a-before', [
+      { type: 'tool_call', callId: 'before', name: 'TodoWrite', input: { todos: [todo('读代码', 'pending'), todo('跑测试', 'pending')] } }
+    ], 0)
+    const beforeResult = toolResultMessage('r-before', [
+      { type: 'tool_result', callId: 'before', output: { content: 'ok' }, isError: false }
+    ], 0)
+
+    const r = await todoWriteTool.execute(
+      { todos: [todo('读代码', 'pending')] },
+      { ...ctx(), messages: [before, beforeResult], todoToolName: 'TodoWrite' }
+    )
+
+    expect(r.output.content).toContain('1 dropped')
+    expect(r.output.content).toContain('You dropped 1 item(s)')
+    expect(r.output.content).toContain('跑测试')
+  })
+
+  it('没有转录 / 没有工具名时只说计数,不编造增量', async () => {
+    const r = await todoWriteTool.execute({ todos: [todo('a', 'pending')] }, ctx())
+
+    expect(r.output.content).toContain('0/1 completed')
+    expect(r.output.content).not.toContain('dropped')
+    expect(r.output.content).not.toContain('added')
+  })
+
+  it('★ 工具名对不上时不误判成「全丢了」—— 撞名后缀会让它一条都取不到', async () => {
+    const before = assistantMessage('a-before', [
+      { type: 'tool_call', callId: 'before', name: 'TodoWrite_a1b2c3d4', input: { todos: [todo('读代码', 'pending')] } }
+    ], 0)
+    const beforeResult = toolResultMessage('r-before', [
+      { type: 'tool_result', callId: 'before', output: { content: 'ok' }, isError: false }
+    ], 0)
+
+    const r = await todoWriteTool.execute(
+      { todos: [todo('读代码', 'pending')] },
+      { ...ctx(), messages: [before, beforeResult], todoToolName: 'TodoWrite' }
+    )
+
+    expect(r.output.content).not.toContain('dropped')
   })
 })
 

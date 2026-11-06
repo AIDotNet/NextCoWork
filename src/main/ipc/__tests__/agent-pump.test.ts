@@ -7,7 +7,7 @@ import { hasSeqGap, type AgentEventEnvelope } from '../../../shared/ipc/contract
 import { runFake } from '../../kernel/fake-emitter'
 import { runs } from '../../kernel/run-registry'
 import { windows, type WindowContext } from '../../window/registry'
-import { abortRun, attachRun, listInteractions, respondInteraction, startRun } from '../agent'
+import { abortRun, activeRunIndex, attachRun, listInteractions, respondInteraction, sessionRuntime, setWindowContentVisible, startRun, unwatchRun } from '../agent'
 import { interactions } from '../../kernel/interaction-gate'
 
 /**
@@ -42,6 +42,18 @@ class FakeWebContents {
   }
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
+  }
+
+  /**
+   * WindowRegistry 判「帧还活不活」靠的是这里,不是 send 抛不抛 ——
+   * 真实的 `webFrameMain.send` 自己把异常吞了(见 window/registry.ts)。
+   */
+  get mainFrame(): { isDestroyed: () => boolean; detached: boolean; send: (channel: string, payload: unknown) => void } {
+    return {
+      isDestroyed: () => this.isDestroyed(),
+      detached: false,
+      send: (channel, payload) => this.send(channel, payload)
+    }
   }
   destroy(): void {
     this.destroyed = true
@@ -113,6 +125,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   runs.abortAll()
+  runs.clearForTest()
 })
 
 describe('步骤 3 端到端 · 假发射器 → 合批泵 → 信封 → 转录', () => {
@@ -135,6 +148,41 @@ describe('步骤 3 端到端 · 假发射器 → 合批泵 → 信封 → 转录
     expect(await pending).toEqual(response)
     expect(listInteractions({}, owner.ctx)).toEqual([])
     handle.finish('done')
+  })
+
+  /**
+   * ★ 第二个窗口那句话**不并发、不订阅**,而是排进这条会话的队列,等正在跑的那一轮
+   * 收尾后由主进程续上(`main/session-runtime.ts`)。原先这里直接抛「会话忙」,
+   * 用户按了回车却要重打一遍。
+   */
+  it('不同窗口不能为同一会话并行启动 run:第二句排进队列,且从不订阅', () => {
+    const owner = fakeWindow()
+    const second = fakeWindow()
+    const firstRequest = req({ sessionId: 'shared' })
+    startRun(firstRequest, owner.ctx, () => {})
+    const secondRequest = req({ sessionId: 'shared', input: [{ type: 'text', text: '第二句' }] })
+    const result = startRun(secondRequest, second.ctx, () => {})
+    expect(result.started).toBe(false)
+    expect(result.started === false && result.queue.queued.map((q) => q.text)).toEqual(['第二句'])
+    expect(runs.get(secondRequest.runId)).toBeUndefined()
+    expect(windows.isSubscribed(`run:${secondRequest.runId}`, second.ctx.sender)).toBe(false)
+    sessionRuntime.queue('shared', { kind: 'drop', id: result.started === false ? result.queue.queued[0]!.id : '' })
+  })
+
+  it('run_end 到驱动收尾完成之间仍然挡住下一轮', async () => {
+    let finishDriver!: () => void
+    const owner = fakeWindow()
+    const firstRequest = req({ sessionId: 'settling' })
+    startRun(firstRequest, owner.ctx, (handle) => {
+      handle.finish('done')
+      return new Promise<void>((resolve) => { finishDriver = resolve })
+    })
+    expect(() => startRun(req({ sessionId: 'settling' }), owner.ctx, () => {})).toThrow(/会话/)
+    finishDriver()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(() => startRun(req({ sessionId: 'settling' }), owner.ctx, () => {})).not.toThrow()
   })
 
   it('★ 流式跑完:信封 seq 全程连续,渲染层一次 attach 都不需要', async () => {
@@ -401,3 +449,71 @@ describe('步骤 3 端到端 · 假发射器 → 合批泵 → 信封 → 转录
     expect(structuredClone(snap)).toEqual(snap)
   })
 })
+
+/**
+ * 没人在看就不推正文 —— Stage 2 的主进程一半。
+ *
+ * run 照跑,只是这个窗口不再收(也不再累积)它的正文;「有个审批在等你」改走全局广播,
+ * 没有正文订阅时它是应用里唯一能看出来的地方。
+ */
+describe('正文订阅跟着「有没有人在看」走', () => {
+  const ASK = { kind: 'ask_user' as const, questions: [{ header: 'Choose', question: 'Choose one',
+    options: [{ label: 'A' }, { label: 'B' }], multiSelect: false, allowFreeform: false }] }
+
+  it('agent:unwatch 只摘调用方自己的订阅,run 照跑,别的窗口照收', async () => {
+    const owner = fakeWindow()
+    const other = fakeWindow()
+    const r = req()
+    startRun(r, owner.ctx, runFake)
+    attachRun({ runId: r.runId, sinceSeq: 0 }, other.ctx)
+
+    unwatchRun({ runId: r.runId }, owner.ctx)
+    const ownerBefore = owner.wc.envelopes().length
+    await runToCompletion()
+
+    expect(windows.isSubscribed(`run:${r.runId}`, owner.ctx.sender)).toBe(false)
+    expect(owner.wc.envelopes()).toHaveLength(ownerBefore)
+    expect(other.wc.envelopes().length).toBeGreaterThan(0)
+    expect(runs.get(r.runId)?.status).toBe('done')
+  })
+
+  it('★ 窗口藏起来:先摘掉它全部的 run 订阅再通知它;之后一条正文都不再推给它', async () => {
+    const { wc, ctx } = fakeWindow()
+    const r = req()
+    startRun(r, ctx, runFake)
+    await vi.advanceTimersByTimeAsync(50)
+
+    setWindowContentVisible(ctx.sender, false)
+    const notice = wc.sent.filter((m) => m.channel === 'window:visibility')
+    expect(notice.at(-1)?.payload).toEqual({ visible: false })
+    const before = wc.envelopes().length
+    await runToCompletion()
+
+    expect(windows.isSubscribed(`run:${r.runId}`, ctx.sender)).toBe(false)
+    expect(wc.envelopes()).toHaveLength(before)
+    // run 不受影响,露出来之后按快照补回
+    expect(runs.get(r.runId)?.status).toBe('done')
+    setWindowContentVisible(ctx.sender, true)
+    expect(wc.sent.filter((m) => m.channel === 'window:visibility').at(-1)?.payload).toEqual({ visible: true })
+  })
+
+  it('★ 待处理的审批进全局索引:请求时出现、回答后消失,不依赖任何正文订阅', () => {
+    const { wc, ctx } = fakeWindow()
+    const r = req()
+    startRun(r, ctx, () => {})
+    unwatchRun({ runId: r.runId }, ctx)
+    const handle = runs.get(r.runId)!
+
+    const pending = interactions.request(handle, ASK, 1)
+    pending.catch(() => {})
+    expect(activeRunIndex().find((e) => e.runId === r.runId)?.pendingInteractions).toBe(1)
+    const broadcast = wc.sent.filter((m) => m.channel === 'agent:activeRuns').at(-1)?.payload as { runs: Array<{ runId: string; pendingInteractions?: number }> }
+    expect(broadcast.runs.find((e) => e.runId === r.runId)?.pendingInteractions).toBe(1)
+
+    const [interaction] = interactions.list().filter((i) => i.runId === r.runId)
+    interactions.respond({ id: interaction!.id, kind: 'ask_user', answers: [['A']] })
+    expect(activeRunIndex().find((e) => e.runId === r.runId)?.pendingInteractions).toBeUndefined()
+    handle.finish('done')
+  })
+})
+

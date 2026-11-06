@@ -20,6 +20,7 @@ import { nodeHost } from '../../kernel/host'
 import type { ToolContext } from '../../kernel/tool/registry'
 import { ToolRegistry } from '../../kernel/tool/registry'
 import { McpManager } from '../manager'
+import { evaluate } from '../../kernel/permission-gate'
 
 const host = nodeHost()
 
@@ -129,12 +130,16 @@ describe('McpManager · 连接与注册', () => {
   })
 
   /** ★ 未声明时朝最危险的方向兜底 —— 见 `bridge.ts` 文件头那张表 */
-  it('annotations 缺省时按「写 + 破坏性」登记', async () => {
+  it('服务器自报的 hints 不降低审批等级', async () => {
     await manager.connect(cfg())
 
     const declared = tools.byInternalId('mcp__demo__add')
-    expect(declared?.readOnly).toBe(true)
-    expect(declared?.destructive).toBe(false)
+    expect(declared?.readOnly).toBe(false)
+    expect(declared?.destructive).toBe(true)
+    expect(evaluate({ mode: 'ask', readOnly: declared!.readOnly, destructive: declared!.destructive, webSearch: true }))
+      .toEqual({ kind: 'ask' })
+    expect(evaluate({ mode: 'auto', readOnly: declared!.readOnly, destructive: declared!.destructive, webSearch: true }))
+      .toEqual({ kind: 'ask' })
 
     const silent = tools.byInternalId('mcp__demo__unknown_risk')
     expect(silent?.readOnly).toBe(false)

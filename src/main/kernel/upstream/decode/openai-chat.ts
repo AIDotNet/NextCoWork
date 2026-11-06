@@ -10,6 +10,31 @@ interface Call {
   started: boolean
 }
 
+/**
+ * 上游这一条 `tool_calls` 该并进哪一格。**只在它没给 `index` 时用。**
+ *
+ * ★★ 三步,顺序不能换 —— 每一步都对应一种真实存在的上游形状:
+ *
+ * 1. **同 id 的调用已经存在** → 并进去。`id` 是上游自己给的标识,比位置权威;
+ *    它还在分片累积(`started === false`)时可能只对上前缀,所以那时按前缀认。
+ * 2. **position 那一格还可用** → 用它。空着是常态;里面那个调用**还没 started**
+ *    也算可用 —— 那说明它的 id/name 正在累积,这一条就是它的下一片。
+ * 3. 否则**另开一格**。省略 index 的上游把并行调用一条一条发,第二条的 position
+ *    同样是 0 —— 并进去会把两个调用串成一个:参数被拼成非法 JSON,而且回传时
+ *    少一个 tool_use id,下一轮直接 400。
+ */
+function slotForToolCall(calls: Map<number, Call>, id: string, position: number): number {
+  if (id !== '') {
+    for (const [key, call] of calls) {
+      if (call.id !== '' && (call.id === id || (!call.started && id.startsWith(call.id)))) return key
+    }
+  }
+  const held = calls.get(position)
+  if (held === undefined || !held.started || held.id === '' || held.id === id) return position
+  // 走到这里 calls 至少有一格(held 就在里面),所以 Math.max 收不到空集合。
+  return Math.max(...calls.keys()) + 1
+}
+
 /** Chat Completions flattens text/reasoning and independently indexes tool calls. */
 export async function* decodeOpenAIChat(events: AsyncIterable<SseEvent>): AsyncGenerator<ProviderStreamEvent> {
   const usage = new OpenAIUsage()
@@ -74,9 +99,23 @@ export async function* decodeOpenAIChat(events: AsyncIterable<SseEvent>): AsyncG
         for (const [position, raw] of delta.tool_calls.entries()) {
           const tool = record(raw)
           const fn = record(tool?.function)
-          // Non-streaming message.tool_calls omits index; streaming deltas must identify it.
-          const upstreamIndex = count(tool?.index) ?? (choice.message !== undefined ? position : undefined)
-          if (tool === undefined || (tool.function !== undefined && fn === undefined) || upstreamIndex === undefined
+          const id = string(tool?.id) ?? ''
+          const name = string(fn?.name) ?? ''
+          /*
+            需求:上游**合法地**省略 `tool_calls[].index` 时,这一帧也要能拼出调用。
+            OpenAI 规范里 `index` 只对**流式片段**是必需的;而 Google 的 OpenAI
+            兼容层把每个调用一次性给全(id/name/arguments 同帧到齐),一个 index
+            都不带 —— 它没写错,是我们以前只认「片段」那一种形状。
+
+            不满足会怎样:第一次让 Gemini 调工具就得到
+            「上游返回的响应格式不完整或不符合协议…(invalid tool call)」,
+            正文一个字都没有,且 retryable:false,重试无用。
+            实测分片形状与复现见
+            `__tests__/decode-openai.test.ts` 的
+            'accepts a frozen tool call that omits tool_calls[].index'。
+          */
+          const upstreamIndex = count(tool?.index) ?? slotForToolCall(calls, id, position)
+          if (tool === undefined || (tool.function !== undefined && fn === undefined)
             || (tool.type !== undefined && tool.type !== 'function')) {
             yield { type: 'error', error: malformedResponse('invalid tool call') }
             return
@@ -86,8 +125,6 @@ export async function* decodeOpenAIChat(events: AsyncIterable<SseEvent>): AsyncG
             call = { index: nextIndex++, id: '', name: '', args: '', started: false }
             calls.set(upstreamIndex, call)
           }
-          const id = string(tool.id) ?? ''
-          const name = string(fn?.name) ?? ''
           if (call.started && ((id !== '' && id !== call.id) || (name !== '' && name !== call.name))) {
             yield { type: 'error', error: malformedResponse('tool identity changed during streaming') }
             return

@@ -46,7 +46,7 @@ export function MentionPopup({
   return (
     <div
       data-testid="mention-popup"
-      className="absolute bottom-full left-0 z-30 mb-2 w-[min(420px,100%)] overflow-hidden rounded-card border border-border bg-surface-raised shadow-lg shadow-black/10"
+      className="absolute bottom-full left-0 z-30 mb-2 w-[min(420px,100%)] overflow-hidden rounded-panel border-0 bg-surface-menu shadow-menu"
     >
       {items.length === 0 ? (
         <div className="px-3 py-2.5 text-[12px] text-fg-faint">

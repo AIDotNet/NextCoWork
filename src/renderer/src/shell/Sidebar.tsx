@@ -19,8 +19,8 @@
  * 也没有分隔条。中途一度以为它在 235~312 之间浮动,那是把设置浮层的左侧导航栏
  * 当成侧边栏量了 —— 浮层盖住了扫描线,量到的是它内部的分栏。
  */
-import { Archive, Check, Copy, ExternalLink, Link, MessageSquarePlus, Pin, Search, Settings, SquarePen, Trash2, Pencil, ListChecks } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { Archive, Check, Copy, ExternalLink, Link, MessageSquarePlus, Pin, Search, Settings, SquarePen, Trash2, Pencil, ListChecks, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { type FeatureKind, type InnerTab } from '../../../shared/domain/tab'
 import type { Workspace } from '../../../shared/domain/workspace'
 import type { SessionListItem } from '../../../shared/domain/session'
@@ -28,7 +28,7 @@ import type { ClientAuthState } from '../../../shared/domain/client-auth'
 // 只借类型:`settings/nav.ts` 是纯数据(零 React 依赖),这里不会把设置页拽进侧边栏的 bundle
 import type { SettingsPageId } from '../settings/nav'
 import { Mark } from '../components/brand/Mark'
-import { EmptyState } from '../components/ui/EmptyState'
+import { EmptyState } from '../components/arc/empty-state/empty-state'
 import { IconButton } from '../components/ui/IconButton'
 import { cn } from '../lib/cn'
 import { IS_MAC } from '../lib/platform'
@@ -37,20 +37,26 @@ import { FEATURE_ICON, MENU_ICON } from './icons'
 import { useI18n, type Translate } from '../i18n'
 import { ContextMenu, type ContextMenuPosition } from '../components/ui/ContextMenu'
 import { AccountMenu } from './AccountMenu'
+import { DeviceSwitcher } from './DeviceSwitcher'
 import { Dialog } from '../components/ui/Dialog'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { duplicateSession, renameSession, setArchived, setFavorited } from '../services/sessions'
 import { copyText, openSessionWindow } from '../services/app'
 import { Spinner } from '../components/ui/Spinner'
+import { useAttentionSessionIds } from '../stores/session'
 import { toast } from '../stores/toast'
 import { usePluginsStore } from '../stores/plugins'
 import { openPluginWebApp } from '../services/plugins'
 import { pluginSidebarEntries } from './plugin-sidebar-entries'
+import { useWindowStore } from '../stores/window'
+import { skillExtractionErrorKey, startSkillExtraction } from '../views/skills/skill-extraction'
+import { requestSessionDelete, useRunningSessionDelete, type DeleteSessionFn } from './session-delete'
 
 const NAV_FEATURES: readonly FeatureKind[] = ['scheduled', 'browser', 'git', 'extensions']
 
 export function Sidebar({
   workspace,
+  focusMode = false,
   chatTabs,
   sessions,
   activeFeature,
@@ -68,6 +74,8 @@ export function Sidebar({
 }: {
   /** 当前工作区。null = 一个都没打开(下半整体降级为空态) */
   workspace: Workspace | null
+  /** quick 窗口只保留当前项目的会话入口，隐藏全局导航与账户入口。 */
+  focusMode?: boolean
   /** 当前工作区里已打开的对话 Tab —— 步骤 6 接上 SQLite 后换成真正的历史会话表 */
   chatTabs: readonly InnerTab[]
   /** 数据库中的全部会话；未打开的历史会话也应出现在侧边栏。 */
@@ -79,14 +87,23 @@ export function Sidebar({
   onNewChat: () => void
   onSearch: () => void
   onOpenFeature: (f: FeatureKind) => void
-  /** 打开设置浮层。**页码是可选的** —— 账户菜单的「积分余额」要直接落到钱包页 */
+  /** 打开设置浮层。**页码是可选的** —— 账户菜单的「余额」要直接落到钱包页 */
   onOpenSettings: (page?: SettingsPageId) => void
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
   onCollapse: () => void
   auth: ClientAuthState
 }): ReactNode {
   const { t } = useI18n()
+  /*
+    需求:右键「提炼为 Skill」—— 另开一条提炼会话,源会话就是被右键的那一条。
+    工作区从这一层取(它是侧边栏唯一持有完整 `Workspace` 的地方),往下只传这个回调。
+  */
+  const extractSkill = (session: SessionListItem): void => {
+    if (workspace === null) return
+    void startSkillExtraction({ workspace, sourceSessionId: session.id, sourceTitle: session.title, hint: '', t })
+      .catch((error: unknown) => toast.error(t(skillExtractionErrorKey(error)), 'skill-extraction'))
+  }
   /*
     插件贡献的网页应用入口。
     ★ 订阅走 selector(`catalog`),不是整份 store:整份订阅会让插件活动日志
@@ -95,8 +112,11 @@ export function Sidebar({
   */
   const catalog = usePluginsStore((state) => state.catalog)
   const pluginEntries = useMemo(() => pluginSidebarEntries(catalog), [catalog])
+  // 版本号走 store 而不是 prop:它是窗口外壳级的常量,透传只会给 Sidebar 和
+  // 主题预览各加一层。订阅取字段不取整份 store(§9)。
+  const appVersion = useWindowStore((state) => state.appVersion)
   return (
-    <aside className="flex w-[297px] shrink-0 flex-col overflow-hidden rounded-panel bg-surface">
+    <aside className={cn('flex shrink-0 flex-col overflow-hidden rounded-panel bg-surface', focusMode ? 'w-[240px]' : 'w-[297px]')}>
       {/*
         macOS hiddenInset 把红绿灯放在窗口左上角,而侧边栏面板正好在那里 ——
         `pl-[74px]` 是给它们让出来的位置,不是随手写的边距。**所以它只给 macOS**:
@@ -130,17 +150,34 @@ export function Sidebar({
         </IconButton>
       </div>
 
-      <div className="flex items-center gap-2 px-4 pt-1 pb-4 text-fg">
-        <Mark />
-        <span className="font-brand text-[15px] font-bold tracking-tight">NextCoWork</span>
-      </div>
+      {!focusMode && (
+        <>
+          {/*
+            版本号靠到品牌行**右端**、和字标同一行 —— 它要回答的是「我现在装的是哪一版」,
+            报 bug 时不用先翻设置。单独占一行会在 logo 下面多出一条 22px 的空行
+            (导航、卡片、账户那一整列的纵向节奏全被顶下去),而它本来就只有五个字符宽。
+          */}
+          <div className="flex items-center gap-2 px-4 pt-1 pb-4 text-fg">
+            <Mark />
+            <span className="font-brand text-[15px] font-bold tracking-tight">NextCoWork</span>
+            {appVersion !== '' && (
+              <span className="ml-auto font-mono text-[11px] text-fg-faint">
+                <span className="sr-only">{t('sidebar.version')}</span>v{appVersion}
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
-      {/* ── 上半:全局 ──
-        五个入口各自占一行、撑满宽度,文字常驻可见,纵向堆叠。 */}
-      <nav className="flex flex-col gap-1.5 px-2.5">
+      {/* 专注窗口只保留当前项目的会话动作；主窗口继续展示完整全局导航。 */}
+      <nav className={cn('flex gap-1.5 px-2.5', focusMode ? 'items-center pt-2' : 'flex-col')}>
         <NavItem icon={<SquarePen size={16} />} label={t('nav.newChat')} onClick={onNewChat} />
-        <NavItem icon={<Search size={16} />} label={t('nav.search')} onClick={onSearch} />
-        {NAV_FEATURES.map((f) => {
+        {focusMode ? (
+          <IconButton label={t('nav.search')} size={32} onClick={onSearch} className="shrink-0">
+            <Search size={16} />
+          </IconButton>
+        ) : <NavItem icon={<Search size={16} />} label={t('nav.search')} onClick={onSearch} />}
+        {!focusMode && NAV_FEATURES.map((f) => {
           const Icon = FEATURE_ICON[f]
           return (
             <NavItem
@@ -157,13 +194,7 @@ export function Sidebar({
             />
           )
         })}
-        {/*
-          插件带进来的网页应用(`contributes.webApps`)。
-          ★ 排在内置入口**之后**,同菜单贡献的 clamp 规则(`mergeMenuItems`):
-          装十个插件也不该把「浏览器」挤下去。
-          ★ 失败要说出来 —— 这是个即发即忘的点击,不接的话「点了没反应」没有任何线索。
-        */}
-        {pluginEntries.map((entry) => {
+        {!focusMode && pluginEntries.map((entry) => {
           const Icon = MENU_ICON[entry.icon]
           return (
             <NavItem
@@ -186,51 +217,57 @@ export function Sidebar({
           <EmptyState
             icon={<MessageSquarePlus size={22} />}
             title={t('workspace.none')}
-            hint={t('workspace.noneHint')}
+            description={t('workspace.noneHint')}
           />
         ) : (
           <>
             <Section
               title={t('workspace.recentChats')}
               defaultOpen
-              action={
+              revealSessionId={focusMode && sessions.some((session) => !session.archived && session.id === activeSessionId) ? activeSessionId : null}
+              action={focusMode ? undefined : (
                 <IconButton label={t('nav.newChat')} size={22} onClick={onNewChat}>
                   <SquarePen size={13} />
                 </IconButton>
-              }
+              )}
             >
               {sessions.filter((s) => !s.archived).length === 0 &&
               chatTabs.every((tab) => tab.kind !== 'chat' || sessions.some((s) => s.id === tab.ref.sessionId && s.archived)) ? (
-                <EmptyState title={t('workspace.noChats')} className="py-6" />
+                <EmptyState title={t('workspace.noChats')} description="" className="py-6" />
               ) : (
                 <ul className="flex flex-col gap-0.5 pb-1">
                   <SessionGroupList
                     workspaceId={workspace.id}
+                    focusMode={focusMode}
                     sessions={sessions}
                     chatTabs={chatTabs}
                     activeSessionId={activeSessionId}
                     runningSessionIds={runningSessionIds}
                     onSelectSession={onSelectSession}
                     onDeleteSession={onDeleteSession}
+                    onExtractSkill={extractSkill}
                     t={t}
                   />
                 </ul>
               )}
             </Section>
 
-            <Section title={t('workspace.archived')} defaultOpen={false}>
+            <Section title={t('workspace.archived')} defaultOpen={false}
+              revealSessionId={focusMode && sessions.some((session) => session.archived && session.id === activeSessionId) ? activeSessionId : null}>
               {sessions.filter((s) => s.archived).length === 0 ? (
-                <EmptyState title={t('workspace.noArchived')} className="py-6" />
+                <EmptyState title={t('workspace.noArchived')} description="" className="py-6" />
               ) : (
                 <ul className="flex flex-col gap-0.5 pb-1">
                   {sessions.filter((s) => s.archived).map((s) => (
                     <ArchivedSessionItem
                       key={s.id}
                       session={s}
+                      active={focusMode && s.id === activeSessionId}
                       workspaceId={workspace.id}
                       runningSessionIds={runningSessionIds}
                       onSelectSession={onSelectSession}
                       onDeleteSession={onDeleteSession}
+                      onExtractSkill={extractSkill}
                       t={t}
                     />
                   ))}
@@ -252,12 +289,15 @@ export function Sidebar({
         触发器、右半是齿轮,两块各自有焦点与 hover —— 原来那段规避重复触发的
         `closest('button')` 判断随之取消,因为它防的就是这个形状。
       */}
-      <div className="mx-1.5 mb-1.5 flex shrink-0 items-center gap-1">
-        <AccountMenu auth={auth} onOpenSettings={onOpenSettings} />
-        <IconButton label={t('common.settings')} onClick={() => onOpenSettings()}>
-          <Settings size={15} />
-        </IconButton>
-      </div>
+      {!focusMode && (
+        <div className="mx-1.5 mb-1.5 flex shrink-0 items-center gap-1">
+          <AccountMenu auth={auth} onOpenSettings={onOpenSettings} />
+          <DeviceSwitcher onOpenSettings={onOpenSettings} />
+          <IconButton label={t('common.settings')} onClick={() => onOpenSettings()}>
+            <Settings size={15} />
+          </IconButton>
+        </div>
+      )}
     </aside>
   )
 }
@@ -316,21 +356,26 @@ type SidebarI18n = Translate
  */
 function SessionGroupList({
   workspaceId,
+  focusMode,
   sessions,
   chatTabs,
   activeSessionId,
   runningSessionIds,
   onSelectSession,
   onDeleteSession,
+  onExtractSkill,
   t
 }: {
   workspaceId: string
+  focusMode: boolean
   sessions: readonly SessionListItem[]
   chatTabs: readonly InnerTab[]
   activeSessionId: string | null
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
+  /** 右键「提炼为 Skill」。失败提示由提供方负责。 */
+  onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
 }): ReactNode {
   /*
@@ -357,10 +402,18 @@ function SessionGroupList({
       return next
     })
   }
+  /*
+    需求:「最近 7 天」是**点开才加载**的一组,默认只留标题那一行。
+    不满足会怎样:七天里攒下的会话会全部铺在侧边栏里,把「今天」和下面的
+    「归档」挤出可视区 —— 用户要的那几条今天的对话反而要滚动才看得到。
+
+    `today` / `earlier` 仍是默认展开:「今天」是当前在用的(必须一进来就在),
+    「更早」是用户自己往下翻才会碰到的一档 —— 只有中间这档是纯粹的噪音。
+  */
   const groups = [
-    { key: 'today', title: t('workspace.today'), items: allSessions.filter((s) => s.updatedAt >= startOfToday) },
-    { key: 'recent', title: t('workspace.last7Days'), items: allSessions.filter((s) => s.updatedAt < startOfToday && s.updatedAt >= startOfRecent) },
-    { key: 'earlier', title: t('workspace.earlier'), items: allSessions.filter((s) => s.updatedAt < startOfRecent) }
+    { key: 'today', title: t('workspace.today'), defaultOpen: true, items: allSessions.filter((s) => s.updatedAt >= startOfToday) },
+    { key: 'recent', title: t('workspace.last7Days'), defaultOpen: false, items: allSessions.filter((s) => s.updatedAt < startOfToday && s.updatedAt >= startOfRecent) },
+    { key: 'earlier', title: t('workspace.earlier'), defaultOpen: true, items: allSessions.filter((s) => s.updatedAt < startOfRecent) }
   ] as const
 
   return (
@@ -372,14 +425,25 @@ function SessionGroupList({
         if (items.length === 0) return null
         return (
           <SessionGroupBlock
-            key={group.key}
+            /*
+              需求:分组的展开态是**每个工作区各一份**的。`SessionGroupList` 在切工作区时
+              不重挂,光靠 `defaultOpen` 的话「最近 7 天」只会在第一个工作区里收起 ——
+              用户点开过一次,之后每换一个工作区看到的都是铺开的列表。
+              不满足会怎样:表现为「这个功能时灵时不灵」,而且没有任何报错。
+              key 里带 workspaceId 顺带把上下文菜单也收掉(菜单里存的是上一个工作区的
+              会话),否则切完工作区菜单还开着、点下去操作的是别的项目里的对话。
+            */
+            key={`${workspaceId}:${group.key}`}
             title={group.title}
+            defaultOpen={group.defaultOpen}
+            revealActive={focusMode && items.some((session) => session.id === activeSessionId)}
             items={items}
             chatTabs={chatTabs}
             activeSessionId={activeSessionId}
             runningSessionIds={runningSessionIds}
             onSelectSession={onSelectSession}
             onDeleteSession={onDeleteSession}
+            onExtractSkill={onExtractSkill}
             t={t}
             multiSelect={multiSelect}
             selectedIds={selectedIds}
@@ -398,12 +462,15 @@ function SessionGroupList({
 
 function SessionGroupBlock({
   title,
+  defaultOpen,
+  revealActive = false,
   items,
   chatTabs,
   activeSessionId,
   runningSessionIds,
   onSelectSession,
   onDeleteSession,
+  onExtractSkill,
   t,
   multiSelect,
   selectedIds,
@@ -412,12 +479,21 @@ function SessionGroupBlock({
   workspaceId
 }: {
   title: string
+  /**
+   * 进来时的展开态。**只在首次挂载生效** —— 之后 `open` 归这一行自己所有,
+   * 所以用户手动点开「最近 7 天」之后,列表因 `sessions:changed` 重拉
+   * (发了一条消息、改了条会话)不会把它又打回收起态。
+   */
+  defaultOpen: boolean
+  revealActive?: boolean
   items: readonly SessionListItem[]
   chatTabs: readonly InnerTab[]
   activeSessionId: string | null
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
+  /** 右键「提炼为 Skill」。见 `Sidebar` 里 `extractSkill` 的说明。 */
+  onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
   multiSelect: boolean
   selectedIds: ReadonlySet<string>
@@ -425,17 +501,20 @@ function SessionGroupBlock({
   onToggleMultiSelect: () => void
   workspaceId: string
 }): ReactNode {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(defaultOpen || revealActive)
+  // 没在看的会话停下来等审批 / 等回答:应用内标一下,不强制切过去
+  const attentionSessionIds = useAttentionSessionIds()
+  useEffect(() => {
+    if (revealActive) setOpen(true)
+  }, [activeSessionId, revealActive])
   const [menu, setMenu] = useState<{ session: SessionListItem; position: ContextMenuPosition } | null>(null)
   const [dialog, setDialog] = useState<{ kind: 'rename'; session: SessionListItem } | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   /*
-    ★ 删除被运行中的 Agent 挡下时要弹窗,不能只让菜单悄悄合上。
-
-    曾经这里的兜底是主进程直接抛错,而 `run()` 只 console.error —— 用户点了
-    「确认删除」却什么都没发生,也不知道自己被什么挡住了。
+    ★ 删除被运行中的 Agent 挡下时要弹窗,不能只让菜单悄悄合上 —— 而且要给出路:
+    「停止并删除」。是否在跑由主进程按真实 run 状态判定(见 `session-delete.tsx`)。
   */
-  const [runningBlocked, setRunningBlocked] = useState(false)
+  const runningDelete = useRunningSessionDelete(onDeleteSession, t)
   const [renameDraft, setRenameDraft] = useState('')
   const run = async (action: () => Promise<void>): Promise<void> => {
     try { await action() } catch (error) { console.error('[sessions] 操作失败', error) }
@@ -468,7 +547,7 @@ function SessionGroupBlock({
                     setMenu({ session, position: { x: event.clientX, y: event.clientY } })
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-[7px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
+                    'flex w-full items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
                     active ? 'bg-canvas text-fg' : 'text-fg-muted hover:bg-tint-hover hover:text-fg'
                   )}
                 >
@@ -485,7 +564,9 @@ function SessionGroupBlock({
                         侧边栏这一行还在转圈,直到用户恰好改了某条会话(改名/归档)才消。
                         一个事实只有一处真源(§9),那一处就是运行中索引。
                       */}
-                  {runningSessionIds.has(session.id) && (
+                  {attentionSessionIds.has(session.id) ? (
+                    <span title={t('chat.pendingInteraction')} aria-label={t('chat.pendingInteraction')} className="size-1.5 shrink-0 rounded-full bg-warning" />
+                  ) : runningSessionIds.has(session.id) && (
                     <Spinner size="xs" label={t('chat.taskChecklistRunning')} className="text-accent" />
                   )}
                   {session.favorited && <span className="shrink-0 text-accent">★</span>}
@@ -516,6 +597,12 @@ function SessionGroupBlock({
                   await duplicateSession(menu.session.id, t('session.copyTitle', { title: menu.session.title }))
                 })
               }} />
+              {/* 提炼会话自己不给这一项:主进程会拒绝「提炼的提炼」 */}
+              {menu.session.skillExtraction !== true && !runningSessionIds.has(menu.session.id) && (
+                <MenuAction icon={<Sparkles size={15} />} label={t('skillify.menu')} onSelect={() => {
+                  void run(async () => { onExtractSkill(menu.session) })
+                }} />
+              )}
               <MenuAction icon={<Link size={15} />} label={t('session.copyLink')} onSelect={() => {
                 void run(async () => {
                   await copyText(`${window.location.href.split('#')[0]}#session=${encodeURIComponent(workspaceId)}/${encodeURIComponent(menu.session.id)}`)
@@ -535,18 +622,9 @@ function SessionGroupBlock({
                     setConfirmingDeleteId(menu.session.id)
                     return
                   }
-                  if (runningSessionIds.has(menu.session.id)) {
-                    setMenu(null)
-                    setConfirmingDeleteId(null)
-                    setRunningBlocked(true)
-                    return
-                  }
+                  const sessionId = menu.session.id
                   void run(async () => {
-                    try { await onDeleteSession(menu.session.id) } catch (error) {
-                      // 主进程的兜底守卫(会话子树里有运行中的 run)在这里变成用户可见的提示。
-                      toast.error(error instanceof Error ? error.message : String(error), 'session-delete')
-                      throw error
-                    }
+                    if (await requestSessionDelete(onDeleteSession, sessionId) === 'running') runningDelete.askStopAndDelete(sessionId)
                   })
                 }}
               />
@@ -554,15 +632,7 @@ function SessionGroupBlock({
           )}
         </ContextMenu>
       )}
-      <Dialog
-        open={runningBlocked}
-        onClose={() => setRunningBlocked(false)}
-        title={t('session.deleteRunningTitle')}
-        width={420}
-        footer={<Button size="sm" variant="accent" onClick={() => setRunningBlocked(false)}>{t('common.close')}</Button>}
-      >
-        <p className="text-[12.5px] text-fg-muted">{t('session.deleteRunningMessage')}</p>
-      </Dialog>
+      {runningDelete.dialog}
       <Dialog
         open={dialog?.kind === 'rename'}
         onClose={() => setDialog(null)}
@@ -570,8 +640,8 @@ function SessionGroupBlock({
         width={420}
         footer={
           <>
-            <Button size="sm" onClick={() => setDialog(null)}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="accent" disabled={renameDraft.trim().length === 0} onClick={() => {
+            <Button variant="secondary" type="button" size="sm" onClick={() => setDialog(null)}>{t('common.cancel')}</Button>
+            <Button type="button" size="sm" variant="primary" disabled={renameDraft.trim().length === 0} onClick={() => {
               if (dialog?.kind !== 'rename') return
               void run(() => renameSession(dialog.session.id, renameDraft)).then(() => setDialog(null))
             }}>{t('common.save')}</Button>
@@ -579,14 +649,14 @@ function SessionGroupBlock({
         }
       >
         <label className="block text-[12px] text-fg-muted" htmlFor="session-rename-input">{t('session.renamePrompt')}</label>
-        <input id="session-rename-input" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} className="selectable mt-2 h-9 w-full rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-accent" />
+        <input id="session-rename-input" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} className="apple-field selectable mt-2 h-9 w-full rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-fg-faint" />
       </Dialog>
     </li>
   )
 }
 
 function MenuAction({ icon, label, danger = false, onSelect }: { icon: ReactNode; label: string; danger?: boolean; onSelect: () => void }): ReactNode {
-  return <button type="button" role="menuitem" onClick={onSelect} className={cn('flex w-full items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-left text-[13px] transition-colors hover:bg-tint-strong', danger ? 'text-danger' : 'text-fg')}><span className={danger ? 'text-danger' : 'text-accent-soft'}>{icon}</span><span className="truncate">{label}</span></button>
+  return <button type="button" role="menuitem" onClick={onSelect} className={cn('flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-[7px] text-left text-[13px] transition-colors hover:bg-tint-strong', danger ? 'text-danger' : 'text-fg')}><span className={danger ? 'text-danger' : 'text-accent-soft'}>{icon}</span><span className="truncate">{label}</span></button>
 }
 
 /**
@@ -597,23 +667,28 @@ function MenuAction({ icon, label, danger = false, onSelect }: { icon: ReactNode
  */
 function ArchivedSessionItem({
   session,
+  active = false,
   workspaceId,
   runningSessionIds,
   onSelectSession,
   onDeleteSession,
+  onExtractSkill,
   t
 }: {
   session: SessionListItem
+  active?: boolean
   workspaceId: string
   /** 和 SessionGroupBlock 同一份运行中集合 —— 归档会话也可能挂着正在跑的 run。 */
   runningSessionIds: ReadonlySet<string>
   onSelectSession: (sessionId: string) => void
-  onDeleteSession: (sessionId: string) => Promise<void>
+  onDeleteSession: DeleteSessionFn
+  /** 归档的会话同样可以提炼 —— 做完归档正是「这段经验该沉淀了」的时刻。 */
+  onExtractSkill: (session: SessionListItem) => void
   t: SidebarI18n
 }): ReactNode {
   const [menu, setMenu] = useState<ContextMenuPosition | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [runningBlocked, setRunningBlocked] = useState(false)
+  const runningDelete = useRunningSessionDelete(onDeleteSession, t)
   const run = async (action: () => Promise<void>): Promise<void> => {
     try { await action() } catch (error) { console.error('[sessions] 操作失败', error) }
     setMenu(null)
@@ -628,7 +703,9 @@ function ArchivedSessionItem({
           event.preventDefault()
           setMenu({ x: event.clientX, y: event.clientY })
         }}
-        className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-1.5 text-left text-[12.5px] text-fg-muted transition-colors hover:bg-tint-hover hover:text-fg"
+        aria-current={active ? 'page' : undefined}
+        className={cn('flex w-full items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
+          active ? 'bg-canvas text-fg' : 'text-fg-muted hover:bg-tint-hover hover:text-fg')}
       >
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
         {session.favorited && <span className="shrink-0 text-accent">★</span>}
@@ -643,6 +720,11 @@ function ArchivedSessionItem({
               <MenuAction icon={<Copy size={15} />} label={t('session.copy')} onSelect={() => {
                 void run(async () => { await duplicateSession(session.id, t('session.copyTitle', { title: session.title })) })
               }} />
+              {session.skillExtraction !== true && !runningSessionIds.has(session.id) && (
+                <MenuAction icon={<Sparkles size={15} />} label={t('skillify.menu')} onSelect={() => {
+                  void run(async () => { onExtractSkill(session) })
+                }} />
+              )}
               <div role="separator" className="my-1 h-px bg-border" />
               <MenuAction icon={<Archive size={15} />} label={t('session.unarchive')} onSelect={() => void run(() => setArchived(session.id, false))} />
               <div role="separator" className="my-1 h-px bg-border" />
@@ -655,17 +737,8 @@ function ArchivedSessionItem({
                     setConfirmingDelete(true)
                     return
                   }
-                  if (runningSessionIds.has(session.id)) {
-                    setMenu(null)
-                    setConfirmingDelete(false)
-                    setRunningBlocked(true)
-                    return
-                  }
                   void run(async () => {
-                    try { await onDeleteSession(session.id) } catch (error) {
-                      toast.error(error instanceof Error ? error.message : String(error), 'session-delete')
-                      throw error
-                    }
+                    if (await requestSessionDelete(onDeleteSession, session.id) === 'running') runningDelete.askStopAndDelete(session.id)
                   })
                 }}
               />
@@ -673,15 +746,7 @@ function ArchivedSessionItem({
           )}
         </ContextMenu>
       )}
-      <Dialog
-        open={runningBlocked}
-        onClose={() => setRunningBlocked(false)}
-        title={t('session.deleteRunningTitle')}
-        width={420}
-        footer={<Button size="sm" variant="accent" onClick={() => setRunningBlocked(false)}>{t('common.close')}</Button>}
-      >
-        <p className="text-[12.5px] text-fg-muted">{t('session.deleteRunningMessage')}</p>
-      </Dialog>
+      {runningDelete.dialog}
     </li>
   )
 }
@@ -691,7 +756,8 @@ function Section({
   title,
   children,
   action,
-  defaultOpen
+  defaultOpen,
+  revealSessionId = null
 }: {
   title: string
   children: ReactNode
@@ -703,8 +769,12 @@ function Section({
    */
   action?: ReactNode
   defaultOpen: boolean
+  revealSessionId?: string | null
 }): ReactNode {
-  const [open, setOpen] = useState(defaultOpen)
+  const [open, setOpen] = useState(defaultOpen || revealSessionId !== null)
+  useEffect(() => {
+    if (revealSessionId !== null) setOpen(true)
+  }, [revealSessionId])
   return (
     <section className="shrink-0 overflow-hidden rounded-card bg-surface-raised">
       <div className="flex items-center gap-2 px-2.5 py-2">

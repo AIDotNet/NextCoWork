@@ -1,5 +1,6 @@
 import type {
   UsageActivityStats,
+  UsageAttemptRecord,
   UsageDailyBucket,
   UsageDimensionStat,
   UsageRequestLogsPage,
@@ -17,6 +18,11 @@ export function getUsageRequestLogs(
   query: UsageRequestLogsQuery
 ): Promise<UsageRequestLogsPage> {
   return invoke('usage:getRequestLogs', query)
+}
+
+// 需求：会话费用明细必须按 session_id 取全量账目，不能按日志搜索词模糊匹配。
+export function getSessionUsageAttempts(sessionId: string): Promise<UsageAttemptRecord[]> {
+  return invoke('usage:getSessionAttempts', { sessionId })
 }
 
 export function getUsageProviderStats(window: UsageWindow): Promise<UsageDimensionStat[]> {

@@ -47,7 +47,11 @@ export function emptyDraft(): McpDraft {
  * 「凭证只写不读」的直接结果,不是遗漏;界面上要说清楚,
  * 不然用户会以为是被清空了。
  */
-export function draftOf(cfg: McpServerConfig): McpDraft {
+export function draftOf(raw: McpServerConfig): McpDraft {
+  // ★ 先归一化:库里那份 JSON 是原样存取的(`repo.ts` 的 `parse<McpServerConfig>`
+  //   不校验),缺一个 `envNames` 就会在这里 `.map` 到 undefined —— 渲染期异常,
+  //   整个窗口白屏。见 `normalizeMcpConfig`。
+  const cfg = normalizeMcpConfig(raw)
   const base = {
     ...emptyDraft(),
     id: cfg.id,
@@ -59,7 +63,7 @@ export function draftOf(cfg: McpServerConfig): McpDraft {
     return {
       ...base,
       command: cfg.command,
-      argsText: cfg.args.join(' '),
+      argsText: formatArgs(cfg.args),
       cwd: cfg.cwd ?? '',
       secretsText: cfg.envNames.map((n) => `${n}=`).join('\n')
     }
@@ -68,6 +72,109 @@ export function draftOf(cfg: McpServerConfig): McpDraft {
     ...base,
     url: cfg.url,
     secretsText: cfg.headerNames.map((n) => `${n}=`).join('\n')
+  }
+}
+
+/**
+ * 参数数组 → 输入框文本,是 `parseArgs` 的逆运算。
+ *
+ * 带空白的参数(路径里的空格)必须加引号,否则「打开编辑 → 原样保存」会把
+ * 一个参数悄悄切成两个。两种引号都含的参数 `parseArgs` 表达不了,只能原样放。
+ */
+export function formatArgs(args: readonly string[]): string {
+  return args
+    .map((a) => {
+      if (a !== '' && !/[\s"']/.test(a)) return a
+      if (!a.includes('"')) return `"${a}"`
+      if (!a.includes("'")) return `'${a}'`
+      return a
+    })
+    .join(' ')
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : ''
+}
+
+/** 键名列表:接受字符串数组,也接受 `{ KEY: value }` 这种对象(取键名,**丢掉值**) */
+function names(list: unknown, fallbackMap: unknown): string[] {
+  const out: string[] = []
+  const push = (n: string): void => {
+    const t = n.trim()
+    if (t !== '' && !out.includes(t)) out.push(t)
+  }
+  if (Array.isArray(list)) {
+    for (const item of list) {
+      if (typeof item === 'string') push(item)
+      else if (typeof item === 'object' && item !== null) push(str((item as Record<string, unknown>)['name']))
+    }
+    return out
+  }
+  const map = typeof list === 'object' && list !== null ? list : fallbackMap
+  if (typeof map === 'object' && map !== null && !Array.isArray(map)) {
+    for (const k of Object.keys(map)) push(k)
+  }
+  return out
+}
+
+/**
+ * 任何「看起来像一台 MCP 服务器」的对象 → 合法的 `McpServerConfig`。
+ *
+ * ★ 存储层不校验形状,所以设置页拿到的配置不一定是当前类型声明的样子:
+ * 旧版本写的、手改过数据库的、从别处 JSON 粘过来的(`env` / `headers` 是对象、
+ * `transport: 'http'`、`command` 是数组、缺 `args`)。编辑器和列表行都只认这里
+ * 吐出来的形状,于是**每一种能存进去的形状都能被打开编辑**,保存时再写回规范形状。
+ *
+ * 不做的事:不猜值、不读密钥 —— 对象里的值(可能是明文 token)一律丢弃,只留键名。
+ */
+export function normalizeMcpConfig(raw: unknown): McpServerConfig {
+  const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+  const id = str(r['id'])
+  const base = {
+    id,
+    name: str(r['name']) || id,
+    enabled: r['enabled'] !== false,
+    ...(typeof r['description'] === 'string' ? { description: r['description'] } : {}),
+    ...(typeof r['workspaceId'] === 'string' && r['workspaceId'] !== ''
+      ? { workspaceId: r['workspaceId'] }
+      : {})
+  }
+
+  const declared = str(r['transport'] ?? r['type']).toLowerCase()
+  const url = str(r['url'])
+  const remote =
+    declared === 'sse' ||
+    declared === 'streamable-http' ||
+    declared === 'http' ||
+    (declared !== 'stdio' && url !== '' && r['command'] === undefined)
+
+  if (remote) {
+    return {
+      ...base,
+      transport: declared === 'sse' ? 'sse' : 'streamable-http',
+      url,
+      headerNames: names(r['headerNames'], r['headers'])
+    }
+  }
+
+  // `command` 可能是 `["npx", "-y", "pkg"]` 这种整条数组(OpenCode 的写法)
+  const rawCommand = r['command']
+  const commandParts = Array.isArray(rawCommand) ? rawCommand.map(str).filter((s) => s !== '') : []
+  const command = Array.isArray(rawCommand) ? (commandParts[0] ?? '') : str(rawCommand)
+  const rawArgs = r['args']
+  const args = Array.isArray(rawArgs)
+    ? rawArgs.map(str)
+    : typeof rawArgs === 'string'
+      ? parseArgs(rawArgs)
+      : []
+  const cwd = str(r['cwd'])
+  return {
+    ...base,
+    transport: 'stdio',
+    command,
+    args: [...commandParts.slice(1), ...args],
+    envNames: names(r['envNames'], r['env']),
+    ...(cwd === '' ? {} : { cwd })
   }
 }
 

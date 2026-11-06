@@ -49,7 +49,7 @@ import { hostname, release, type as osType, arch } from 'node:os'
 
 import type { OAuthCredential } from '../../../../shared/domain/credential'
 import type { TransportContext, UpstreamTransport } from '../../upstream/transport'
-import { uuidFromSeed } from '../../upstream/transport'
+import { uuidFromSeed } from '../../upstream/ids'
 import { OAuthFailedError } from '../errors'
 import type { OAuthExchangeContext, OAuthIdentity, OAuthProviderSpec } from '../registry'
 import { record, str } from './shared'

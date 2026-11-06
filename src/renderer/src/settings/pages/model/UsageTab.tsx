@@ -8,8 +8,9 @@ import type {
   UsageSummary,
   UsageWindow
 } from '../../../../../shared/domain/usage'
+import { Select } from '../../../components/ui/Select'
 import { TextInput } from '../../../components/ui/TextInput'
-import { Toggle } from '../../../components/ui/Toggle'
+import { Switch } from '../../../components/arc/switch/switch'
 import { useI18n, type Locale, type Translate } from '../../../i18n'
 import { cn } from '../../../lib/cn'
 import {
@@ -238,7 +239,7 @@ export function UsageTab(): ReactNode {
           <button
             type="button"
             onClick={retry}
-            className="rounded-[7px] bg-accent px-3 py-1.5 text-[11.5px] text-accent-fg"
+            className="rounded-[8px] bg-accent px-3 py-1.5 text-[11.5px] text-accent-fg"
           >
             {t('common.retry')}
           </button>
@@ -464,23 +465,26 @@ function RequestLogs({
           size="sm"
           className="w-[220px]"
         />
-        <select
-          value={status}
-          onChange={(event) => onStatus(event.target.value as UsageStatusFilter)}
-          aria-label={t('usage.statusFilterLabel')}
-          className="h-7 rounded-[8px] border border-border bg-surface-field px-2 text-[11.5px] text-fg outline-none focus:border-accent"
-        >
-          <option value="all">{t('usage.status.all')}</option>
-          <option value="success">{t('usage.status.success')}</option>
-          <option value="failed">{t('usage.status.failed')}</option>
-        </select>
+        <div className="w-[104px]">
+          <Select
+            inModal
+            value={status}
+            ariaLabel={t('usage.statusFilterLabel')}
+            onValueChange={(next) => onStatus(next as UsageStatusFilter)}
+            options={[
+              { value: 'all', label: t('usage.status.all') },
+              { value: 'success', label: t('usage.status.success') },
+              { value: 'failed', label: t('usage.status.failed') }
+            ]}
+          />
+        </div>
         <span className="flex-1" />
         <label className="flex items-center gap-2 text-[11px] text-fg-muted">
           {t('usage.showDetails')}
-          <Toggle
+          <Switch
             checked={showAllDetails}
-            onChange={onShowAllDetails}
-            label={t('usage.showDetails')}
+            onCheckedChange={onShowAllDetails}
+            aria-label={t('usage.showDetails')}
           />
         </label>
         <span className="text-[11px] text-fg-faint">
@@ -540,7 +544,7 @@ function RequestLogs({
           type="button"
           onClick={onPrevious}
           disabled={page === null || page.offset === 0 || loading}
-          className="rounded-[7px] border border-border px-2 py-1 text-fg-muted disabled:opacity-35"
+          className="rounded-[8px] border border-border px-2 py-1 text-fg-muted disabled:opacity-35"
         >
           {t('usage.previousPage')}
         </button>
@@ -548,7 +552,7 @@ function RequestLogs({
           type="button"
           onClick={onNext}
           disabled={page === null || page.offset + page.items.length >= page.total || loading}
-          className="rounded-[7px] border border-border px-2 py-1 text-fg-muted disabled:opacity-35"
+          className="rounded-[8px] border border-border px-2 py-1 text-fg-muted disabled:opacity-35"
         >
           {t('usage.nextPage')}
         </button>

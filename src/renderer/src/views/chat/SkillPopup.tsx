@@ -22,8 +22,8 @@ export function SkillPopup({ id, items, active, loading, error, search, onSearch
   const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (search !== undefined) searchRef.current?.focus() }, [search])
   return (
-    <div className="absolute bottom-full left-2 z-20 mb-2 w-[min(380px,calc(100%-1rem))] overflow-hidden rounded-xl border border-border bg-surface-input p-1 shadow-lg" onKeyDown={onKeyDown}>
-      {search !== undefined && <div className="flex items-center gap-2 border-b border-border px-2 py-1.5"><Search size={14} className="text-fg-faint" /><input ref={searchRef} value={search} onChange={(e) => onSearch(e.target.value)} placeholder={labels.search} aria-label={labels.search} className="min-w-0 flex-1 bg-transparent text-[12px] text-fg outline-none" /></div>}
+    <div className="absolute bottom-full left-2 z-20 mb-2 w-[min(380px,calc(100%-1rem))] overflow-hidden rounded-panel border-0 bg-surface-menu p-1.5 shadow-menu" onKeyDown={onKeyDown}>
+      {search !== undefined && <div className="mb-1 flex items-center gap-2 px-2 py-1.5"><Search size={14} className="text-fg-faint" /><input ref={searchRef} value={search} onChange={(e) => onSearch(e.target.value)} placeholder={labels.search} aria-label={labels.search} className="min-w-0 flex-1 bg-transparent text-[12px] text-fg outline-none" /></div>}
       <div id={id} role="listbox" className="max-h-64 overflow-y-auto py-1">
         {loading ? <div className="px-3 py-4 text-center text-[12px] text-fg-faint">{labels.loading}</div> : error ? <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-danger"><AlertTriangle size={14} />{labels.error}</div> : items.length === 0 ? <div className="px-3 py-4 text-center text-[12px] text-fg-faint">{labels.empty}</div> : items.map((item, i) => (
           <div key={item.key}>

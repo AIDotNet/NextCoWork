@@ -135,7 +135,8 @@ export function TodoRow({
  * 「这个字段能存,但今天全应用没人读它」。
  *
  * 这类行占了本页面的一大半(`defaultPermissionMode` / `subagent` / `gateway` /
- * `proxy` / `notifications` / `locale` 全应用零消费者),把它们藏起来不诚实,
+ * `proxy` / `notifications` / `locale` 全应用零消费者;`notifications` 现已由
+ * `stores/notification-sounds.ts` 读取,那几行的标记随之摘掉),把它们藏起来不诚实,
  * 假装它们已经生效更不诚实 —— 所以每一行都点名将来是谁读它。
  */
 export function LandsAt({ children }: { children: ReactNode }): ReactNode {

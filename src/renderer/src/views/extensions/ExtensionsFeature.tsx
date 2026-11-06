@@ -15,7 +15,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { IconButton } from '../../components/ui/IconButton'
-import { Segmented } from '../../components/ui/Segmented'
+import SegmentedControl from '../../components/arc/segmented-control/segmented-control'
 import { useI18n } from '../../i18n'
 import { cn } from '../../lib/cn'
 import { FeatureFrame } from '../../shell/FeatureFrame'
@@ -53,11 +53,10 @@ export function ExtensionsFeature({ onClose }: { onClose?: () => void }): ReactN
             <ArrowLeft size={15} />
           </IconButton>
           <h1 className="text-[14px] font-medium text-fg">{t('ext.title')}</h1>
-          <Segmented<ExtensionTab>
+          <SegmentedControl
             className="ml-3 app-no-drag"
-            size="sm"
             value={tab}
-            onChange={setTab}
+            onValueChange={(value) => setTab(value as ExtensionTab)}
             label={t('ext.title')}
             options={[
               /*

@@ -66,7 +66,7 @@ describe('Bash · 前置条件', () => {
   it('没有工作区时直接拒,不起进程', async () => {
     let called = false
     const r = await bashTool.execute(
-      { command: 'echo hi' },
+      { command: 'echo hi', description: '测试命令' },
       ctx({
         workspaceRoot: '',
         ...withSpawn(() => {
@@ -81,14 +81,30 @@ describe('Bash · 前置条件', () => {
   })
 
   it('空命令过不了 schema', async () => {
-    const r = await bashTool.execute({ command: '' }, ctx())
+    const r = await bashTool.execute({ command: '', description: '测试命令' }, ctx())
     expect(r.isError).toBe(true)
     expect(r.output.content).toContain('Invalid arguments')
   })
 
+  /**
+   * ★★ description 在工具描述里写成必填,但**缺席不能让命令失败**。
+   *
+   * 挂 `.min(1)` 的话,正在跑的旧会话里下一条命令会直接变成一条
+   * 「Invalid arguments」——用户看到的是「我的命令怎么跑不了了」,而他什么都没做。
+   * 缺席时补空串,界面退回去画命令主干(`commandGist`)。
+   */
+  it('★ 模型省了 description 时补空串,而不是拒掉整条命令', async () => {
+    const r = await bashTool.execute(
+      { command: 'echo hi' },
+      ctx(withSpawn(() => Promise.resolve(spawned({ stdout: 'hi' }))))
+    )
+    expect(r.isError).toBeFalsy()
+    expect(r.output.content).toContain('hi')
+  })
+
   it(`timeout 超过上限 ${String(BASH_LIMITS.MAX_TIMEOUT_MS)} 时被 schema 挡回`, async () => {
     const r = await bashTool.execute(
-      { command: 'echo hi', timeout: BASH_LIMITS.MAX_TIMEOUT_MS + 1 },
+      { command: 'echo hi', timeout: BASH_LIMITS.MAX_TIMEOUT_MS + 1, description: '测试命令' },
       ctx()
     )
     expect(r.isError).toBe(true)
@@ -98,25 +114,25 @@ describe('Bash · 前置条件', () => {
 
 describe('Bash · 真的跑一条命令', () => {
   it('拿到 stdout', async () => {
-    const r = await bashTool.execute({ command: 'echo hello-from-bash' }, ctx())
+    const r = await bashTool.execute({ command: 'echo hello-from-bash', description: '测试命令' }, ctx())
     expect(r.isError).toBeFalsy()
     expect(r.output.content).toContain('hello-from-bash')
     expect(r.output.content).toContain('<stdout>')
   })
 
   it('cwd 是工作区根 —— 模型不用自己 cd', async () => {
-    const r = await bashTool.execute({ command: 'pwd' }, ctx())
+    const r = await bashTool.execute({ command: 'pwd', description: '测试命令' }, ctx())
     expect(r.output.content).toContain(root.replace(/^\/private/, ''))
   })
 
   it('能写文件(证明它确实在跑,不是被打桩了)', async () => {
-    const r = await bashTool.execute({ command: 'printf abc > written.txt' }, ctx())
+    const r = await bashTool.execute({ command: 'printf abc > written.txt', description: '测试命令' }, ctx())
     expect(r.isError).toBeFalsy()
     expect(readFileSync(join(root, 'written.txt'), 'utf8')).toBe('abc')
   })
 
   it('非零退出码是 toolFail,并带上退出码', async () => {
-    const r = await bashTool.execute({ command: 'echo out; echo err >&2; exit 3' }, ctx())
+    const r = await bashTool.execute({ command: 'echo out; echo err >&2; exit 3', description: '测试命令' }, ctx())
     expect(r.isError).toBe(true)
     expect(r.output.content).toContain('exited with code 3')
     // ★ 失败时 stdout 和 stderr 都要给 —— 只给 stderr 的话模型看不到它做到哪一步了
@@ -125,20 +141,20 @@ describe('Bash · 真的跑一条命令', () => {
   })
 
   it('★ 成功但没输出时说「没有任何输出」,不是一段静默的空白', async () => {
-    const r = await bashTool.execute({ command: 'true' }, ctx())
+    const r = await bashTool.execute({ command: 'true', description: '测试命令' }, ctx())
     expect(r.isError).toBeFalsy()
     expect(r.output.content).toContain('no output')
   })
 
   it('失败且没输出时也说清楚', async () => {
-    const r = await bashTool.execute({ command: 'exit 7' }, ctx())
+    const r = await bashTool.execute({ command: 'exit 7', description: '测试命令' }, ctx())
     expect(r.isError).toBe(true)
     expect(r.output.content).toContain('exited with code 7')
     expect(r.output.content).toContain('no output')
   })
 
   it('stdout 和 stderr 分开装,不混成一坨', async () => {
-    const r = await bashTool.execute({ command: 'echo AAA; echo BBB >&2' }, ctx())
+    const r = await bashTool.execute({ command: 'echo AAA; echo BBB >&2', description: '测试命令' }, ctx())
     const c = r.output.content
     expect(c.indexOf('<stdout>')).toBeLessThan(c.indexOf('<stderr>'))
     expect(c.slice(c.indexOf('<stdout>'), c.indexOf('</stdout>'))).toContain('AAA')
@@ -149,7 +165,7 @@ describe('Bash · 真的跑一条命令', () => {
 describe('Bash · 超时', () => {
   it('★ 超时(code 124)时明说是超时、且进程组已经被带走', async () => {
     const r = await bashTool.execute(
-      { command: 'x' },
+      { command: 'x', description: '测试命令' },
       ctx(withSpawn(() => Promise.resolve(spawned({ code: 124, stderr: '超时' }))))
     )
     expect(r.isError).toBe(true)
@@ -158,14 +174,14 @@ describe('Bash · 超时', () => {
   })
 
   it('真的会超时 —— sleep 撞上 200ms 预算', async () => {
-    const r = await bashTool.execute({ command: 'sleep 5', timeout: 200 }, ctx())
+    const r = await bashTool.execute({ command: 'sleep 5', timeout: 200, description: '测试命令' }, ctx())
     expect(r.isError).toBe(true)
     expect(r.output.content).toContain('timed out')
   }, 10_000)
 
   it('超时提示里带上实际用的那个毫秒数', async () => {
     const r = await bashTool.execute(
-      { command: 'x', timeout: 4321 },
+      { command: 'x', timeout: 4321, description: '测试命令' },
       ctx(withSpawn(() => Promise.resolve(spawned({ code: 124 }))))
     )
     expect(r.output.content).toContain('4321')
@@ -176,7 +192,7 @@ describe('Bash · 输出预算', () => {
   it(`★ 超过 ${String(BASH_LIMITS.MAX_OUTPUT_CHARS)} 字符被截断`, async () => {
     const huge = 'x'.repeat(BASH_LIMITS.MAX_OUTPUT_CHARS * 2)
     const r = await bashTool.execute(
-      { command: 'x' },
+      { command: 'x', description: '测试命令' },
       ctx(withSpawn(() => Promise.resolve(spawned({ stdout: huge }))))
     )
     expect(r.output.content.length).toBeLessThan(BASH_LIMITS.MAX_OUTPUT_CHARS + 500)
@@ -193,7 +209,7 @@ describe('Bash · 中断', () => {
     const ac = new AbortController()
     ac.abort()
     const p = bashTool.execute(
-      { command: 'sleep 30' },
+      { command: 'sleep 30', description: '测试命令' },
       ctx({
         signal: ac.signal,
         ...withSpawn(() => Promise.reject(abortError()))
@@ -204,7 +220,7 @@ describe('Bash · 中断', () => {
 
   it('真进程 + 真中断:也是抛,不是返回', async () => {
     const ac = new AbortController()
-    const p = bashTool.execute({ command: 'sleep 30' }, ctx({ signal: ac.signal }))
+    const p = bashTool.execute({ command: 'sleep 30', description: '测试命令' }, ctx({ signal: ac.signal }))
     setTimeout(() => {
       ac.abort()
     }, 50)

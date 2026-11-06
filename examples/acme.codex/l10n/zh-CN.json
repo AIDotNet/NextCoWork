@@ -1,0 +1,7 @@
+{
+  "cmd.launch": "Codex",
+  "config.title": "Codex 接入配置",
+  "config.baseUrl": "Base URL（可选）",
+  "config.model": "模型（可选，经 -m 传入）",
+  "config.apiKey": "API Key（可选，中转站的鉴权密钥）"
+}

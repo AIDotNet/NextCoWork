@@ -26,12 +26,10 @@ import { store } from '../../state/store'
 import * as service from '../service'
 
 /*
-  ★ 这几个必须在 import 服务之前 mock 掉:
-  - `ipc/attachment` 会 import electron(附件根目录要 `app.getPath`),
-    而这套测试按设计跑在**没有 electron 的 node 环境**里(见 vitest.config.ts 文件头)。
-    导入器只在遇到内联图片时才会碰它,所以一个最小替身就够。
+  内联图片的落盘单独由附件服务测试覆盖；导入闭环使用固定附件回执。
+  mock 必须跟随生产依赖路径，不能在服务提取后继续 mock 已不使用的 IPC 模块。
 */
-vi.mock('../../ipc/attachment', () => ({
+vi.mock('../../services/attachments', () => ({
   uploadAttachment: (req: { mime: string }) => ({
     id: 'att',
     scope: 'session',

@@ -14,7 +14,7 @@ const localStateSchema = z.object({
   version: z.literal(2), accountId: z.string().min(1).max(128), vault: syncVaultSchema.nullable(),
   selection: syncSelectionSchema, confirmed: z.boolean(), remembered: z.boolean(),
   migrationRequired: z.boolean(), legacyExists: z.boolean(),
-  categories: z.object({ providers: categorySchema, preferences: categorySchema, connections: categorySchema, extensions: categorySchema, workspaces: categorySchema, automation: categorySchema }).strict(),
+  categories: z.object({ providers: categorySchema, preferences: categorySchema, connections: categorySchema, extensions: categorySchema, workspaces: categorySchema, automation: categorySchema, usage: categorySchema }).strict(),
   lastSuccessAt: counter.nullable(), errorCode: z.enum(SYNC_ERRORS).nullable(),
   bindings: z.array(z.object({ kind: z.enum(['workspace', 'extension', 'automation', 'connection']), id: z.string().max(512), name: z.string().max(512) }).strict()).max(5000)
 }).strict()
@@ -30,10 +30,29 @@ export function newSyncState(accountId: string): SyncLocalState {
     lastSuccessAt: null, errorCode: null, bindings: []
   }
 }
+/**
+ * 需求:`usage` category 是后加的。老版本写下的状态里 selection / categories 都没有这个键,
+ * 而 schema 是 strict 的 —— 不补的话 readSyncState 直接 invalidData,整块云同步进错误态。
+ * 补的值:已经在同步供应商的账户默认一并合并使用统计(数据页可关),同步状态从零开始。
+ */
+function withUsageCategory(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
+  const state = raw as Record<string, unknown>
+  const selection = state['selection']
+  const categories = state['categories']
+  const next: Record<string, unknown> = { ...state }
+  if (typeof selection === 'object' && selection !== null && !('usage' in selection)) {
+    next['selection'] = { ...selection, usage: (selection as Record<string, unknown>)['providers'] === true }
+  }
+  if (typeof categories === 'object' && categories !== null && !('usage' in categories)) {
+    next['categories'] = { ...categories, usage: emptySyncCategory() }
+  }
+  return next
+}
 export function readSyncState(accountId: string): SyncLocalState {
   const raw = getKv<unknown>(stateKey(accountId), null)
   if (raw === null) return newSyncState(accountId)
-  const parsed = localStateSchema.safeParse(raw)
+  const parsed = localStateSchema.safeParse(withUsageCategory(raw))
   if (!parsed.success || parsed.data.accountId !== accountId || (parsed.data.vault !== null && parsed.data.vault.accountId !== accountId)) throw new ConfigSyncError('invalidData')
   return parsed.data
 }

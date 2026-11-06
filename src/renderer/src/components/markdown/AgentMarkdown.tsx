@@ -11,6 +11,7 @@ import { MarkdownImage } from './MarkdownImage'
 import { useMarkdownEnvironment } from './MarkdownProvider'
 import { STREAMING_FENCE, rehypeMarkdownIds, rehypeStreamingFence, textOf } from './ast'
 import { resolveMarkdownTarget } from './links'
+import { normalizeMathDelimiters } from './math-delimiters'
 import 'katex/dist/katex.min.css'
 import './markdown.css'
 
@@ -54,6 +55,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({ content, streaming = 
   const { t } = useI18n()
   const prefix = `markdown-${useId().replace(/[^a-zA-Z0-9-]/g, '')}-`
   const container = useRef<HTMLDivElement>(null)
+  const source = useMemo(() => normalizeMathDelimiters(content), [content])
   const state = useMemo(() => ({ prefix, container }), [prefix])
   // `scoped` 与 `streaming` 同值,因为流式路径就是 Streamdown 路径(见上方注释)。
   const rehypePlugins = useMemo(() => [
@@ -77,8 +79,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({ content, streaming = 
       {/* 两条路径都套这一层,提交瞬间的 DOM 结构才一致,不会整棵子树重建。 */}
       <div className="agent-markdown-body">
         {streaming
-          ? <Streamdown {...options} content={content} smoothing="realtime" latexGuard />
-          : <ReactMarkdown {...options}>{content}</ReactMarkdown>}
+          ? <Streamdown {...options} content={source} smoothing="realtime" latexGuard />
+          : <ReactMarkdown {...options}>{source}</ReactMarkdown>}
       </div>
     </RenderContext.Provider>
   </div>

@@ -8,6 +8,7 @@ import type {
   GitBranchSummary,
   GitCommitSummary,
   GitDiff,
+  GitDiffSides,
   GitOverview
 } from '../../../shared/domain/git'
 import { invoke } from './ipc'
@@ -26,6 +27,15 @@ export function listGitCommits(workspaceId: string, limit?: number): Promise<Git
 
 export function getGitDiff(workspaceId: string, path: string, staged: boolean): Promise<GitDiff> {
   return invoke('git:getDiff', { workspaceId, path, staged })
+}
+
+/** 两侧全文,给代码对比视图。`null` = 没法按全文对比,界面退回 unified 文本 */
+export function getGitDiffSides(
+  workspaceId: string,
+  path: string,
+  staged: boolean
+): Promise<GitDiffSides | null> {
+  return invoke('git:getDiffSides', { workspaceId, path, staged })
 }
 
 export function stageGitPaths(workspaceId: string, paths: string[]): Promise<void> {

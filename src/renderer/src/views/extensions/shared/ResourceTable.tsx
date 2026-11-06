@@ -8,8 +8,8 @@
  */
 import { Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { EmptyState } from '../../../components/ui/EmptyState'
-import { Toggle } from '../../../components/ui/Toggle'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
+import { Switch } from '../../../components/arc/switch/switch'
 import { cn } from '../../../lib/cn'
 import { useI18n } from '../../../i18n'
 
@@ -64,7 +64,7 @@ export function ResourceTable<T extends ResourceRow>({
   if (rows.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyState icon={icon} title={emptyTitle} hint={emptyHint} />
+        <EmptyState icon={icon} title={emptyTitle} description={emptyHint} />
       </div>
     )
   }
@@ -101,11 +101,11 @@ export function ResourceTable<T extends ResourceRow>({
                 <span className="mt-0.5 block truncate text-[11px] text-fg-faint">{row.description}</span>
               </button>
               <ScopeBadge scope={row.scope} />
-              {!hideToggle && <Toggle
+              {!hideToggle && <Switch
                 checked={row.enabled}
                 disabled={readOnly}
-                onChange={(v) => onToggle(row, v)}
-                label={t('ext.toggleLabel', { name: row.name })}
+                onCheckedChange={(v) => onToggle(row, v)}
+                aria-label={t('ext.toggleLabel', { name: row.name })}
               />}
             </li>
           )

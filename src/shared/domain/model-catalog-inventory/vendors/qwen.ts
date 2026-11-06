@@ -1,5 +1,5 @@
 import type { BuiltinModelRecord } from '../types'
-import { model, textCapabilities, visionCapabilities, toggleThinking, effortThinking, alwaysThinking, efforts, OPENCODE_GO_SOURCE } from '../helpers'
+import { model, textCapabilities, visionCapabilities, toggleThinking, effortThinking, alwaysThinking, efforts, OPENCODE_GO_SOURCE , videoCapabilities } from '../helpers'
 
 export const QWEN: readonly BuiltinModelRecord[] = [
   model('qwen', 'qwen3.8-max', 'Qwen3.8-Max', {
@@ -251,5 +251,22 @@ export const QWEN: readonly BuiltinModelRecord[] = [
   }),
   model('qwen', 'qwen-math-plus', 'Qwen-Math-Plus', {
     capabilities: textCapabilities({ tools: false }),
+  }),
+  /*
+   * 需求:视频档案表按目录型号查绑定。百炼的 Wan 走**原生异步任务**
+   * (`/api/v1/services/aigc/video-generation/video-synthesis`),不是
+   * compatible-mode 的 chat 端点 —— 所以它的连接是另一条 provider 记录(id 带
+   * `video-` 前缀),而型号仍归 qwen(阿里云)这个家族。
+   * ★ 按秒计费,TokenRates 表达不了,查不到价显示「—」。
+   */
+  model('qwen', 'wan2.7-t2v', 'Wan 2.7 文生视频', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    aliases: ['wan2.7-t2v-2026-06-12'],
+  }),
+  model('qwen', 'wan2.7-i2v', 'Wan 2.7 图生视频', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    aliases: ['wan2.7-i2v-2026-06-12'],
   }),
 ]

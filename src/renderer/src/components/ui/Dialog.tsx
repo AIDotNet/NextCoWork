@@ -1,51 +1,25 @@
 /**
- * 模态弹窗 —— 参考图那个「添加 MCP 服务器」用的就是它。
+ * 模态弹窗 —— Arc 的 `Dialog` / `DialogContent`,外加本应用外壳的几条约束。
  *
- * ★ **四条约束照抄 `SettingsOverlay.tsx`,一条都不能少。** 它们各自对应一个
- * 已经踩过的坑,而这个弹窗和设置浮层处在完全相同的位置(全窗覆盖、压着自绘
- * 标题栏、里面装着草稿态输入框):
+ * 动画、遮罩、焦点陷阱、Esc、点外面关闭、标题与关闭按钮全是 Arc(Radix)的。
+ * 留这一层是因为下面几条约束对 49 个调用点都成立,不该散落在每一处:
  *
- * 1. **根节点 `app-no-drag`。** 顶部那条 34px 标题栏是
- *    `-webkit-app-region: drag`,OS 吞掉该区域里所有 pointer 事件 ——
- *    不加的话弹窗上半部分点不动,一按住整个窗口跟着鼠标跑。
- * 2. **`z-100`。** 见 theme.css 末尾的 z 轴约定:50 是面板内的下拉,100 是模态。
- * 3. **Esc 前先看 `e.defaultPrevented`。** 弹窗里有 `Segmented`,将来还会有
- *    别的自关闭组件;不查这个的话,一次 Esc 会把弹窗和设置浮层一起关掉。
- *    ★ 而且这里 `stopPropagation` 也是必须的 —— 设置浮层在 `document` 上
- *    也挂着一个 Esc 监听,两个都跑的话弹窗关了、浮层也没了。
- * 4. **点遮罩关闭绑 `click` 不绑 `pointerdown`。** 输入框是草稿态、靠失焦提交:
- *    pointerdown 会在 blur 之前就把面板卸掉,用户刚打的那行没了。
+ * 1. **`app-no-drag`。** 顶部那条标题栏是 `-webkit-app-region: drag`,OS 吞掉该区域里
+ *    所有 pointer 事件 —— 不加的话弹窗上半部分点不动,一按住整个窗口跟着鼠标跑。
+ * 2. **z 轴。** Arc 弹窗自带 z 50/51,而本应用模态是 100(设置浮层就在这一档)——
+ *    从设置里打开的弹窗会整块压在浮层背后。`.ncw-dialog` 这个类就是给
+ *    `styles/arc-integration.css` 认的,那边把整组 portal 抬到 100。
+ * 3. **Esc 只关这一层。** 设置浮层在 `document` 上挂着冒泡阶段的 Esc 监听;Radix 的
+ *    Esc 监听在捕获阶段,在这里 `stopPropagation` 就拦得住它,否则一次 Esc 弹窗和
+ *    浮层一起没了。
+ * 4. **宽度。** 调用点按内容给宽度(默认 520);Arc 默认 440。用行内样式给,
+ *    CSS Modules 不在层里,Tailwind 类压不住它。
  *
- * ## 唯一一条**反着来**的:这里必须 portal
- *
- * `SettingsOverlay` 的文件头写着「不 portal」,那条在这里不适用,因为两者
- * 挂的位置不同。浮层挂在应用根上,`fixed` 就是相对视口的;而这个弹窗是从
- * **设置内容区里**渲染出来的,那个容器带着 `.fade-bottom`
- * (`mask-image`,见 theme.css)——**带 mask 的元素会成为 `position: fixed`
- * 后代的包含块**。于是 `fixed inset-0` 不再是「铺满窗口」,而是「铺满那块
- * 滚动区」,再被它的 `overflow-y-auto` 裁一刀:弹窗被压进内容区、标题随内容
- * 滚没、底边还带着一道渐隐。光加 `z-100` 救不回来 —— 那是层叠问题,这是**几何**问题。
- *
- * 挂到 `document.body` 之后:
- * - **层级**:portal 节点排在 `#root` 之后,同为 `z-100` 时后来者在上,稳定压住设置浮层;
- * - **焦点**:`useFocusTrap` 的 Tab 监听挂在各自的面板元素上(不是 document),
- *   弹窗在浮层的 DOM 之外,两个陷阱因此互不干扰;
- * - **事件**:React 的合成事件仍沿 **React 树**冒泡,调用点原有的 onClick 之类照旧。
- *
- * ★ **类型选择器请用 `Segmented`,不要用 `Menu`** —— `ModelPage.tsx:9-13`
- * 记着 Menu 在滚动区里会被裁掉。这句话写在这里,是因为下一个往弹窗里加
- * 下拉框的人先看到的是这个文件。
+ * ★ **类型选择器请用 `SegmentedControl`,不要用 `Menu`** —— `ModelPage.tsx:9-13`
+ * 记着 Menu 在滚动区里会被裁掉。
  */
-import { X } from 'lucide-react'
-import { useEffect, useRef, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { cn } from '../../lib/cn'
-import { usePresence } from '../../lib/usePresence'
-import { IconButton } from './IconButton'
-import { useFocusTrap } from './useFocusTrap'
-import { useI18n } from '../../i18n'
-
-const DIALOG_MS = 220
+import type { ReactNode } from 'react'
+import { Dialog as ArcDialog, DialogContent } from '../arc/dialog/dialog'
 
 export function Dialog({
   title,
@@ -57,7 +31,7 @@ export function Dialog({
   children
 }: {
   title: string
-  /** 标题下那行小字。参考图的弹窗有,不给就不占位 */
+  /** 标题下那行小字。不给就不占位 */
   description?: string
   open: boolean
   onClose: () => void
@@ -66,79 +40,25 @@ export function Dialog({
   width?: number
   children: ReactNode
 }): ReactNode {
-  const { t } = useI18n()
-  const panelRef = useRef<HTMLDivElement>(null)
-  const firstRef = useRef<HTMLDivElement>(null)
-  const presence = usePresence(open, DIALOG_MS, true)
-
-  // Presence mounts the panel before the first frame of an opening transition and
-  // keeps it mounted until the closing transition has finished.  Tie the focus
-  // trap to the mounted state so it also runs when a dialog starts closed.
-  useFocusTrap(panelRef, open && presence.mounted, firstRef)
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      e.preventDefault()
-      // ★ 拦住,别让设置浮层那个 document 级监听也跑一遍(约束 3)
-      e.stopPropagation()
-      onClose()
-    }
-    // 捕获阶段:document 上那个监听是冒泡阶段的,捕获阶段先到,
-    // stopPropagation 才拦得住它
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
-
-  if (!presence.mounted) return null
-
-  const visible = presence.shown
-
-  return createPortal(
-    <div
-      className={cn(
-        'app-no-drag fixed inset-0 z-100 flex items-center justify-center p-[10px]',
-        'transition-opacity duration-220 ease-panel motion-reduce:transition-none',
-        visible ? 'opacity-100' : 'pointer-events-none opacity-0'
-      )}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
+  return (
+    <ArcDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
+      }}
     >
-      <div className="absolute inset-0 bg-scrim/35 backdrop-blur-[2px]" onClick={onClose} />
-
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        style={{ width }}
-        className={cn(
-          'relative flex max-h-full w-full flex-col overflow-hidden bg-surface',
-          'rounded-panel shadow-2xl shadow-black/40 outline-none',
-          'transition-[opacity,transform,translate,scale] duration-220 ease-panel motion-reduce:transition-none motion-reduce:transform-none motion-reduce:translate-y-0 motion-reduce:scale-100',
-          visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-2 scale-[.98] opacity-0'
-        )}
+      <DialogContent
+        title={title}
+        description={description}
+        className="ncw-dialog app-no-drag"
+        // Radix 用 aria-labelledby 指向标题;再挂一份 aria-label 是给探针脚本和测试按标题找弹窗的
+        aria-label={title}
+        style={{ width: `min(calc(100vw - 20px), ${String(width)}px)` }}
+        onEscapeKeyDown={(event) => event.stopPropagation()}
       >
-        <div ref={firstRef} tabIndex={-1} className="flex shrink-0 items-start gap-2 px-5 pt-4 outline-none">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] text-fg">{title}</div>
-            {description !== undefined && (
-              <div className="mt-0.5 text-[12px] text-fg-faint">{description}</div>
-            )}
-          </div>
-          <IconButton label={t('common.close')} onClick={onClose}>
-            <X size={15} />
-          </IconButton>
-        </div>
-
-        {/* 内容自己滚 —— 弹窗整体高度受 max-h-full 限制,而表单可以很长 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-
-        {footer !== undefined && (
-          <div className="flex shrink-0 items-center justify-end gap-2 px-5 pb-4">{footer}</div>
-        )}
-      </div>
-    </div>,
-    document.body
+        {children}
+        {footer !== undefined && <div className="mt-5 flex items-center justify-end gap-2">{footer}</div>}
+      </DialogContent>
+    </ArcDialog>
   )
 }

@@ -17,6 +17,7 @@ import { useTabsStore } from '../../stores/tabs'
 import { IconButton } from '../../components/ui/IconButton'
 import { cn } from '../../lib/cn'
 import { Spinner } from '../../components/ui/Spinner'
+import { isAddressableUrl, isExternalOpenableUrl, resolveAddress } from './address'
 
 interface BrowserElement extends HTMLElement {
   loadURL?: (url: string) => Promise<void>
@@ -34,8 +35,11 @@ interface CuaIndicator extends BrowserCuaEvent {
 /**
  * 隔离的浏览器标签视图。
  *
- * 每个工作区使用独立的 Electron session partition；页面永远只能通过
- * webview 加载 http(s) 地址，不能导航到应用的 ncw://、file:// 或脚本协议。
+ * 每个工作区使用独立的 Electron session partition；页面只能通过 webview 加载
+ * http(s) 与 file:// 地址（原先是「永远只能 http(s)」，2026-09-22 按工作区所有者
+ * 要求放开本地页面 —— 需求与风险见 `main/kernel/tool/builtin/ssrf.ts` 的
+ * `allowFileUrls`，协议闸在 `main/index.ts` 的 `browserUrlProtocol`），
+ * 不能导航到应用的 ncw:// 或脚本协议。
  */
 export function BrowserView({ tab, workspace }: { tab: Extract<InnerTab, { kind: 'browser' }>; workspace: Workspace }): ReactNode {
   const { t } = useI18n()
@@ -98,7 +102,7 @@ function LocalBrowserView({ tab, workspace }: { tab: Extract<InnerTab, { kind: '
     }
     const onNavigate = (event: Event): void => {
       const next = (event as Event & { url?: string }).url
-      if (typeof next !== 'string' || !/^https?:\/\//i.test(next)) return
+      if (typeof next !== 'string' || !isAddressableUrl(next)) return
       setUrl(next)
       setDraft(next)
       setBrowser(workspace.id, tab.id, { url: next })
@@ -159,22 +163,29 @@ function LocalBrowserView({ tab, workspace }: { tab: Extract<InnerTab, { kind: '
   const navigate = async (): Promise<void> => {
     const raw = draft.trim()
     if (raw === '') return
-    const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    /*
+      需求：本地页面也能从地址栏打开（file://，2026-09-22 —— 见 address.ts 头注）。
+      解析失败/协议不认直接给 invalidUrl，不再混进下面的通用 catch —— 那条路会把
+      「地址填错了」显示成「操作失败」，用户会以为是浏览器坏了而不是自己拼错了。
+    */
+    const href = resolveAddress(raw)
+    if (href === null) {
+      setError(t('browser.invalidUrl'))
+      return
+    }
+    setError(null)
+    setLoading(true)
     try {
-      const parsed = new URL(candidate)
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error(t('browser.invalidUrl'))
-      setError(null)
-      setLoading(true)
       if (tab.ref.browserId === undefined) {
-        const remote = await openBrowserTab(workspace.id, parsed.href, tab.title, tab.ref.profileId, tab.id)
+        const remote = await openBrowserTab(workspace.id, href, tab.title, tab.ref.profileId, tab.id)
         setBrowser(workspace.id, tab.id, { browserId: remote.id, url: remote.url })
       } else {
-        await navigateBrowserTab(workspace.id, tab.ref.browserId, parsed.href)
-        setBrowser(workspace.id, tab.id, { url: parsed.href })
+        await navigateBrowserTab(workspace.id, tab.ref.browserId, href)
+        setBrowser(workspace.id, tab.id, { url: href })
       }
-      setUrl(parsed.href)
-      setDraft(parsed.href)
-      await viewRef.current?.loadURL?.(parsed.href)
+      setUrl(href)
+      setDraft(href)
+      await viewRef.current?.loadURL?.(href)
     } catch {
       setLoading(false)
       setError(t('browser.operationFailed'))
@@ -182,7 +193,7 @@ function LocalBrowserView({ tab, workspace }: { tab: Extract<InnerTab, { kind: '
   }
 
   const openExternal = (): void => {
-    if (!/^https?:\/\//i.test(url)) return
+    if (!isExternalOpenableUrl(url)) return
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 

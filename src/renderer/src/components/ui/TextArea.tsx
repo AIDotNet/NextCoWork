@@ -50,9 +50,9 @@ export function TextArea({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => commit(onCommit)}
       className={cn(
-        'app-no-drag selectable w-full resize-none rounded-[8px] border border-border',
+        'apple-field app-no-drag selectable w-full resize-none rounded-[8px] border border-border',
         'bg-surface-field px-2.5 py-2 text-[13px] leading-[1.6] text-fg outline-none',
-        'transition-colors placeholder:text-fg-faint focus:border-accent disabled:opacity-40',
+        'transition-colors placeholder:text-fg-faint focus:border-fg-faint disabled:opacity-40',
         className
       )}
     />

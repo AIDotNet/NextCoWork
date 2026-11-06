@@ -57,6 +57,23 @@ export function bucketTokens(bucket: UsageDailyBucket): number {
   return bucket.inputTokens + bucket.outputTokens + bucket.cacheReadTokens + bucket.cacheWriteTokens
 }
 
+/**
+ * 模型的稳定键 `providerId/upstreamModel`。
+ * 需求:环形图、费用表、趋势堆叠图按同一个 key 查颜色(`charts/colors.ts`),
+ * 口径只能有一份 —— 各写各的模板串,改一处漏一处,颜色就会在图与图之间对不上。
+ */
+export function modelKeyOf(bucket: UsageDailyBucket): string {
+  return `${bucket.providerId}/${bucket.upstreamModel}`
+}
+
+/** `toModelShares` 合并尾部后那一项的 key。 */
+export const OTHERS_KEY = '__others__'
+
+/** 所在周的周日(周起点口径见 `applyGranularity` 的 ★)。 */
+export function weekStartOf(day: string): string {
+  return dayFromIndex(dayIndex(day) - weekdayOf(day))
+}
+
 function addCost(into: Map<string, number>, bucket: UsageDailyBucket): void {
   if (bucket.costMicros === null || bucket.currency === '') return
   into.set(bucket.currency, (into.get(bucket.currency) ?? 0) + bucket.costMicros)
@@ -155,7 +172,7 @@ export function applyGranularity(
   const out: DayTotal[] = []
   let current: DayTotal | null = null
   for (const total of totals) {
-    const weekStart = dayFromIndex(dayIndex(total.day) - weekdayOf(total.day))
+    const weekStart = weekStartOf(total.day)
     if (current === null || current.day !== weekStart) {
       current = emptyDay(weekStart)
       out.push(current)
@@ -365,7 +382,7 @@ export function toModelShares(buckets: readonly UsageDailyBucket[], limit = 8): 
   const sources = new Map<string, LabelSource>()
 
   for (const bucket of buckets) {
-    const key = `${bucket.providerId}/${bucket.upstreamModel}`
+    const key = modelKeyOf(bucket)
     let share = byModel.get(key)
     if (share === undefined) {
       share = {
@@ -398,7 +415,7 @@ export function toModelShares(buckets: readonly UsageDailyBucket[], limit = 8): 
   const tail = sorted.slice(limit)
   if (tail.length > 0) {
     const merged: ModelShare = {
-      key: '__others__',
+      key: OTHERS_KEY,
       label: '',
       tokens: 0,
       requests: 0,
@@ -465,7 +482,7 @@ export function toCostBreakdown(buckets: readonly UsageDailyBucket[]): CostBreak
       rows = new Map()
       byCurrency.set(bucket.currency, rows)
     }
-    const key = `${bucket.providerId}/${bucket.upstreamModel}`
+    const key = modelKeyOf(bucket)
     const row = rows.get(key)
     if (row === undefined) {
       rows.set(key, {
@@ -535,7 +552,7 @@ export function totalsOf(buckets: readonly UsageDailyBucket[]): UsageTotals {
     totals.tokens += bucketTokens(bucket)
     totals.requests += bucket.requestCount
     totals.unpricedRequests += unpricedOf(bucket)
-    models.add(`${bucket.providerId}/${bucket.upstreamModel}`)
+    models.add(modelKeyOf(bucket))
     addCost(costs, bucket)
   }
 

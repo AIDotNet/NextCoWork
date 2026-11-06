@@ -75,6 +75,18 @@ describe('清单校验', () => {
     }
   })
 
+  it('命令的 iconFile 必须是包内相对的 svg/png —— 品牌图标走这条并行通道', () => {
+    const ok = parse({ contributes: { commands: [{ command: 'x', title: '%cmd.x%', iconFile: 'assets/claude.svg' }] } })
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.manifest.contributes.commands[0]?.iconFile).toBe('assets/claude.svg')
+    for (const iconFile of ['/etc/logo.svg', '../evil.svg', 'assets/logo.gif']) {
+      const result = parse({ contributes: { commands: [{ command: 'x', title: '%cmd.x%', iconFile }] } })
+      expect(result.ok, iconFile).toBe(false)
+      if (result.ok) continue
+      expect(result.errors.some((e) => e.field.endsWith('.iconFile')), iconFile).toBe(true)
+    }
+  })
+
   it('★ main 必须是包内相对路径的单文件 ESM', () => {
     for (const main of ['/etc/passwd', '../../x.js', 'C:\\x.js', './dist/extension.cjs', '']) {
       expect(parse({ main }).ok, main).toBe(false)

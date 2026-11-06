@@ -38,7 +38,7 @@ declare module 'nextcowork' {
   /**
    * 这份垫片的版本。**与清单里的 `engines.nextcowork` 不是一回事**,
    * 但两者都指向同一个东西的两半:前者是运行期垫片,后者是宿主声明它实现了
-   * 哪一版**插件 API**(当前 `0.3.1`,见 `shared/plugin/api-version.ts`)。
+   * 哪一版**插件 API**(当前 `0.3.3`,见 `shared/plugin/api-version.ts`)。
    *
    * ★ `engines.nextcowork` 比的**不是应用版本**。这两个曾被当成同一个,结果是
    * 宿主拿 `app.getVersion()`(2.x)去比 `^0.2.0`,按官方模板写的插件装上一律
@@ -64,6 +64,88 @@ declare module 'nextcowork' {
      * 那些监听器还挂着,而下一次激活会再注册一遍。
      */
     readonly subscriptions: { dispose(): unknown }[]
+  }
+
+  /**
+   * 需求：Office 插件通过受控会话而非整文件覆盖修改文档。仅插件宿主页可调用，
+   * 不是 iframe 的预览画布 API；需要 >=0.3.2。后台工具必须逐次携带 invoke 的 callId。
+   */
+  export namespace documents {
+    export type Format = 'docx' | 'docm' | 'xlsx' | 'xlsm' | 'pptx' | 'pptm' | 'pdf'
+    export interface Scope { callId?: string }
+    export interface SessionRequest extends Scope { sessionId: string }
+    export interface Snapshot {
+      sessionId: string
+      format: Format
+      status: 'loading' | 'ready' | 'saving' | 'conflict' | 'crashed' | 'recovering' | 'closed'
+      generation: number
+      modelRevision: number
+      savedRevision: number
+      diskRevision: string
+      seq: number
+    }
+    export interface Target { generation: number; ref: string }
+    export type Operation =
+      | { kind: 'text.replace'; target: Target; text: string }
+      | { kind: 'text.insert'; target: Target; position: 'before' | 'after' | 'start' | 'end'; text: string }
+      | { kind: 'style.apply'; target: Target; style: string }
+      | { kind: 'cells.set'; sheet: string; range: string; values: (string | number | boolean | null)[][] }
+      | { kind: 'cells.formula'; sheet: string; cell: string; formula: string }
+      | { kind: 'sheet.insert'; name: string; index?: number }
+      | { kind: 'slide.insert'; index: number; layout?: string }
+      | { kind: 'slide.move'; from: number; to: number }
+      | { kind: 'object.delete'; target: Target }
+      | { kind: 'pdf.annotate'; page: number; rect: [number, number, number, number]; text: string }
+      | { kind: 'pdf.formFill'; field: string; value: string }
+      /** 按字面文字定位（Word）。expectedCount 与实际命中数不符时整批拒绝，文档不变 */
+      | { kind: 'text.findReplace'; find: string; replace: string; matchCase?: boolean; expectedCount?: number }
+      | { kind: 'paragraph.style'; find: string; style: string; matchCase?: boolean; expectedCount?: number }
+      /** 锚点必须恰好命中一处 */
+      | { kind: 'paragraph.insert'; anchor: string; position: 'before' | 'after'; text: string; matchCase?: boolean }
+    export type Query =
+      | { kind: 'outline' }
+      | { kind: 'text'; maxChars?: number }
+      | { kind: 'cells'; sheet: string; range: string; maxChars?: number }
+      /** 页 / 工作表 / 幻灯片的尺寸与 Writer 页矩形，单位 twips */
+      | { kind: 'layout'; part?: number }
+    export interface Capabilities {
+      format: Format
+      engineVersion: string
+      operations: Operation['kind'][]
+      canSave: boolean
+      canExport: Format[]
+      canUndo: boolean
+      macros: { list: boolean; run: boolean }
+      /** 画布交互输入(键盘 / 鼠标 / 输入法)。缺省 = 引擎只能只读预览这份文档 */
+      interaction?: { keyboard: boolean; mouse: boolean; textInput: boolean }
+    }
+    export interface ApplyResult {
+      operationId: string
+      appliedRevision: number
+      dirty: boolean
+      warnings: string[]
+      undoable: boolean
+      /** 与批次逐条对应；按文字定位的操作带命中数。引擎不回报时省略 */
+      results?: { matches?: number }[]
+    }
+    /** 读权限；引擎只能来自自身清单或已声明依赖，不执行文档宏。 */
+    export function open(params: Scope & { path: string; engine?: string }): Thenable<{ sessionId: string; viewId: string; path: string; snapshot: Snapshot; capabilities: Capabilities }>
+    /** 写权限；成功表示活动模型已改变，不代表写盘。 */
+    export function apply(params: SessionRequest & { generation: number; modelRevision: number; operationId: string; operations: Operation[] }): Thenable<ApplyResult>
+    export function save(params: SessionRequest): Thenable<{ snapshot: Snapshot }>
+    /** 写权限；默认不覆盖，禁止替代 documents.save 写回当前文件。 */
+    export function exportDocument(params: SessionRequest & { path: string; format: Format; overwrite?: boolean }): Thenable<{ snapshot: Snapshot; path: string }>
+    export function getState(params: SessionRequest): Thenable<Snapshot>
+    /** 读权限；读的是活动模型（含未保存修改），结果有字符上限 */
+    export function query(params: SessionRequest & { request: Query }): Thenable<{ generation: number; modelRevision: number; result: unknown }>
+    export function getOperation(params: SessionRequest & { operationId: string }): Thenable<
+      | { status: 'missing' }
+      | { status: 'applied'; sessionId: string; result: ApplyResult }
+      | { status: 'rejected'; sessionId: string; code: string }
+      | { status: 'unknown'; sessionId: string }
+    >
+    /** 放下调用方租约；脏模型保留，之后 open 可重新加入。 */
+    export function close(params: SessionRequest): Thenable<{ closed: boolean; dirty: boolean }>
   }
 
   // ─────────────────────────── env ───────────────────────────
@@ -117,10 +199,38 @@ declare module 'nextcowork' {
     export function remove(permissions: Permission[]): Thenable<void>
   }
 
+  /**
+   * 工作区类调用的**可选作用域**。`workspace.*` / `process.*` / `scm.*` /
+   * `storage.workspace.*` 都接受它。需要 >=0.3.3。
+   *
+   * ## 为什么需要它
+   *
+   * 一个 Agent 工具在后台工作区(A)里跑,而用户此刻正看着 B。此前这类调用
+   * 一律按**当前聚焦的工作区**定位,于是工具给 A 画的东西**写进了 B**。
+   * 带上产生这次调用的 `callId`,宿主就把作用域钉在那次工具调用的工作区上
+   * —— 和 `documents.*` 的 callId 是同一套东西。
+   *
+   * ## 不填会怎样
+   *
+   * - 这个插件**恰好一次**工具调用在跑 → 按那一次推断(插件无从选择,安全);
+   * - **多次**在跑 → 调用被拒,不替你猜一个工作区;
+   * - 没有工具调用在跑(菜单、命令面板、视图里的 UI 代码)→ 按发起时的工作区,
+   *   与不带这个参数时的旧行为一致。
+   *
+   * ## 它不能用来指定任意工作区
+   *
+   * 值必须是**你正在跑**的一次工具调用的 callId。填别的插件的、已经结束的、
+   * 或者根本猜的,只会拿到一条 `rejected` / `invalid_argument`——**不会**回退到
+   * 当前聚焦的工作区。
+   */
+  export interface Scope {
+    callId?: string
+  }
+
   // ──────────────────────── workspace ────────────────────────
 
   export namespace workspace {
-    export function folders(): Thenable<{ id: string; name: string; path: string }[]>
+    export function folders(options?: Scope): Thenable<{ id: string; name: string; path: string }[]>
 
     export const fs: {
       /**
@@ -129,18 +239,20 @@ declare module 'nextcowork' {
        * UNC 路径上各有各的坑。
        * @returns `revision` 是写回时的乐观锁凭据。
        */
-      readFile(path: string, encoding?: 'utf8' | 'base64'): Thenable<{ data: string; revision: number }>
+      readFile(path: string, encoding?: 'utf8' | 'base64', options?: Scope): Thenable<{ data: string; revision: number }>
       /**
        * @param options.revision 上次读到的 revision。盘上变过就拒绝写入 ——
        * **Agent 和你可能在同时改同一个文件**。
+       * @param options.callId 见 `Scope` —— 在后台工具的调用里写文件时**务必带上**,
+       * 否则作用域按当前聚焦的工作区算。
        */
-      writeFile(path: string, data: string, options?: { encoding?: 'utf8' | 'base64'; revision?: number }): Thenable<{ revision: number }>
-      delete(path: string): Thenable<void>
-      stat(path: string): Thenable<{ kind: 'file' | 'dir' | 'missing'; size: number; mtimeMs: number }>
+      writeFile(path: string, data: string, options?: { encoding?: 'utf8' | 'base64'; revision?: number } & Scope): Thenable<{ revision: number }>
+      delete(path: string, options?: Scope): Thenable<void>
+      stat(path: string, options?: Scope): Thenable<{ kind: 'file' | 'dir' | 'missing'; size: number; mtimeMs: number }>
     }
 
     /** 只支持前缀 glob(`src/**`、`docs/*.md`)。要更强的匹配,取回来自己筛。 */
-    export function findFiles(glob: string, limit?: number): Thenable<string[]>
+    export function findFiles(glob: string, limit?: number, options?: Scope): Thenable<string[]>
 
     /**
      * 工作区里有文件变了。需要 `workspace.read`。
@@ -176,7 +288,7 @@ declare module 'nextcowork' {
     export function exec(
       command: string,
       args?: string[],
-      options?: { cwd?: string; timeoutMs?: number }
+      options?: { cwd?: string; timeoutMs?: number; callId?: string }
     ): Thenable<{ code: number; stdout: string; stderr: string }>
 
     /**
@@ -197,6 +309,8 @@ declare module 'nextcowork' {
       options?: {
         cwd?: string
         timeoutMs?: number
+        /** 见 `Scope` —— 后台工具的调用里**务必带上**,否则 cwd 按当前聚焦的工作区算。 */
+        callId?: string
         onOutput?: (chunk: { stream: 'stdout' | 'stderr'; chunk: string; truncated: boolean }) => unknown
         onExit?: (result: { code: number; timedOut: boolean }) => unknown
       }
@@ -217,11 +331,17 @@ declare module 'nextcowork' {
      * 都必须走这里 —— 于是「这个插件访问了哪些域名」变成主进程可校验、
      * 可审计、可关闭的一条通道。
      * ★ 逐 URL 匹配清单里的 `hostPermissions`;内网与环回地址一律拒绝。
+     * ★ **重定向不自动跟**:每一跳都重过一遍同一道 URL 门,最多 5 跳。
+     *   跨 host 的跳转会被拒 —— 跟着走等于让远端替你改掉 `hostPermissions`。
+     * ★ 正文按**字节**截到 8MB。
      * ★ 回来的是**数据**,不是 `Response`:没有流句柄可以继续操作。
+     * ★ `init.callId` 是**取消凭据**,不是工作区作用域(net.fetch 与工作区无关)。
+     *   在工具的调用里带上产生这次调用的 `callId`,用户点停止时已经发出的请求
+     *   会被真正中断,而不只是「阻止下一次请求」。见 `Scope` 的 callId 取值规则。
      */
     export function fetch(
       url: string,
-      init?: { method?: string; headers?: Record<string, string>; body?: string }
+      init?: { method?: string; headers?: Record<string, string>; body?: string; callId?: string }
     ): Thenable<{ status: number; headers: Record<string, string>; body: string }>
   }
 
@@ -236,8 +356,12 @@ declare module 'nextcowork' {
   export const storage: {
     /** 跟着这台机器走。 */
     global: Memento
-    /** 跟着当前工作区走。 */
-    workspace: Memento
+    /** 跟着**这次调用**的工作区走(见 `Scope`)。 */
+    workspace: {
+      get(key: string, options?: Scope): Thenable<string | null>
+      set(key: string, value: string | null, options?: Scope): Thenable<void>
+      keys(options?: Scope): Thenable<string[]>
+    }
   }
 
   /** `safeStorage` 加密。key 会被宿主自动加上 `plugin:<id>:` 前缀。 */
@@ -372,6 +496,35 @@ declare module 'nextcowork' {
       url: string,
       options?: { open?: 'tab' | 'right' }
     ): Thenable<boolean>
+
+    /**
+     * 在指定工作区的**根目录**开一个终端 Tab,并在里面启动 `command`。
+     *
+     * ```ts
+     * // claude-code 插件:把用户的 baseURL / key / 模型以环境变量带进 CLI
+     * const result = await ncw.tabs.openTerminal({
+     *   workspaceId, command: 'claude', env: { ANTHROPIC_BASE_URL: baseUrl }
+     * })
+     * if (result.opened === false) throw new Error(result.reason)
+     * ```
+     *
+     * - 需要 `process` 能力,且 `command` 的基名必须命中清单 `allowedCommands`
+     *   —— 与 `process.exec` 同一份白名单,能进交互式终端的命令不比能一次性
+     *   执行的更宽;
+     * - `env` 会注入终端子进程环境(不落盘、不进终端回滚缓冲),最多 16 项、
+     *   单值 ≤4096 字符;
+     * - **不接受 `cwd`**:恒为该工作区的根目录;
+     * - `title` 是 `%key%` 形式的 l10n key 片段,作为终端 Tab 的标题;
+     * - `opened: false` 表示没开成,`reason: 'remote'` = SSH 远程工作区
+     *   (一期不支持),`'declined'` = 工作区不存在或参数被拒。
+     */
+    export function openTerminal(options: {
+      workspaceId: string
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+      title?: string
+    }): Thenable<{ opened: boolean; reason?: 'remote' | 'declined' }>
   }
 
   // ─────────────────── customEditors ─────────────────────────
@@ -391,16 +544,16 @@ declare module 'nextcowork' {
 
   export namespace scm {
     /** 需要 `scm.read`。仓库开不出来(远程工作区 / 没装 git / 不是仓库)时这条调用失败。 */
-    export function status(): Thenable<{ branch: string; staged: string[]; unstaged: string[] }>
+    export function status(options?: Scope): Thenable<{ branch: string; staged: string[]; unstaged: string[] }>
     /** 一个文件的 diff。**没有「整仓 diff」**:那是一次无上限的输出,而 `status` 已经说了哪些文件变了。 */
-    export function diff(path: string, options?: { staged?: boolean }): Thenable<{ diff: string; binary: boolean; truncated: boolean }>
-    export function log(options?: { limit?: number }): Thenable<{ hash: string; subject: string; author: string; at: number }[]>
-    export function branches(): Thenable<{ current: string; branches: string[] }>
+    export function diff(path: string, options?: { staged?: boolean } & Scope): Thenable<{ diff: string; binary: boolean; truncated: boolean }>
+    export function log(options?: { limit?: number } & Scope): Thenable<{ hash: string; subject: string; author: string; at: number }[]>
+    export function branches(options?: Scope): Thenable<{ current: string; branches: string[] }>
     /** 以下四条需要 `scm.write`,并且走和用户手敲命令**同一条**审批链。 */
-    export function stage(paths: string[]): Thenable<void>
-    export function commit(message: string): Thenable<string>
-    export function createBranch(name: string, options?: { checkout?: boolean }): Thenable<void>
-    export function checkout(name: string): Thenable<void>
+    export function stage(paths: string[], options?: Scope): Thenable<void>
+    export function commit(message: string, options?: Scope): Thenable<string>
+    export function createBranch(name: string, options?: { checkout?: boolean } & Scope): Thenable<void>
+    export function checkout(name: string, options?: Scope): Thenable<void>
     /*
       ★ 没有 push / pull:它们把本机凭据用到远端,而失败形态(冲突、鉴权、
       远端 hook)不是一个返回值能如实回答的。
@@ -444,6 +597,9 @@ declare module 'nextcowork' {
      * @param commandId 必须是清单 `contributes.commands` 里声明过的 ——
      * 没声明的会被静默忽略(菜单、快捷键、命令面板都按 id 分发,
      * 允许运行期注册任意 id 等于让插件能劫持别人的命令)。
+     * @param handler 的 `args` 是**宿主调用点上下文**,不是用户输入:
+     * `+` 菜单触发的调用带 `{ workspaceId }`(菜单在哪个工作区点的)。
+     * 它只是来源信息,命令的语义仍由清单声明。
      */
     export function registerCommand(commandId: string, handler: (args?: unknown) => unknown): Disposable
     /** ★ 只能执行**自己**贡献的命令。跨插件调用会被拒。 */

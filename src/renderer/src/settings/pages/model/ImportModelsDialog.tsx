@@ -1,9 +1,9 @@
 import { AlertTriangle, Check, Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { type ModelAlias } from "../../../../../shared/domain/provider";
-import { Button } from "../../../components/ui/Button";
+import { Button } from "../../../components/arc/button/button";
 import { Dialog } from "../../../components/ui/Dialog";
-import { EmptyState } from "../../../components/ui/EmptyState";
+import { EmptyState } from "../../../components/arc/empty-state/empty-state";
 import { TextInput } from "../../../components/ui/TextInput";
 import { cn } from "../../../lib/cn";
 import { useI18n } from "../../../i18n";
@@ -153,20 +153,16 @@ export function ImportModelsDialog({
       width={560}
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={saving}>
+          <Button size="sm" type="button" variant="secondary" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button
-            size="sm"
-            variant="accent"
+          <Button size="sm"
+            type="button"
+            variant="primary"
             disabled={rows === null || saving || selected.size === 0}
-            icon={
-              saving ? (
-                <Spinner size="sm" />
-              ) : undefined
-            }
             onClick={submit}
           >
+            {saving ? <Spinner size="sm" /> : undefined}
             {t("models.updateList", { count: selected.size })}
           </Button>
         </>
@@ -182,7 +178,7 @@ export function ImportModelsDialog({
             </p>
           </div>
           {rows === null && (
-            <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+            <Button size="sm" type="button" variant="secondary" onClick={() => setAttempt((n) => n + 1)}>
               {t("common.retry")}
             </Button>
           )}
@@ -194,7 +190,7 @@ export function ImportModelsDialog({
           <EmptyState
             icon={<Spinner size="md" />}
             title={t("models.fetchingTitle")}
-            hint={t("models.fetchingHint")}
+            description={t("models.fetchingHint")}
             className="py-12"
           />
         )
@@ -231,7 +227,7 @@ export function ImportModelsDialog({
             <EmptyState
               icon={<Search size={20} />}
               title={t("models.noMatch")}
-              hint={t("models.searchIdHint")}
+              description={t("models.searchIdHint")}
               className="py-10"
             />
           ) : (

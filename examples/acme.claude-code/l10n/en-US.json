@@ -1,0 +1,7 @@
+{
+  "cmd.launch": "Claude Code",
+  "config.title": "Claude Code connection",
+  "config.baseUrl": "Base URL (optional, e.g. https://api.routin.ai)",
+  "config.model": "Model (optional, e.g. claude-sonnet-4-5)",
+  "config.apiKey": "API Key (optional, for relay endpoints)"
+}

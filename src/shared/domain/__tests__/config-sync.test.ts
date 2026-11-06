@@ -13,15 +13,19 @@ describe('encrypted configuration contract', () => {
     expect(SYNC_REGISTRY.preferences.deviceFields).toContain('shell')
   })
   it('preserves all provider fields except device-local references', () => {
-    const provider: UpstreamProvider = { id: 'custom', name: 'Provider', protocol: 'anthropic', baseUrl: 'https://example.com', credentialRef: 'private-ref', priority: 3, enabled: true, protocolOptions: { anthropic: { cacheTtl: '1h' } } }
+    const provider: UpstreamProvider = { id: 'custom', name: 'Provider', protocol: 'anthropic', baseUrl: 'https://example.com', credentialRef: 'private-ref', priority: 3, enabled: true, protocolOptions: { anthropic: { cacheTtl: '1h' } }, videoGeneration: { adapter: 'google-veo', baseUrl: 'https://generativelanguage.googleapis.com', region: 'us-central1' } }
     const copy = portableProvider(provider)
     expect(Object.keys(copy).sort()).toEqual(Object.keys(PROVIDER_SYNC_FIELDS).filter((key) => key !== 'credentialRef').sort())
     expect(JSON.stringify(copy)).not.toContain('private-ref')
     expect(copy.protocolOptions).toEqual(provider.protocolOptions)
     expect(copy.protocolOptions).not.toBe(provider.protocolOptions)
   })
+  it('never includes read-only effective protocol in portable model fields', () => {
+    expect(MODEL_SYNC_FIELDS).not.toHaveProperty('runtimeProtocol')
+    expect(MODEL_SYNC_FIELDS.protocolOverride).toBe('copy')
+  })
   it('keeps advanced model configuration through document serialization', () => {
-    const model: ModelAlias = { alias: 'model', providerId: 'custom', upstreamModel: 'upstream', ...IMPORTED_ALIAS_DEFAULTS, protocolOverride: 'openai-responses', priority: 5, enabled: false, displayName: 'Custom', modality: 'text', thinkingConfig: { mode: 'effort', defaultEnabled: true, defaultEffort: 'high', effortMap: { high: 'deep' }, standardWire: true }, reasoningEfforts: ['low', 'high'], requestAdapter: { preset: 'custom', patches: [{ op: 'add', path: 'extra', value: { flag: true } }] }, source: { url: 'https://example.com', fetchedAt: '2026-09-15' }, catalogOverrides: ['thinkingConfig', 'capabilities.tools'] }
+    const model: ModelAlias = { alias: 'model', providerId: 'custom', upstreamModel: 'upstream', ...IMPORTED_ALIAS_DEFAULTS, protocolOverride: 'openai-responses', priority: 5, enabled: false, displayName: 'Custom', modality: 'text', thinkingConfig: { mode: 'effort', defaultEnabled: true, defaultEffort: 'high', effortMap: { high: 'deep' }, standardWire: true }, reasoningEfforts: ['low', 'high'], requestAdapter: { preset: 'custom', patches: [{ op: 'add', path: 'extra', value: { flag: true } }] }, source: { url: 'https://example.com', fetchedAt: '2026-09-15' }, catalogOverrides: ['thinkingConfig', 'capabilities.tools'], video: { profileId: 'google-veo-3.1' } }
     expect(Object.keys(model).sort()).toEqual(Object.keys(MODEL_SYNC_FIELDS).sort())
     const document = { version: 2, kind: 'providers', data: model }
     expect(syncDocumentSchema.parse(JSON.parse(JSON.stringify(document)))).toEqual(document)

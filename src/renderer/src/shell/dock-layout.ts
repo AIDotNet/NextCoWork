@@ -28,6 +28,19 @@ export function visibleDockNode(node: DockNode, tabs: readonly InnerTab[], right
   return { ...node, first, second }
 }
 
+/**
+ * 整棵子树是否**只因为**右/底部两面的开关而不可见 —— 开合动画的 ghost 判定靠
+ * 这个等价关系:「按当前开关投影出来是 null」。
+ *
+ * ★ 只能在**结构树**上调用:结构树先用 `visibleDockNode(..., true, true)` 滤掉
+ * 空组与 hidden 组,于是返回 true 就只剩「被开关藏起来」这一种原因。直接拿
+ * store 的原树来问,空组也会返回 true,会被误判成「开关藏的」并在开合动画里
+ * 被当成 ghost 留在 DOM 上 —— 表现为关掉右栏后那格还剩一层空壳。
+ */
+export function edgeHidden(node: DockNode, tabs: readonly InnerTab[], rightVisible: boolean, bottomVisible: boolean): boolean {
+  return visibleDockNode(node, tabs, rightVisible, bottomVisible) === null
+}
+
 export function dockDropZone(x: number, y: number, width: number, height: number, tabBarHeight: number): DockDropZone {
   if (y <= tabBarHeight) return 'tabs'
   const px = x / Math.max(1, width)

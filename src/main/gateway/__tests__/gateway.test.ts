@@ -208,7 +208,9 @@ describe('Agent HTTP boundary', () => {
     const sender = { id: 901, once: () => {}, isDestroyed: () => false, send: () => {} } as unknown as WebContents
     const original = runs.get(first)!
     const req: RunRequest = { runId: 'desktop-conflict', sessionId: a.id, workspaceId: 'w1', depth: 0, input: [], mode: 'code', thinking: 'off', permissionMode: 'ask', webSearch: false, model: DEMO_ALIAS, skillIds: [] }
-    expect(() => startRun(req, { id: 901, kind: 'main', sender }, () => {})).toThrow('Session already has an active run')
+    // 桌面端撞上 HTTP 正在跑的会话时走 main 的「忙则入队」,不另起一个并行 run。
+    expect(startRun(req, { id: 901, kind: 'main', sender }, () => {}).started).toBe(false)
+    expect(runs.get('desktop-conflict')).toBeUndefined()
     expect(original.status).toBe('running')
     const invalid = await request('/v1/runs', { sessionId: a.id, text: 'x', parentRunId: first })
     expect(invalid.status).toBe(400)

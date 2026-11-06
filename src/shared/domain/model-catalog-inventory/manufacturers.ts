@@ -101,6 +101,17 @@ export const MODEL_MANUFACTURERS: readonly ModelManufacturer[] = [
     label: '上海人工智能实验室 InternLM',
     aliases: ['internlm', 'internvl'],
   },
+  // ── 视频厂商(本轮接入) ──
+  // ★ 这几个家族是**按模型品牌**分的,不是按谁能提供它。Veo 挂 google、
+  //   Kling 挂 kling、Wan 挂 qwen(阿里云),而聚合商(fal / Replicate 自己
+  //   也是家族)各自成一条 —— 同一个 veo 名字可以由原厂和聚合站同时提供,
+  //   绑定里存的是 providerId,品牌这里只用来归属。
+  { id: 'runway', label: 'Runway', aliases: ['runway', 'gen4', 'gen3'] },
+  { id: 'luma', label: 'Luma AI', aliases: ['luma', 'ray-', 'dream-machine'] },
+  { id: 'kling', label: '可灵 Kling', aliases: ['kling', 'klingai', '可灵'] },
+  { id: 'fal', label: 'fal.ai', aliases: ['fal-ai', 'fal'] },
+  { id: 'replicate', label: 'Replicate', aliases: ['replicate'] },
+  { id: 'siliconflow', label: '硅基流动 SiliconFlow', aliases: ['siliconflow', '硅基流动'] },
   { id: 'other', label: '其他厂商', aliases: [] },
 ]
 

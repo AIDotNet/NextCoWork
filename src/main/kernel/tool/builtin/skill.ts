@@ -24,7 +24,7 @@ import { z } from 'zod'
 import { SKILL_BODY_MAX } from '../../../../shared/domain/skill'
 import { toolFail, toolOk } from '../../../../shared/agent/tool'
 import { skillRegistry } from '../../skill/registry'
-import { store } from '../../../state/store'
+import { recordSkillTrigger } from '../skill-port'
 import { clampWithEllipsis, stripControlChars } from '../../text'
 import { untrustedBoundary } from '../../untrusted'
 import { defineTool } from '../define'
@@ -121,7 +121,8 @@ export const skillTool: ToolRegistration = defineTool({
       : '\n\nSource: client instruction snapshot. Client files and absolute client paths are not available on the server.' : ''
     // 正文在加载时已经消毒过一次;这里再来一次是因为「谁消的毒」不该由调用方记着
     const body = clampWithEllipsis(stripControlChars(hit.body), SKILL_BODY_MAX)
-    try { store.recordSkillTrigger(hit.id, ctx.workspaceId) } catch { /* telemetry must never break Skill */ }
+    // 遥测走注入端口,内核不碰 store —— 且**永不阻断**这次取用(见 `skill-port.ts`)。
+    try { recordSkillTrigger(hit.id, ctx.workspaceId) } catch { /* telemetry must never break Skill */ }
     const tools = hit.frontmatter.allowedTools
     /*
       ★ 只展示,不强制收窄。CC 自己的 `allowed-tools` 在运行时也不真的限制工具,

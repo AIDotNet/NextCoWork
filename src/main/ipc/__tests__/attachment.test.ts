@@ -38,13 +38,14 @@ import { closeDatabase, openDatabase } from '../../db'
 import * as repo from '../../db/repo'
 import { switchConfigProfile } from '../../db/config-profile'
 import { attachmentRoot, handleAttachmentRequest } from '../../net/attachment-protocol'
+import { ThumbnailCache } from '../../net/attachment-thumbnail'
 import { cancelWorkspaceUpload, completeWorkspaceUpload, listSessionAttachments, pickAttachments, prepareWorkspaceUpload, removeAttachment, uploadAttachment } from '../attachment'
 import { localEnvironment } from '../../environment/local'
 import { nodeHost } from '../../kernel/host'
-import { prepareRequestImages } from '../../kernel/upstream/images'
+import { imageUrlNote, prepareRequestImages } from '../../kernel/upstream/images'
 import { encodeUpstream } from '../../kernel/upstream/codec'
 import { REQUEST } from '../../kernel/upstream/__tests__/openai-fixtures'
-import { userMessage } from '../../../shared/agent/message'
+import { toolResultMessage, userMessage } from '../../../shared/agent/message'
 import { DEFAULT_WORKSPACE_SETTINGS } from '../../../shared/domain/workspace'
 import type { WindowContext } from '../../window/registry'
 
@@ -147,10 +148,49 @@ describe('uploadAttachment', () => {
     const prepared = await prepareRequestImages(request, host, { workspaceId: 'workspace', sessionId }, new AbortController().signal)
     for (const protocol of ['anthropic', 'openai-chat', 'openai-responses'] as const) {
       const encoded = encodeUpstream(protocol, prepared, 'vision-model', 'test-key', { userId: 'workspace', cacheTtl: '5m' })
-      expect(JSON.stringify(encoded.body)).toContain(png.toString('base64'))
-      expect(JSON.stringify(encoded.body)).not.toContain('ncw://')
+      const body = JSON.stringify(encoded.body)
+      expect(body).toContain(png.toString('base64'))
+      // 地址只以图后那行文本出现(让 Agent 能点名这张图);图像块本身必须是字节
+      const note = imageUrlNote(attachment!.url)
+      expect(body).toContain(note)
+      expect(body.split(note).join('')).not.toContain('ncw://')
     }
     expect(request).toEqual(before)
+  })
+
+  /*
+    需求:卡片里的图走 `?preview=thumb` 拿缩略档,原图校验一步不少;缩不了就回原图。
+  */
+  it('serves the generated thumbnail for ?preview=thumb and the original otherwise', async () => {
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 10, 0, 0, 0, 5, 160, 0, 0])
+    const uploaded = uploadAttachment({ scope: 'session', ownerId: 'S1', displayName: 'shot.png', mime: 'image/png', bytes: png })
+    const thumbDir = join(userDataDir, 'thumbs')
+    const render = vi.fn(() => new Uint8Array([7, 7, 7]))
+    const thumbs = new ThumbnailCache(() => thumbDir, { render })
+
+    const thumb = await handleAttachmentRequest(new Request(`${uploaded.url}?preview=thumb`), attachmentRoot(), thumbs)
+    expect(thumb.status).toBe(200)
+    expect(thumb.headers.get('content-type')).toBe('image/png')
+    expect([...new Uint8Array(await thumb.arrayBuffer())]).toEqual([7, 7, 7])
+    expect(render).toHaveBeenCalledTimes(1)
+
+    const original = await handleAttachmentRequest(new Request(uploaded.url), attachmentRoot(), thumbs)
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(png)
+
+    // 解码器说缩不了(另一个空缓存目录):回原图
+    const failing = new ThumbnailCache(() => join(userDataDir, 'thumbs-empty'), { render: () => null })
+    const fallback = await handleAttachmentRequest(new Request(`${uploaded.url}?preview=thumb`), attachmentRoot(), failing)
+    expect(new Uint8Array(await fallback.arrayBuffer())).toEqual(png)
+  })
+
+  it('rejects unknown preview values and still refuses escaping paths with a preview', async () => {
+    const thumbs = new ThumbnailCache(() => join(userDataDir, 'thumbs'), { render: vi.fn(() => new Uint8Array([1])) })
+    const uploaded = uploadAttachment({ scope: 'session', ownerId: 'S1', displayName: 'shot.png', mime: 'image/png', bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0]) })
+
+    expect((await handleAttachmentRequest(new Request(`${uploaded.url}?preview=full`), attachmentRoot(), thumbs)).status).toBe(400)
+    expect((await handleAttachmentRequest(new Request(`${uploaded.url}?preview=thumb&preview=thumb`), attachmentRoot(), thumbs)).status).toBe(400)
+    expect((await handleAttachmentRequest(new Request('ncw://attachments/sessions/%2e%2e/%2e%2e/x.png?preview=thumb'), attachmentRoot(), thumbs)).status).toBe(403)
+    expect((await handleAttachmentRequest(new Request('ncw://attachments/sessions/S1/MISSING.png?preview=thumb'), attachmentRoot(), thumbs)).status).toBe(404)
   })
 
   it('uses the image bytes rather than a misleading MIME label for storage and restored metadata', () => {
@@ -310,6 +350,30 @@ describe('listSessionAttachments', () => {
     repo.commitAttachmentsByPath([row?.path as string], 'M1', 'S1')
     expect(listSessionAttachments({ sessionId: 'S1' })).toHaveLength(0)
     expect(repo.getAttachmentRow(a.id)?.status).toBe('committed')
+  })
+
+  /*
+    需求:生成图落成本会话 draft 附件,地址只在 tool_result 的 output.images 里。
+    不随消息转 committed 的话,7 天后被当过期草稿回收,转录里那张图从此是裂图。
+  */
+  it('tool_result 里的本会话 ncw 图随消息一起转 committed,内联图与别的会话的图不受影响', () => {
+    repo.ensureSession({ id: 'S1', workspaceId: 'W1', rootPathAtCreation: '/tmp' })
+    const mine = uploadAttachment({ scope: 'session', ownerId: 'S1', displayName: 'generated.png', mime: 'image/png', bytes: bytesOf('G') })
+    const other = uploadAttachment({ scope: 'session', ownerId: 'S2', displayName: 'generated.png', mime: 'image/png', bytes: bytesOf('H') })
+    const message = toolResultMessage('M2', [{
+      type: 'tool_result', callId: 'c1', isError: false,
+      output: { content: 'Generated', images: [
+        { mime: 'image/png', dataRef: mine.url },
+        { mime: 'image/png', dataRef: 'data:image/png;base64,AAAA' },
+        { mime: 'image/png', dataRef: other.url }
+      ] }
+    }], Date.now())
+    repo.commitMessage('S1', message)
+    // 重放同一条消息(编辑重跑 / 恢复)必须幂等
+    repo.commitMessage('S1', message)
+    expect(repo.getAttachmentRow(mine.id)?.status).toBe('committed')
+    expect(repo.getAttachmentRow(other.id)?.status).toBe('draft')
+    expect(listSessionAttachments({ sessionId: 'S1' })).toHaveLength(0)
   })
 })
 

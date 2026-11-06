@@ -26,7 +26,7 @@ vi.mock('../../services/app', () => ({
   persistOuterTabs: vi.fn(),
   // 未发出的输入落盘。null = 没有存档,让每个用例从空白 store 起步
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: vi.fn()
+  persistSessionDraft: vi.fn()
 }))
 
 vi.mock('../../services/agent', () => ({

@@ -56,8 +56,9 @@ import { DEFAULT_SETTINGS, mergeSettings, type ShellPreference, type StorageStat
 import { mcpSecretKind, mcpSecretRef } from '../../shared/domain/mcp'
 import { searchSecretRef } from '../../shared/domain/search'
 import { providerCredentialRef } from '../../shared/domain/provider'
+import { providerAccountCredentialRef } from '../../shared/domain/provider-account'
 import { DRAFT_ATTACHMENT_TTL_MS } from '../../shared/domain/attachment'
-import { databaseDirectory, databaseFilePath, databaseSchemaVersion, checkpointDatabase, closeDatabase, openDatabase, txAsync, vacuumDatabase } from '../db'
+import { databaseDirectory, databaseFilePath, checkpointDatabase, closeDatabase, openDatabase, txAsync, vacuumDatabase } from '../db'
 import { MIGRATIONS } from '../db/schema'
 import { PROFILE_DIRECTORY_SEGMENT } from '../db/config-profile'
 import {
@@ -69,17 +70,21 @@ import * as repo from '../db/repo'
 import { getHost } from '../runtime'
 import { migrateLegacyCredentials } from '../host'
 import { pauseConfigSyncForDatabaseReplacement } from './config-sync'
+import { sessionRuntime } from './agent'
 import { resumeStoredAccountAfterDatabaseReplacement } from './client-auth'
 import { store } from '../state/store'
 import { windows } from '../window/registry'
 import { PROXY_PASSWORD_REF } from '../net/proxy'
+import { THUMBNAIL_CACHE_DIR } from '../net/attachment-thumbnail'
 import { IpcError } from './errors'
+import { exportProviderAccounts, mergeProviderAccounts } from './provider-accounts-transfer'
 import { isWithin, recordPendingDelete } from './pending-delete'
 import { runs } from '../kernel/run-registry'
 import { jobStatusFor } from '../imports/service'
 import { store as stateStore } from '../state/store'
 import { GLOBAL_SETTINGS_FILENAME, clearGlobalSettingsCache } from '../kernel/local-settings'
 import { CREDENTIAL_KEY_FILENAME, isProgramEncrypted } from '../secrets/credential-crypto'
+import { runBackupArchive, runBackupSnapshot } from '../db/backup-worker'
 
 /**
  * 破坏性操作与导入作业**互斥**。
@@ -126,6 +131,8 @@ const ELECTRON_PROFILE_PATHS = CHROMIUM_PROFILE_ENTRIES
  */
 const MANAGED_DATA_PATHS = [
   ATTACHMENTS_DIR,
+  // 图片缩略档的派生缓存(`net/attachment-thumbnail.ts`)。不进备份,但「删除全部数据」要带走
+  THUMBNAIL_CACHE_DIR,
   'skills',
   'agents',
   // ★ 全局斜杠命令。漏了它的话「删除全部数据并退出」之后,用户自己写的 `/xxx`
@@ -133,6 +140,8 @@ const MANAGED_DATA_PATHS = [
   'commands',
   'modes',
   'plugins',
+  // 文档引擎的私有副本与 helper 临时目录也属于应用数据，清理时不能留下用户文档副本。
+  'document-engine',
   'workspaces',
   // credentials 表的 NCK1 密文离了这 32 字节就永远解不开。
   CREDENTIAL_KEY_FILENAME,
@@ -464,8 +473,6 @@ function atomicWrite(path: string, bytes: Uint8Array): void {
 
 // ── minimal ZIP writer/reader ──────────────────────────────────────────────
 
-interface ZipEntry { name: string; data: Buffer }
-
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
   for (let n = 0; n < 256; n++) {
@@ -480,64 +487,6 @@ function crc32(data: Uint8Array): number {
   let c = 0xffffffff
   for (const b of data) c = CRC_TABLE[(c ^ b) & 0xff]! ^ (c >>> 8)
   return (c ^ 0xffffffff) >>> 0
-}
-
-function makeZip(entries: readonly ZipEntry[]): Buffer {
-  const locals: Buffer[] = []
-  const central: Buffer[] = []
-  let offset = 0
-  for (const entry of entries) {
-    const name = Buffer.from(entry.name, 'utf8')
-    const data = entry.data
-    const local = Buffer.alloc(30 + name.length + data.length)
-    local.writeUInt32LE(0x04034b50, 0)
-    local.writeUInt16LE(20, 4)
-    local.writeUInt16LE(0, 6)
-    local.writeUInt16LE(0, 8) // store
-    local.writeUInt16LE(0, 10)
-    local.writeUInt16LE(0, 12)
-    local.writeUInt32LE(crc32(data), 14)
-    local.writeUInt32LE(data.length, 18)
-    local.writeUInt32LE(data.length, 22)
-    local.writeUInt16LE(name.length, 26)
-    local.writeUInt16LE(0, 28)
-    name.copy(local, 30)
-    data.copy(local, 30 + name.length)
-    locals.push(local)
-
-    const c = Buffer.alloc(46 + name.length)
-    c.writeUInt32LE(0x02014b50, 0)
-    c.writeUInt16LE(20, 4)
-    c.writeUInt16LE(20, 6)
-    c.writeUInt16LE(0, 8)
-    c.writeUInt16LE(0, 10)
-    c.writeUInt16LE(0, 12)
-    c.writeUInt16LE(0, 14)
-    c.writeUInt32LE(crc32(data), 16)
-    c.writeUInt32LE(data.length, 20)
-    c.writeUInt32LE(data.length, 24)
-    c.writeUInt16LE(name.length, 28)
-    c.writeUInt16LE(0, 30)
-    c.writeUInt16LE(0, 32)
-    c.writeUInt16LE(0, 34)
-    c.writeUInt16LE(0, 36)
-    c.writeUInt32LE(0, 38)
-    c.writeUInt32LE(offset, 42)
-    name.copy(c, 46)
-    central.push(c)
-    offset += local.length
-  }
-  const centralBytes = Buffer.concat(central)
-  const end = Buffer.alloc(22)
-  end.writeUInt32LE(0x06054b50, 0)
-  end.writeUInt16LE(0, 4) // disk number
-  end.writeUInt16LE(0, 6) // central-directory disk
-  end.writeUInt16LE(entries.length, 8)
-  end.writeUInt16LE(entries.length, 10)
-  end.writeUInt32LE(centralBytes.length, 12)
-  end.writeUInt32LE(offset, 16)
-  end.writeUInt16LE(0, 20)
-  return Buffer.concat([...locals, centralBytes, end])
 }
 
 /**
@@ -705,6 +654,15 @@ function readZip(bytes: Buffer): Map<string, Buffer> {
 function credentialRefs(): string[] {
   const refs = new Set<string>()
   for (const p of store.listProviders()) refs.add(p.credentialRef)
+  /*
+    ★★ 账号密文是**另一族 ref**(`provider:<id>#<accountId>`,schema 第 24 条)。
+    漏在这里的表现分两种,都很难查:导出包里多账号的登录态整个缺失(换台机器后
+    只剩当前那一个),以及导入回滚时账号密文不在快照里 —— 一次失败的导入会把
+    它们留在被改写之后的状态上。
+  */
+  for (const account of store.listProviderAccounts()) {
+    refs.add(providerAccountCredentialRef(account.providerId, account.id))
+  }
   for (const cfg of store.listMcpServers()) refs.add(mcpSecretRef(cfg.id, mcpSecretKind(cfg)))
   for (const c of store.listSearchProviders()) refs.add(searchSecretRef(c.id))
   refs.add(PROXY_PASSWORD_REF)
@@ -748,6 +706,25 @@ function credentialImportPlan(data: DataExport): CredentialImportPlan {
         ? null
         : (local?.credentialRef ?? providerCredentialRef(incoming.id))
     )
+  }
+
+  /*
+    账号密文。**ref 一律在本地重新派生**,绝不接受导入文件里写的那个 ——
+    和上面 provider 那条是同一条规矩(`credentialImportPlan` 的文件头英文注释:
+    一个档案永远不许指定本地的凭证指针)。派生用的是
+    `providerId + accountId`,两者都来自导入记录本身,所以这条映射是自洽的。
+
+    ★ 账号的去留跟着**它所属的 provider** 走:provider 那条被判 `skip`
+    (本地那份更新),它名下的账号密文也不该被覆盖 —— 否则会出现
+    「provider 配置是本地的、登录态是档案里的」这种半新半旧的组合。
+  */
+  const incomingAccounts = data.providerAccounts ?? []
+  for (const account of incomingAccounts) {
+    const source = providerAccountCredentialRef(account.providerId, account.id)
+    const provider = data.providers.find((item) => item.id === account.providerId)
+    const local = localProviders.find((item) => item.id === account.providerId)
+    const decision = provider === undefined ? 'skip' : dataMergeDecision(local, provider)
+    add(source, decision === 'skip' ? null : source)
   }
 
   const localMcp = store.listMcpServers()
@@ -843,7 +820,17 @@ function decryptCredentials(block: EncryptedCredentials, password: string): Reco
 
 async function createExport(includeEncryptedKeys: boolean, password?: string): Promise<DataExport> {
   const base = repo.exportDataSnapshot()
-  const data: DataExport = { ...base }
+  /*
+    ★ 账号**元数据**在这里补上(密文走下面那条凭证通道)。不在
+    `repo.exportDataSnapshot` 里做,是为了不让 `db/repo.ts` 反向依赖
+    `db/provider-accounts.ts` —— 那会是一个循环 import,见
+    `ipc/provider-accounts-transfer.ts` 的文件头。
+  */
+  const providerAccounts = exportProviderAccounts()
+  const data: DataExport = {
+    ...base,
+    ...(providerAccounts.length === 0 ? {} : { providerAccounts })
+  }
   if (includeEncryptedKeys) {
     if (password === undefined || password.length < 8) throw new IpcError('auth', '加密导出密码至少需要 8 个字符')
     if (!getHost().secrets.available()) throw new IpcError('auth', '凭证加密存储不可用，无法导出加密密钥')
@@ -995,6 +982,17 @@ export function getStats(): StorageStats {
   return repo.storageStats(dataDirectory(), attachmentDirectory(), readBackupStatus().lastBackupAt)
 }
 
+/**
+ * UI 的 `storage:getStats` 走这条。
+ *
+ * ★ 只有一件差别:附件目录的字节数用异步、有界的遍历,目录很大时让出事件
+ *   循环;库/WAL/会话/消息口径与 `getStats` 逐字相同。同步的 `getStats` 保留
+ *   给 `vacuum` 之类已经在同步路径里的调用点。
+ */
+export function getStatsAsync(): Promise<StorageStats> {
+  return repo.getStatsAsync(dataDirectory(), attachmentDirectory(), readBackupStatus().lastBackupAt)
+}
+
 export async function openDataDirectory(): Promise<void> {
   const path = dataDirectory()
   const message = await shell.openPath(path)
@@ -1047,34 +1045,22 @@ export async function importPreview(ownerId = 0): Promise<ImportPreview | null> 
 export async function importApply(req: { password?: string }, ownerId = 0): Promise<ImportApplyResult> {
   const data = pendingImports.get(ownerId)
   if (data === undefined) throw new IpcError('unknown', '没有待确认的导入预览')
-  const credentialPlan = credentialImportPlan(data)
-  let credentialValues: Record<string, string> = {}
+  let sourceCredentials: Record<string, string> = {}
   if (data.encryptedCredentials !== undefined && typeof data.encryptedCredentials !== 'boolean') {
     if (req.password === undefined) throw new IpcError('auth', '该导出包含加密密钥，需要输入密码')
     // 先验证密码，再开始事务；无效密码不会修改任何记录。
-    credentialValues = mapImportedCredentials(
-      credentialPlan,
-      decryptCredentials(data.encryptedCredentials, req.password)
-    )
+    sourceCredentials = decryptCredentials(data.encryptedCredentials, req.password)
   }
-  const credentialRollback = await snapshotCredentialRollback([
-    ...Object.keys(credentialValues),
-    ...credentialPlan.removals
-  ])
-  // 自定义/测试 host 的凭证可能不在数据库里。先保存数据库快照,任何一步失败
-  // 都恢复整库与 host 状态,保证「导入失败 = 现有数据完全不变」。
-  const dbPath = databaseFilePath()
-  let safety: string | null = null
-  if (dbPath !== null && existsSync(dbPath)) {
-    checkpointDatabase()
-    safety = `${dbPath}.import-safety-${Date.now()}`
-    copyFileSync(dbPath, safety)
-  }
-  try {
-    // 生产 Electron host 最终写回 credentials 表；如果任一步失败，数据库和
-    // 凭证行一起回滚。异步 test host 仍由外层 rollback snapshot 兜底。
-    const result = await txAsync(async () => {
+  const applied = await txAsync(async () => {
+    const credentialPlan = credentialImportPlan(data)
+    const credentialValues = mapImportedCredentials(credentialPlan, sourceCredentials)
+    const credentialRollback = await snapshotCredentialRollback([
+      ...Object.keys(credentialValues), ...credentialPlan.removals
+    ])
+    try {
       const merged = repo.mergeDataExport(data)
+      // 账号依赖已经写好的 provider，且与配置和数据库凭证一起回滚。
+      mergeProviderAccounts(data)
       const secrets = getHost().secrets
       for (const ref of credentialPlan.removals) {
         if (secrets.remove !== undefined) await secrets.remove(ref)
@@ -1083,29 +1069,19 @@ export async function importApply(req: { password?: string }, ownerId = 0): Prom
       for (const [ref, value] of Object.entries(credentialValues)) {
         await secrets.set(ref, value)
       }
-      return merged
-    })
-    pendingImports.delete(ownerId)
-    windows.emitToAll('settings:changed', store.getSettings())
-    windows.emitToAll('workspace:changed', { workspaces: store.listWorkspaces() })
-    windows.emitToAll('sessions:changed', { kind: 'reset' })
-    return result
-  } catch (err) {
-    await restoreCredentialRollback(credentialRollback)
-    if (safety !== null && dbPath !== null) {
-      try {
-        closeDatabase()
-        atomicWrite(dbPath, readFileSync(safety))
-        for (const suffix of ['-wal', '-shm']) { try { unlinkSync(`${dbPath}${suffix}`) } catch { /* ignore */ } }
-        openDatabase(dirname(dbPath))
-      } catch (rollbackError) {
-        console.error('[storage] 导入回滚失败', rollbackError)
-      }
+      return { result: merged, settings: store.getSettings(), workspaces: store.listWorkspaces() }
+    } catch (error) {
+      // 宿主内存凭证也在同一所有者内恢复；随后 txAsync 回滚 SQL 再释放队列。
+      // 不能恢复整库旧快照：它会抹掉已经独立提交的其它事务。
+      await restoreCredentialRollback(credentialRollback)
+      throw error
     }
-    throw err
-  } finally {
-    if (safety !== null) { try { unlinkSync(safety) } catch { /* ignore */ } }
-  }
+  })
+  pendingImports.delete(ownerId)
+  windows.emitToAll('settings:changed', applied.settings)
+  windows.emitToAll('workspace:changed', { workspaces: applied.workspaces })
+  windows.emitToAll('sessions:changed', { kind: 'reset' })
+  return applied.result
 }
 
 export async function chooseBackupDirectory(): Promise<string | null> {
@@ -1159,52 +1135,81 @@ function ensureBackupDirectory(): string {
   return normalized
 }
 
-function dbSnapshot(): Buffer {
-  checkpointDatabase()
-  const path = databaseFilePath()
-  if (path === null || !existsSync(path)) throw new IpcError('unknown', '数据库文件不可用')
-  return readFileSync(path)
-}
-
+/**
+ * 造一份备份。
+ *
+ * ## 主进程在这里只做「接线」
+ *
+ * 整库读进内存、整库散列、把归档拼成一个 Buffer —— 这三件按库大小线性的重活
+ * 全部交给 `db/backup-worker.ts` 的 worker 线程。它们的产物要么直接落盘
+ * (归档)、要么是一个小结果(散列、字节数、计数),没有一样需要经过主进程的堆。
+ *
+ * ## 清单数字必须和归档里的那份库同源
+ *
+ * 顺序是:**先**用 SQLite 的异步备份 API 把当前库复制成一个私有快照,**再**从
+ * 那份快照里读行数、settings 行、`user_version`。反过来先读活库、再复制的话,
+ * `await` 期间账户切换或新消息写入就会让清单计数和库内容对不上 —— 而恢复端的
+ * `validateBackupDatabase` 是拿裸 `COUNT(*)` 和 `settings.json` 逐项对账的,
+ * 表现是**每一个新建的备份都恢复不了**。
+ *
+ * ★ 清单里**不再**枚举全库会话(那要走一遍 `getHistory`,按会话数乘出去):
+ *   计数就是数据库的 `COUNT(*)`,和 `validateBackupDatabase` 的口径逐字一致。
+ */
 export async function createBackup(req: { manual?: boolean } = { manual: true }): Promise<BackupStatus> {
   if (backupRunning) return toBackupStatus()
   backupRunning = true
+  let tempDir: string | null = null
   try {
+    assertNoImportJob('备份')
     const dir = ensureBackupDirectory()
-    const database = dbSnapshot()
-    const details = repo.listAllSessionDetails()
-    const keyPath = join(dataDirectory(), CREDENTIAL_KEY_FILENAME)
+    const dbPath = databaseFilePath()
+    if (dbPath === null) throw new IpcError('unknown', '备份需要文件数据库')
+    // 在线 backup 会包含 WAL；不要在主线程同步 checkpoint 整库。
+    if (!existsSync(dbPath)) throw new IpcError('unknown', '数据库文件不可用')
+    const credentialKeyPath = join(dataDirectory(), CREDENTIAL_KEY_FILENAME)
     let credentialKey: Buffer | null = null
-    if (existsSync(keyPath)) {
-      const keyStat = lstatSync(keyPath)
+    if (existsSync(credentialKeyPath)) {
+      const keyStat = lstatSync(credentialKeyPath)
       if (!keyStat.isFile() || keyStat.isSymbolicLink()) {
         throw new IpcError('unknown', '凭证主密钥路径不是普通文件，无法创建可恢复的备份')
       }
-      chmodSync(keyPath, 0o600)
-      credentialKey = readFileSync(keyPath)
+      chmodSync(credentialKeyPath, 0o600)
+      credentialKey = readFileSync(credentialKeyPath)
     }
     if (credentialKey !== null && credentialKey.length !== 32) {
       throw new IpcError('unknown', '凭证主密钥文件损坏，无法创建可恢复的备份')
     }
-    const credentialRows = repo.listAllCredentialBlobs()
-    const hasProgramCredentials = credentialRows.some((row) => isProgramEncrypted(row.blob))
-    if (hasProgramCredentials && credentialKey === null) {
+
+    // 私有临时目录:快照只在对用户可见的目标路径上出现,失败时整棵删掉。
+    tempDir = mkdtempSync(join(tmpdir(), 'nextcowork-backup-'))
+    const snapshotPath = join(tempDir, 'database.sqlite')
+    const snapshot = await runBackupSnapshot({ sourcePath: dbPath, snapshotPath })
+
+    if (snapshot.hasProgramCredentials && credentialKey === null) {
       throw new IpcError('unknown', '凭证主密钥文件缺失，无法创建可恢复的备份')
     }
+    /*
+      从**快照里**读设置,不读活库的 `store.getSettings()`:恢复端拿归档里的
+      settings.json 和 database.sqlite 里那一行对账,两份必须来自同一个时刻。
+      缺行时按默认值,和 `validateBackupDatabase` 的兜底一致。
+    */
+    const settings = snapshot.settingsJson === ''
+      ? jsonBytes(DEFAULT_SETTINGS)
+      : Buffer.from(snapshot.settingsJson, 'utf8')
     const manifest: BackupManifest = {
       format: 'nextcowork-backup',
       formatVersion: BACKUP_FORMAT_VERSION,
       appVersion: app.getVersion(),
       createdAt: Date.now(),
-      schemaVersion: databaseSchemaVersion(),
-      databaseSha256: sha256(database),
-      sessionCount: details.length,
-      messageCount: details.reduce((n, x) => n + x.messages.length, 0),
+      // 用快照自己的 user_version,不是当前连接的:校验端读的是归档里这个文件头。
+      schemaVersion: snapshot.schemaVersion,
+      databaseSha256: snapshot.databaseSha256,
+      sessionCount: snapshot.sessionCount,
+      messageCount: snapshot.messageCount,
       // 数据库快照含**全部账户作用域**的密文,这里也必须按整表计数。
-      encryptedCredentials: credentialRows.length > 0,
+      encryptedCredentials: snapshot.encryptedCredentials,
       ...(credentialKey === null ? {} : { credentialKeySha256: sha256(credentialKey) })
     }
-    const settings = jsonBytes(store.getSettings())
     /*
       全局 `settings.json`（目前只有 hooks）。
 
@@ -1217,13 +1222,6 @@ export async function createBackup(req: { manual?: boolean } = { manual: true })
       恢复端也按「没有钩子」处理。
     */
     const globalSettings = readGlobalSettingsBytes()
-    const archive = makeZip([
-      { name: 'manifest.json', data: jsonBytes(manifest) },
-      { name: 'database.sqlite', data: database },
-      { name: 'settings.json', data: settings },
-      ...(credentialKey === null ? [] : [{ name: CREDENTIAL_KEY_FILENAME, data: credentialKey }]),
-      ...(globalSettings === null ? [] : [{ name: 'global-settings.json', data: globalSettings }])
-    ])
     const baseName = req.manual === true ? `nextcowork-${new Date().toISOString().replaceAll(':', '-')}` : 'nextcowork-auto'
     let name = `${baseName}${BACKUP_EXT}`
     if (req.manual === true) {
@@ -1231,7 +1229,20 @@ export async function createBackup(req: { manual?: boolean } = { manual: true })
       while (existsSync(join(dir, name))) name = `${baseName}-${String(n++)}${BACKUP_EXT}`
     }
     const target = join(dir, name)
-    atomicWrite(target, archive)
+    // worker 在 target 同目录写 `.tmp` 再 rename —— 跨文件系统 rename 会 EXDEV,
+    // 而同一目录内一定是原子的。归档因此从不出现在目标名字上的一半状态。
+    await runBackupArchive({
+      snapshotPath,
+      archivePath: target,
+      entries: [
+        { name: 'manifest.json', data: jsonBytes(manifest) },
+        { name: 'database.sqlite', fromPath: snapshotPath },
+        { name: 'settings.json', data: settings },
+        ...(credentialKey === null ? [] : [{ name: CREDENTIAL_KEY_FILENAME, data: credentialKey }]),
+        ...(globalSettings === null ? [] : [{ name: 'global-settings.json', data: globalSettings }])
+      ],
+      expected: { sessionCount: snapshot.sessionCount, messageCount: snapshot.messageCount }
+    })
     if (req.manual !== true) {
       // 自动备份只管理自己的固定文件；手动备份永不被清理。
       for (const entry of readdirSync(dir)) {
@@ -1246,6 +1257,9 @@ export async function createBackup(req: { manual?: boolean } = { manual: true })
     writeBackupStatus({ ...old, lastError: message })
     throw err
   } finally {
+    if (tempDir !== null) {
+      try { rmSync(tempDir, { recursive: true, force: true }) } catch { /* 临时快照删不掉不影响结果 */ }
+    }
     backupRunning = false
   }
 }
@@ -1482,7 +1496,7 @@ export async function restoreBackup(req: { confirm?: boolean }, ownerId = 0): Pr
     pendingRestores.set(ownerId, { path, preview })
     return { restored: false, preview }
   }
-  if (runs.activeRunIds().length > 0) throw new IpcError('unknown', '有运行中的 Agent，请先停止任务后再恢复')
+  if (runs.activeRunIds().length > 0 || runs.hasSessionOperations()) throw new IpcError('unknown', '有运行中的 Agent 或历史操作，请等待完成后再恢复')
   assertNoImportJob('恢复')
   const target = pendingRestores.get(ownerId)
   if (target === undefined) throw new IpcError('unknown', '没有待确认的恢复预览')
@@ -1495,6 +1509,8 @@ export async function restoreBackup(req: { confirm?: boolean }, ownerId = 0): Pr
   const localBackupState = captureLocalBackupState()
   // 先停并等同步退出。否则它可能在关库后触发,或把恢复前账户的响应写进恢复后的库。
   await pauseConfigSyncForDatabaseReplacement()
+  // 会话运行时缓存的草稿/队列属于旧库:丢掉而不是写回,恢复后的库按需重读
+  sessionRuntime.reset()
   checkpointDatabase()
   copyFileSync(dbPath, safety)
   try {
@@ -1988,7 +2004,7 @@ export function cleanupPreview(req: { kind: 'attachments' | 'age' | 'history' | 
 }
 
 export function cleanupAttachments(): CleanupResult {
-  if (runs.activeRunIds().length > 0) throw new IpcError('unknown', '有运行中的 Agent，请先停止任务后再清理')
+  if (runs.activeRunIds().length > 0 || runs.hasSessionOperations()) throw new IpcError('unknown', '有运行中的 Agent 或历史操作，请等待完成后再清理')
   assertNoImportJob('清理')
 
   // ★ 预览与执行走同一次扫描，不是两次 —— 两次之间文件可能变化，
@@ -2029,7 +2045,7 @@ export function cleanupAttachments(): CleanupResult {
 }
 
 export function cleanupByAge(req: { age: CleanupAge }): CleanupResult {
-  if (runs.activeRunIds().length > 0) throw new IpcError('unknown', '有运行中的 Agent，请先停止任务后再清理')
+  if (runs.activeRunIds().length > 0 || runs.hasSessionOperations()) throw new IpcError('unknown', '有运行中的 Agent 或历史操作，请等待完成后再清理')
   assertNoImportJob('清理')
   const cutoff = cutoffForAge(Date.now(), req.age)
   const ids = repo.sessionIdsBefore(cutoff)
@@ -2045,7 +2061,7 @@ export function cleanupByAge(req: { age: CleanupAge }): CleanupResult {
 }
 
 export function clearHistory(): CleanupResult {
-  if (runs.activeRunIds().length > 0) throw new IpcError('unknown', '有运行中的 Agent，请先停止任务后再清理')
+  if (runs.activeRunIds().length > 0 || runs.hasSessionOperations()) throw new IpcError('unknown', '有运行中的 Agent 或历史操作，请等待完成后再清理')
   assertNoImportJob('清理')
   const rows = repo.allSessionAttachmentRows()
   const preview = withActualAttachmentBytes(repo.cleanupPreview('history'), rows)
@@ -2061,7 +2077,7 @@ export function clearHistory(): CleanupResult {
 /** 删除本应用管理的目录/文件；不会递归删除数据根目录本身。 */
 export function clearLocalData(req: { confirm: boolean }): { deleted: boolean } {
   if (!req.confirm) throw new IpcError('unknown', '必须明确确认删除本机数据')
-  if (runs.activeRunIds().length > 0) throw new IpcError('unknown', '有运行中的 Agent，请先停止任务后再删除')
+  if (runs.activeRunIds().length > 0 || runs.hasSessionOperations()) throw new IpcError('unknown', '有运行中的 Agent 或历史操作，请等待完成后再删除')
   assertNoImportJob('删除')
   const dataRoot = dataDirectory()
   /*

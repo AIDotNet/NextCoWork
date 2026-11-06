@@ -36,6 +36,29 @@ export const THINKING_LEVELS: readonly ThinkingLevel[] = [
   'off'
 ]
 
+/**
+ * 思考强度的**有序**序列,从弱到强。
+ *
+ * 需求:旁路请求(压缩 / 目标判定 / 权限审核 / 会话标题)在「想要的档位这个模型不支持」时
+ * 要降到**最近的可用档**,而不是让整次请求失败。没有这条序就只能落回 `'auto'` ——
+ * 那等于把用户选的强度静默换成模型默认值。落点见 `domain/model-runtime.ts` 的
+ * `auxiliaryThinkingLevel`。
+ *
+ * ★ 和 `THINKING_LEVELS` **不是一回事,不要合并**:那一条是下拉列表的排序
+ * (`'auto'` 在首位因为它是缺省项,`'off'` 在末位因为它是「反向」的那一个),
+ * 拿它的下标比大小会得出「off 比 max 还强」。这里 `'auto'` **故意不在轴上** ——
+ * 它的含义是「模型自己决定」,没有强度可比。
+ */
+export const THINKING_STRENGTH: readonly ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'higher',
+  'max'
+]
+
 export const THINKING_LEVEL_LABEL: Record<ThinkingLevel, string> = {
   auto: '自动',
   minimal: '极低',
@@ -169,6 +192,13 @@ export interface RunRequest {
   agentType?: string
   /** Approved Markdown plan file injected by the main process for an execution run. */
   planExecution?: PlanExecutionRef
+  /**
+   * 对话里 widget 经 `host.setContext()` 发布的状态摘要,随这条消息交给模型一次
+   * (进系统提醒尾块,不进转录、不显示在气泡里)。用户在输入框上方看得见、能移除。
+   *
+   * ★ 内容是模型写的 widget 产出的,在 `context-assembler.ts` 里按**不可信材料**包起来。
+   */
+  widgetContext?: Array<{ title: string; text: string }>
 }
 
 /**

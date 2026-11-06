@@ -6,7 +6,6 @@
  *   一轮改十个文件、每个几十 KB 的话,卡片一挂就是几百 KB 过 IPC。全文只在
  *   用户真的点开某个文件看 diff 时,按 `review:getFileDiff` 单文件取。
  */
-
 export type ChangeKind = 'created' | 'modified' | 'deleted'
 export type ChangeSetState = 'applied' | 'reverted'
 

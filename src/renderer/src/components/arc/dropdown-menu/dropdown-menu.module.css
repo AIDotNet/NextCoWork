@@ -1,0 +1,40 @@
+.trigger { display: inline-flex; max-width: 100%; min-height: var(--control-height-sm); align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); font-weight: 500; cursor: pointer; transition: background-color var(--duration-instant) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .trigger:hover { background: color-mix(in srgb, var(--surface), var(--foreground) 4%); } }
+/* The trigger anchors the menu, so press feedback stays in color. A scaled rect would be measured on pointerdown and shift the menu. */
+.trigger[data-state="open"] { background: color-mix(in srgb, var(--surface), var(--foreground) 8%); }
+.trigger:active { background: color-mix(in srgb, var(--surface), var(--foreground) 10%); }
+.item:focus-visible { outline: none; }
+.triggerIcon { display: inline-flex; flex: none; color: var(--text-secondary); }
+.label { position: relative; display: inline-flex; min-width: 0; flex: 0 1 auto; overflow-x: clip; }
+.labelMeasure { position: absolute; top: 0; left: 0; visibility: hidden; white-space: nowrap; pointer-events: none; }
+.labelText { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chevron { flex: none; color: var(--text-muted); transition: transform var(--duration-spring) var(--ease-spring), color var(--duration-fast) var(--ease-standard); }
+.trigger[data-state="open"] .chevron { transform: rotate(180deg); }
+/* The menu grows from the trigger edge: offset toward the trigger, scale from the Radix origin, fade quickly.
+   Transitions instead of keyframes, so a close that interrupts the open (or a reopen during the close) reverses from where it is. */
+.menu { --menu-x: 0px; --menu-y: -5px; position: relative; z-index: 60; min-width: min(12rem, var(--radix-dropdown-menu-content-available-width)); max-width: var(--radix-dropdown-menu-content-available-width); padding: 5px; border: 0; border-radius: 10px; background: var(--material-menu); -webkit-backdrop-filter: var(--material-blur); backdrop-filter: var(--material-blur); box-shadow: var(--shadow-floating); transform-origin: var(--radix-dropdown-menu-content-transform-origin); transition: opacity var(--duration-fast) var(--ease-enter), transform var(--duration-spring) var(--ease-spring); }
+.menu[data-side="top"] { --menu-y: 5px; }
+.menu[data-side="left"] { --menu-x: 5px; --menu-y: 0px; }
+.menu[data-side="right"] { --menu-x: -5px; --menu-y: 0px; }
+@starting-style {
+  .menu[data-state="open"] { opacity: 0; transform: translate(var(--menu-x), var(--menu-y)) scale(.97); }
+  .menu[data-state="open"] .item { opacity: 0; transform: translate(calc(var(--menu-x) * .4), calc(var(--menu-y) * .4)); }
+}
+/* Radix unmounts when the exit animation ends, so a no-op keyframe times the exit while the transition does the visual work. */
+.menu[data-state="closed"] { opacity: 0; transform: translate(calc(var(--menu-x) * .5), calc(var(--menu-y) * .5)) scale(.985); transition: opacity 130ms var(--ease-standard), transform 130ms var(--ease-standard); animation: menu-exit 130ms linear both; pointer-events: none; }
+/* macOS 菜单的选中行:强调色实底 + 白字 */
+.highlight { position: absolute; top: 0; right: 5px; left: 5px; border-radius: 5px; background: var(--accent); opacity: 0; pointer-events: none; transition: background-color var(--duration-fast) var(--ease-standard); }
+.highlight[data-tone="danger"] { background: var(--danger); }
+.item { position: relative; display: flex; min-height: 24px; align-items: center; gap: 8px; padding: 0 9px; border-radius: 5px; color: var(--foreground); font-size: 13px; cursor: pointer; outline: none; transition: color var(--duration-fast) var(--ease-standard), opacity var(--duration-standard) var(--ease-enter) calc(min(var(--i, 0), 4) * 35ms), transform var(--duration-standard) var(--ease-enter) calc(min(var(--i, 0), 4) * 35ms); }
+.icon { display: inline-flex; width: 16px; color: var(--text-secondary); }
+.item[data-highlighted], .item[data-highlighted] .icon { color: var(--accent-foreground); }
+.separator { height: 1px; margin: 5px 9px; background: var(--border); }
+.destructive { color: var(--danger); }
+.destructive .icon { color: var(--danger); }
+.item[data-disabled] { opacity: .45; cursor: default; }
+@keyframes menu-exit { to { --menu-exit: 1; } }
+@media (prefers-reduced-transparency: reduce) { .menu { background: var(--surface-raised); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .trigger, .chevron, .item, .highlight { transition: none; }
+  .menu, .menu[data-state="closed"] { transform: none; transition: opacity var(--duration-instant) linear; }
+}

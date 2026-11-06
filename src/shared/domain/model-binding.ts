@@ -3,6 +3,7 @@ import { IMPORTED_ALIAS_DEFAULTS, MODEL_METADATA_FIELDS } from './provider'
 import { findCatalogModel, mergeModelCatalog, type ModelCatalogDefinition } from './model-catalog'
 import { BUILTIN_MODEL_CATALOG, OLLAMA_REASONING_EFFORTS, OLLAMA_STANDARD_THINKING } from './model-catalog-inventory'
 import { OLLAMA_PROVIDER_IDS } from './presets'
+import { anthropicThinkingForModel } from './model-catalog-inventory/vendors/anthropic'
 
 /** JSON metadata equality independent of object property insertion order. */
 function same(a: unknown, b: unknown): boolean {
@@ -38,7 +39,18 @@ export function modelBindingResolver(custom: readonly ModelCatalogDefinition[] =
   function resolve(raw: ModelAlias): ModelAlias {
     const definition = findCatalogModel(catalog, raw.upstreamModel)
     const builtin = findCatalogModel(BUILTIN_MODEL_CATALOG, raw.upstreamModel)
+    const inferred = definition === undefined &&
+      !(OLLAMA_PROVIDER_IDS as readonly string[]).includes(raw.providerId)
+      ? anthropicThinkingForModel(raw.upstreamModel) : undefined
     const overrides = new Set<ModelCatalogOverride>(raw.catalogOverrides)
+    // Old Anthropic catalogue copies must follow the new adaptive declaration;
+    // a modified budget or an explicit override still belongs to the user.
+    const oldAnthropicThinking = builtin?.manufacturerId === 'anthropic' &&
+      builtin.thinkingConfig.anthropicAdaptive === true && same(raw.thinkingConfig, {
+        mode: 'budget', defaultEnabled: true,
+        defaultBudgetTokens: builtin.id.includes('-opus-') ? 64_000 : builtin.id.includes('-haiku-') ? 16_000 : 32_000,
+        parameterPath: 'thinking.budget_tokens'
+      })
     if (raw.catalogOverrides === undefined) {
       // Old imports stored generic placeholders; older explicit catalogue binds
       // stored a copy of the definition. Neither is a provider customization.
@@ -47,19 +59,23 @@ export function modelBindingResolver(custom: readonly ModelCatalogDefinition[] =
         const fallback = field in IMPORTED_ALIAS_DEFAULTS
           ? IMPORTED_ALIAS_DEFAULTS[field as 'contextWindow' | 'maxOutputTokens'] : undefined
         if (value !== undefined && !same(value, fallback) &&
-          !same(value, definition?.[field]) && !same(value, builtin?.[field])) overrides.add(field)
+          !same(value, definition?.[field]) && !same(value, builtin?.[field]) &&
+          !(field === 'thinkingConfig' && (oldAnthropicThinking || same(value, inferred?.thinkingConfig))) &&
+          !(field === 'reasoningEfforts' && same(value, inferred?.reasoningEfforts))) overrides.add(field)
       }
       for (const key of Object.keys(raw.capabilities) as (keyof ModelCapabilities)[]) {
         const value = raw.capabilities[key]
         if (value !== undefined && value !== IMPORTED_ALIAS_DEFAULTS.capabilities[key] &&
           value !== HISTORICAL_CATALOG_DEFAULTS[key] &&
-          value !== definition?.capabilities[key] && value !== builtin?.capabilities[key]) {
+          value !== definition?.capabilities[key] && value !== builtin?.capabilities[key] &&
+          !(key === 'thinking' && inferred !== undefined && value === true)) {
           overrides.add(`capabilities.${key}`)
         }
       }
       if (overrides.has('thinkingConfig')) overrides.add('reasoningEfforts')
     }
     const result = structuredClone(raw)
+    delete result.runtimeProtocol
     if (result.protocolOverride === undefined) delete result.protocolOverride
     result.catalogOverrides = [...overrides]
     if (definition !== undefined) {
@@ -71,6 +87,13 @@ export function modelBindingResolver(custom: readonly ModelCatalogDefinition[] =
         const value = raw.capabilities[key]
         if (overrides.has(`capabilities.${key}`) && value !== undefined) result.capabilities[key] = value
       }
+    }
+    // Unknown versioned Claude IDs get a conservative adaptive fallback.
+    // Custom catalogues, explicit restrictions and Ollama remain authoritative.
+    if (inferred !== undefined && !overrides.has('thinkingConfig') &&
+      !overrides.has('capabilities.thinking')) {
+      result.thinkingConfig = inferred.thinkingConfig
+      if (!overrides.has('reasoningEfforts')) result.reasoningEfforts = inferred.reasoningEfforts
     }
     // A legacy capability toggle is still an explicit provider restriction.
     if (definition !== undefined && overrides.has('capabilities.thinking') && !overrides.has('thinkingConfig')) {

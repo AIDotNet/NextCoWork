@@ -1,0 +1,70 @@
+.field { --nf-height: var(--control-height-md); --nf-step: 34px; --nf-inset: 3px; --nf-text: var(--text-base); --nf-width: var(--number-field-width, 196px); --nf-limit: color-mix(in oklab, var(--warning) 72%, var(--foreground)); display: grid; min-width: 0; }
+.field[data-size="sm"] { --nf-height: var(--control-height-sm); --nf-step: 28px; --nf-inset: 3px; --nf-text: var(--text-sm); --nf-width: var(--number-field-width, 164px); }
+.field[data-size="lg"] { --nf-height: var(--control-height-lg); --nf-step: 40px; --nf-inset: 4px; --nf-text: var(--text-lg); --nf-width: var(--number-field-width, 228px); }
+:root[data-theme="dark"] .field { --nf-limit: color-mix(in oklab, var(--warning) 88%, var(--foreground)); }
+/* The label row matches the control's width, so the limit note sits over the stepper it answers. */
+.head { display: flex; width: min(100%, var(--nf-width)); align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.label { min-width: 0; color: var(--foreground); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); }
+.field[data-size="sm"] .label { font-size: var(--text-xs); }
+.limit { flex: none; color: var(--nf-limit); font-size: var(--text-xs); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A scrubbable label says so with its cursor. Vertical pans still scroll the page on touch. */
+.label[data-scrub] { cursor: ew-resize; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+/* A hairline shell. Focus darkens the border only (the library draws no rings); a typed value past a limit tints it with the warning
+   role instead, calm rather than alarming. Set --number-field-width to resize the shell. */
+.control { display: flex; align-items: center; width: min(100%, var(--nf-width)); min-height: var(--nf-height); gap: 2px; border: .5px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--nf-inset); background: var(--surface); transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-standard) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .control:hover, .field:has(.label[data-scrub]:hover) .control { border-color: var(--border-strong); } }
+.control[data-scrubbing] { border-color: var(--accent); }
+.control:has(input:focus) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-outline); }
+.control[data-warn], .control[data-warn]:hover { border-color: color-mix(in oklab, var(--warning) 55%, var(--border)); background: color-mix(in oklab, var(--warning) 5%, var(--surface)); }
+.control[data-warn]:has(input:focus) { border-color: color-mix(in oklab, var(--warning) 80%, var(--border)); }
+.control[data-disabled] { opacity: .5; background: var(--surface-muted); }
+/* Radius steps in by the shell's inset, so the pressed fill sits concentric with the shell. */
+.step { display: grid; width: var(--nf-step); height: var(--nf-step); flex: 0 0 var(--nf-step); place-items: center; border: 0; border-radius: calc(var(--radius-control) - var(--nf-inset) - 1px); padding: 0; background: transparent; color: var(--text-secondary); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), opacity var(--duration-standard) var(--ease-standard); }
+.icon { display: grid; place-items: center; }
+.icon svg { transition: transform var(--duration-spring) var(--ease-spring); }
+@media (hover: hover) and (pointer: fine) { .step:hover:not(:disabled, [aria-disabled="true"]) { background: var(--surface-muted); color: var(--foreground); } }
+/* Quick press, spring release: the fill deepens and the glyph sinks. A held button stays pressed for as long as it repeats. */
+.step:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"]) { background: color-mix(in oklab, var(--foreground) 10%, var(--surface)); color: var(--foreground); transition: background-color 60ms linear, color 60ms linear; }
+.step:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"]) svg { transform: scale(.82); transition: transform 90ms var(--ease-standard); }
+.step:focus-visible { outline: none; background: var(--surface-muted); color: var(--foreground); }
+/* At a limit the button dims and refuses, but stays in the tab order; pressing it strains the value toward the limit and it shakes once. */
+.step[aria-disabled="true"] { opacity: .32; cursor: not-allowed; }
+.step:disabled { opacity: .35; cursor: not-allowed; }
+.control[data-strain="max"] .step[aria-disabled="true"]:last-child, .control[data-strain="min"] .step[aria-disabled="true"]:first-child { opacity: .6; color: var(--nf-limit); transition: opacity 60ms linear, color 60ms linear; }
+.valueWrap { position: relative; display: flex; min-width: 0; flex: 1; align-self: stretch; align-items: center; justify-content: center; cursor: text; }
+.control[data-disabled] .valueWrap { cursor: not-allowed; }
+/* The number, its prefix, and its suffix travel as one centered group. Tabular digits keep every column the same width. */
+.value { display: inline-flex; align-items: center; white-space: nowrap; color: var(--foreground); font-size: var(--nf-text); transition: color var(--duration-standard) var(--ease-standard); font-weight: 500; line-height: var(--leading-body); letter-spacing: var(--tracking-body); font-variant-numeric: tabular-nums; }
+.affix { display: inline-flex; color: var(--text-secondary); font-weight: 400; }
+.char { display: inline-block; overflow-x: clip; white-space: pre; }
+/* The rolling digits and the real input share one cell. The input only draws the caret and selection; its text is always painted by a span
+   (the digits, or the draft mirror while typing), so the value keeps one weight and position whether it is rolling or being edited. */
+.number { position: relative; display: inline-grid; align-items: center; }
+.display { display: inline-flex; grid-area: 1 / 1; }
+.display[data-hidden] { position: absolute; top: 0; left: 0; visibility: hidden; }
+.mirror { grid-area: 1 / 1; white-space: pre; }
+.input { position: absolute; z-index: 1; top: 0; left: 0; width: calc(100% + 1em); height: 100%; margin: 0; border: 0; padding: 0; background: transparent; color: transparent; caret-color: var(--foreground); font: inherit; font-variant-numeric: inherit; letter-spacing: inherit; line-height: inherit; text-align: left; outline: none; }
+.input:focus-visible { outline: none; }
+.input::selection { background: color-mix(in oklab, var(--foreground) 16%, transparent); color: transparent; }
+.input:disabled { cursor: not-allowed; }
+/* Each digit is a wheel whose window reaches a little past the line box and feathers out, so a turning digit fades at the edge instead of being cut.
+   The window clips vertically only: a column opening its width shows its whole digit fading in, never a sliver. */
+.column { --feather: .2em; position: relative; display: inline-block; overflow-x: visible; overflow-y: clip; margin-block: calc(var(--feather) * -1); padding-block: var(--feather); mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--feather) * 1.5), #000 calc(100% - var(--feather) * 1.5), transparent); mask-repeat: repeat-x; mask-clip: no-clip; }
+.sizer { visibility: hidden; }
+.glyph { position: absolute; inset: var(--feather) 0; text-align: center; }
+.symbol { display: inline-block; overflow-x: clip; white-space: pre; }
+/* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
+.messageSlot { display: block; overflow: hidden; }
+.hint { display: block; padding-top: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); letter-spacing: var(--tracking-body); font-variant-numeric: tabular-nums; }
+/* Words are measured against their slot when they pop out to leave, so the slot must be the positioned parent. */
+.words { position: relative; display: block; }
+.wordSlot { position: relative; display: inline-block; vertical-align: top; white-space: pre; }
+.wordSizer { position: absolute; top: 0; left: 0; visibility: hidden; white-space: pre; }
+.word { display: inline-block; white-space: pre; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Reduced motion: no travel. The value changes at once and a press at a limit answers with a brief warning tint instead of a strain. */
+@media (prefers-reduced-motion: reduce) {
+  .control, .step { transition: opacity var(--duration-instant) linear, border-color var(--duration-instant) linear, background-color var(--duration-instant) linear; }
+  .step:is(:active, [data-pressed]):not(:disabled, [aria-disabled="true"]) svg, .icon svg { transform: none; transition: none; }
+  .control[data-strain] .value { color: var(--nf-limit); transition: none; }
+}

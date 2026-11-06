@@ -16,16 +16,18 @@ import type {
   McpConnectionState,
   McpServerStatus,
 } from "../../../../../shared/domain/mcp";
-import { Button } from "../../../components/ui/Button";
-import { EmptyState } from "../../../components/ui/EmptyState";
+import { Button } from "../../../components/arc/button/button";
+import { EmptyState } from "../../../components/arc/empty-state/empty-state";
 import { IconButton } from "../../../components/ui/IconButton";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { useI18n } from "../../../i18n";
 import { cn } from "../../../lib/cn";
 import { testMcpConnection } from "../../../services/mcp";
 import { useMcpStore } from "../../../stores/mcp";
 import { SettingGroup } from "../../Row";
 import { McpServerDialog } from "./McpServerDialog";
+import { normalizeMcpConfig } from "../../mcp-form";
+import { ErrorBoundary } from "../../../components/ui/ErrorBoundary";
 import { Spinner } from '../../../components/ui/Spinner'
 
 const STATE_DOT: Readonly<Record<McpConnectionState, string>> = {
@@ -59,12 +61,12 @@ export function McpPane(): ReactNode {
             {t("connection.mcp.hint")}
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="accent"
-          icon={<Plus size={13} />}
+        <Button size="sm"
+          type="button"
+          variant="primary"
           onClick={() => setDialog({ open: true, editing: null })}
         >
+          <Plus size={13} />
           {t("connection.mcp.add")}
         </Button>
       </div>
@@ -86,7 +88,7 @@ export function McpPane(): ReactNode {
         <EmptyState
           icon={<Cable size={22} />}
           title={t("connection.mcp.empty")}
-          hint={t("connection.mcp.emptyHint")}
+          description={t("connection.mcp.emptyHint")}
         />
       ) : (
         <ul className="border-t border-hairline">
@@ -94,7 +96,9 @@ export function McpPane(): ReactNode {
             <ServerRow
               key={s.config.id}
               status={s}
-              onToggle={(enabled) => void upsert({ ...s.config, enabled })}
+              onToggle={(enabled) =>
+                void upsert({ ...normalizeMcpConfig(s.config), enabled })
+              }
               onEdit={() => setDialog({ open: true, editing: s })}
               onRemove={() => void remove(s.config.id)}
             />
@@ -102,12 +106,20 @@ export function McpPane(): ReactNode {
         </ul>
       )}
 
-      <McpServerDialog
-        open={dialog.open}
-        editing={dialog.editing}
-        existingIds={servers.map((s) => s.config.id)}
-        onClose={() => setDialog({ open: false, editing: null })}
-      />
+      {/* ★ 弹窗里任何一处渲染期异常都只坏这一块,不能把整个窗口带成白屏。
+          resetKey 跟着「这次打开的是谁」走:关掉再开,错误态随之清掉 */}
+      <ErrorBoundary
+        resetKey={dialog.open ? (dialog.editing?.config.id ?? "__new__") : null}
+        label="mcp-dialog"
+        onDismiss={() => setDialog({ open: false, editing: null })}
+      >
+        <McpServerDialog
+          open={dialog.open}
+          editing={dialog.editing}
+          existingIds={servers.map((s) => s.config.id)}
+          onClose={() => setDialog({ open: false, editing: null })}
+        />
+      </ErrorBoundary>
     </SettingGroup>
   );
 }
@@ -124,7 +136,9 @@ function ServerRow({
   onRemove: () => void;
 }): ReactNode {
   const { t } = useI18n();
-  const { config, state, tools, toolCount } = status;
+  const { state, tools, toolCount } = status;
+  // 库里的 JSON 不保证是当前形状(缺 `args` 时下面的展开会直接抛)—— 见 normalizeMcpConfig
+  const config = normalizeMcpConfig(status.config);
   const [testing, setTesting] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -256,10 +270,10 @@ function ServerRow({
           >
             <Trash2 size={14} />
           </IconButton>
-          <Toggle
-            label={t("connection.mcp.enable", { name: config.name })}
+          <Switch
+            aria-label={t("connection.mcp.enable", { name: config.name })}
             checked={config.enabled}
-            onChange={onToggle}
+            onCheckedChange={onToggle}
           />
         </div>
       </div>

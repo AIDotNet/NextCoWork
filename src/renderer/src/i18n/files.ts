@@ -35,6 +35,8 @@ export const filesZh = {
   'files.manage.readFailed': '无法读取文件夹，点击重试',
   'files.manage.truncated': '目录内容较多，仅显示前 {count} 项',
   'files.manage.dismissStatus': '关闭文件操作提示',
+  'files.menu.addToChat': '添加到聊天',
+  'files.menu.addToChatFailed': '无法添加到聊天，请先切回这个工作区的对话。',
 } as const
 
 export const filesEn: Record<keyof typeof filesZh, string> = {
@@ -74,4 +76,6 @@ export const filesEn: Record<keyof typeof filesZh, string> = {
   'files.manage.readFailed': 'Unable to read folder. Click to retry.',
   'files.manage.truncated': 'This folder is large. Showing the first {count} items.',
   'files.manage.dismissStatus': 'Dismiss file operation status',
+  'files.menu.addToChat': 'Add to chat',
+  'files.menu.addToChatFailed': 'Could not add to chat. Switch back to a conversation in this workspace first.',
 }

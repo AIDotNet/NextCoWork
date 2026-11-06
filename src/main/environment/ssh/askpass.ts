@@ -14,7 +14,41 @@ interface AuthPending {
   senderId: number
   request: SshAuthRequest
   ref: string
+  /** 这批问答属于哪一次连接尝试。Broker 关掉这次尝试时,按它整批撤掉。 */
+  scope: PendingScope
   answer(response: { value?: string; cancelled?: boolean }): void
+}
+
+/**
+ * 一次连接尝试里挂在界面上的全部问答。
+ *
+ * ★ 需求(取消正确性):这条连接一旦结束(用户断开、失败、abort),界面上**不能再留着**
+ * 它的确认框 —— 点下去只会打到一条已经死掉的链路。`close()` 撤掉自己这批,`cancelWindow()`
+ * 撤掉某个窗口的全部批次。
+ */
+export class PendingScope {
+  private readonly ids = new Set<string>()
+
+  /** 登记一条刚挂上去的问答。不登记 = `drain()` 撤不到它。 */
+  track(id: string): void {
+    this.ids.add(id)
+  }
+
+  /** 某条问答已被回答/已从 pending 表里摘掉,不再属于这批。 */
+  withdraw(id: string): void {
+    this.ids.delete(id)
+  }
+
+  /** 从 pending 表里整批摘掉,返回摘下来的那些,交给调用方逐个答"取消"。 */
+  drain(pending: Map<string, AuthPending>): AuthPending[] {
+    const taken: AuthPending[] = []
+    for (const id of [...this.ids]) {
+      const entry = pending.get(id)
+      if (entry) { pending.delete(id); taken.push(entry) }
+    }
+    this.ids.clear()
+    return taken
+  }
 }
 
 const AUTH_TIMEOUT_MS = 5 * 60_000
@@ -95,6 +129,7 @@ export class SshAuthBroker {
       throw new EnvironmentError('invalid-profile')
     }
     this.pending.delete(response.id)
+    pending.scope.withdraw(response.id)
     try {
       if (response.cancelled) { pending.answer({ cancelled: true }); return }
       const value = response.useSaved && pending.request.hasSaved ? await this.secrets.get(pending.ref) : response.value
@@ -107,12 +142,67 @@ export class SshAuthBroker {
   }
 
   cancelWindow(senderId: number): void {
-    for (const pending of this.pending.values()) {
-      if (pending.senderId === senderId) pending.answer({ cancelled: true })
-    }
+    const scopes = new Set<PendingScope>()
+    for (const pending of this.pending.values()) if (pending.senderId === senderId) scopes.add(pending.scope)
+    for (const scope of scopes) for (const pending of scope.drain(this.pending)) pending.answer({ cancelled: true })
   }
 
-  async open(profile: SshConnectionProfile, senderId: number, invocation: { executable: string; appPath?: string }): Promise<{ env: NodeJS.ProcessEnv; close(): Promise<void>; resolve(values: Map<string, string>): void }> {
+  /**
+   * 给内置 SSH 客户端用的一次询问。不经过系统 ssh。
+   *
+   * 需求:Windows 上那条 ssh2 连接自己问密码,而不是再起一个 ssh.exe。
+   * 存过的密码直接返回,不弹窗;没有,或调用方声明上一次被拒了,才弹现有的询问框。
+   * 弹出来的框和系统 ssh 走 SSH_ASKPASS 时是同一个,勾「记住」写的也是同一个槽位。
+   */
+  ask(senderId: number, profile: SshConnectionProfile, prompt: string, options: { rejected?: boolean; scope?: PendingScope } = {}): Promise<string> {
+    const scope = options.scope ?? new PendingScope()
+    const ref = credentialRef(profile, 'password', prompt)
+    const canRemember = profile.authMethod !== 'ask' && this.secrets.available()
+    return (async () => {
+      const stored = canRemember && options.rejected !== true ? await this.secrets.get(ref) : null
+      if (stored !== null && options.rejected !== true) return stored
+      const id = randomUUID()
+      const request: SshAuthRequest = {
+        id, connectionId: profile.id, connectionName: profile.name, prompt, kind: 'password',
+        canRemember, hasSaved: stored !== null, ...(options.rejected === true ? { savedRejected: true } : {})
+      }
+      return await new Promise<string>((resolve, reject) => {
+        this.pending.set(id, { senderId, request, ref, scope, answer: (answer) => {
+          scope.withdraw(id)
+          if (answer.cancelled || answer.value === undefined) reject(new EnvironmentError('cancelled'))
+          else resolve(answer.value)
+        } })
+        scope.track(id)
+        this.notify(senderId, request)
+      })
+    })()
+  }
+
+  /**
+   * 内置客户端的主机密钥确认。**只有明确的「是」返回 `true`。**
+   *
+   * ★ 复用与系统 ssh 同一个确认框、同一个 `host-key` 语义:界面只回 `yes`/`no`,
+   * `respond()` 里那条 `value !== 'yes' && value !== 'no'` 的强校验继续挡着任意串。
+   *
+   * 槽位(`connection:hostkey:<hash>`)由 `BundledSshClient` 自己读写,这里只负责问。
+   * `prompt` 里带的是**真实指纹**,不是连接表单里存的那个密码 —— 确认框只会显示它,
+   * 也不提供「使用已保存的凭据」:主机确认读不出、更不该复用一个存下的密码。
+   */
+  askHostKey(senderId: number, profile: SshConnectionProfile, prompt: string, options: { scope?: PendingScope } = {}): Promise<boolean> {
+    const scope = options.scope ?? new PendingScope()
+    const id = randomUUID()
+    const request: SshAuthRequest = { id, connectionId: profile.id, connectionName: profile.name, prompt, kind: 'host-key', canRemember: false, hasSaved: false }
+    return new Promise<boolean>((resolve) => {
+      this.pending.set(id, { senderId, request, ref: '', scope, answer: (answer) => {
+        scope.withdraw(id)
+        resolve(answer.cancelled !== true && answer.value === 'yes')
+      } })
+      scope.track(id)
+      this.notify(senderId, request)
+    })
+  }
+
+  async open(profile: SshConnectionProfile, senderId: number, invocation: { executable: string; appPath?: string }): Promise<{ env: NodeJS.ProcessEnv; close(): Promise<void>; resolve(values: Map<string, string>): void; ask(prompt: string, rejected: boolean): Promise<string>; askHostKey(prompt: string): Promise<boolean>; secrets: KernelHost['secrets'] }> {
     const directory = await mkdtemp(join(tmpdir(), 'ncw-auth-'))
     await chmod(directory, 0o700)
     const endpoint = process.platform === 'win32' ? `\\\\.\\pipe\\ncw-auth-${randomUUID()}` : join(directory, 'socket')
@@ -125,7 +215,7 @@ export class SshAuthBroker {
      * 调一次 `open()`,`connectSshEnvironment` 的 close 里配套调 `close()`。所以
      * `usedStoredPassword` 天然是"这次尝试用过没有",不需要另外的复位逻辑。
      */
-    const session: { resolved?: ResolvedSshTarget; usedStoredPassword: boolean } = { usedStoredPassword: false }
+    const session: { resolved?: ResolvedSshTarget; usedStoredPassword: boolean; scope: PendingScope } = { usedStoredPassword: false, scope: new PendingScope() }
     const server = createServer((socket) => {
       sockets.add(socket)
       socket.setTimeout(AUTH_TIMEOUT_MS, () => socket.destroy())
@@ -184,10 +274,11 @@ export class SshAuthBroker {
             canRemember, hasSaved: stored !== null,
             // 存了密码、这次尝试也用过了,却又问一次 —— 只能是服务器把它拒了
             ...(kind === 'password' && session.usedStoredPassword ? { savedRejected: true } : {}) }
-          this.pending.set(id, { senderId, request, ref, answer: (answer) => {
+          this.pending.set(id, { senderId, request, ref, scope: session.scope, answer: (answer) => {
             this.pending.delete(id)
             socket.end(`${JSON.stringify(answer)}\n`)
           } })
+          session.scope.track(id)
           this.notify(senderId, request)
         })().catch(() => socket.destroy())
       })
@@ -198,7 +289,36 @@ export class SshAuthBroker {
       if (process.platform !== 'win32') await chmod(endpoint, 0o600)
       let executable = invocation.executable
       if (process.platform === 'win32') {
-        if (invocation.appPath) throw new EnvironmentError('unsupported-client', 'Use the packaged application for native Windows askpass.')
+        /**
+         * 需求:Windows 上(开发态和打包版都要)用存下的密码连得上去。
+         *
+         * ssh 每问一次密码,就把 SSH_ASKPASS 指向的东西**再起一个进程**,而在 Windows 上
+         * 那个进程只能是 exe:OpenSSH 走 `CreateProcessW(NULL, cmdline, …)`
+         * (`contrib/win32/win32compat/w32fd.c` 的 `spawn_child_internal`),`.cmd` 与 `#!`
+         * 脚本都起不来 —— 下面 Unix 那层 `sh` 包装在这里没有对等物。
+         *
+         * 所以 helper 是**同一个 exe 的 node 形态**(`ELECTRON_RUN_AS_NODE=1`,见 env),
+         * 入口就是这个脚本。必须绕开 Chromium 的两条理由都很实:
+         *
+         * 1. ★ stdout 上除了密码**一个字节都不能有**。OpenSSH 只认第一行
+         *    (`readpass.c`:`buf[strcspn(buf, "\r\n")] = '\0'`),Chromium 启动时先写的
+         *    那个换行会把密码整个吃掉 —— 表现为「密码明明是对的却认证失败」,
+         *    而且没有任何一条错误提到 askpass。
+         * 2. ★ 不能和主窗口抢同一个 Chromium profile(两边都是 `~/.next-cowork`)。
+         *    第二个实例卡在 profile 上,表现为连接一直转圈直到超时。
+         *
+         * ★ SSH_ASKPASS **可以带参数**:它的值被原样拼进命令行(`build_commandline_string`
+         * 对已经加了引号的串照抄),ssh 只在末尾追加提示文本。于是还能多兜两层:
+         * - `--user-data-dir=`:万一哪天 `runAsNode` fuse 被关掉、exe 退回 GUI 形态
+         *   (由 `entry.ts` 的 askpass 分支接住),它至少不会卡在第 2 条上;
+         * - 末尾的 `--`:终止开关解析。提示文本在 keyboard-interactive 下**由远端 sshd
+         *   完全控制**,绝不能落到 Chromium 的开关位置上(同 Unix 分支的理由)。
+         *
+         * 路径直接加引号即可:Windows 文件名里不可能有 `"`。
+         */
+        const client = join(directory, 'askpass.js')
+        await writeFile(client, windowsAskpassClient(), { mode: 0o600 })
+        executable = `"${invocation.executable}" "${client}" --user-data-dir="${join(directory, 'profile')}" --`
       } else {
         // ★ OpenSSH 以 execlp(askpass, askpass, msg) 调用,msg 在 keyboard-interactive 下**由远端 sshd
         //   完全控制**;而打包形态的 executable 就是 Electron 本体,Chromium 会抢在我们的 JS 之前把它
@@ -223,7 +343,14 @@ export class SshAuthBroker {
       await writeFile(secret, token, { mode: 0o600 })
       return {
         env: { SSH_ASKPASS: executable, SSH_ASKPASS_REQUIRE: 'force', DISPLAY: process.env.DISPLAY ?? ':0',
-          NCW_SSH_ASKPASS: '1', NCW_SSH_AUTH_ENDPOINT: endpoint, NCW_SSH_AUTH_SECRET: secret },
+          NCW_SSH_ASKPASS: '1', NCW_SSH_AUTH_ENDPOINT: endpoint, NCW_SSH_AUTH_SECRET: secret,
+          /*
+            ★ 只能放进 **ssh 自己的环境**:Windows 没有 `sh` 可以包一层,helper 的环境
+            就是 ssh 的环境(OpenSSH 用 `CreateProcessW(…, lpEnvironment = NULL, …)`
+            起 askpass,子进程原样继承)。代价是 ProxyCommand 之类的兄弟进程也会看到它 ——
+            对非 Electron 程序无意义,所以 `sshProcessEnvironment` 只对 overrides 放开这一个名字。
+          */
+          ...(process.platform === 'win32' ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
         /**
          * 传输层解析完 `ssh -G` 之后把结果交过来。
          *
@@ -235,14 +362,89 @@ export class SshAuthBroker {
         resolve: (values) => {
           session.resolved = { user: values.get('user'), hostname: values.get('hostname'), proxyJump: values.get('proxyjump') }
         },
+        ask: (prompt: string, rejected: boolean) => this.ask(senderId, profile, prompt, { rejected, scope: session.scope }),
+        /**
+         * 内置客户端(Windows 上那条 ssh2 连接)的主机密钥确认。和上面的密码询问共用这一批
+         * `session.scope`,所以 `close()` 一并把两者从界面上撤掉 —— 断开之后按下的「批准」
+         * 不会去启动一条已经结束的连接。
+         */
+        askHostKey: (prompt: string) => this.askHostKey(senderId, profile, prompt, { scope: session.scope }),
+        secrets: this.secrets,
         close: async () => {
+          /**
+           * ★ 先撤问答,再关套接字/服务器。
+           *
+           * 断开链路的顺序是 `client.close()` → `authentication.close()`,而 `close()` 是
+           * 最后一步;到这一步还没有人答的确认框(用户在慢慢看指纹,或窗口已经关了)必须
+           * 立刻判否,而不是等那 5 分钟超时。
+           */
+          for (const pending of session.scope.drain(this.pending)) pending.answer({ cancelled: true })
           for (const socket of sockets) socket.destroy()
           await new Promise<void>((resolve) => server.close(() => resolve()))
-          await rm(directory, { recursive: true, force: true })
+          /*
+            ★ 删不掉也要往下走。这是整条断开链路的**最后一步**(`ssh/provider.ts` 的
+            `close()`),从这里抛出去的错会变成「断不开连接」。而 Windows 上真会删不掉:
+            GUI 兜底形态留下的 `profile/` 是 Chromium 的 profile,它握着句柄时
+            `force` 也救不了。代价只是临时目录里留下一份垃圾,由系统清理。
+          */
+          await rm(directory, { recursive: true, force: true }).catch(() => {})
         }
       }
     } catch (error) { server.close(); await rm(directory, { recursive: true, force: true }); throw error }
   }
+}
+
+/**
+ * Windows 上 ssh 真正执行的那个 helper 的源码(每次连接尝试生成一份到临时目录)。
+ *
+ * 需求:它要在**不带 Chromium 的 node 形态**里跑完整条问答 —— 理由写在 `open()` 里那段
+ * `win32` 注释。那个形态下拿不到应用的任何模块(入口就是这一个文件),所以它是下面
+ * `requestAskpass` 的第二份实现,说的是同一套线上协议。
+ *
+ * ★ 两份必须一起改。`askpass.test.ts` 按 ssh 的调法真的把这个脚本跑起来对答案,
+ * 改坏了那条用例会挂 —— 而线上坏掉的表现只是「密码不对」,不会有任何报错指向这里。
+ */
+export function windowsAskpassClient(): string {
+  return `'use strict'
+/* 由 src/main/environment/ssh/askpass.ts 生成,不是版本库里的文件。
+   约定:提示是 argv 的最后一个;stdout 的第一行就是答案,别的一个字节都不许写。 */
+const { createConnection } = require('node:net')
+const { readFileSync } = require('node:fs')
+
+const endpoint = process.env.NCW_SSH_AUTH_ENDPOINT
+const secretPath = process.env.NCW_SSH_AUTH_SECRET
+const prompt = process.argv[process.argv.length - 1] || ''
+/* 失败一律用非 0 退出码,绝不往 stdout 写空行:OpenSSH 把非 0 当成「没问到」并放弃,
+   而一行空字符串会被当成**一个空密码**送给服务器(readpass.c 只取第一行)。 */
+const fail = () => { process.exit(1) }
+if (!endpoint || !secretPath || prompt.length > 8192) fail()
+let token = ''
+try { token = readFileSync(secretPath, 'utf8') } catch (error) { fail() }
+if (!token) fail()
+let buffer = ''
+let answered = false
+const socket = createConnection(endpoint)
+socket.setTimeout(${AUTH_TIMEOUT_MS}, fail)
+socket.on('error', fail)
+socket.on('close', () => { if (!answered) fail() })
+socket.on('connect', () => {
+  socket.write(JSON.stringify({ token: token, prompt: prompt, hint: process.env.SSH_ASKPASS_PROMPT }) + '\\n')
+})
+socket.on('data', (bytes) => {
+  buffer += bytes.toString('utf8')
+  if (Buffer.byteLength(buffer) > ${MAX_AUTH_BYTES}) fail()
+  const end = buffer.indexOf('\\n')
+  if (end < 0) return
+  let reply = null
+  try { reply = JSON.parse(buffer.slice(0, end)) } catch (error) { fail() }
+  if (!reply || reply.cancelled || typeof reply.value !== 'string') fail()
+  answered = true
+  socket.destroy()
+  /* ★ 写完再退。stdout 到管道是异步写,直接 process.exit 会把还在队列里的密码丢掉 ——
+     表现为 ssh 收到空密码,而这边看起来一切正常。 */
+  process.stdout.write(reply.value + '\\n', () => { process.exit(0) })
+})
+`
 }
 
 export function requestAskpass(env: NodeJS.ProcessEnv, prompt: string): Promise<string> {

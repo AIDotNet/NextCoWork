@@ -33,7 +33,7 @@ vi.mock('../../window/registry', () => ({
 }))
 
 vi.mock('../../kernel/run-registry', () => ({
-  runs: { activeRunIds: (): string[] => [...runState.ids] }
+  runs: { activeRunIds: (): string[] => [...runState.ids], hasSessionOperations: (): boolean => false }
 }))
 
 vi.mock('../../runtime', () => ({

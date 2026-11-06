@@ -19,7 +19,7 @@ import { closeDatabase, openDatabase } from '../../db/index'
 import { store } from '../../state/store'
 import * as service from '../service'
 
-vi.mock('../../ipc/attachment', () => ({
+vi.mock('../../services/attachments', () => ({
   uploadAttachment: (req: { mime: string }) => ({
     id: 'att', scope: 'session', displayName: 'x', mime: req.mime,
     size: 1, checksum: 'c', createdAt: 0, url: 'ncw://attachments/session/x/att.png'

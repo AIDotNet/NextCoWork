@@ -12,6 +12,7 @@ vi.mock('../../services/browser', () => ({
   closeBrowserTab: vi.fn(async () => undefined)
 }))
 
+import { getInnerTabs, persistInnerTabs } from '../../services/app'
 import { useTabsStore } from '../tabs'
 import { useWindowStore } from '../window'
 
@@ -102,6 +103,74 @@ describe('browser workspace isolation', () => {
     const dock = useTabsStore.getState().dockOf('workspace-b')
     const group = dock.root.type === 'split' ? dock.root.second : dock.root
     expect(group.type === 'group' && group.activeTabId).toBe(browser?.id)
+  })
+})
+
+describe('专注窗口的浏览器事件隔离', () => {
+  beforeEach(() => {
+    useWindowStore.setState({ windowKind: 'quick', activeWorkspaceId: 'workspace-a' })
+    useTabsStore.getState().openFocusedSession('workspace-a', 'focused-session', '目标会话')
+  })
+
+  it('早到或其他项目的广播不会读取主窗口布局', () => {
+    const before = useTabsStore.getState().stateOf('workspace-a')
+    useTabsStore.getState().syncBrowserTabs('workspace-b', [{
+      id: 'other-project-browser', ownerSessionId: 'focused-session',
+      source: 'agent', url: 'https://example.com/', title: 'Other project'
+    }])
+    expect(useTabsStore.getState().byWorkspace['workspace-b']).toBeUndefined()
+    expect(useTabsStore.getState().stateOf('workspace-a')).toBe(before)
+    expect(getInnerTabs).not.toHaveBeenCalled()
+    expect(persistInnerTabs).not.toHaveBeenCalled()
+  })
+
+  it('同项目其他会话的页面也不进入当前窗口', () => {
+    const before = useTabsStore.getState().stateOf('workspace-a')
+    useTabsStore.getState().syncBrowserTabs('workspace-a', [{
+      id: 'other-session-browser', ownerSessionId: 'other-session',
+      source: 'agent', url: 'https://example.com/', title: 'Other session'
+    }, {
+      id: 'main-window-browser', source: 'user', clientTabId: 'another-window-tab',
+      url: 'https://example.com/', title: 'Main window'
+    }])
+    expect(useTabsStore.getState().stateOf('workspace-a')).toBe(before)
+    expect(getInnerTabs).not.toHaveBeenCalled()
+    expect(persistInnerTabs).not.toHaveBeenCalled()
+  })
+
+  it('目标会话自己的页面仍能显示在右侧，不抢走对话焦点', () => {
+    const before = useTabsStore.getState().stateOf('workspace-a')
+    useTabsStore.getState().syncBrowserTabs('workspace-a', [{
+      id: 'own-browser', ownerSessionId: 'focused-session', source: 'agent',
+      url: 'https://example.com/', title: 'Own page'
+    }])
+    const current = useTabsStore.getState().stateOf('workspace-a')
+    expect(current.tabs.filter((tab) => tab.kind === 'browser')).toEqual([expect.objectContaining({
+      pane: 'right', ref: { browserId: 'own-browser', url: 'https://example.com/' }
+    })])
+    expect(current.activeTabId).toBe(before.activeTabId)
+    expect(persistInnerTabs).not.toHaveBeenCalled()
+
+    useTabsStore.getState().syncBrowserTabs('workspace-a', [])
+    expect(useTabsStore.getState().stateOf('workspace-a').tabs).toEqual(before.tabs)
+  })
+
+  it('本窗口手动打开的页面按 clientTabId 合并，不引入主窗口页面', () => {
+    const tabs = useTabsStore.getState()
+    const chat = tabs.stateOf('workspace-a').tabs[0]!
+    const browser: InnerTab = { id: 'own-client-tab', kind: 'browser', pane: 'bottom', title: 'New page', ref: { url: '' } }
+    tabs.hydrate('workspace-a', { tabs: [chat, browser], activeTabId: chat.id, bottomActiveTabId: browser.id })
+    tabs.syncBrowserTabs('workspace-a', [{
+      id: 'own-user-browser', clientTabId: browser.id, source: 'user',
+      url: 'https://example.com/', title: 'Own user page'
+    }, {
+      id: 'other-user-browser', clientTabId: 'other-client-tab', source: 'user',
+      url: 'https://example.com/other', title: 'Other user page'
+    }])
+    expect(tabs.stateOf('workspace-a').tabs.filter((tab) => tab.kind === 'browser')).toEqual([expect.objectContaining({
+      id: browser.id, pane: 'bottom', ref: { browserId: 'own-user-browser', url: 'https://example.com/' }
+    })])
+    expect(persistInnerTabs).not.toHaveBeenCalled()
   })
 })
 

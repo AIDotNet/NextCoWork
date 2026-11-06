@@ -7,8 +7,18 @@ import type { RunSnapshot } from '../../../../shared/agent/event'
 vi.mock('../../services/agent', () => ({
   startRun: vi.fn(), attachRun: vi.fn(), abortRun: vi.fn(), onAgentEvent: vi.fn(() => () => {})
 }))
-vi.mock('../../services/app', () => ({ getSessionInput: vi.fn(async () => null), persistSessionInput: vi.fn() }))
-vi.mock('../../services/sessions', () => ({ getSession: vi.fn() }))
+vi.mock('../../services/app', () => ({ getSessionInput: vi.fn(async () => null), persistSessionDraft: vi.fn() }))
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn()
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...detail, hasMore: false }
+    }),
+  }
+})
 
 import { attachRun } from '../../services/agent'
 import { getSessionInput } from '../../services/app'

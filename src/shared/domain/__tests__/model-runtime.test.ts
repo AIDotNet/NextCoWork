@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '../../agent/message'
 import type { ModelAlias, ThinkingConfig } from '../provider'
-import { modelThinkingLevels, normalizeModelThinkingLevel, resolveModelThinking, validateModelRuntime } from '../model-runtime'
+import { auxiliaryThinkingLevel, effectiveModelThinking, modelThinkingLevels, normalizeModelThinkingLevel, resolveModelThinking, validateModelRuntime } from '../model-runtime'
 
 const message = (types: string[]): AgentMessage => ({
   id: 'm1',
@@ -95,6 +95,84 @@ describe('resolveModelThinking', () => {
   })
 })
 
+describe('legacy Anthropic budget controls', () => {
+  const budget: ThinkingConfig = {
+    mode: 'budget', defaultEnabled: true, defaultBudgetTokens: 60_000,
+    parameterPath: 'thinking.budget_tokens'
+  }
+  const legacy = (over: Partial<ModelAlias> = {}): ModelAlias => alias({
+    upstreamModel: 'claude-opus-5-5', runtimeProtocol: 'anthropic',
+    thinkingConfig: { ...budget }, ...over
+  })
+
+  it.each([
+    ['claude-opus-5', 'high', true],
+    ['claude-opus-5-5', 'medium', false],
+    ['claude-sonnet-5-5', 'high', false],
+    ['claude-opus-6-1', 'high', false]
+  ] as const)('shares %s defaults and supported Off with the sender', (upstreamModel, defaultEffort, off) => {
+    const model = legacy({ upstreamModel })
+    const saved = structuredClone(model)
+    const effective = effectiveModelThinking(model)
+    expect(effective.thinkingConfig).toMatchObject({ mode: 'effort', anthropicAdaptive: true, defaultEffort })
+    expect(modelThinkingLevels(model).includes('off')).toBe(off)
+    expect(modelThinkingLevels(model)).not.toContain('minimal')
+    expect(auxiliaryThinkingLevel('off', model)).toBe(off ? 'off' : 'low')
+    expect(normalizeModelThinkingLevel('off', model)).toBe(off ? 'off' : 'auto')
+    expect(resolveModelThinking('auto', effective.thinkingConfig, 1024, effective.reasoningEfforts)?.effort).toBe(defaultEffort)
+    expect(model).toEqual(saved)
+  })
+
+  it('projects explicit effort restrictions onto UI and auxiliary choices', () => {
+    const model = legacy({ reasoningEfforts: ['none', 'medium', 'high'] })
+    expect(modelThinkingLevels(model)).toEqual(['auto', 'medium', 'high'])
+    expect(auxiliaryThinkingLevel('off', model)).toBe('medium')
+    expect(auxiliaryThinkingLevel('higher', model)).toBe('high')
+    expect(normalizeModelThinkingLevel('higher', model)).toBe('auto')
+  })
+
+  it('repairs legacy default Off without pretending that explicit Off is supported', () => {
+    const model = legacy({ thinkingConfig: { ...budget, defaultEnabled: false } })
+    expect(effectiveModelThinking(model).thinkingConfig).toMatchObject({ defaultEnabled: true, defaultEffort: 'medium' })
+    expect(modelThinkingLevels(model)).not.toContain('off')
+    expect(model.thinkingConfig?.defaultEnabled).toBe(false)
+  })
+
+  it.each(['claude-opus-4-5', 'claude-opus-4-6'])('keeps valid %s manual controls', (upstreamModel) => {
+    const model = legacy({ upstreamModel })
+    expect(effectiveModelThinking(model)).toBe(model)
+    expect(modelThinkingLevels(model)).toContain('minimal')
+    expect(auxiliaryThinkingLevel('off', model)).toBe('off')
+  })
+
+  it('uses declared protocol context, including preset overrides, not the Claude name', () => {
+    for (const model of [
+      legacy({ runtimeProtocol: undefined }),
+      legacy({ runtimeProtocol: 'openai-chat' }),
+      legacy({ requestAdapter: { preset: 'openai-responses', patches: [] } }),
+      legacy({ thinkingConfig: { ...budget, standardWire: true } }),
+      legacy({ thinkingConfig: { ...budget, anthropicAdaptive: false } }),
+      legacy({ thinkingConfig: { ...budget, parameterPath: 'thinking_budget' },
+        requestAdapter: { preset: 'custom', patches: [] } })
+    ]) {
+      expect(effectiveModelThinking(model)).toBe(model)
+      expect(modelThinkingLevels(model)).toContain('off')
+    }
+    for (const model of [
+      legacy({ runtimeProtocol: undefined, protocolOverride: 'anthropic' }),
+      legacy({ runtimeProtocol: 'openai-chat', requestAdapter: { preset: 'anthropic', patches: [] } }),
+      legacy({ requestAdapter: { preset: 'custom', patches: [] } })
+    ]) expect(modelThinkingLevels(model)).not.toContain('off')
+  })
+
+  it('exposes only Auto for an empty accepted set and does not retain a stale default', () => {
+    const model = legacy({ reasoningEfforts: [], thinkingConfig: { ...budget, defaultEffort: 'max' } })
+    expect(modelThinkingLevels(model)).toEqual(['auto'])
+    expect(auxiliaryThinkingLevel('off', model)).toBe('auto')
+    expect(effectiveModelThinking(model).thinkingConfig?.defaultEffort).toBeUndefined()
+  })
+})
+
 describe('validateModelRuntime', () => {
   it('honours explicit visionInput and legacy vision', () => {
     const legacy = validateModelRuntime({ alias: alias({ capabilities: { tools: true, vision: true, thinking: false, caching: false } }), messages: [message(['image'])] })
@@ -153,5 +231,49 @@ describe('validateModelRuntime', () => {
       estimatedInputTokens: 7_000,
       maxOutputTokens: 2_000
     }).map((issue) => issue.code)).not.toContain('context_length')
+  })
+})
+
+/**
+ * 需求:压缩 / 目标判定 / 权限审核 / 会话标题这些旁路请求想「尽量别思考」,
+ * 但**绝不能因为档位不可用而失败**。这一组盯的正是那条失败:
+ * `gpt-6-*` 的 reasoningEfforts 不含 'none',硬发 'off' 会被 thinking-adapter
+ * 抛成不可重试的错 —— 压缩每次必败、三次熔断、上下文再也压不下去,全程零报错。
+ */
+describe('auxiliaryThinkingLevel', () => {
+  it('keeps the wanted level when the model accepts it', () => {
+    const model = alias({ thinkingConfig: { mode: 'effort', defaultEnabled: true },
+      reasoningEfforts: ['none', 'low', 'high'] })
+    expect(auxiliaryThinkingLevel('off', model)).toBe('off')
+    expect(auxiliaryThinkingLevel('high', model)).toBe('high')
+  })
+
+  it('★ falls back to the lowest available strength when the model cannot disable reasoning', () => {
+    // gpt-6-astra / sol / luna 的档位集合(openAiAstraEfforts):没有 none。
+    const gpt6 = alias({ thinkingConfig: { mode: 'effort', defaultEnabled: true },
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'] })
+    expect(auxiliaryThinkingLevel('off', gpt6)).toBe('low')
+  })
+
+  it('steps down to the closest weaker level instead of returning auto', () => {
+    const model = alias({ thinkingConfig: { mode: 'effort', defaultEnabled: true },
+      reasoningEfforts: ['none', 'low', 'max'] })
+    // high 不在表里 —— 取「不超过它的最强一档」= low,而不是 normalize 的 'auto'。
+    expect(auxiliaryThinkingLevel('high', model)).toBe('low')
+    expect(normalizeModelThinkingLevel('high', model)).toBe('auto')
+  })
+
+  it('returns auto for auto, for reasoning-only models and when the model is unknown', () => {
+    const always = alias({ thinkingConfig: { mode: 'always', defaultEnabled: true } })
+    expect(auxiliaryThinkingLevel('auto', alias())).toBe('auto')
+    expect(auxiliaryThinkingLevel('off', always)).toBe('auto')
+    expect(auxiliaryThinkingLevel('off', undefined)).toBe('auto')
+  })
+
+  it('keeps Off available on toggle models', () => {
+    const toggle = alias({ thinkingConfig: { mode: 'toggle', defaultEnabled: true } })
+    expect(auxiliaryThinkingLevel('off', toggle)).toBe('off')
+    // 轨道只有 ['auto','medium','off'],high 降到 medium。
+    expect(auxiliaryThinkingLevel('high', toggle)).toBe('medium')
   })
 })

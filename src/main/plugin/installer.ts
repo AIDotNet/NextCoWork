@@ -18,10 +18,20 @@
  *
  * 最后两条在 `parsePluginManifest` 里已经查过形状,这里查的是**文件真的在不在** ——
  * 形状对但文件不在的包装上之后,症状是「插件装上了,点菜单没反应」。
+ *
+ * ## 原生包(办公插件自带 LibreOffice)
+ *
+ * 声明了 `nativeComponents` 的包按 `NATIVE_PACKAGE_LIMITS` 装(实测一份 LibreOffice 是
+ * 800 MB、1.7 万个文件、20 层深),其余插件的限额**一个数都不变**。因此清单要先于其它条目
+ * 读出来 —— 在那之前只按原生包的外层上限约束。原生包的其余核对(索引、可执行位、
+ * 包内符号链接)在 `native-installer.ts`,在 staging 里、切换版本之前做。
+ * 解压流式写盘:最大的单个库 144 MB,整条目读进内存再写会把主进程内存顶上去。
  */
-import { createReadStream, promises as fs } from 'node:fs'
+import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve, sep } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import unzipper from 'unzipper'
 import {
   PLUGIN_ID_RE,
@@ -29,12 +39,37 @@ import {
   type ManifestError,
   type PluginManifest
 } from '../../shared/plugin/manifest'
+import { NATIVE_DIR, NATIVE_PACKAGE_LIMITS } from '../../shared/plugin/native-component'
 import { SUPPORTED_LOCALE_FILES } from './locale-files'
+import { assertNativeFilesPresent, assertNativeTargetsAvailable, verifyInstalledNativeComponents } from './native-installer'
 
-const MAX_ZIP = 20 * 1024 * 1024
-const MAX_EXPANDED = 50 * 1024 * 1024
-const MAX_ENTRIES = 2000
-const MAX_DEPTH = 12
+interface PackageLimits {
+  maxZipBytes: number
+  maxExpandedBytes: number
+  maxEntries: number
+  maxDepth: number
+}
+
+/** 普通插件的限额。★ 原生包的大限额只给声明了 nativeComponents 的包,见文件头 */
+const REGULAR_LIMITS: PackageLimits = {
+  maxZipBytes: 20 * 1024 * 1024,
+  maxExpandedBytes: 50 * 1024 * 1024,
+  maxEntries: 2000,
+  maxDepth: 12
+}
+
+function limitsFor(manifest: PluginManifest): PackageLimits {
+  return (manifest.nativeComponents ?? []).length > 0 ? NATIVE_PACKAGE_LIMITS : REGULAR_LIMITS
+}
+
+/** 原生包的早检:本机没有构建就别解压了(几百 MB 的包白等一分钟) */
+function assertInstallable(manifest: PluginManifest): void {
+  try {
+    assertNativeTargetsAvailable(manifest)
+  } catch (error) {
+    throw new PluginInstallError((error as Error).message)
+  }
+}
 
 export interface InstalledPluginPackage {
   manifest: PluginManifest
@@ -49,14 +84,14 @@ export class PluginInstallError extends Error {
   }
 }
 
-function safeEntry(name: string): boolean {
+function safeEntry(name: string, maxDepth: number): boolean {
   return (
     name !== '' &&
     !name.includes('\\') &&
     !name.startsWith('/') &&
     !/^[A-Za-z]:/.test(name) &&
     name.split('/').every((part) => part !== '' && part !== '.' && part !== '..') &&
-    name.split('/').length <= MAX_DEPTH
+    name.split('/').length <= maxDepth
   )
 }
 
@@ -78,6 +113,21 @@ async function readEntry(entry: unzipper.File, limit: number): Promise<Buffer> {
   }
 }
 
+/** 流式解压一个条目到 `destination`(必须是新文件)。返回写入的字节数 */
+async function writeEntry(entry: unzipper.File, destination: string, limit: number): Promise<number> {
+  let total = 0
+  const counter = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      total += chunk.length
+      if (total > limit) done(new PluginInstallError('package expands beyond the size limit'))
+      else done(null, chunk)
+    }
+  })
+  await pipeline(entry.stream(), counter, createWriteStream(destination, { flags: 'wx' }))
+  if (total !== entry.uncompressedSize) throw new PluginInstallError('package entry size mismatch')
+  return total
+}
+
 /**
  * 装一个 ZIP。`expectedSha256` 来自市场的授权接口 —— **权威摘要由服务端给**,
  * 不采信包里任何自述的哈希(同 `ipc/skills.ts` 那四步)。
@@ -85,10 +135,12 @@ async function readEntry(entry: unzipper.File, limit: number): Promise<Buffer> {
 export async function installPluginZip(
   zipPath: string,
   root: string,
-  expectedSha256?: string
+  expectedSha256?: string,
+  beforeReplace?: (manifest: PluginManifest) => Promise<void>
 ): Promise<InstalledPluginPackage> {
   const stat = await fs.stat(zipPath)
-  if (!stat.isFile() || stat.size > MAX_ZIP) throw new PluginInstallError('package file is too large')
+  // 读清单之前只能按原生包的外层上限约束;是不是原生包要看清单,见文件头
+  if (!stat.isFile() || stat.size > NATIVE_PACKAGE_LIMITS.maxZipBytes) throw new PluginInstallError('package file is too large')
 
   const sha256 = await hashFile(zipPath)
   if (expectedSha256 !== undefined && expectedSha256.toLowerCase() !== sha256) {
@@ -96,9 +148,23 @@ export async function installPluginZip(
   }
 
   const directory = await unzipper.Open.file(zipPath)
-  if (directory.files.length === 0 || directory.files.length > MAX_ENTRIES) {
+  if (directory.files.length === 0 || directory.files.length > NATIVE_PACKAGE_LIMITS.maxEntries) {
     throw new PluginInstallError('package has an invalid number of entries')
   }
+
+  /*
+    先读清单,再按它定限额。只按精确路径取 `<顶层目录>/package.json` 这一个条目,
+    其余条目一律等限额定下来之后再核(下面的循环)。
+  */
+  const firstTop = directory.files[0]?.path.split('/')[0] ?? ''
+  const manifestCandidate = directory.files.find((entry) => entry.path === `${firstTop}/package.json`)
+  if (manifestCandidate === undefined) throw new PluginInstallError('package.json is missing')
+  const raw = (await readEntry(manifestCandidate, 256 * 1024)).toString('utf8')
+  const manifest = parseManifestText(raw)
+  const limits = limitsFor(manifest)
+  if (stat.size > limits.maxZipBytes) throw new PluginInstallError('package file is too large')
+  if (directory.files.length > limits.maxEntries) throw new PluginInstallError('package has an invalid number of entries')
+  assertInstallable(manifest)
 
   let expanded = 0
   let top: string | null = null
@@ -120,7 +186,7 @@ export async function installPluginZip(
   const names = new Set<string>()
   for (const entry of directory.files) {
     const name = entry.path.replace(/\/$/, '')
-    if (!safeEntry(name)) throw new PluginInstallError('package contains an unsafe path')
+    if (!safeEntry(name, limits.maxDepth)) throw new PluginInstallError('package contains an unsafe path')
     const parts = name.split('/')
     if (top === null) top = parts[0] ?? ''
     if (parts[0] !== top) throw new PluginInstallError('package must contain exactly one top-level directory')
@@ -131,21 +197,22 @@ export async function installPluginZip(
     if (!Number.isFinite(entry.uncompressedSize) || entry.uncompressedSize < 0) {
       throw new PluginInstallError('package entry has an invalid size')
     }
-    // Unix mode 0120000 = 符号链接。永不从不可信归档里还原链接。
+    /*
+      Unix mode 0120000 = 符号链接。永不从不可信归档里还原链接 —— 原生包也一样:它需要的链接
+      写在摘要受清单约束的索引里,由 `native-installer.ts` 在所有文件落盘后创建。
+    */
     const unixMode = (entry.externalFileAttributes >>> 16) & 0xffff
     if ((unixMode & 0xf000) === 0xa000) throw new PluginInstallError('package must not contain symlinks')
     expanded += entry.uncompressedSize
-    if (expanded > MAX_EXPANDED) throw new PluginInstallError('package expands beyond the size limit')
+    if (expanded > limits.maxExpandedBytes) throw new PluginInstallError('package expands beyond the size limit')
     if (name === `${top}/package.json`) manifestEntry = entry
   }
 
   if (top === null || !PLUGIN_ID_RE.test(top)) {
     throw new PluginInstallError('the top-level directory must be named <publisher>.<name>')
   }
-  if (manifestEntry === null) throw new PluginInstallError('package.json is missing')
-
-  const raw = (await readEntry(manifestEntry, 256 * 1024)).toString('utf8')
-  const manifest = parseManifestText(raw)
+  // 与上面按首个条目取到的是同一个条目(顶层目录唯一已核过);不同就是归档自相矛盾
+  if (manifestEntry !== manifestCandidate) throw new PluginInstallError('package.json is missing')
   if (manifest.id !== top) {
     throw new PluginInstallError(`the top-level directory "${top}" does not match the manifest id "${manifest.id}"`)
   }
@@ -169,11 +236,9 @@ export async function installPluginZip(
         continue
       }
       await fs.mkdir(dirname(destination), { recursive: true })
-      const bytes = await readEntry(entry, MAX_EXPANDED - actual)
-      actual += bytes.length
-      await fs.writeFile(destination, bytes, { flag: 'wx' })
+      actual += await writeEntry(entry, destination, limits.maxExpandedBytes - actual)
     }
-  })
+  }, manifest, beforeReplace)
 
   return { manifest, target, sha256 }
 }
@@ -187,7 +252,8 @@ export async function installPluginZip(
  */
 export async function installPluginDirectory(
   sourceDir: string,
-  root: string
+  root: string,
+  beforeReplace?: (manifest: PluginManifest) => Promise<void>
 ): Promise<InstalledPluginPackage> {
   const stat = await fs.lstat(sourceDir)
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PluginInstallError('source must be a real directory')
@@ -196,8 +262,15 @@ export async function installPluginDirectory(
     throw new PluginInstallError('package.json is missing')
   })
   const manifest = parseManifestText(raw)
+  const limits = limitsFor(manifest)
+  assertInstallable(manifest)
 
-  const files = await collectFiles(sourceDir)
+  /*
+    原生包的开发目录里,运行时(复制来的 LibreOffice.app)带着真实的符号链接。它们由文件索引
+    重建(native-installer.ts),所以这里跳过 `native/` 下的链接;不带索引的包仍然一律拒链接。
+  */
+  const recreatedFromIndex = (manifest.nativeComponents ?? []).some((component) => component.targets.some((t) => t.payload !== undefined))
+  const files = await collectFiles(sourceDir, limits, (rel) => recreatedFromIndex && rel.startsWith(`${NATIVE_DIR}/`))
   assertPackageFiles(
     manifest,
     (path) => files.has(normalizeRel(path)),
@@ -210,12 +283,12 @@ export async function installPluginDirectory(
     for (const rel of files) {
       const destination = join(staging, rel)
       await fs.mkdir(dirname(destination), { recursive: true })
-      const bytes = await fs.readFile(join(sourceDir, rel))
-      written += bytes.length
-      if (written > MAX_EXPANDED) throw new PluginInstallError('package expands beyond the size limit')
-      await fs.writeFile(destination, bytes, { flag: 'wx' })
+      // copyFile 而不是整个读进内存:原生包里单个库就有上百 MB
+      written += (await fs.lstat(join(sourceDir, rel))).size
+      if (written > limits.maxExpandedBytes) throw new PluginInstallError('package expands beyond the size limit')
+      await fs.copyFile(join(sourceDir, rel), destination, fs.constants.COPYFILE_EXCL)
     }
-  })
+  }, manifest, beforeReplace)
 
   return { manifest, target }
 }
@@ -261,6 +334,13 @@ function assertPackageFiles(
   }
   if (manifest.icon !== undefined && !hasFile(manifest.icon)) {
     throw new PluginInstallError(`icon "${manifest.icon}" is missing from the package`)
+  }
+  // 命令的品牌图标(iconFile)与包级 icon 同一条规矩:引用了就得真的在包里。
+  // 缺了的话菜单会在运行期静默回落到拼图块,而作者不会收到任何提示。
+  for (const command of manifest.contributes.commands) {
+    if (command.iconFile !== undefined && !hasFile(command.iconFile)) {
+      throw new PluginInstallError(`command "${command.command}" iconFile "${command.iconFile}" is missing from the package`)
+    }
   }
   if (manifest.l10n !== undefined) {
     if (!hasDir(manifest.l10n)) throw new PluginInstallError(`l10n directory "${manifest.l10n}" is missing`)
@@ -310,6 +390,12 @@ function assertPackageFiles(
   for (const mode of manifest.contributes.modes) {
     if (!hasDir(mode.path)) throw new PluginInstallError(`mode directory is missing: ${mode.path}`)
   }
+  // 原生组件(办公插件自带的引擎):入口与许可证文件的存在性,见 native-installer.ts
+  try {
+    assertNativeFilesPresent(manifest, hasFile)
+  } catch (error) {
+    throw new PluginInstallError((error as Error).message)
+  }
 }
 
 function normalizeRel(path: string): string {
@@ -332,7 +418,7 @@ function resolveTarget(root: string, id: string): string {
  * 删 backup。任何一步炸了都把 backup 挪回来 —— 升级失败之后用户手里应该是
  * **旧版本**,而不是一个装了一半的目录。
  */
-async function materialize(target: string, fill: (staging: string) => Promise<void>): Promise<void> {
+async function materialize(target: string, fill: (staging: string) => Promise<void>, manifest?: PluginManifest, beforeReplace?: (manifest: PluginManifest) => Promise<void>): Promise<void> {
   const stamp = `${String(Date.now())}-${Math.random().toString(36).slice(2)}`
   const staging = `${target}.installing-${stamp}`
   const backup = `${target}.backup-${stamp}`
@@ -341,6 +427,18 @@ async function materialize(target: string, fill: (staging: string) => Promise<vo
   try {
     await fs.mkdir(staging, { recursive: true })
     await fill(staging)
+    /*
+      ★ 原生组件在 **staging 里、切换版本之前**核对:摘要不符或本机没有对应构建时
+      整次安装回滚,用户手里仍是旧版本 —— 而不是换上一个起不来的引擎。
+    */
+    if (manifest !== undefined) {
+      await verifyInstalledNativeComponents(staging, manifest).catch((error: unknown) => {
+        throw new PluginInstallError((error as Error).message)
+      })
+    }
+    // 需求：清单已校验且尚未替换旧目录，此时只检查目标插件的脏文档并收掉它的干净 helper。
+    // 回调拒绝会走 staging 回滚；无关插件的未保存文档不能阻断这次安装。
+    if (manifest !== undefined) await beforeReplace?.(manifest)
     try {
       await fs.rename(target, backup)
       backedUp = true
@@ -356,22 +454,31 @@ async function materialize(target: string, fill: (staging: string) => Promise<vo
   }
 }
 
-async function collectFiles(root: string, prefix = '', depth = 0): Promise<Set<string>> {
-  if (depth > MAX_DEPTH) throw new PluginInstallError('package directory is nested too deeply')
-  const out = new Set<string>()
+async function collectFiles(
+  root: string,
+  limits: PackageLimits,
+  skipSymlink: (rel: string) => boolean,
+  prefix = '',
+  depth = 0,
+  out = new Set<string>()
+): Promise<Set<string>> {
+  if (depth > limits.maxDepth) throw new PluginInstallError('package directory is nested too deeply')
   const entries = await fs.readdir(join(root, prefix), { withFileTypes: true })
   for (const entry of entries) {
     const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`
     // 开发目录里躺着 node_modules 是常态 —— 装进来只会是几万个无用文件。
     if (entry.name === 'node_modules' || entry.name === '.git' || entry.name.startsWith('.DS_Store')) continue
-    if (entry.isSymbolicLink()) throw new PluginInstallError(`package must not contain symlinks: ${rel}`)
+    if (entry.isSymbolicLink()) {
+      if (skipSymlink(rel)) continue
+      throw new PluginInstallError(`package must not contain symlinks: ${rel}`)
+    }
     if (entry.isDirectory()) {
-      for (const child of await collectFiles(root, rel, depth + 1)) out.add(child)
+      await collectFiles(root, limits, skipSymlink, rel, depth + 1, out)
       continue
     }
     if (!entry.isFile()) continue
     out.add(rel)
-    if (out.size > MAX_ENTRIES) throw new PluginInstallError('package has too many files')
+    if (out.size > limits.maxEntries) throw new PluginInstallError('package has too many files')
   }
   return out
 }

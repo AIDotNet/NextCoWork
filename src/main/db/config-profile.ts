@@ -44,6 +44,7 @@ import type { EnvironmentRef } from '../../shared/domain/environment'
 import { normalizeEnvironmentRef } from '../../shared/domain/environment'
 import type { AppSettings, AppSettingsPatch } from '../../shared/domain/settings'
 import { DEFAULT_SETTINGS, mergeSettings } from '../../shared/domain/settings'
+import { providerAccountCredentialRef } from '../../shared/domain/provider-account'
 import { ulid } from '../../shared/util/id'
 import { sameRoot } from '../state/workspace-root-path'
 import { stmt, tx } from './index'
@@ -92,11 +93,33 @@ export class ConfigProfileError extends Error {
 const PROFILE_TABLES = [
   'providers',
   'model_aliases',
+  /*
+    ★★ OAuth 账号必须随作用域走(schema 第 24 条)。漏掉的表现很具体:
+    A 账户登录的 Codex 账号会出现在 B 账户的设置页里 —— 而它的**密文**是
+    按作用域隔离的(`physicalCredentialRef` 加前缀),于是 B 看到一行「已登录」、
+    一发消息却报「还没有配置密钥」,两边都不报错。
+
+    ★ 排在 `providers` 之后:虽然这张表**没建外键**(它还要连带删 credentials
+    里的密文,而那件事外键管不着),但恢复顺序保持和依赖关系一致,
+    将来真给它加上外键时这里一行都不用动。
+  */
+  'provider_accounts',
   'mcp_servers',
   'search_providers',
   'connection_profiles',
   'scheduled_tasks'
 ] as const
+
+/**
+ * `runtime.ts` 的 `seed()` 种默认模型 / 默认子代理的一次性标记。
+ *
+ * 需求:这两项只在「这个作用域从没种过」时种一次,之后用户选什么(包括空串
+ * 「跟随对话」)都原样保留 —— 以前按「值为空」判,重启就把「跟随对话」顶回 deepseek。
+ *
+ * ★ 必须随作用域走(所以登记在下面的 `PROFILE_KV_KEYS`):留在全局的话,
+ * 切到一个新账户时标记还在,新账户的空作用域拿不到种子,首屏模型选择器是空的。
+ */
+export const MODEL_DEFAULTS_SEEDED_KEY = 'settings.model-defaults-seeded'
 
 /**
  * 随作用域走的 kv 键 —— **白名单,不是黑名单**。
@@ -116,10 +139,11 @@ const PROFILE_KV_KEYS = [
   // client 供应商的一次性迁移标记。跟着供应商走,否则切回账户时
   // 那个「把出厂 openai-chat 抬到 Responses」的一次性动作会重跑一次并覆盖用户的选择。
   'client-auth.responses-default',
-  'client-auth.deepseek-zhipu-xiaomi-qwen-anthropic-override-v3'
+  'client-auth.deepseek-zhipu-xiaomi-qwen-anthropic-override-v3',
+  MODEL_DEFAULTS_SEEDED_KEY
 ] as const
 
-const PROFILE_KV_PREFIXES = ['tabs.outer.', 'tabs.inner.', 'session.input.'] as const
+const PROFILE_KV_PREFIXES = ['tabs.outer.', 'tabs.inner.', 'session.input.', 'session.widget.'] as const
 
 /** 物理 ref 的分隔符。U+0000 不可能出现在任何一个 ref 构造器里。 */
 const SCOPE_SEPARATOR = '\u0000'
@@ -579,6 +603,8 @@ function machineLevelPatch(settings: AppSettings): AppSettingsPatch {
     gateway: structuredClone(settings.gateway),
     proxy: structuredClone(settings.proxy),
     shell: settings.shell,
+    // 和 shell 同理:描述的是这台机器上装了哪些程序,不随账户换
+    defaultOpenTarget: settings.defaultOpenTarget,
     data: { backupDirectory: settings.data.backupDirectory }
   }
 }
@@ -742,6 +768,14 @@ export function migrateLegacyLocalProvidersToCurrentAccount(): boolean {
   const providerIds = new Set(providerRefs.keys())
   const aliases = (source.tables?.['model_aliases'] ?? [])
     .filter((row) => providerIds.has(String(row['provider_id'] ?? '')))
+  /*
+    ★★ 账号行与它们的密文要和 provider 一起过来(schema 第 24 条)。
+    漏掉的表现是:账户隔离上线**之前**就已经登录了多个号的用户,首次登录账户之后
+    只剩下当前那一个 —— 另外几个的密文还在 local 作用域里躺着,而界面上
+    连一行都不显示,他只会以为自己被登出了。
+  */
+  const accounts = (source.tables?.['provider_accounts'] ?? [])
+    .filter((row) => providerIds.has(String(row['provider_id'] ?? '')))
 
   return tx(() => {
     const insertedProviders = new Set<string>()
@@ -768,6 +802,24 @@ export function migrateLegacyLocalProvidersToCurrentAccount(): boolean {
       if (credentialsHas(next)) continue
       const row = stmt('SELECT blob FROM credentials WHERE ref = ?').get(logical)
       const blob = row?.['blob']
+      if (blob instanceof Uint8Array) stmt('INSERT INTO credentials (ref, blob) VALUES (?, ?)').run(next, blob)
+    }
+    /*
+      账号行 + 它们的密文。★ 只搬那些 provider 刚被插进来的(`insertedProviders`):
+      目标账户已经有同 id provider 时,它名下的账号是**它自己的**,
+      把 local 的账号混进去会让两个账户的登录态串在一起。
+    */
+    for (const row of accounts) {
+      const providerId = String(row['provider_id'] ?? '')
+      const accountId = String(row['id'] ?? '')
+      if (!insertedProviders.has(providerId) || accountId === '') continue
+      if (stmt('SELECT id FROM provider_accounts WHERE id = ?').get(accountId) !== undefined) continue
+      restoreTable('provider_accounts', [row])
+      const logical = providerAccountCredentialRef(providerId, accountId)
+      const next = physicalCredentialRef(logical, target)
+      if (credentialsHas(next)) continue
+      const credential = stmt('SELECT blob FROM credentials WHERE ref = ?').get(logical)
+      const blob = credential?.['blob']
       if (blob instanceof Uint8Array) stmt('INSERT INTO credentials (ref, blob) VALUES (?, ?)').run(next, blob)
     }
     writeProfileRecord(target, { ...existing, migratedLegacyProviders: true })
@@ -841,6 +893,14 @@ function planRows(sourceTables: Record<string, Row[]>, workspaceMap: Record<stri
     return { ...row, json: JSON.stringify(next) }
   })
   out['search_providers'] = [...(sourceTables['search_providers'] ?? [])]
+  /*
+    ★ 账号行跟着它的 provider 走,平台那条同样排除(理由同上面两行:
+    `nextcowork` 每个账户各有一份,由登录流程自己保证)。
+    密文不在这里 —— 它由 `migrateLegacyLocalProvidersToCurrentAccount` 那条
+    凭证搬运路径按 ref 处理(见本文件里 `physicalCredentialRef` 那一节)。
+  */
+  out['provider_accounts'] = (sourceTables['provider_accounts'] ?? [])
+    .filter((row) => String(row['provider_id'] ?? '') !== 'nextcowork')
   out['connection_profiles'] = [...(sourceTables['connection_profiles'] ?? [])]
   out['scheduled_tasks'] = (sourceTables['scheduled_tasks'] ?? []).map((row) => remapScheduledTask(row, workspaceMap))
   /* 只在冲突判定里用到:`PROFILE_TABLES` 不含 workspaces(它们靠 owner 复制,不整表搬)。 */

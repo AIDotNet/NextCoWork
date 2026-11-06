@@ -56,7 +56,7 @@ export const DEFAULT_SKIP_DIRS: ReadonlySet<string> = new Set([
 ])
 
 /** 无论如何都不该出现在搜索结果里的文件名。 */
-const SKIP_FILES: ReadonlySet<string> = new Set(['.DS_Store', 'Thumbs.db'])
+export const SKIP_FILES: ReadonlySet<string> = new Set(['.DS_Store', 'Thumbs.db'])
 
 /**
  * ★ **不跳过点开头的目录**(表里明确列出的那几个除外)。

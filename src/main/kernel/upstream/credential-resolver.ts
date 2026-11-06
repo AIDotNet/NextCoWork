@@ -69,6 +69,15 @@ export class CredentialResolver {
     signal.throwIfAborted()
     const cred = parseCredential(await this.host.secrets.get(ref))
     if (cred === null || cred.kind === 'api-key') return cred
+    /*
+      ★ 签名凭证(腾讯 TC3 / AWS SigV4)**没有可刷新的东西** —— 它是一对长期
+      AccessKey/SecretKey,不存在 OAuth 那种"用一次就轮换"的续期。原样返回,
+      由视频适配器那边按它重算签名。少了这一句,它会被送进 `expiringSoon`/
+      `refreshOnce` 那些按 OAuth 形状写的分支,在那里读 `expiresAt` 得到
+      undefined —— 而 undefined 永远不"快过期",于是表现为"看起来能过、
+      但每次请求都拿一段 JSON 当 Bearer 发出去"。
+    */
+    if (cred.kind === 'signature') return cred
     if (!expiringSoon(cred, this.host.clock.now())) return cred
     return this.refreshOnce(ref, cred)
   }

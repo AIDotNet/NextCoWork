@@ -6,14 +6,20 @@
  * 「一等公民」的实际含义,也意味着只有一条权限链路、一套命名方案、一个执行路径。
  */
 import type { ToolInfo, ToolProgress, ToolResult, ToolSource } from '../../../shared/agent/tool'
+import type { AgentMessage } from '../../../shared/agent/message'
 import type { PermissionMode } from '../../../shared/agent/permission'
 import type { Skill } from '../../../shared/domain/skill'
 import type { SchedulingBridge } from '../../../shared/domain/scheduled'
 import type { ShellBridge } from '../../../shared/domain/shell'
 import type { RunStatus } from '../../../shared/agent/event'
 import type { AgentError } from '../../../shared/agent/error'
-import type { KernelHost, PlatformInfo, WorkspacePaths } from '../host'
+import type { DetachedProcess, KernelHost, PlatformInfo, WorkspacePaths } from '../host'
+import type { ImageGenBridge } from '../image-gen'
+import type { SessionImageStore } from '../session-images'
+import type { VideoGenBridge } from '../video-gen'
+import type { SessionVideoStore } from '../session-videos'
 import type { InteractFn } from '../interaction-gate'
+import { NETWORK_SWITCH_TOOLS } from '../permission-gate'
 import { isValidExternalName, sanitizeDescription, ToolNamer } from './naming'
 
 /**
@@ -52,6 +58,13 @@ export interface SubagentRequest {
   callId: string
   /** 不等待结果，让父代理继续工作；子 run 仍在主进程中独立运行。 */
   background?: boolean
+  /**
+   * 这一次派发钉死用哪个模型别名,优先于子代理文件和设置页。
+   * ★ 调用方要先用 `ToolContext.subagentModels` 校验过 —— 这里查不到就 `refused`。
+   */
+  model?: string
+  /** 这一次派发的思考档位,优先于子代理文件和设置页;仍按子 run 的模型归一化 */
+  thinking?: import('../../../shared/agent/run-request').ThinkingLevel
 }
 
 /**
@@ -75,6 +88,8 @@ export type SubagentOutcome =
       color?: import('../../../shared/domain/agent-def').AgentColor
       /** `status === 'error'` 时的原因 */
       error?: AgentError | string
+      /** 子 run 各轮用量之和。上游没报用量时缺省 */
+      usage?: import('../../../shared/agent/stream').TokenUsage
     }
   | {
       kind: 'background'
@@ -88,6 +103,13 @@ export type SubagentOutcome =
        * 分成两支只会让 `Task` 里多一条除了措辞之外完全一样的分支。
        */
       queued?: boolean
+      /**
+       * 前台派出去的,跑到一半被**用户**转去了后台。
+       *
+       * ★ 单独标出来,因为对模型的措辞不同:它不是自己选的后台,得知道是用户
+       * 不想再等,以及结论之后会自己送回来 —— 不然它会以为子任务丢了,再派一次。
+       */
+      detached?: boolean
     }
 
 export type SpawnSubagentFn = (req: SubagentRequest) => Promise<SubagentOutcome>
@@ -131,11 +153,40 @@ export interface ToolContext {
    */
   scheduling?: SchedulingBridge
   /**
+   * 对话内生图的读写通道。缺省 = 这个环境里生不了图(纯内核测试、没装配),
+   * `generate_image` 整体不下发(`isEnabled`)—— 见 `kernel/image-gen.ts` 文件头。
+   *
+   * ★ 形状同 `scheduling` / `shells`:内核只认这个窄接口,「store 在哪、密钥怎么读、
+   * `/images/generations` 怎么发」全部留在 `main/kernel/image-gen.ts` +
+   * `runtime.ts` 的装配点。内核仍然零 electron、可单测。
+   */
+  imageGen?: ImageGenBridge
+  /**
+   * 本会话的图片仓:生成图落成 `ncw://` 会话附件、按地址把图读回字节。
+   * 缺省 = 纯内核测试没装配 —— `generate_image` 退回内联 data URL(回执里不列地址),
+   * `SaveImage` 整体不下发(`isEnabled`)。见 `kernel/session-images.ts` 文件头。
+   */
+  sessionImages?: SessionImageStore
+  /**
+   * 对话内生成视频的异步通道。缺省 = 这个环境里生不了视频,
+   * `generate_video` 整体不下发(`isEnabled`)—— 见 \`kernel/video-gen.ts\`。
+   *
+   * ★ 与 `imageGen` 的关键差别:提交返回的是**任务**,成品由后台 worker
+   * 落成本会话附件;`status` / `cancel` 对**已有任务**有效,与当前选中的
+   * 模型和开关都无关。
+   */
+  videoGen?: VideoGenBridge
+  /**
+   * 本会话的视频仓。缺省 = 纯内核测试没装配 —— `SaveVideo` 整体不下发
+   * (它靠这个按 \`ncw://\` 地址读回字节)。见 \`kernel/session-videos.ts\`。
+   */
+  sessionVideos?: SessionVideoStore
+  /**
    * Agent 手上那些 shell(前台停止句柄 + 后台进程)。缺省 = 这个环境里
    * 既停不了单条命令、也起不了后台命令(纯内核测试),`BashOutput` / `KillShell`
    * 整体不下发,`Bash` 的 `run_in_background` 会当场说清楚而不是假装起了。
    */
-  shells?: ShellBridge
+  shells?: ShellBridge<DetachedProcess>
   /**
    * ★ 宿主**从 ctx 传进来,不在工具里闭包捕获**。
    *
@@ -149,10 +200,40 @@ export interface ToolContext {
   /** 进度是**易失的**:单独的事件类型,永不写入转录 */
   emit(progress: ToolProgress): void
   /**
+   * 这次 run 的转录(在**这次调用之前**的部分)。
+   *
+   * 需求:工具的结果文案要能对照「自己上一轮做了什么」—— 目前只有 `TodoWrite`
+   * 用得到(它每轮发完整清单,得知道这次改了什么才能把差异回显给模型)。不给的话
+   * 工具只能自己去存一份状态,而那正是 `todo.ts` 文件头明令排除的「幽灵清单」。
+   *
+   * ★ 与 `spawnSubagent` 同一个取舍:**给不出就不放这个字段**(纯内核测试、
+   * 还没有转录的场景),而不是放一个空数组 —— 「不知道」和「历史是空的」在
+   * 派生逻辑里是两件事。
+   */
+  messages?: readonly AgentMessage[]
+  /**
+   * `TodoWrite` 在**本会话**里的外部名(`ToolNamer` 分配的,撞名时带哈希后缀)。
+   *
+   * 同上,只有清单工具用得到,而它必须来自注册表 —— 写字面量 `'TodoWrite'`
+   * 在撞名时**静默**取不到任何东西。见 `shared/agent/todo.ts` 的
+   * `latestTodosFrom`。
+   */
+  todoToolName?: string
+  /**
    * 派子代理。只有 `Task` 用得到,所以是可选的 —— 让每个工具的
    * ctx 都必须带上一个它永远不会碰的函数,是没有道理的。
    */
   spawnSubagent?: SpawnSubagentFn
+  /**
+   * 此刻可用的模型别名(去重)。`Workflow` 要在派出任何节点之前校验节点钉的 `model` ——
+   * 派到一半才发现名字不对,前面的节点已经白跑了。
+   */
+  subagentModels?: () => readonly string[]
+  /**
+   * 设置 › 实验 里某一项此刻开没开。**现读**,改了设置下一轮就生效。
+   * 缺省 = 这个环境里没有设置可读(纯内核测试),一律当作关 —— 实验功能的默认就是关。
+   */
+  experimentalEnabled?: (feature: keyof import('../../../shared/domain/settings').ExperimentalSettings) => boolean
   interact?: InteractFn
   canProposeGoal?: () => boolean
   proposeGoal?: (condition: string, askUser: boolean) => Promise<'set' | 'pending'>
@@ -186,9 +267,10 @@ export interface SnapshotFilter {
    */
   allowList?: readonly string[]
   /**
-   * 工作区的「联网」开关(`WorkspaceSettings.webSearch`)。
+   * 工作区的「联网搜索」开关(`WorkspaceSettings.webSearch`)。
    *
-   * ★ 关掉时**根本不下发**联网工具,而不是下发了再在调用时拒绝。
+   * ★ 关掉时**根本不下发**受它管的工具(`permission-gate.ts` 的 `NETWORK_SWITCH_TOOLS`,
+   * 目前只有 `WebFetch` / `web_search`),而不是下发了再在调用时拒绝。
    * 后者也拦得住(`permission-gate.ts` 那张表的第 1 行),但代价是模型先花一轮
    * 去调一个注定被拒的工具 —— 用户看到的是「它先试了一次搜索,被拒,才回答」。
    * 那道闸仍然留着:它挡的是「这一轮下发之后开关被关掉」的窗口,以及
@@ -294,7 +376,9 @@ export class ToolRegistry {
     const out: Tool[] = []
     for (const t of this.tools.values()) {
       if (filter.context !== undefined && t.isEnabled?.(filter.context) === false) continue
-      if (filter.network === false && t.needsNetwork) continue
+      // ★ 按名单而不是 `t.needsNetwork`:开关只管网页搜索与抓取(见 NETWORK_SWITCH_TOOLS)。
+      //   必须和 runtime.ts `approveWith` 读同一张表,分家就是「列表里没有,调用却放行」。
+      if (filter.network === false && NETWORK_SWITCH_TOOLS.has(t.internalId)) continue
       if (filter.noInteraction === true && INTERACTIVE_TOOLS.has(t.internalId)) continue
       if (allow !== undefined && !allow.has(t.internalId) && !allow.has(t.externalName)) continue
       out.push(t)

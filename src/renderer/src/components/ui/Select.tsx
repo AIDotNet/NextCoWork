@@ -1,4 +1,5 @@
 import { Check, ChevronDown } from "lucide-react";
+import { motion, useReducedMotion, type Variants } from "motion/react";
 import { Select as SelectPrimitive } from "radix-ui";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
@@ -13,7 +14,22 @@ export type SelectOption = {
  *
  * Radix 负责弹层、焦点管理和键盘导航；这里仅固定应用的视觉与 `app-no-drag`
  * 约束，避免设置浮层里的原生 select 露出系统控件样式。
+ *
+ * 动效借自 beUI 的 Select（https://beui.dev/components/motion/select，MIT）：
+ * 面板从触发器下方「分离」出来、选项逐项带一点模糊浮现、箭头用带回弹的曲线转半圈。
+ * ★ 只借**外观与动效**，没有换成它的实现 —— 它的面板是 `absolute` 定位在字段内部，
+ * 会被设置页里带 `overflow-hidden` 的卡片裁掉；这里保留 Radix 的 portal + 碰撞检测。
+ * 关闭时 Radix 直接卸载面板，所以只有入场动画，没有退场。
  */
+
+const LIST: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.025, delayChildren: 0.04 } },
+};
+const ITEM: Variants = {
+  hidden: { opacity: 0, y: -4, filter: "blur(3px)" },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.18, ease: [0.16, 1, 0.3, 1] } },
+};
 export function Select({
   value,
   options,
@@ -22,6 +38,7 @@ export function Select({
   className,
   disabled = false,
   inModal = false,
+  onOpenChange,
 }: {
   value: string;
   options: readonly SelectOption[];
@@ -38,6 +55,11 @@ export function Select({
    * 症状不是「样式错位」而是「点了没反应」:菜单开了,只是看不见。
    */
   inModal?: boolean;
+  /**
+   * 打开/关闭回调。★ 对话模型选择器用它做「打开时校正」(见 `useChatModelGuard`);
+   * 可选,缺省不影响任何现有调用方的行为。
+   */
+  onOpenChange?: (open: boolean) => void;
 }): ReactNode {
   // Radix 把空串保留给“尚未选择”的内部状态；设置里的“跟随对话”恰好以空串持久化。
   // 为这个选项映射一个仅在组件内部使用、且不会和调用方值冲突的值。
@@ -46,6 +68,7 @@ export function Select({
     emptyValue = `_${emptyValue}`;
   }
   const radixValue = value === "" ? emptyValue : value;
+  const reduce = useReducedMotion() ?? false;
 
   return (
     <SelectPrimitive.Root
@@ -53,16 +76,18 @@ export function Select({
       onValueChange={(nextValue) =>
         onValueChange(nextValue === emptyValue ? "" : nextValue)
       }
+      onOpenChange={onOpenChange}
     >
       <SelectPrimitive.Trigger
         aria-label={ariaLabel}
         disabled={disabled}
         className={cn(
-          "app-no-drag group flex h-7 w-full items-center gap-1.5 rounded-[7px] border border-border",
-          "bg-surface-field px-2 text-left text-[11.5px] text-fg outline-none",
-          "transition-[background-color,border-color,box-shadow] duration-150",
-          "hover:bg-tint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/15",
-          "data-[state=open]:border-accent data-[state=open]:bg-tint",
+          "app-no-drag group flex h-7 w-full items-center gap-1.5 rounded-full border border-[var(--border-strong)]",
+          "bg-[var(--surface)] px-3 text-left text-[12px] text-fg outline-none",
+          "transition-[background-color,border-color,box-shadow,border-radius] duration-150",
+          "hover:bg-tint focus-visible:ring-3 focus-visible:ring-accent/50",
+          // 苹果风格:弹出按钮展开时只压暗一档,不再改圆角
+          "data-[state=open]:bg-tint",
           className,
         )}
       >
@@ -77,38 +102,53 @@ export function Select({
         <span className="min-w-0 flex-1 truncate">
           <SelectPrimitive.Value />
         </span>
-        <SelectPrimitive.Icon className="shrink-0 text-fg-faint transition-transform duration-150 group-data-[state=open]:rotate-180">
+        <SelectPrimitive.Icon className="shrink-0 text-fg-faint transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-data-[state=open]:rotate-180 motion-reduce:transition-none">
           <ChevronDown aria-hidden size={12} />
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
           position="popper"
-          sideOffset={4}
+          sideOffset={6}
           className={cn(
             "app-no-drag max-h-[min(240px,var(--radix-select-content-available-height))]",
             inModal ? "z-[150]" : "z-[60]",
-            "w-[var(--radix-select-trigger-width)] overflow-hidden rounded-card border border-border",
-            "bg-surface-raised p-1 shadow-2xl shadow-black/40 outline-none",
+            "w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[10px] border-0",
+            "bg-surface-menu p-[5px] shadow-menu outline-none",
+            // 入场:从触发器那一侧轻轻展开。transform-origin 用 Radix 算好的锚点,翻到上方时自动跟着翻
+            "origin-[var(--radix-select-content-transform-origin)]",
+            "data-[state=open]:animate-[select-unfold_0.22s_cubic-bezier(0.16,1,0.3,1)] motion-reduce:animate-none",
           )}
         >
           <SelectPrimitive.Viewport className="scroll-thin overflow-y-auto">
-            {options.map((option) => (
-              <SelectPrimitive.Item
-                key={option.value}
-                value={option.value === "" ? emptyValue : option.value}
-                className={cn(
-                  "relative flex min-h-7 cursor-default select-none items-center rounded-[6px] py-1 pr-6 pl-2",
-                  "text-[11.5px] text-fg outline-none",
-                  "data-[highlighted]:bg-tint-hover data-[highlighted]:text-fg",
-                )}
-              >
-                <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
-                <SelectPrimitive.ItemIndicator className="absolute right-2 inline-flex items-center text-accent">
-                  <Check aria-hidden size={11} />
-                </SelectPrimitive.ItemIndicator>
-              </SelectPrimitive.Item>
-            ))}
+            <motion.div
+              variants={reduce ? undefined : LIST}
+              initial={reduce ? false : "hidden"}
+              animate="show"
+            >
+              {options.map((option) => (
+                <SelectPrimitive.Item
+                  key={option.value}
+                  value={option.value === "" ? emptyValue : option.value}
+                  asChild
+                >
+                  <motion.div
+                    variants={reduce ? undefined : ITEM}
+                    className={cn(
+                      "group/opt relative flex min-h-6 cursor-default select-none items-center rounded-[5px] py-[3px] pr-6 pl-2",
+                      "text-[11.5px] text-fg-muted outline-none transition-colors",
+                      "data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg",
+                      "data-[state=checked]:font-medium",
+                    )}
+                  >
+                    <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                    <SelectPrimitive.ItemIndicator className="absolute right-2 inline-flex items-center text-accent group-data-[highlighted]/opt:text-accent-fg">
+                      <Check aria-hidden size={11} />
+                    </SelectPrimitive.ItemIndicator>
+                  </motion.div>
+                </SelectPrimitive.Item>
+              ))}
+            </motion.div>
           </SelectPrimitive.Viewport>
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>

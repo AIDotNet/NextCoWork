@@ -54,7 +54,8 @@ async function click(label: string): Promise<void> {
 describe('theme studio labels and library previews', () => {
   it.each(['zh-CN', 'en-US'] as const)('renders translated appearance and all editor options in %s', async (locale) => {
     await render(profiles.find((p) => p.id === 'builtin-image-misty-forest')!, locale)
-    expect(container.querySelector('[role="radiogroup"]')?.textContent).toContain(locale === 'zh-CN' ? '跟随系统' : 'Follow system')
+    // Arc 的分段控件是 role="group" + aria-pressed(不是 radiogroup)
+    expect(container.querySelector('[role="group"]')?.textContent).toContain(locale === 'zh-CN' ? '跟随系统' : 'Follow system')
     const groups = locale === 'zh-CN' ? ['壁纸', '色彩', '面板', '字体与动效', '可读性'] : ['Wallpaper', 'Colors', 'Surfaces', 'Type & motion', 'Readability']
     for (const group of groups) {
       await click(group)

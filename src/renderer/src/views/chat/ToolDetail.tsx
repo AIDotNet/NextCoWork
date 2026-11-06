@@ -11,45 +11,66 @@
  * 对未知输入永远正确的呈现。
  */
 import type { ReactNode } from "react";
-import type { ToolOutput } from "../../../../shared/agent/message";
+import type { ToolOutput, ToolOutputImage } from "../../../../shared/agent/message";
 import type { ToolShape } from "../../../../shared/domain/tool-presenter";
+import { isTodoListTool } from "../../../../shared/domain/tool-presenter";
+import { ncwPreviewUrl } from "../../../../shared/domain/attachment";
 import { useI18n } from "../../i18n";
 import { cn } from "../../lib/cn";
 import { DiffBlock } from "./DiffView";
 import { CardRenderer } from "./CardRenderer";
+import { CodeBlock, languageOf } from "../../components/code";
+import { DETAIL_CARD_CLASS, DETAIL_CARD_DANGER_CLASS } from "./detail-card";
+import { parseNumberedOutput } from "./read-output";
+import { MatchList } from "./MatchList";
+import { TerminalBlock } from "./TerminalBlock";
 import { InteractionPreviewBlock } from "./InteractionPreviewBlock";
-import { TaskChecklist } from "./TaskChecklist";
+import { TodoWriteChecklist } from "./TodoWriteChecklist";
 import { WidgetDetail } from "./WidgetDetail";
-import { previewTodos } from "./todo-preview";
+import { ImageGenDetail } from "./ImageGenDetail";
+import { VideoGenDetail } from "./VideoGenDetail";
+import { ScreenshotDetail } from "./ScreenshotDetail";
+import { WorkflowDetail } from "./WorkflowDetail";
 
 // ─────────────────────────── 原语 ───────────────────────────
 
-/** 详情区里的一个带标签的块。样式沿用改造前 `parts.tsx` 的 Labeled,不新增 token。 */
+/**
+ * 详情区里的一个块。
+ *
+ * ★★ `label` 现在是**可选的,而且绝大多数调用点不给**。原先每个块头上都顶着
+ * 一行「内容 / 更改 / 输出 / 命令」的小标题,而展开区是用户**主动点开**的 ——
+ * 他已经知道自己点的是哪一行,再告诉他「这是输出」只是把真正的内容往下推一行。
+ * 参考实现的展开区里一个小标题都没有:点开命令行就是终端,点开编辑行就是 diff。
+ *
+ * ★ 失败那一档**保留标题**:那时块里装的不是这个工具的产物,而是它失败的原因,
+ * 红字能说明「出事了」,说不清「这段文字是错误信息而不是输出」。
+ */
 export function Labeled({
   label,
   children,
   tone = "normal",
 }: {
-  label: string;
+  label?: string;
   children: ReactNode;
   tone?: "normal" | "danger";
 }): ReactNode {
   return (
     <div className="mt-1.5 first:mt-0">
-      <p
-        className={cn(
-          "mb-0.5 text-[11px]",
-          tone === "danger" ? "text-danger" : "text-fg-faint",
-        )}
-      >
-        {label}
-      </p>
+      {label !== undefined && (
+        <p
+          className={cn(
+            "mb-0.5 text-[12px]",
+            tone === "danger" ? "text-danger" : "text-fg-faint",
+          )}
+        >
+          {label}
+        </p>
+      )}
       <pre
         className={cn(
-          "selectable scroll-thin max-h-56 overflow-auto rounded-[7px] px-2.5 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap",
-          tone === "danger"
-            ? "bg-danger/5 text-danger"
-            : "bg-canvas text-fg-muted",
+          "selectable scroll-thin max-h-56 overflow-auto px-3 py-2 font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap",
+          tone === "danger" ? DETAIL_CARD_DANGER_CLASS : DETAIL_CARD_CLASS,
+          tone === "danger" ? "text-danger" : "text-fg-muted",
         )}
       >
         {children}
@@ -106,7 +127,11 @@ function Truncated({ omitted }: { omitted: number }): ReactNode {
   );
 }
 
-/** 结果块 —— 八个渲染器里有七个都要用,所以抽出来。`WidgetDetail` 用的是它。 */
+/**
+ * 结果块 —— 八个渲染器里有七个都要用,所以抽出来。`WidgetDetail` 用的是它。
+ *
+ * ★ 成功时**不带标题**(见 `Labeled`);失败时带,因为那一段是失败原因,不是产物。
+ */
 export function OutputBlock({
   output,
   label,
@@ -114,17 +139,18 @@ export function OutputBlock({
   maxLines = 40,
 }: {
   output: ToolOutput | undefined;
+  /** 只在少数确实需要区分「这是哪一段」的地方给(目前没有)。默认不画标题 */
   label?: string;
   isError?: boolean;
   maxLines?: number;
 }): ReactNode {
   const { t } = useI18n();
   if (output === undefined) return null;
-  const effectiveLabel = label ?? t("chat.tool.result");
   const { text, omitted } = clipLines(output.content, maxLines);
+  const heading = isError ? t("chat.tool.failureReason") : label;
   return (
     <Labeled
-      label={isError ? t("chat.tool.failureReason") : effectiveLabel}
+      {...(heading === undefined ? {} : { label: heading })}
       tone={isError ? "danger" : "normal"}
     >
       {text}
@@ -137,7 +163,7 @@ export function OutputBlock({
       {(output.images ?? []).map((image, index) => (
         <img
           key={`${image.dataRef.slice(0, 48)}:${index}`}
-          src={image.dataRef}
+          src={ncwPreviewUrl(image.dataRef)}
           alt={t("chat.tool.result")}
           className="mt-2 max-h-96 max-w-full rounded-lg border border-hairline object-contain"
         />
@@ -159,66 +185,104 @@ export interface DetailProps {
    * 空对象),而形态类只分到「这是一次等你表态」为止。再往下分到具体工具的那一步
    * 由 `interaction-preview.ts` 的表完成,所以这里必须把名字传下去。
    * 其余渲染器用不到它 —— 别拿它在别处开按工具名分叉的口子,那正是注册表要消掉的东西。
+   *
+   * (例外:`orchestration` 这一档确实要按名字分流 —— 但判据来自注册表里的
+   * `isTodoListTool`,不是这里现写一个 `toolName === 'TodoWrite'`。)
    */
   toolName?: string;
+  /**
+   * 这次调用的 id。
+   *
+   * 原先只为 frame 卡片反查 pluginId 而存在;现在 `orchestration` 里那个清单渲染器
+   * 也用它去问「这次调用**之前**那份清单是什么」(`views/chat/todo-history.tsx`)——
+   * 那是算增量唯一缺的一块事实。
+   */
+  callId?: string;
+  /**
+   * 生图工具运行中已经到手的那几张(`ToolCallState.partialImages`,按格子序号)。
+   *
+   * 需求:`image` 形态的卡片要逐张把加载格换成图,而那几张在 `tool_end` 之前只存在于
+   * 易失的调用状态里,`output` 还没有。只有 `ImageGenDetail` 读它。
+   */
+  partialImages?: Readonly<Record<number, ToolOutputImage>>;
+  /**
+   * `Workflow` 运行中的整份节点状态(`ToolCallState.workflow`)。同 `partialImages`:
+   * `tool_end` 之前只存在于易失的调用状态里。只有 `WorkflowDetail` 读它。
+   */
+  workflow?: import("../../../../shared/agent/workflow").WorkflowState;
 }
 
-/** read:路径单独一行,输出当代码预览(Read 的输出本身已带 `cat -n` 行号) */
+/**
+ * read:文件内容按**带高亮的代码卡**渲染。
+ *
+ * ★ `Read` 给模型的是 `cat -n` 格式(行号 + 制表符 + 正文)。行号必须先拆出来
+ * 再喂给高亮器 —— 每行以数字开头的"源码"解析出来的树和真代码毫无关系,
+ * 染出来的颜色比不染更糟。拆解在 `read-output.ts`,那里写了为什么允许失败。
+ * ★ 路径那一行删了:行本身已经写着文件名和目录(见 `row.tsx` 的版式)。
+ */
 function ReadDetail({ input, output, isError }: DetailProps): ReactNode {
-  const { t } = useI18n();
-  const path = str(input, "file_path") || str(input, "path");
+  if (output === undefined) return null;
+  if (isError) return <OutputBlock output={output} isError maxLines={20} />;
+  const { code, startLine } = parseNumberedOutput(output.content);
   return (
-    <>
-      {path !== "" && <PathLine path={path} />}
-      <OutputBlock
-        output={output}
-        isError={isError}
-        label={t("chat.tool.content")}
-        maxLines={40}
-      />
-    </>
+    <CodeBlock
+      code={code}
+      language={languageOf(str(input, "file_path") || str(input, "path"))}
+      startLine={startLine}
+      maxLines={40}
+      className={DETAIL_CARD_CLASS}
+    />
   );
 }
 
 /**
  * mutate:**入参里的 `content` / `new_string` 才是重点**,而它们正是现状
- * JSON 化之后最不可读的部分。这里单独拎出来按原文渲染(保留换行)。
+ * JSON 化之后最不可读的部分。
  *
- * ★ **新文本一律走 `DiffBlock`,参数还在流的时候也一样。** 判据原先是
+ * ★ **改一段(Edit)走 diff,整份新内容(Write)走带高亮的代码卡。**
+ * 判据是「有没有另一侧可对照」:`Write` 的 `content` 是一份**全新的文件**,
+ * 把它画成「全是新增」的 diff 等于给每一行都刷上绿底并加一个 `+` ——
+ * 那是一份读不动的源码,而这一步用户最想做的就是把新文件读一遍。
+ * 改了多少行仍然在行右端的 `+N`(见 `ToolLineStats`),信息没丢。
+ *
+ * ★ **Edit 的新文本一律走 `DiffBlock`,参数还在流的时候也一样。** 判据原先是
  * 「old 和 new 都到齐」,于是一次 Edit 在流式阶段先显示成两块纯文本,
  * `new_string` 收尾的那一刻整块换成 diff —— 同一件事两套画法,而切换恰好发生在
- * 用户正盯着看的时刻。只有新文本时(Write 的 `content`、或 new 先到)就是一份
- * 「全是新增」的 diff,与改动审查里新建文件的画法一致。
+ * 用户正盯着看的时刻。
+ *
+ * ★ diff 上方的「更改 / 写入内容」小标题删了,路径行同理 —— 见 `Labeled`。
  */
 function MutateDetail({ input, output, isError }: DetailProps): ReactNode {
-  const { t } = useI18n();
-  const path = str(input, "file_path");
   const content = str(input, "content");
   const oldStr = str(input, "old_string");
   const newStr = str(input, "new_string");
+  const language = languageOf(str(input, "file_path"));
 
   return (
     <>
-      {path !== "" && <PathLine path={path} />}
-      {newStr !== "" && (
-        <DiffBlock oldStr={oldStr} newStr={newStr} label={t("chat.tool.change")} />
-      )}
+      {newStr !== "" && <DiffBlock oldStr={oldStr} newStr={newStr} language={language} />}
       {/* new 还没开始流:此刻只有「要被换掉的那一段」,没有第二侧可对照 */}
       {newStr === "" && oldStr !== "" && (
-        <Labeled label={t("chat.tool.before")}>
-          {clipLines(oldStr, 12).text}
-          <Truncated omitted={clipLines(oldStr, 12).omitted} />
-        </Labeled>
+        <CodeBlock code={oldStr} language={language} maxLines={12} className={DETAIL_CARD_CLASS} />
       )}
       {content !== "" && (
-        <DiffBlock oldStr="" newStr={content} label={t("chat.tool.writeContent")} />
+        <CodeBlock code={content} language={language} startLine={1} maxLines={40} className={DETAIL_CARD_CLASS} />
       )}
-      <OutputBlock output={output} isError={isError} maxLines={12} />
+      {/*
+        ★ 成功时的输出是一句「Edited a.ts: replaced 3 occurrence(s).」——
+        行右端的 `+N −M` 已经把同一件事说得更准,所以只在失败时才画这一块。
+      */}
+      {isError && <OutputBlock output={output} isError maxLines={12} />}
     </>
   );
 }
 
-/** search:模式 + 命中列表。命中多时只显示前 40 行,余量注明。 */
+/**
+ * search:模式 + **命中清单**。
+ *
+ * ★ 清单走 `MatchList`(文件名可点开),不是一坨文本:找到了东西之后,
+ * 下一步一定是去看它 —— 让用户把路径复制出来再去文件树里翻是这一步最大的浪费。
+ */
 function SearchDetail({ input, output, isError }: DetailProps): ReactNode {
   const { t } = useI18n();
   const pattern = str(input, "pattern");
@@ -226,8 +290,8 @@ function SearchDetail({ input, output, isError }: DetailProps): ReactNode {
   return (
     <>
       {pattern !== "" && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-faint">
-          <span className="rounded-[5px] bg-canvas px-1.5 py-0.5 font-mono text-fg-muted">
+        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-fg-faint">
+          <span className="rounded-[5px] border border-stroke bg-surface-raised px-1.5 py-0.5 font-mono text-fg-muted">
             {pattern}
           </span>
           {scope !== "" && (
@@ -237,39 +301,36 @@ function SearchDetail({ input, output, isError }: DetailProps): ReactNode {
           )}
         </div>
       )}
-      <OutputBlock
-        output={output}
-        isError={isError}
-        label={t("chat.tool.match")}
-        maxLines={40}
-      />
+      {isError
+        ? <OutputBlock output={output} isError maxLines={20} />
+        : output !== undefined && <MatchList content={output.content} />}
     </>
   );
 }
 
-/** command:命令原文 + 终端样式输出 */
+/**
+ * command:命令和它的输出是**同一块终端**。
+ *
+ * 渲染细节(输出不折行、两条流分色、`<stdout>` 信封不出现、命令那一行折行)
+ * 全在 `TerminalBlock` 里 —— 那个文件的头注释写了每一条的理由。
+ */
 function CommandDetail({ input, output, isError }: DetailProps): ReactNode {
-  const { t } = useI18n();
-  const command = str(input, "command");
   return (
-    <>
-      {command !== "" && (
-        <Labeled label={t("chat.tool.command")}>
-          <span className="text-accent-soft">$ </span>
-          {command}
-        </Labeled>
-      )}
-      <OutputBlock
-        output={output}
-        isError={isError}
-        label={t("chat.tool.output")}
-        maxLines={60}
-      />
-    </>
+    <TerminalBlock
+      command={str(input, "command")}
+      output={output}
+      isError={isError}
+    />
   );
 }
 
-/** network:URL 可点开性留给将来,先保证它完整可见且不撑破布局 */
+/**
+ * network:URL + 抓回来的正文。
+ *
+ * ★ 正文走 `CodeBlock`:抓回来的东西大多是 JSON 或已经排好版的 Markdown/文本,
+ * 折行会把 JSON 的层级和表格拆散。提示词(`prompt`)相反,那是写给模型的散文,
+ * 所以仍然用会折行的 `Labeled`。
+ */
 function NetworkDetail({ input, output, isError }: DetailProps): ReactNode {
   const { t } = useI18n();
   const url = str(input, "url");
@@ -279,46 +340,47 @@ function NetworkDetail({ input, output, isError }: DetailProps): ReactNode {
     <>
       {url !== "" && <PathLine path={url} />}
       {query !== "" && (
-        <div className="mb-1.5 text-[11.5px] text-fg-muted">
+        <div className="mb-1.5 text-[12.5px] text-fg-muted">
           <span className="text-fg-faint">{t("chat.tool.query")}</span> {query}
         </div>
       )}
-      {prompt !== "" && (
-        <Labeled label={t("chat.tool.prompt")}>
-          {clipLines(prompt, 6).text}
-        </Labeled>
-      )}
-      <OutputBlock
-        output={output}
-        isError={isError}
-        label={t("chat.tool.response")}
-        maxLines={40}
-      />
+      {prompt !== "" && <Labeled>{clipLines(prompt, 6).text}</Labeled>}
+      {isError
+        ? <OutputBlock output={output} isError maxLines={20} />
+        : output !== undefined && (
+          <CodeBlock code={output.content} language={languageOf(url)} maxLines={40} className={DETAIL_CARD_CLASS} />
+        )}
     </>
   );
 }
 
 /**
- * orchestration:TodoWrite 的 `todos` 是**结构化数据**,渲染成清单比 JSON
- * 有用得多 —— 这是用户在整个转录里唯一会反复回看的一份状态。
+ * orchestration 形态下有两条路,判据是 `isTodoListTool(toolName)`
+ * (`shared/domain/tool-presenter.ts` 里那张数据表):
  *
- * ★ **清单本体就是输入框上方那张 `TaskChecklist`,不是另画的一份。**
- * 这里原本有一套自绘的 ○▸✓ 列表,于是同一份 todos 在同一屏里有两种长相
- * (卡片里是带删除线的文本行,输入框上方是带进度环和 Spinner 的清单),
- * 改一处必漏一处。半截入参的收窄规则在 `todo-preview.ts`。
- * 外层定位由 `className` 抹掉 —— 那套居中/限宽是输入框上方那个位置的需求。
+ * - **自带清单的那个**(`TodoWrite`)→ `TodoWriteChecklist`,见它的文件头;
+ * - 其余(`Task` / `Skill` / 四个定时任务工具)→ 下面的提示词 + 输出。
+ *
+ * ★ 判据**不能**是「入参里有没有 `todos`」:模型往任何工具里塞一个 `todos` 字段
+ * 都会让那张卡片改画成清单,而那张卡片可能根本没有清单语义。名字来自注册表,
+ * 与标题行、摘要用的是同一份事实。
  */
 function OrchestrationDetail({
   input,
   output,
   isError,
+  toolName,
+  callId,
 }: DetailProps): ReactNode {
   const { t } = useI18n();
-  const todos = previewTodos(input);
-  if (todos.length > 0) {
+  if (toolName !== undefined && isTodoListTool(toolName)) {
     return (
       <>
-        <TaskChecklist todos={todos} className="max-w-none px-0 pb-1.5" />
+        <TodoWriteChecklist
+          callId={callId}
+          input={input}
+          className="max-w-none px-0 pb-1.5"
+        />
         <OutputBlock output={output} isError={isError} maxLines={6} />
       </>
     );
@@ -330,12 +392,13 @@ function OrchestrationDetail({
   return (
     <>
       {name !== "" && (
-        <div className="mb-1.5 text-[11.5px] text-fg-muted">
+        <div className="mb-1.5 text-[12.5px] text-fg-muted">
           <span className="text-fg-faint">{t("chat.tool.name")}</span> {name}
         </div>
       )}
+      {/* 提示词是写给模型的散文 —— 折行读,所以留在 Labeled 而不是 CodeBlock */}
       {prompt !== "" && (
-        <Labeled label={t("chat.tool.task")}>
+        <Labeled>
           {clipLines(prompt, 10).text}
           <Truncated omitted={clipLines(prompt, 10).omitted} />
         </Labeled>
@@ -380,18 +443,21 @@ function InteractionDetail({
   );
 }
 
-/** external:兜底 —— 通用 JSON。这正是改造前所有工具的行为。 */
+/**
+ * external:兜底 —— 入参与结果都按 JSON 画。
+ *
+ * ★ 这是**唯一对未知输入永远正确**的呈现(见文件头);走 `CodeBlock` 之后
+ * 至少 JSON 的缩进层级保得住 —— 折行的 JSON 和一行行读的 JSON 是两种东西。
+ */
 function ExternalDetail({ input, output, isError }: DetailProps): ReactNode {
-  const { t } = useI18n();
-  const raw = stringify(input);
-  const { text, omitted } = clipLines(raw, 30);
   return (
     <>
-      <Labeled label={t("chat.tool.input")}>
-        {text}
-        <Truncated omitted={omitted} />
-      </Labeled>
-      <OutputBlock output={output} isError={isError} maxLines={40} />
+      <CodeBlock code={stringify(input)} language="json" maxLines={30} className={DETAIL_CARD_CLASS} />
+      {isError
+        ? <OutputBlock output={output} isError maxLines={20} />
+        : output !== undefined && (
+          <CodeBlock code={output.content} maxLines={40} className={cn(DETAIL_CARD_CLASS, "mt-1.5")} />
+        )}
     </>
   );
 }
@@ -399,7 +465,7 @@ function ExternalDetail({ input, output, isError }: DetailProps): ReactNode {
 function PathLine({ path }: { path: string }): ReactNode {
   return (
     <p
-      className="mb-1.5 truncate font-mono text-[11px] text-fg-faint"
+      className="mb-1.5 truncate font-mono text-[12px] text-fg-faint"
       title={path}
       dir="rtl"
     >
@@ -433,6 +499,18 @@ export const DETAIL_RENDERERS: Record<
     两个分支共用同一个 `WidgetFrame` —— 见 `WidgetDetail.tsx` 的文件头。
   */
   widget: WidgetDetail,
+  // image:生图的专属图片卡 —— 加载格、逐张出图、成品网格都在 `ImageGenDetail.tsx`
+  image: ImageGenDetail,
+  // video:生成视频的专属卡片 —— 异步任务的生命周期 + 播放器,见那边的文件头
+  video: VideoGenDetail,
+  /*
+    screenshot:浏览器页面截图(`browser_screenshot`)的卡片 —— 见它的文件头。
+    与 `image` 分开的理由写在 `ToolShape` 里那一段:生图有生成期与提示词,
+    截图只有一帧,复用那张卡会在图上多出一块永远空着的提示词区。
+  */
+  screenshot: ScreenshotDetail,
+  // workflow:工作流画布(实验功能),懒加载 @xyflow/react,见 `WorkflowCanvas.tsx` 文件头
+  workflow: WorkflowDetail,
   external: ExternalDetail,
 };
 
@@ -444,14 +522,15 @@ export function ToolDetail({
   toolName,
   callId,
   card,
+  partialImages,
+  workflow,
 }: {
   shape: ToolShape;
   /*
-    `toolName` 原先只为 frame 卡片反查 pluginId 而存在,现在同时被 `interaction`
-    渲染器用来分派题面投影 —— 所以它移进了 `DetailProps`(见那里的注释),
-    不再在这里单独声明。
+    `toolName` / `callId` 移进了 `DetailProps`(见那里的注释):前者原先只为 frame
+    卡片反查 pluginId 而存在,现在 `interaction` 的分派与 `orchestration` 的清单
+    分流都要它;后者现在也是清单增量那块的入参。
   */
-  callId?: string;
   /**
    * 要渲染的卡片。调用方决定优先级:结果快照(`output.card`)或运行中的实时卡片
    * (`ToolCallState.card`,第 2 层)。给了它就渲染卡片,**与 shape 正交**。
@@ -469,6 +548,9 @@ export function ToolDetail({
       output={output}
       isError={isError}
       toolName={toolName}
+      callId={callId}
+      partialImages={partialImages}
+      workflow={workflow}
     />
   );
 }

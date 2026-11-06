@@ -9,12 +9,14 @@
  * 和合并语义绑在一起才看得出意义)。
  */
 import { describe, expect, it } from 'vitest'
-import type { ProxySettings } from '../proxy'
+import type { ProxyEndpoint, ProxySettings } from '../proxy'
 import {
+  childProxyEnv,
   DEFAULT_PROXY,
   DIRECT_BYPASS,
   composeProxyUrl,
   isLocalNetworkHost,
+  LOCAL_ONLY_BYPASS,
   normalizeBypassList,
   parseProxyEndpoint,
   parseResolvedProxy,
@@ -274,6 +276,79 @@ describe('parseResolvedProxy', () => {
     expect(parseResolvedProxy('PROXY proxy.corp')?.port).toBe(80)
     expect(parseResolvedProxy('HTTPS proxy.corp')?.port).toBe(443)
     expect(parseResolvedProxy('SOCKS5 proxy.corp')?.port).toBe(1080)
+  })
+})
+
+/**
+ * `childProxyEnv` —— 代理端点翻成子进程环境变量(Agent 的 Bash / 后台 shell / 钩子用)。
+ *
+ * 失败模式和文件头说的是同一副面孔:**以为走了代理,其实没走**(变量拼错/被清空),
+ * 以及反过来 **以为没动用户的配置,其实盖掉了**(父进程优先没守住)。
+ */
+describe('childProxyEnv', () => {
+  const http = parseProxyEndpoint('http://127.0.0.1:7890') as ProxyEndpoint
+
+  it('直连返回空对象 —— 不清空、不覆盖,维持继承来的现状', () => {
+    expect(childProxyEnv(null, { HTTPS_PROXY: 'http://user-env:1' })).toEqual({})
+  })
+
+  it('http 代理补全大小写两套变量,NO_PROXY 默认是回环名单', () => {
+    const env = childProxyEnv(http, {})
+    expect(env).toEqual({
+      HTTP_PROXY: 'http://127.0.0.1:7890',
+      HTTPS_PROXY: 'http://127.0.0.1:7890',
+      ALL_PROXY: 'http://127.0.0.1:7890',
+      NO_PROXY: LOCAL_ONLY_BYPASS.join(','),
+      http_proxy: 'http://127.0.0.1:7890',
+      https_proxy: 'http://127.0.0.1:7890',
+      all_proxy: 'http://127.0.0.1:7890',
+      no_proxy: LOCAL_ONLY_BYPASS.join(',')
+    })
+  })
+
+  /**
+   * ★ socks 塞进 HTTP_PROXY 大多数工具不认,只会得到一句莫名其妙的报错;
+   * ALL_PROXY 才是 socks 的正经载体,不认 socks 的工具自己会忽略它。
+   */
+  it('socks5 代理只发 ALL_PROXY 和 NO_PROXY,不发 HTTP_PROXY/HTTPS_PROXY', () => {
+    const env = childProxyEnv(parseProxyEndpoint('socks5://127.0.0.1:1080') as ProxyEndpoint, {})
+    expect(env).toEqual({
+      ALL_PROXY: 'socks5://127.0.0.1:1080',
+      NO_PROXY: LOCAL_ONLY_BYPASS.join(','),
+      all_proxy: 'socks5://127.0.0.1:1080',
+      no_proxy: LOCAL_ONLY_BYPASS.join(',')
+    })
+  })
+
+  /**
+   * ★★ 用户自己 export 过的永远赢 —— 那是他显式写的配置,盖掉它等于替他换了
+   * 一条网络路径,而设置页上什么都看不出来。大小写不敏感:只定义了小写的
+   * `https_proxy` 时,大写那一份也不发,免得两个变量打架(谁赢看工具心情)。
+   */
+  it('父进程已有的键不覆盖,大小写不敏感', () => {
+    const env = childProxyEnv(http, { https_proxy: 'http://user-env:1', no_proxy: 'my.corp' })
+    expect(env.HTTP_PROXY).toBe('http://127.0.0.1:7890')
+    expect(env.HTTPS_PROXY).toBeUndefined()
+    expect(env.https_proxy).toBeUndefined()
+    expect(env.NO_PROXY).toBeUndefined()
+    expect(env.no_proxy).toBeUndefined()
+  })
+
+  /** win32 环境变量不分大小写,小写副本会和大写撞名 */
+  it('lowercase: false 时只发大写', () => {
+    const env = childProxyEnv(http, {}, { lowercase: false })
+    for (const name of Object.keys(env)) expect(name).toBe(name.toUpperCase())
+  })
+
+  it('显式 bypass 按序逗号连接(手动代理那条路把设置页的白名单原样带过来)', () => {
+    const env = childProxyEnv(http, {}, { bypass: ['my.corp', ...DIRECT_BYPASS] })
+    expect(env.NO_PROXY).toBe(['my.corp', ...DIRECT_BYPASS].join(','))
+  })
+
+  /** 端点缺端口时按协议默认值拼 url —— 与 composeProxyUrl 的约定一致 */
+  it('端口为 0 的端点拼出无端口的 url', () => {
+    const env = childProxyEnv({ scheme: 'http', host: 'proxy.corp', port: 0 }, {})
+    expect(env.HTTP_PROXY).toBe('http://proxy.corp')
   })
 })
 

@@ -14,8 +14,10 @@ import { Check, Copy, Download, GitBranch, RotateCcw, Trash2 } from 'lucide-reac
 import { formatDuration } from '../../../../shared/agent/duration'
 import { copyText, saveTextFile } from '../../services/app'
 import { ActionIconButton, useTransientStatus } from '../../components/ui/ActionIconButton'
+import { Spinner } from '../../components/ui/Spinner'
 import { cn } from '../../lib/cn'
 import { useI18n } from '../../i18n'
+import { toast } from '../../stores/toast'
 
 /** 待确认状态自动复位的时长。与代码块「已复制」的 2.2s 同量级,但留得久一点。 */
 const CONFIRM_TIMEOUT_MS = 4000
@@ -38,7 +40,7 @@ export function TurnActions({
 }: {
   /** 这一轮的散文正文。为空(纯工具轮)时复制与导出没有意义。 */
   text: string
-  /** 引出这一轮的用户提问。缺失时不能重新生成,也不能删除,也不能分支。 */
+  /** 引出这一轮的用户提问。缺失时不能重新生成,也不能分支(删除不依赖它,见 `onDelete`)。 */
   prompt?: TurnPrompt
   /** 最后一轮常驻显示;更早的回合悬停才浮现,避免整屏都是按钮。 */
   alwaysVisible: boolean
@@ -48,7 +50,13 @@ export function TurnActions({
   /** 用量读数(带缓存明细的浮层)。只有携带 run 用量的那一轮会传。 */
   usage?: ReactNode
   onRegenerate?: (id: string, text: string) => Promise<void>
-  onDelete?: (id: string) => Promise<void>
+  /**
+   * 只删这条回复,提问留着。
+   *
+   * ★ 不挂在 `prompt` 上:后台汇报引出的回复前面没有提问,以前因此整颗删除键消失。
+   * 有没有东西可删由调用方决定(这一行有没有已落盘的消息),没有就不传。
+   */
+  onDelete?: () => Promise<void>
   /** 从这一轮分支出一条新会话,只带上到这一轮为止的转录。 */
   onBranch?: (id: string) => Promise<void>
 }): ReactNode {
@@ -56,6 +64,13 @@ export function TurnActions({
   const [copy, setCopy] = useTransientStatus()
   const [exported, setExported] = useTransientStatus()
   const [branched, setBranched] = useTransientStatus()
+  /*
+    需求:分支要复制一段转录(含图片),长会话上要等一会儿。原先按钮在这段时间里
+    毫无变化,用户以为没点上就再点,于是一次建出好几条一模一样的分支。
+    进行中:按钮禁用 + 转圈;失败:除了图标的 tooltip,再给一条 toast ——
+    tooltip 只有悬停才看得见,等于没报错。主进程另有同键去重,这里只是别让人白点。
+  */
+  const [branching, setBranching] = useState(false)
   const [confirm, setConfirm] = useState<'none' | 'regenerate' | 'delete'>('none')
 
   // 正文变了就撤掉「已复制」—— 那个钩子说的是上一份文本,留着会指错东西。
@@ -68,9 +83,10 @@ export function TurnActions({
 
   const hasText = text.trim() !== ''
   const canRewrite = prompt !== undefined && !disabled
+  const canDelete = onDelete !== undefined && !disabled
 
   // 一整轮都没产出散文、又没有提问可依附时,这条操作条没有任何可点的东西。
-  if (!hasText && !canRewrite && usage === undefined && durationMs === undefined) return null
+  if (!hasText && !canRewrite && !canDelete && usage === undefined && durationMs === undefined) return null
 
   return (
     <div
@@ -96,13 +112,22 @@ export function TurnActions({
 
       {canRewrite && onBranch !== undefined && (
         <ActionIconButton
-          label={t(branched === 'failed' ? 'chat.turn.branchFailed' : branched === 'done' ? 'chat.turn.branched' : 'chat.turn.branch')}
+          label={t(branching ? 'chat.turn.branching' : branched === 'failed' ? 'chat.turn.branchFailed' : branched === 'done' ? 'chat.turn.branched' : 'chat.turn.branch')}
           testId="turn-branch"
+          disabled={branching}
           onClick={() => {
-            void onBranch(prompt.id).then(() => setBranched('done')).catch(() => setBranched('failed'))
+            if (branching) return
+            setBranching(true)
+            void onBranch(prompt.id)
+              .then(() => setBranched('done'))
+              .catch(() => {
+                setBranched('failed')
+                toast.error(t('chat.turn.branchFailed'), 'chat-turn-branch')
+              })
+              .finally(() => setBranching(false))
           }}
         >
-          {branched === 'done' ? <Check size={13} /> : <GitBranch size={13} />}
+          {branching ? <Spinner size="sm" /> : branched === 'done' ? <Check size={13} /> : <GitBranch size={13} />}
         </ActionIconButton>
       )}
 
@@ -137,7 +162,7 @@ export function TurnActions({
         </ActionIconButton>
       )}
 
-      {canRewrite && onDelete !== undefined && (
+      {canDelete && (
         <ActionIconButton
           label={confirm === 'delete' ? t('common.confirmDelete') : t('chat.turn.delete')}
           testId="turn-delete"
@@ -146,7 +171,7 @@ export function TurnActions({
           onClick={() => {
             if (confirm !== 'delete') { setConfirm('delete'); return }
             setConfirm('none')
-            void onDelete(prompt.id)
+            void onDelete?.()
           }}
         >
           <Trash2 size={13} />

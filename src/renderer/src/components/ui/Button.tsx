@@ -1,13 +1,13 @@
-import { cn } from '../../lib/cn'
+import { Button as ArcButton } from '../arc/button/button'
 
 /**
- * 文字按钮。仓库里在此之前只有 `IconButton` —— 设置浮层右下角那颗「完成」
- * 是第一个需要它的地方(量自 06cd7b3c:x1012..1077、h≈34、`rounded-pill`、
- * 底色 accent)。
+ * ★ **宿主代码不要用这个文件** —— 直接 `import { Button } from 'components/arc/button/button'`。
  *
- * 三档而不是一档:「完成」是主动作(accent),「优化存储」是中性动作(ghost),
- * 「清空数据」这类是危险动作(danger)。三者共用同一个盒子,只有配色不同 ——
- * 分成三个组件的话,某一天改高度就会改漏一个。
+ * 它只为插件 API 留着:`nextcowork/ui`(`plugin-ui/ui.ts`)对第三方插件导出的
+ * `Button` 一直是这套参数(`variant: accent | ghost | danger`、`icon`)。删掉或改签名
+ * 等于让所有已发布的插件在下次更新宿主时编译失败,所以签名不动,实现换成 Arc。
+ *
+ *   accent → primary · ghost → secondary · danger → danger
  */
 export function Button({
   children,
@@ -27,24 +27,16 @@ export function Button({
   className?: string
 }): React.ReactNode {
   return (
-    <button
+    <ArcButton
       type="button"
+      variant={variant === 'accent' ? 'primary' : variant === 'danger' ? 'danger' : 'secondary'}
+      size={size}
       disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        'app-no-drag inline-flex shrink-0 items-center justify-center gap-1.5 rounded-pill',
-        'whitespace-nowrap transition-[background-color,border-color,color,opacity,transform,scale,translate] duration-150',
-        'active:scale-[.97] motion-reduce:transition-none motion-reduce:active:scale-100 disabled:opacity-40',
-        size === 'sm' ? 'h-7 px-3 text-[12px]' : 'h-[34px] px-4 text-[13px]',
-        variant === 'accent' && 'bg-accent text-accent-fg hover:opacity-90',
-        // ghost 的静息态是「槽」,悬停往暖里偏 —— 和 theme.css 那条规律一致
-        variant === 'ghost' && 'bg-tint text-fg hover:bg-tint-strong',
-        variant === 'danger' && 'border border-danger text-danger hover:bg-danger/10',
-        className
-      )}
+      onClick={onClick === undefined ? undefined : () => onClick()}
+      className={className}
     >
-      {icon !== undefined && <span className="shrink-0">{icon}</span>}
+      {icon}
       {children}
-    </button>
+    </ArcButton>
   )
 }

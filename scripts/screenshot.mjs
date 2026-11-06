@@ -262,11 +262,11 @@ try {
     if (!ok) throw new Error(`设置里找不到「${text}」这一页`)
   }
 
-  /** 子 Tab 是 Segmented,渲染成 role=radio */
+  /** 子 Tab 是 Arc 的 SegmentedControl,每一段是带 aria-pressed 的按钮 */
   const clickSub = async (text) => {
     const ok = await cdp.eval(`
       (() => {
-        const b = [...document.querySelectorAll('[role="radio"]')].find(
+        const b = [...document.querySelectorAll('button[aria-pressed]')].find(
           (x) => x.textContent.trim() === ${JSON.stringify(text)}
         )
         if (!b) return false

@@ -317,6 +317,20 @@ describe('Task · 传给启动器的东西', () => {
     }])
   })
 
+  it('★ 前台派出、被用户转去后台:成功,说清是用户转的、别再派一次,回执标成后台在跑', async () => {
+    const spawn = fakeSpawn({ kind: 'background', childRunId: 'run_1:sub:2', detached: true })
+
+    const r = await task().execute(
+      { description: '迁移数据层', prompt: '把数据层迁到 Dapper.AOT', subagent_type: 'researcher' },
+      ctx({ callId: 'call_fg', spawnSubagent: spawn.fn })
+    )
+
+    expect(r.isError).toBe(false)
+    expect(r.output.content).toContain('The user moved this subagent to the background')
+    expect(r.output.content).toContain('do NOT launch it again')
+    expect(r.subagent).toMatchObject({ childRunId: 'run_1:sub:2', status: 'running', background: true })
+  })
+
   it('★ 名字不做任何纠正,原样递过去 —— 回落到 general-purpose 是最坏的失败', async () => {
     const spawn = fakeSpawn({ kind: 'refused', reason: '没有名为 "RESEARCHER" 的子代理。' })
 

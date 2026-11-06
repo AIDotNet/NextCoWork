@@ -28,6 +28,7 @@ import routinUrl from '../../../../../resources/images/routin-ai.webp'
 
 import ai302 from '@lobehub/icons-static-svg/icons/ai302.svg?raw'
 import aihubmix from '@lobehub/icons-static-svg/icons/aihubmix.svg?raw'
+import atlascloud from '@lobehub/icons-static-svg/icons/atlascloud.svg?raw'
 import anthropic from '@lobehub/icons-static-svg/icons/anthropic.svg?raw'
 import azure from '@lobehub/icons-static-svg/icons/azure.svg?raw'
 import baichuan from '@lobehub/icons-static-svg/icons/baichuan.svg?raw'
@@ -65,6 +66,7 @@ import vertexai from '@lobehub/icons-static-svg/icons/vertexai.svg?raw'
 import vllm from '@lobehub/icons-static-svg/icons/vllm.svg?raw'
 import volcengine from '@lobehub/icons-static-svg/icons/volcengine.svg?raw'
 import xai from '@lobehub/icons-static-svg/icons/xai.svg?raw'
+import xiaomimimo from '@lobehub/icons-static-svg/icons/xiaomimimo.svg?raw'
 import yi from '@lobehub/icons-static-svg/icons/yi.svg?raw'
 import zai from '@lobehub/icons-static-svg/icons/zai.svg?raw'
 import zhipu from '@lobehub/icons-static-svg/icons/zhipu.svg?raw'
@@ -98,11 +100,12 @@ const RASTER: Record<RasterBrand, string> = { routin: routinUrl }
  * 而不是运行时的一个空图标。
  */
 const MARK: Record<Exclude<Brand, RasterBrand>, string> = {
-  ai302, aihubmix, anthropic, azure, baichuan, baiducloud, bailian, bedrock,
+  ai302, aihubmix, anthropic, atlascloud, azure, baichuan, baiducloud, bailian, bedrock,
   claude, cohere, deepinfra, deepseek, doubao, fireworks, gemini, groq,
   hunyuan, kimi, lmstudio, menlo, meta, minimax, mistral, moonshot, ollama,
   openai, opencode, openrouter, perplexity, qwen, sensenova, siliconcloud,
-  spark, stepfun, together, vertexai, vllm, volcengine, xai, yi, zai, zhipu
+  spark, stepfun, together, vertexai, vllm, volcengine, xai, xiaomimimo, yi,
+  zai, zhipu
 }
 
 /**

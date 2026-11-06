@@ -19,9 +19,9 @@ import type {
 } from '../../../../../shared/domain/import'
 import { IMPORT_LIMITS } from '../../../../../shared/domain/import'
 import type { Workspace } from '../../../../../shared/domain/workspace'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
-import { EmptyState } from '../../../components/ui/EmptyState'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { Select } from '../../../components/ui/Select'
 import { TextInput } from '../../../components/ui/TextInput'
 import { cn } from '../../../lib/cn'
@@ -191,9 +191,10 @@ export function ImportSelectionDialog({
       width={640}
       footer={
         <>
-          <Button onClick={onClose}>{t('import.cancel')}</Button>
-          <Button
-            variant="accent"
+          <Button size="sm" type="button" variant="secondary" onClick={onClose}>{t('import.cancel')}</Button>
+          <Button size="sm"
+            type="button"
+            variant="primary"
             disabled={busy || loading || !blockers.ok}
             onClick={() => onApply([...selected], [...targets].map(([projectKey, workspaceId]) => ({ projectKey, workspaceId })))}
           >
@@ -240,7 +241,7 @@ export function ImportSelectionDialog({
         </p>
       )}
 
-      {!loading && items.length === 0 && error === null && <EmptyState title={t('import.noItems')} />}
+      {!loading && items.length === 0 && error === null && <EmptyState title={t('import.noItems')} description="" />}
 
       {IMPORT_GROUPS.map((group) => {
         const groupItems = byGroup.get(group.id) ?? []

@@ -6,7 +6,7 @@
  * `doubao-seed-2.1-pro`)。右侧面板那张「模型优先级」列表才是这家底下的模型们。
  * 照字面把它做成模型列表,右侧面板就没有主语了。
  */
-import type { ModelAlias, UpstreamProvider } from '../../../../../shared/domain/provider'
+import { isChatModelAlias, type ModelAlias, type UpstreamProvider } from '../../../../../shared/domain/provider'
 import {
   modelSelectionKey,
   selectModelBinding
@@ -73,13 +73,20 @@ export function modelOptions(
   models: readonly ModelAlias[],
   providers: readonly UpstreamProvider[] = []
 ): { value: string; label: string }[] {
+  /*
+    ★ 需求:这个构建器的调用方**全是对话语境**(默认模型/子代理/审核/目标判定/
+    工作区默认模型/Hooks),选择器一律只列文本模型 —— 图片模型选中了也发不出
+    对话请求,它出现在这个下拉里就是一个选了就废的选项。判据收口在
+    `isChatModelAlias`,别在调用点再写一份。
+  */
+  const chatModels = models.filter(isChatModelAlias)
   const shared = new Set<string>()
   const seen = new Set<string>()
-  for (const model of models) {
+  for (const model of chatModels) {
     if (seen.has(model.alias)) shared.add(model.alias)
     seen.add(model.alias)
   }
-  return models.map((model) => {
+  return chatModels.map((model) => {
     const providerName = providers.find((p) => p.id === model.providerId)?.name ?? model.providerId
     return {
       value: modelSelectionKey(model.providerId, model.alias),

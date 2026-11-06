@@ -1,54 +1,42 @@
-import { Check, Code2, Copy, WrapText } from 'lucide-react'
-import { memo, useEffect, useState, type ReactNode } from 'react'
+/**
+ * markdown 围栏 → 共享代码卡的接线。
+ *
+ * 需求:围栏比别处的代码块多两件只有 markdown 才有的事 —— 「预览 / 源码」切换
+ * (mermaid 图、宿主注入的 `codeRenderers`)和流式期间强制显示源码。卡本身
+ * (工具栏、折行开关、复制、高亮正文)是 `components/code/CodeBlock` 那一张,
+ * 全仓库只有那一份;这里只决定「正文是源码还是预览」,并把切换按钮塞进它的
+ * `actions` 插槽。
+ */
+import { memo, useState, type ReactNode } from 'react'
+import { CodeBlock as CodeCard } from '../code'
 import { useI18n } from '../../i18n'
 import { useMarkdownEnvironment, type MarkdownCodeProps } from './MarkdownProvider'
 import { MermaidBlock } from './MermaidBlock'
-import { CodeSource } from './CodeSource'
 
 export const CodeBlock = memo(function CodeBlock(props: MarkdownCodeProps): ReactNode {
   const { code, language, streaming } = props
   const { t } = useI18n()
-  const { onCopyCode, codeRenderers } = useMarkdownEnvironment()
-  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
-  const [wrap, setWrap] = useState(false)
+  const { codeRenderers } = useMarkdownEnvironment()
   const [source, setSource] = useState(false)
   const Renderer = codeRenderers?.[language] ?? (language === 'mermaid' ? MermaidBlock : undefined)
   const showSource = !Renderer || source || streaming
 
-  useEffect(() => { setCopy('idle') }, [code])
-  useEffect(() => {
-    if (copy === 'idle') return
-    const timer = setTimeout(() => setCopy('idle'), 2200)
-    return () => clearTimeout(timer)
-  }, [copy])
-
   return (
-    <div className="markdown-code-block" data-language={language || undefined} data-streaming={streaming || undefined}>
-      <div className="markdown-code-toolbar">
-        {/* 需求：代码块标题要先被识别成文件/代码产物，再呈现语言和操作。 */}
-        <Code2 size={14} aria-hidden="true" className="shrink-0 text-fg-faint" />
-        <span className="markdown-code-language">{language || t('markdown.code')}</span>
-        {Renderer && <div className="markdown-code-views">
-          <button type="button" aria-pressed={!showSource} disabled={streaming} onClick={() => setSource(false)}>{t(language === 'mermaid' ? 'markdown.diagram' : 'markdown.preview')}</button>
-          <button type="button" aria-pressed={showSource} onClick={() => setSource(true)}>{t('markdown.source')}</button>
-        </div>}
-        <div className="markdown-code-actions">
-          {showSource && <button type="button" title={t(wrap ? 'markdown.unwrap' : 'markdown.wrap')}
-            aria-label={t(wrap ? 'markdown.unwrap' : 'markdown.wrap')} aria-pressed={wrap} onClick={() => setWrap((v) => !v)}>
-            <WrapText size={14} aria-hidden="true" />
-          </button>}
-          <button type="button" className="markdown-copy" title={t(copy === 'failed' ? 'markdown.copyFailed' : 'markdown.copy')}
-            onClick={() => {
-              void Promise.resolve().then(() => onCopyCode ? onCopyCode(code) : navigator.clipboard.writeText(code))
-                .then(() => setCopy('copied')).catch(() => setCopy('failed'))
-            }}>
-            {copy === 'copied' ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
-            <span aria-live="polite">{t(copy === 'copied' ? 'markdown.copied' : copy === 'failed' ? 'markdown.copyFailed' : 'markdown.copy')}</span>
-          </button>
-        </div>
-      </div>
-      {Renderer && streaming && <div className="markdown-render-status" role="status">{t('markdown.diagramStreaming')}</div>}
-      {showSource ? <CodeSource code={code} language={language} wrap={wrap} /> : <Renderer {...props} />}
-    </div>
+    <CodeCard
+      variant="fence"
+      code={code}
+      language={language}
+      streaming={streaming}
+      actions={Renderer && <div className="code-card-views">
+        <button type="button" aria-pressed={!showSource} disabled={streaming} onClick={() => setSource(false)}>{t(language === 'mermaid' ? 'markdown.diagram' : 'markdown.preview')}</button>
+        <button type="button" aria-pressed={showSource} onClick={() => setSource(true)}>{t('markdown.source')}</button>
+      </div>}
+      status={Renderer && streaming
+        ? <div className="markdown-render-status" role="status">{t('markdown.diagramStreaming')}</div>
+        : undefined}
+    >
+      {/* 不给 children = 用卡自己的源码正文(连带那个折行开关);给了就是预览 */}
+      {showSource || Renderer === undefined ? undefined : <Renderer {...props} />}
+    </CodeCard>
   )
 })

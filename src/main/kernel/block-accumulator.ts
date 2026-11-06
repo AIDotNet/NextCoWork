@@ -20,6 +20,20 @@ interface ThinkingBlock {
   kind: 'thinking'
   text: string
   opaque?: unknown
+  /**
+   * 需求:思考卡片显示「思考了多久」,落盘成 `ContentPart.durationMs`。
+   *
+   * ★ 起点取**这块出现之前最后一条内容事件**(`message_start` 或上一个块的增量),
+   * 不是这块自己的首个增量。OpenAI Responses 这类上游先在服务端闷头推理、
+   * 最后才吐一小段摘要:按首个增量算,用户干等了 30 秒,卡片却写「思考 1 秒」。
+   * 终点是这块最后一个 `thinking_delta`(签名那条 `block_opaque` 不算,它不是思考本身)。
+   *
+   * ★ 渲染层 `shared/agent/transcript.ts` 的 `LiveBlock.startedAt` 按同一口径现算
+   * 实时计时 —— 两边哪条规则不一致,提交那一刻时长就会跳。改这里就得同时改那边。
+   * 时间戳由 session 经 `apply(e, at)` 传进来,这个类自己仍然不读时钟。
+   */
+  startedAt?: number
+  endedAt?: number
 }
 interface CallBlock {
   kind: 'tool_call'
@@ -53,10 +67,27 @@ export class BlockAccumulator {
   private readonly blocks = new Map<number, Block>()
   /** 参数的累积与解析语义(空参数、只 parse 一次)复用 shared 里那一份 */
   private readonly args = new ToolCallAccumulator()
+  /** 最近一条内容性事件的时间 —— 新 thinking 块的起点,口径见 `ThinkingBlock.startedAt` */
+  private lastAt: number | undefined
+  /** `message_end.usage.reasoningTokens`;见 `finalize` 里何时把它归给某一块 */
+  private reasoningTokens: number | undefined
 
-  apply(e: ProviderStreamEvent): void {
+  /**
+   * `at` 是调用方(session)读的主进程时钟。可选:测试与不关心计时的调用方不传,
+   * 结果就是没有 `durationMs` —— 和旧转录同一种「没有事实就不画」。
+   */
+  apply(e: ProviderStreamEvent, at?: number): void {
     switch (e.type) {
+      case 'message_start':
+        this.lastAt = at
+        break
+
+      case 'message_end':
+        this.reasoningTokens = e.usage.reasoningTokens
+        break
+
       case 'text_delta': {
+        this.lastAt = at ?? this.lastAt
         const b = this.blocks.get(e.index)
         if (b === undefined) this.blocks.set(e.index, { kind: 'text', text: e.text })
         else if (b.kind === 'text') b.text += e.text
@@ -67,8 +98,21 @@ export class BlockAccumulator {
 
       case 'thinking_delta': {
         const b = this.blocks.get(e.index)
-        if (b === undefined) this.blocks.set(e.index, { kind: 'thinking', text: e.text })
-        else if (b.kind === 'thinking') b.text += e.text
+        if (b === undefined) {
+          this.blocks.set(e.index, {
+            kind: 'thinking',
+            text: e.text,
+            ...(at === undefined ? {} : { startedAt: this.lastAt ?? at, endedAt: at })
+          })
+        } else if (b.kind === 'thinking') {
+          b.text += e.text
+          if (at !== undefined) {
+            // 先由 block_opaque 建出来的块(见下)没有起点,首个增量补上
+            b.startedAt ??= this.lastAt ?? at
+            b.endedAt = at
+          }
+        }
+        this.lastAt = at ?? this.lastAt
         break
       }
 
@@ -93,10 +137,12 @@ export class BlockAccumulator {
         // 是上游对这个 index 的一次显式声明,而增量只是延续 —— 延续不该重定义。
         this.blocks.set(e.index, { kind: 'tool_call', callId: e.callId, name: e.name })
         this.args.start(e.callId, e.name)
+        this.lastAt = at ?? this.lastAt
         break
 
       case 'tool_call_delta':
         this.args.delta(e.callId, e.argsDelta)
+        this.lastAt = at ?? this.lastAt
         break
 
       case 'tool_call_end': {
@@ -110,7 +156,8 @@ export class BlockAccumulator {
       }
 
       // message_start / message_end / provider_retry / provider_switch / error
-      // 都不产生内容块 —— 它们由 session 直接消费。
+      // 都不产生内容块 —— 它们由 session 直接消费。(前两个在上面另有分支,
+      // 但只为思考卡片取计时起点与 reasoningTokens,同样不产生块。)
       default:
         break
     }
@@ -137,6 +184,17 @@ export class BlockAccumulator {
     // 按 index 排序而不是按到达顺序:块的先后是**模型表达的顺序**,
     // 而事件到达顺序在并行工具调用时可以交错。
     const ordered = [...this.blocks.entries()].sort((a, b) => a[0] - b[0])
+    /*
+      需求:思考卡片显示 token 数,上游报了真值就用真值。
+
+      ★ `reasoningTokens` 是**整次回复**的数,不是某一块的。只有这次回复里恰好一块
+      有正文的思考时,归属才没有歧义;交错思考(思考 → 工具 → 思考)拆成几块时
+      不写,由渲染层按正文估算 —— 按长度摊派出来的「真值」比明说是约数更误导人。
+    */
+    const visibleThinking = ordered.filter(([, b]) => b.kind === 'thinking' && b.text !== '')
+    const reportedTokens = visibleThinking.length === 1 && this.reasoningTokens !== undefined && this.reasoningTokens > 0
+      ? this.reasoningTokens
+      : undefined
 
     for (const [, b] of ordered) {
       switch (b.kind) {
@@ -151,7 +209,11 @@ export class BlockAccumulator {
             parts.push({
               type: 'thinking',
               text: b.text,
-              ...(b.opaque !== undefined ? { opaque: b.opaque } : {})
+              ...(b.opaque !== undefined ? { opaque: b.opaque } : {}),
+              ...(b.startedAt === undefined || b.endedAt === undefined
+                ? {}
+                : { durationMs: Math.max(0, b.endedAt - b.startedAt) }),
+              ...(reportedTokens !== undefined && b.text !== '' ? { tokens: reportedTokens } : {})
             })
           }
           break

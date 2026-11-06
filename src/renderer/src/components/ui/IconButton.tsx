@@ -1,24 +1,25 @@
-import { cn } from '../../lib/cn'
+import { Button } from '../arc/button/button'
 
 /**
- * 纯图标按钮。`active` 走的是「挖暗」那一档,悬停走「偏暖」那一档 ——
- * 两个维度分开,所以「悬停在一个已激活的项上」不会互相盖掉。
+ * 纯图标按钮 —— Arc 的 `Button` 加上方形尺寸。
  *
- * ★ 静息色是 `icon`、激活色是 `accent`,**这两个 token 是分开的**。
- * 一度写成「静息就是 accent」,那是只看深色参考(docs/images)得出的结论:
- * 那一版里 chrome 图标确实全是橙的。但 docs/image-new 那一版量下来,静息图标是
- * 中性灰 #7e7f7e、只有**激活**的才变强调色 —— 量得最干净的一处是外层 Tab 条右侧
- * 那两个面板按钮:「工作区文件」面板打开的那张里,`PanelRight` 是 底 #dbd8d1 +
- * 图标 #2d4739,而同一张里 `PanelBottom` 还是 底 #e8e4dd + 图标 #7e7f7e。
+ * ★ **Arc 没有纯图标按钮**,所以保留这一层。按压、悬停、禁用、键盘焦点全是 Arc Button
+ *   的;这里只负责三件 Arc 给不了的事:
  *
- * 所以语义是:**`icon` = 「这是个可点的东西」,`accent` = 「这个正开着」**。
- * 深色那套两者同值,合并了也看不出来;浅色合并就错。
+ *   1. **方形。** Arc 的 `sm` 带左右内边距和 `--control-height-sm` 的最小高度,
+ *      一颗图标放进去是个扁长条。标题栏、工具栏都是按 24/28px 的方块排的,
+ *      所以宽、高、最小高度、内边距用行内样式钉死 —— Arc 的样式是 CSS Modules
+ *      (不在层里),Tailwind 工具类压不住它,行内样式压得住。
+ *   2. **`active`。** 「这个面板正开着 / 当前项」—— 用 Arc 的 `secondary`(有底有边)
+ *      表达,静息态是 `ghost`。
+ *   3. **`pressed`。** 见下面那个参数的注释。
  */
 export function IconButton({
   children,
   label,
   onClick,
   active = false,
+  pressed,
   disabled = false,
   size = 28,
   width,
@@ -29,36 +30,37 @@ export function IconButton({
   label: string
   onClick?: () => void
   active?: boolean
+  /**
+   * 开关按钮(加粗、倾斜……)的按下状态,给读屏读「已按下 / 未按下」。
+   * ★ 和 `active` 分开:`active` 在宿主里多半是「这个面板正开着 / 当前项」,不是开关,
+   *   一律报 aria-pressed 会把导航项读成开关。缺省 = 不是开关,不输出这个属性。
+   */
+  pressed?: boolean
   disabled?: boolean
   /** 边长(方形)。给了 `width` 时它只当高度用 */
   size?: number
   /**
-   * 单独指定宽度 —— 标题栏那条上的开关**不是方的**:量 docs/image-new,
-   * 「展开侧边栏」和「工作区文件」两个盒子都是 x 跨 38px、y 跨 28px,
-   * 且圆角等于半高(y=13 那一行只剩 x92..117,正是 r=14 的药丸轮廓)。
-   * 按方形画出来会比参考窄一圈,和红绿灯也对不齐。
+   * 单独指定宽度 —— 标题栏那条上的开关**不是方的**:「展开侧边栏」和「工作区文件」
+   * 两个盒子都是 38×28,按方形画出来会比参考窄一圈,和红绿灯也对不齐。
    */
   width?: number
   className?: string
   title?: string
 }): React.ReactNode {
   return (
-    <button
+    <Button
       type="button"
+      variant={active ? 'secondary' : 'ghost'}
+      size="sm"
       aria-label={label}
+      aria-pressed={pressed}
       title={title ?? label}
       disabled={disabled}
       onClick={onClick}
-      style={{ width: width ?? size, height: size }}
-      className={cn(
-        'app-no-drag flex shrink-0 items-center justify-center rounded-[8px] transition-[background-color,color,opacity,transform,scale,translate] duration-150',
-        'active:scale-[.94] motion-reduce:transition-none motion-reduce:active:scale-100',
-        'text-icon hover:bg-tint-hover hover:text-fg disabled:opacity-30 disabled:hover:bg-transparent',
-        active && 'bg-surface-sunken text-accent hover:text-accent',
-        className
-      )}
+      className={className}
+      style={{ width: width ?? size, height: size, minHeight: size, paddingInline: 0, flexShrink: 0 }}
     >
       {children}
-    </button>
+    </Button>
   )
 }

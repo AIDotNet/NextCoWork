@@ -49,6 +49,122 @@ describe('parseFrontmatter · 基本形状', () => {
   })
 })
 
+describe('parseFrontmatter · 块标量', () => {
+  it('★ 字面块(|)保留换行,块结束后的键照常解析', () => {
+    // 这条是 installSkillZip 那个「装不上」的回归保护:官方 Skill 的
+    // description 就是这么写的,而安装器把 skipped 非空当硬失败。
+    const fm = parseFrontmatter('---\ndescription: |\n  第一行\n  第二行\nname: x\n---\n正文')
+    expect(fm.data.description).toBe('第一行\n第二行\n')
+    expect(fm.data.name).toBe('x')
+    expect(fm.skipped).toHaveLength(0)
+    expect(fm.body).toBe('正文')
+    // ★ 缩进的续行不能被当成「嵌套 map」再报一次,更不能被当成键值解析出来
+    expect(fm.data).not.toHaveProperty('第一行')
+  })
+
+  it('折叠块(>)把换行折成空格,空行才是换行', () => {
+    const fm = parseFrontmatter('---\nd: >\n  一\n  二\n\n  三\n---\n')
+    expect(fm.data.d).toBe('一 二\n三\n')
+  })
+
+  it('★ 折叠块里更深缩进的行保持字面换行', () => {
+    const fm = parseFrontmatter('---\nd: >\n  开头\n    缩进行\n  结尾\n---\n')
+    expect(fm.data.d).toBe('开头\n  缩进行\n结尾\n')
+  })
+
+  it('截断指示:缺省留一个换行,- 全去掉,+ 原样留着', () => {
+    expect(parseFrontmatter('---\nd: |\n  x\n\n\n---\n').data.d).toBe('x\n')
+    expect(parseFrontmatter('---\nd: |-\n  x\n\n---\n').data.d).toBe('x')
+    expect(parseFrontmatter('---\nd: |+\n  x\n\n---\n').data.d).toBe('x\n\n')
+  })
+
+  it('缩进指示两种顺序都认,且前导空格按它保留', () => {
+    // `|2` 把块的缩进钉死在 2 列,于是第一行多出来的两个空格是内容的一部分
+    expect(parseFrontmatter('---\nd: |2\n    缩进\n  顶格\n---\n').data.d).toBe('  缩进\n顶格\n')
+    expect(parseFrontmatter('---\nd: |-2\n  x\n---\n').data.d).toBe('x')
+    expect(parseFrontmatter('---\nd: |2-\n  x\n---\n').data.d).toBe('x')
+  })
+
+  it('块里的空行和 # 不当注释、不当分隔', () => {
+    const fm = parseFrontmatter('---\nd: |\n  一\n\n  # 井号\nname: x\n---\n')
+    expect(fm.data.d).toBe('一\n\n# 井号\n')
+    expect(fm.data.name).toBe('x')
+  })
+
+  it('空块读成空值,下一个键不受影响', () => {
+    const fm = parseFrontmatter('---\nd: |\nname: x\n---\n')
+    expect(fmString(fm, 'd')).toBeUndefined()
+    expect(fm.data.name).toBe('x')
+    expect(fm.skipped).toHaveLength(0)
+  })
+
+  it('★ 块内容也走限长 —— 它同样会进系统提示词', () => {
+    const fm = parseFrontmatter(`---\nd: |\n  ${'x'.repeat(FM_LIMITS.FM_VALUE_MAX + 100)}\n---\n`)
+    expect((fm.data.d as string).length).toBe(FM_LIMITS.FM_VALUE_MAX)
+    expect(fm.skipped.join()).toContain('截断')
+  })
+})
+
+describe('parseFrontmatter · 一层嵌套', () => {
+  it('★ 市场里真实的 SKILL.md —— metadata 块不再让整包装不上', () => {
+    const fm = parseFrontmatter(
+      [
+        '---',
+        'name: programming-tutor',
+        'description: "全能 AI 编程导师"',
+        'license: MIT',
+        'metadata:',
+        '  author: "Samuel Kahessay"',
+        '  version: "1.0.1"',
+        '  category: "education"',
+        '---',
+        '正文'
+      ].join('\n')
+    )
+    expect(fm.skipped).toHaveLength(0)
+    expect(fm.data.name).toBe('programming-tutor')
+    expect(fm.data.license).toBe('MIT')
+    expect(fm.data['metadata.author']).toBe('Samuel Kahessay')
+    expect(fm.data['metadata.version']).toBe('1.0.1')
+    expect(fm.body).toBe('正文')
+    // 父键本身是一张 map,不该再留着那个空串占位
+    expect(fm.data).not.toHaveProperty('metadata')
+  })
+
+  it('嵌套结束后顶层的键照常解析', () => {
+    const fm = parseFrontmatter('---\nm:\n  a: 1\nname: x\n---\n')
+    expect(fm.data['m.a']).toBe('1')
+    expect(fm.data.name).toBe('x')
+    expect(fm.skipped).toHaveLength(0)
+  })
+
+  it('子键下的列表,块式和流式都认', () => {
+    const block = parseFrontmatter('---\nm:\n  tags:\n    - a\n    - b\n---\n')
+    expect(block.data['m.tags']).toEqual(['a', 'b'])
+    const flow = parseFrontmatter('---\nm:\n  tags: [a, b]\n---\n')
+    expect(flow.data['m.tags']).toEqual(['a', 'b'])
+  })
+
+  it('子键的值也能是块标量', () => {
+    const fm = parseFrontmatter('---\nm:\n  note: |\n    第一行\n    第二行\n  after: x\n---\n')
+    expect(fm.data['m.note']).toBe('第一行\n第二行\n')
+    expect(fm.data['m.after']).toBe('x')
+  })
+
+  it('★ 子键里的 __proto__ 照样被拒', () => {
+    const fm = parseFrontmatter('---\nm:\n  __proto__: polluted\n---\n')
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    expect(fm.data).not.toHaveProperty('m.__proto__')
+    expect(fm.skipped.join()).toContain('安全')
+  })
+
+  it('空值的父键没有子键时,仍然是一个空值', () => {
+    const fm = parseFrontmatter('---\nm:\nname: x\n---\n')
+    expect(fm.data.m).toBe('')
+    expect(fm.data.name).toBe('x')
+  })
+})
+
 describe('parseFrontmatter · 引号', () => {
   it('单引号和双引号都去掉', () => {
     const fm = parseFrontmatter(`---\na: 'hello'\nb: "world"\n---\n`)
@@ -111,25 +227,24 @@ describe('parseFrontmatter · 列表', () => {
 })
 
 describe('parseFrontmatter · 不支持的语法照实记下', () => {
-  it('嵌套 map 被跳过', () => {
-    const fm = parseFrontmatter('---\nname: x\nnested:\n  a: 1\n---\n')
+  it('两层以上的嵌套被跳过', () => {
+    const fm = parseFrontmatter('---\nname: x\na:\n  b:\n    c: 1\n---\n')
     expect(fm.data.name).toBe('x')
-    expect(fm.data).not.toHaveProperty('a')
+    expect(fm.data).not.toHaveProperty('a.b.c')
     expect(fm.skipped.join()).toContain('嵌套')
+  })
+
+  it('没有父键的缩进行被跳过', () => {
+    const fm = parseFrontmatter('---\nname: x\n  stray: 1\n---\n')
+    expect(fm.data.name).toBe('x')
+    expect(fm.data).not.toHaveProperty('name.stray')
+    expect(fm.skipped.join()).toContain('父键')
   })
 
   it('锚点和别名被跳过', () => {
     const fm = parseFrontmatter('---\na: &anchor v\nb: *anchor\n---\n')
     expect(fm.skipped.filter((s) => s.includes('锚点'))).toHaveLength(2)
     expect(fm.data).not.toHaveProperty('a')
-  })
-
-  it('块标量被跳过,连同它后面的缩进行', () => {
-    const fm = parseFrontmatter('---\ntext: |\n  line1\n  line2\nname: x\n---\n')
-    expect(fm.skipped.join()).toContain('块标量')
-    expect(fm.data.name).toBe('x')
-    // ★ 缩进的续行不能被当成「嵌套 map」再报一次,更不能被当成键值解析出来
-    expect(fm.data).not.toHaveProperty('line1')
   })
 
   it('不合法的键名被跳过', () => {
@@ -413,6 +528,28 @@ describe('serializeFrontmatter · 往返', () => {
   const round = (data: Record<string, string | string[]>, body = 'body'): Record<string, string | string[]> =>
     parseFrontmatter(serializeFrontmatter(data, body)).data as Record<string, string | string[]>
 
+  it('★ 一层嵌套能往返 —— 编辑器保存不该吃掉 metadata 整块', () => {
+    const data = {
+      name: 'programming-tutor',
+      'metadata.author': 'Samuel Kahessay',
+      'metadata.version': '1.0.1',
+      'metadata.tags': ['python', 'javascript']
+    }
+    expect(round(data)).toEqual(data)
+    // 子键必须连成一片:写成两个 `metadata:` 块的话,读回来只剩后一个
+    const text = serializeFrontmatter(data, '')
+    expect(text.split('\n').filter((l) => l === 'metadata:')).toHaveLength(1)
+  })
+
+  it('同名的标量与 map 同在时,写 map 那一半', () => {
+    // 两个都写出去的话读回来只会剩一个,而标量那半本来就是解析时的占位
+    expect(round({ m: '', 'm.a': 'x' })).toEqual({ 'm.a': 'x' })
+  })
+
+  it('三层的键写不回去,直接不写 —— 写了也读不回来', () => {
+    expect(round({ name: 'x', 'a.b.c': 'v' })).toEqual({ name: 'x' })
+  })
+
   it('普通标量和列表原样回来', () => {
     const data = { name: 'commit', description: '写提交信息', tools: ['Read', 'Grep'] }
     expect(round(data)).toEqual(data)
@@ -439,6 +576,9 @@ describe('serializeFrontmatter · 往返', () => {
       alias: '*ref',
       block: '|',
       block2: '>-2',
+      // ★ 缩进指示在前的写法也是块标量头,needsQuote 漏了它就会在读回来时吃掉后面几行
+      block3: '|2-',
+      block4: '>2',
       dash: '- 看着像列表项',
       hash: '#不是注释',
       colon: 'foo: bar',

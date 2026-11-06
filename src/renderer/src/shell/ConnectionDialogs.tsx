@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { ConnectionStatus, SshAuthRequest, SshAuthResponse } from '../../../shared/domain/environment'
 import { normalizeEnvironmentRef } from '../../../shared/domain/environment'
 import type { Workspace } from '../../../shared/domain/workspace'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Dialog } from '../components/ui/Dialog'
 import { IconButton } from '../components/ui/IconButton'
 import { useI18n } from '../i18n'
@@ -43,14 +43,14 @@ export function ConnectionDialogs({ workspace }: { workspace?: Workspace }): Rea
         </span>
         {pending ? <IconButton label={t('common.cancel')} onClick={win.cancelActivation}><X size={14} /></IconButton>
           : workspace && ref.kind === 'connection' && status?.phase !== 'ready'
-            ? <Button size="sm" icon={<RotateCw size={13} />} onClick={() => { void win.openWorkspace(workspace.id) }}>{t('ssh.reconnect')}</Button>
+            ? <Button variant="secondary" type="button" size="sm" onClick={() => { void win.openWorkspace(workspace.id) }}><RotateCw size={13} />{t('ssh.reconnect')}</Button>
             : null}
         {win.activationError && !pending && <IconButton label={t('common.close')} onClick={win.clearActivationError}><X size={14} /></IconButton>}
       </div>
     )}
     <Dialog open={win.activationApproval} title={t('ssh.native.title')} onClose={() => win.confirmActivation(false)} footer={<>
-      <Button size="sm" onClick={() => win.confirmActivation(false)}>{t('common.cancel')}</Button>
-      <Button size="sm" variant="accent" icon={<ShieldCheck size={13} />} onClick={() => win.confirmActivation(true)}>{t('ssh.native.allow')}</Button>
+      <Button variant="secondary" type="button" size="sm" onClick={() => win.confirmActivation(false)}>{t('common.cancel')}</Button>
+      <Button type="button" size="sm" variant="primary" onClick={() => win.confirmActivation(true)}><ShieldCheck size={13} />{t('ssh.native.allow')}</Button>
     </>}>
       <p className="mb-3 break-all text-[13px] text-fg">{pendingWorkspace?.name}<br />{pendingWorkspace?.rootPath}</p>
       <p className="text-[12px] leading-relaxed text-fg-muted">{t('ssh.native.risk')}</p>
@@ -73,9 +73,9 @@ function AuthenticationDialog({ request, onDone }: { request: SshAuthRequest; on
   }
   const submit = (): void => { void answer(request.kind === 'host-key' ? { value: 'yes' } : { value, remember }) }
   return <Dialog open title={t('ssh.auth.title', { name: request.connectionName })} onClose={() => { void answer({ cancelled: true }) }} footer={<>
-    <Button size="sm" disabled={busy} onClick={() => { void answer({ cancelled: true }) }}>{t('common.cancel')}</Button>
-    {request.hasSaved && <Button size="sm" disabled={busy} onClick={() => { void answer({ useSaved: true }) }}>{t('ssh.auth.useSaved')}</Button>}
-    <Button size="sm" variant="accent" disabled={busy || (request.kind !== 'host-key' && value === '')} onClick={submit}>{t(request.kind === 'host-key' ? 'ssh.auth.trust' : 'ssh.auth.confirm')}</Button>
+    <Button variant="secondary" type="button" size="sm" disabled={busy} onClick={() => { void answer({ cancelled: true }) }}>{t('common.cancel')}</Button>
+    {request.hasSaved && <Button variant="secondary" type="button" size="sm" disabled={busy} onClick={() => { void answer({ useSaved: true }) }}>{t('ssh.auth.useSaved')}</Button>}
+    <Button type="button" size="sm" variant="primary" disabled={busy || (request.kind !== 'host-key' && value === '')} onClick={submit}>{t(request.kind === 'host-key' ? 'ssh.auth.trust' : 'ssh.auth.confirm')}</Button>
   </>}>
     {request.savedRejected && <p role="alert" className="mb-3 text-[12px] text-danger">{t('ssh.auth.savedRejected')}</p>}
     <pre className="selectable mb-4 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[12px] text-fg-muted">{request.prompt}</pre>
@@ -83,7 +83,7 @@ function AuthenticationDialog({ request, onDone }: { request: SshAuthRequest; on
       {t(`ssh.auth.${request.kind}`)}
       <input type="password" autoComplete="off" value={value} autoFocus aria-label={t(`ssh.auth.${request.kind}`)}
         onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) submit() }}
-        className="h-8 w-full rounded-[6px] border border-border bg-canvas px-2 font-mono outline-none focus:border-accent" />
+        className="apple-field h-8 w-full rounded-[6px] border border-border bg-canvas px-2 font-mono outline-none focus:border-fg-faint" />
     </label>}
     {request.canRemember && <label className="mt-3 flex items-center gap-2 text-[12px] text-fg-muted">
       <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{t('ssh.auth.remember')}

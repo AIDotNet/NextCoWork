@@ -31,7 +31,7 @@ import {
 } from '../../runtime'
 import { store } from '../../state/store'
 import type { WindowContext } from '../../window/registry'
-import { startChildRun, startRun } from '../agent'
+import { backgroundSubagent, startChildRun, startRun } from '../agent'
 
 const CHILD_MARK = 'QUEUE-MARK'
 const PARENT_SESSION = 'queue-parent-session'
@@ -41,6 +41,8 @@ let dispatchCount = 1
 let background = false
 /** 父代理收到的每一份 `tool_result` 文本 —— 「已排队」那句话就是在这里被看见的 */
 let toolResults: string[] = []
+/** 非空 = 子代理的上游回包挂在这个 Promise 上,放行前子代理一直在跑 */
+let holdChild: Promise<void> | undefined
 
 class FakeWebContents {
   readonly sent: Array<{ channel: string; payload: unknown }> = []
@@ -49,6 +51,18 @@ class FakeWebContents {
   isDestroyed(): boolean { return false }
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
+  }
+
+  /**
+   * WindowRegistry 判「帧还活不活」靠的是这里,不是 send 抛不抛 ——
+   * 真实的 `webFrameMain.send` 自己把异常吞了(见 window/registry.ts)。
+   */
+  get mainFrame(): { isDestroyed: () => boolean; detached: boolean; send: (channel: string, payload: unknown) => void } {
+    return {
+      isDestroyed: () => this.isDestroyed(),
+      detached: false,
+      send: (channel, payload) => this.send(channel, payload)
+    }
   }
   envelopes(): AgentEventEnvelope[] {
     return this.sent.filter((m) => m.channel === 'agent:event').map((m) => m.payload as AgentEventEnvelope)
@@ -79,7 +93,10 @@ function fakeUpstream(): typeof fetch {
       (m.content ?? []).filter((b) => b.type === 'text').map((b) => (typeof b.text === 'string' ? b.text : ''))
     )
     if (texts.some((t) => t.includes(CHILD_MARK))) {
-      return Promise.resolve(sse([{ kind: 'text', text: '子代理报告完毕。' }], model, 'end_turn'))
+      const report = (): Response => sse([{ kind: 'text', text: '子代理报告完毕。' }], model, 'end_turn')
+      // 「跑很久的前台子代理」:放行之前一直挂着(转后台的用例靠它)
+      if (holdChild !== undefined) return holdChild.then(report)
+      return Promise.resolve(report())
     }
 
     const results = (messages[messages.length - 1]?.content ?? []).filter((b) => b.type === 'tool_result')
@@ -151,9 +168,8 @@ const req = (over: Partial<RunRequest> = {}): RunRequest => ({
  * 占位者是一条货真价实的、`parentRunId` 不为空的 running run —— 队列数的就是这个。
  */
 function occupy(id: string): () => void {
-  // 需求：占的是别的会话的全局名额，不能与待测父 run 共用转录并绕过单会话闸门。
   runs.create(req({ runId: `${id}-owner`, sessionId: `${id}-owner-session` }))
-  const child = runs.create(req({ runId: id, sessionId: `${id}-child-session`, parentRunId: `${id}-owner`, depth: 1 }))
+  const child = runs.create(req({ runId: id, sessionId: `${id}-session`, parentRunId: `${id}-owner`, parentSessionId: `${id}-owner-session`, depth: 1 }))
   return () => child.finish('done')
 }
 
@@ -173,6 +189,7 @@ beforeEach(() => {
   dispatchCount = 1
   background = false
   toolResults = []
+  holdChild = undefined
   resetRuntimeForTest()
   store.putWorkspace({ id: 'w1', name: 'Local test workspace', rootPath: '', environment: { kind: 'local' }, settings: DEFAULT_WORKSPACE_SETTINGS, createdAt: 1, lastOpenedAt: 1 })
   store.ensureSession({ id: PARENT_SESSION, workspaceId: 'w1', rootPathAtCreation: '' })
@@ -302,5 +319,59 @@ describe('后台派发撞上并发上限', () => {
       .find((part) => part.type === 'tool_result' && part.subagent !== undefined)
     expect(receipt?.type === 'tool_result' ? receipt.subagent?.status : undefined).toBe('aborted')
     release()
+  })
+})
+
+describe('前台子代理被用户转去后台', () => {
+  it('★ 父代理不再等它、当场收工;子代理照跑,结束时按后台收尾', async () => {
+    let releaseChild = (): void => {}
+    holdChild = new Promise((resolve) => { releaseChild = resolve })
+    const { wc, ctx } = fakeWindow()
+    const r = req()
+
+    startRun(r, ctx)
+    let childRunId: string | undefined
+    for (let i = 0; i < 400 && childRunId === undefined; i++) {
+      const start = allEvents(wc).find((e) => e.type === 'subagent_start')
+      childRunId = start?.type === 'subagent_start' ? start.childRunId : undefined
+      if (childRunId === undefined) await new Promise((res) => setTimeout(res, 5))
+    }
+    expect(childRunId).toBeDefined()
+
+    expect(backgroundSubagent({ childRunId: childRunId! }, ctx)).toBe(true)
+    // 第二次点:已经是后台了,不是错误,只是没有可转的
+    expect(backgroundSubagent({ childRunId: childRunId! }, ctx)).toBe(false)
+
+    await waitForEnd(r.runId)
+    expect(runs.get(r.runId)?.status).toBe('done')
+    expect(toolResults.join('\n')).toContain('moved this subagent to the background')
+    // 父代理收工时子代理还在跑
+    expect(runs.get(childRunId!)?.status).toBe('running')
+    expect(runs.get(childRunId!)?.backgroundTask?.type).toBe('general-purpose')
+
+    releaseChild()
+    await waitForEnd(childRunId!)
+    for (let i = 0; i < 200; i++) {
+      const receipt = store.getHistory(PARENT_SESSION).flatMap((m) => m.parts)
+        .find((part) => part.type === 'tool_result' && part.subagent !== undefined)
+      if (receipt?.type === 'tool_result' && receipt.subagent?.status === 'done') break
+      await new Promise((res) => setTimeout(res, 5))
+    }
+    const receipt = store.getHistory(PARENT_SESSION).flatMap((m) => m.parts)
+      .find((part) => part.type === 'tool_result' && part.subagent !== undefined)
+    // ★ 按后台收尾:回执是后台的、跑完了、等着交回主代理
+    expect(receipt?.type === 'tool_result' ? receipt.subagent : undefined).toMatchObject({
+      background: true, status: 'done', reportStatus: 'pending'
+    })
+  })
+
+  it('已经跑完的子代理转不了 —— false,不是错误', async () => {
+    const { wc, ctx } = fakeWindow()
+    const r = req()
+    startRun(r, ctx)
+    await waitForEnd(r.runId)
+    const start = allEvents(wc).find((e) => e.type === 'subagent_start')
+    expect(start?.type).toBe('subagent_start')
+    expect(backgroundSubagent({ childRunId: start?.type === 'subagent_start' ? start.childRunId : '' }, ctx)).toBe(false)
   })
 })

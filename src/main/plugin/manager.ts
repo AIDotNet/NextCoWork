@@ -60,14 +60,16 @@ import type {
 import { installPluginDirectory, installPluginZip, readInstalledManifest } from './installer'
 import { explainUnsupported, inactiveContributions } from './unsupported'
 import { recordActivity, clearActivity } from './diagnostics'
-import { CapabilityError, invokeCapability, prepareExec, type CapabilityContext, type PluginScmAdapter } from './rpc'
-import { matchesPathScope, narrowWorkspacePath, wrapPluginContext } from './capabilities'
+import { abortable } from '../kernel/abort'
+import { CapabilityError, invokeCapability, prepareExec, type CapabilityContext, type CapabilityOutcome, type PluginScmAdapter } from './rpc'
+import { matchesPathScope, narrowCommand, narrowLaunchEnv, narrowWorkspacePath, wrapPluginContext } from './capabilities'
 import { isValidPluginToolName, pluginToolId, toolRegistrationFor, type PluginToolDeclaration } from './tools'
 import { sanitizeToolCard } from '../../shared/agent/tool-card'
 import type { ToolProgress } from '../../shared/agent/tool'
 import type { ToolRegistration } from '../kernel/tool/registry'
 import type { PluginSkillRoot } from '../kernel/skill/load'
 import { SUPPORTED_LOCALE_FILES, localeOfFile } from './locale-files'
+import { PluginCapabilityError, type DocumentCallScope, type PluginDocumentsBridge } from './document-rpc'
 
 /** 插件目录名。`ipc/storage.ts:148` 的删除清单里已经有它。 */
 export const PLUGINS_DIR = 'plugins'
@@ -97,6 +99,109 @@ const MAX_EXEC_STREAM_CHARS = 512 * 1024
  * 两处取同一个值,插件作者只需要认识一个数。
  */
 const TIMEOUT_EXIT_CODE = 124
+
+/**
+ * deadline 到点时的 abort 标记。
+ *
+ * ★ 取消这个动作有两个来源 —— **deadline 到点**和**插件被禁用 / shutdown** ——
+ * 而插件要看到的是两句不同的话(「超时了」vs「这次调用已经被取消了」)。
+ * 用同一个共享的 reason 对象区分:只有到点的那一次是它。
+ */
+const TIMEOUT_ABORT_REASON = Object.freeze({ kind: 'plugin_timeout' })
+
+function isTimeoutAbort(signal: AbortSignal): boolean {
+  return signal.aborted && signal.reason === TIMEOUT_ABORT_REASON
+}
+
+/**
+ * **按工作区定位**的方法:`callId` 在这几个上有含义,其余方法上它只是普通数据。
+ *
+ * ★ 这份表就是「哪些 RPC 会被受信作用域覆盖」的答案,而且它必须和 `protocol.ts`
+ * 里挂了 `PluginScopeParam` 的方法一一对应 —— 两边不一致的表现是「某个方法
+ * 明明在协议上写着可以带 callId,却按焦点工作区走」,而那是一类**静默**的错误
+ * (它照样成功,只是写错了地方)。所以这里只列 `protocol.ts` 声明了 callId 的那些。
+ */
+const WORKSPACE_SCOPED_METHODS: ReadonlySet<PluginMethod> = new Set<PluginMethod>([
+  'workspace.folders',
+  'workspace.readFile',
+  'workspace.writeFile',
+  'workspace.deleteFile',
+  'workspace.stat',
+  'workspace.findFiles',
+  'process.exec',
+  'process.execStream',
+  'scm.status',
+  'scm.diff',
+  'scm.log',
+  'scm.branches',
+  'scm.stage',
+  'scm.commit',
+  'scm.createBranch',
+  'scm.checkout',
+  'storage.get',
+  'storage.set',
+  'storage.keys'
+])
+
+/**
+ * 解析 `callId` 的**许可表**。
+ *
+ * ★ 它就是 `WORKSPACE_SCOPED_METHODS` 加上 `net.fetch` —— 后者要 callId 是为了
+ * **取消**(net.fetch 绑定工具取消),并不是因为它按工作区定位:网络请求与工作区
+ * 无关,它的作用域是 `hostPermissions`。
+ *
+ * ★ 单独一张表而不是「往工作区表里塞一个 net.fetch」,是因为两者回答的问题不同:
+ * 把 `net.fetch` 放进工作区表会让 `resolveCallWorkspace` 去给它算一个工作区、
+ * 在工作区被切走时把它判 `[stale_scope]` —— 那不是这次加固要的东西。
+ *
+ * ★ 两处解析 callId 的地方(作用域、signal 继承)都只认这张表 —— 于是
+ * `diagnostics.log` / `tool.progress` 这些方法上同名的普通字段永远不会被当成 scope。
+ */
+const CALL_SCOPED_METHODS: ReadonlySet<PluginMethod> = new Set<PluginMethod>([
+  ...WORKSPACE_SCOPED_METHODS,
+  'net.fetch'
+])
+
+/**
+ * 这个方法会不会按 `callId` 定位到产生它的那次工具调用。
+ *
+ * ★ `documents.*` 是单独一类:它们的作用域走 `resolveDocumentScope`(另一套解析,
+ * 同一个 callId 语义),所以不放进上面那张表 —— 但 signal 继承是同一条规矩:
+ * 一次 `documents.save` 只要属于某次工具调用,就该跟着那次调用的 abort 一起停。
+ */
+function isGlobalStorageRequest(method: PluginMethod, params: unknown): boolean {
+  return (method === 'storage.get' || method === 'storage.set' || method === 'storage.keys')
+    && params !== null && typeof params === 'object' && !Array.isArray(params)
+    && (params as Record<string, unknown>).scope === 'global'
+}
+
+function resolvesCallId(method: PluginMethod, params: unknown): boolean {
+  // 全局 KV 与本地工作区无关，远程、无工作区和并发工具都必须能够读取它。
+  return !isGlobalStorageRequest(method, params) && (CALL_SCOPED_METHODS.has(method) || method.startsWith('documents.'))
+}
+
+/**
+ * 挂在**派生的调用 signal** 上的「关系」标记 —— `child.abort(TOOL_CANCELLED_REASON)`。
+ *
+ * ★ 为什么不能像 deadline 那样用一个共享对象:每一次调用的派生 controller 都要
+ * 听**两条**上游 —— 宿主自己的 deadline,和产生它的那次工具调用。工具被中止是
+ * 「用户按了停止」,不是「RPC 超时」,两者对插件是两句不同的话;用共享标记的话
+ * 任何一条上游 abort 都会被读成超时。
+ */
+const TOOL_CANCELLED_REASON = Object.freeze({ kind: 'tool_cancelled' })
+
+/**
+ * 一次调用里**已经开始**的副作用。
+ *
+ * ★ 它替代了原先那张「哪些方法有副作用」的静态表:表回答不了「这一次到底走到
+ * 哪了」。审批迟到、在文档队列里排太久、路径门被拒 —— 这些都在动手**之前**
+ * 就失败了,重试是安全的;只有越过 `markSideEffectStarted` 之后的取消才必须
+ * 报 `[result_unknown]`。分不开的后果是**两向都错**:老老实实在排队时被取消的
+ * 调用被误报成「可能已执行」,而一次真的写完了的调用反倒被当成可安全重试。
+ */
+interface SideEffectTracker {
+  started: boolean
+}
 
 /** 持久化的那一小块:用户的决定。清单本身每次从盘上重读。 */
 interface PersistedPlugin {
@@ -161,6 +266,10 @@ export interface PluginManagerDeps {
   setKv: (key: string, value: unknown) => void
   /** 当前工作区。路径类能力全部以它为根 */
   currentWorkspace: () => { id: string; rootPath: string }
+  /** 活动文档桥。旧测试 / 旧宿主可省略；调用 documents.* 时省略即报宿主未接线。 */
+  documents?: PluginDocumentsBridge
+  /** 按受信 workspaceId 解析本地工作区；远程或已关闭工作区返回 null。 */
+  resolveWorkspace?: (workspaceId: string) => { id: string; rootPath: string } | null
   /** 宿主当前的深浅色。插件只读,不挂权限(见 `PLUGIN_METHOD_PERMISSION`) */
   currentAppearance: () => 'light' | 'dark'
   /**
@@ -231,6 +340,20 @@ export interface PluginManagerDeps {
    */
   openTab: (pluginId: string, target: PluginTabTarget) => void
   /**
+   * 在指定工作区根目录开一个终端 Tab 并启动命令(`tabs.openTerminal` 的落地)。
+   *
+   * ★ 分工:manager 那边只做**清单级参数门**(allowedCommands / env 体量),
+   * 「工作区存不存在、是不是远程、spec 备在哪」这些要碰工作区存储与
+   * TerminalHost 的事全在这一侧 —— 测试里的假 deps 因此不必起任何 pty。
+   *
+   * 返回 `opened: false` 而不是抛:同 `openWebApp`,「这个工作区开不了」
+   * 是调用方(插件)要拿去给用户的一句话,不是一次系统故障。
+   */
+  launchTerminal: (
+    pluginId: string,
+    spec: { workspaceId: string; command: string; args: string[]; env: Record<string, string>; title?: string }
+  ) => { opened: boolean; reason?: 'remote' | 'declined' }
+  /**
    * 向用户发起一次交互(选项 / 输入 / 确认),等他回答。
    *
    * ★ 主进程**不画 UI**:这里只把请求广播出去,由渲染层用既有的
@@ -278,6 +401,11 @@ interface PluginRecord {
   statusBar: Map<string, PluginStatusBarItem>
   /** 有未保存改动的自定义编辑器文档:`documentId → 文件路径` */
   dirtyDocuments: Map<string, string>
+  /**
+   * 命令的品牌图标(`iconFile`)读出的 data URL,按 commandId 索引。
+   * 装载时读一次;catalog 投影(`project`)原样带走 —— 菜单在激活前就要画。
+   */
+  commandIcons: Record<string, string>
   /** 本插件对外导出的 API 方法名(`ncw.plugins.exposeApi`)。禁用时清空。 */
   exposedApi: Set<string>
   /** 本插件订阅了的事件 topic —— 禁用时要从全局订阅表里摘掉。 */
@@ -289,6 +417,8 @@ interface PluginRecord {
    * (不带 glob,意思是「全都要」)会一条都收不到。
    */
   watchGlobs?: string[]
+  /** 文档变更通知绑定订阅时的工作区，后台写入不能污染前台订阅。 */
+  watchWorkspaceId?: string
   /** 这一刻它挂着的进度条 id —— 禁用 / 休眠时要全部撤掉,不留下转不停的条。 */
   progress: Set<string>
 }
@@ -304,8 +434,35 @@ export class PluginManager {
    * ★ 带 `pluginId`:`tool.progress` RPC 要核对调用方就是这次工具调用的主人,
    * 否则一个插件能拿别人工具的 callId 往它的卡片上推东西(callId 虽不易猜,但
    * 「不易猜」不是授权)。
+   *
+   * ★ 带 `workspaceId`:这是**受信作用域**的完整一份,供
+   * `resolveCallWorkspace` 把工作区类 RPC 钉在产生它的那次调用上。只给 workspaceId
+   * 不够 —— 解析它要经 `deps.resolveWorkspace`,而后者可能认不出(远程/已关闭),
+   * 那时必须**拒绝**,不能回退到当前聚焦的工作区。
    */
-  private readonly liveToolEmits = new Map<string, { pluginId: string; emit: (progress: ToolProgress) => void }>()
+  private readonly liveToolEmits = new Map<string, {
+    pluginId: string
+    workspaceId?: string
+    /** 宿主原始 `ToolContext.signal` —— 用户点停止时到达这里,见 handleRequest 的转发。 */
+    signal: AbortSignal
+    emit: (progress: ToolProgress) => void
+  }>()
+  /**
+   * 正在进行的 RPC 调用,按 `pluginId → 一组 { controller, deadline 定时器 }`。
+   *
+   * ★ 存在的理由是**禁用 / 卸载 / shutdown 要能取消这个插件未完成的调用**。
+   * 只靠超时的话,一次卡在网络上的调用会活过插件的生命周期 —— 它的宿主窗口
+   * 已经销毁了,而主进程还在为它把响应读完、甚至把文件写完。
+   *
+   * ★ 定时器**跟 controller 一起记在这里**。分开记的话,取消这条路要清定时器
+   * 就得再去别处找它 —— 而"忘了清"的症状是 30 秒后一条对着空气的 abort。
+   *
+   * 普通 RPC 与 `process.execStream` 分开记:后者的 abort 语义要回一条
+   * `process.exit`(见 `finishExec`),由它自己的表管;这里只管「一次性调用」。
+   */
+  private readonly liveRequests = new Map<string, Set<{ controller: AbortController; timer: NodeJS.Timeout }>>()
+  /** 需求：先排空文档请求再检查 dirty；收尾期间的新写入不能越过这次检查。 */
+  private documentsClosing = false
   /** 事件总线的订阅表:topic → 订阅它的 pluginId 集合(第 5 层)。 */
   private readonly eventSubscribers = new Map<string, Set<string>>()
   /**
@@ -314,10 +471,52 @@ export class PluginManager {
    * ★ 带 `pluginId` 的理由同 `liveToolEmits`:`process.execAbort` 要核对调用方
    * 就是这条命令的主人,否则一个插件能掐断另一个插件正在跑的构建。
    */
-  private readonly execStreams = new Map<string, { pluginId: string; controller: AbortController }>()
+  /**
+   * 正在跑的流式命令:`execId → { 主人, 中断句柄, 收尾 }`。
+   *
+   * ★ 带 `pluginId` 的理由同 `liveToolEmits`:`process.execAbort` 要核对调用方
+   * 就是这条命令的主人,否则一个插件能掐断另一个插件正在跑的构建。
+   *
+   * ★ `controller` **只**接两个来源:`process.execAbort` 和插件禁用 / shutdown。
+   * 启动它的那条 RPC 的 30 秒期限不进这里 —— 那条命令可能跑几分钟(见
+   * `startExecStream` 的说明)。它仍然跟随产生它的那次工具调用的 abort,由
+   * `detach` 表示的那个 listener 负责。
+   */
+  private readonly execStreams = new Map<string, {
+    pluginId: string
+    controller: AbortController
+    /** 摘掉挂在工具 signal 上的 listener —— 命令无论怎么结束都要调一次。 */
+    detach: () => void
+  }>()
   private nextExecId = 1
+  /**
+   * 工作区在**同一次插件激活周期内**的代号,按 **workspaceId** 记。
+   *
+   * ★ 它回答的是「这次调用开始时冻结的那个工作区,到现在还是同一个根吗」。
+   * 同一个 id 被重新指向另一个 root(切库、重建工作区)时代号要变 —— 变了就
+   * 说明这次调用**不能再写**了:它拿到的是旧作用域。
+   *
+   * ★★ **必须是按 id 的一张表,不能是一个全局计数器。** 全局计数的话,一次指向
+   * A 的调用和一次指向 B 的调用会互相把代号翻掉 —— 于是两个都正常、互不相干的
+   * 并发调用会各自收到一条 `[stale_scope]`,而工作区谁都没动过。
+   */
+  private readonly workspaceGenerations = new Map<string, { rootPath: string; generation: number }>()
+  private nextWorkspaceGeneration = 0
 
   constructor(private readonly deps: PluginManagerDeps) {}
+
+  /** 冻结这一次调用的作用域代号。同一个 id + 同一个根拿到的是同一个值。 */
+  private markWorkspaceGeneration(workspace: { id: string; rootPath: string }): number {
+    const current = this.workspaceGenerations.get(workspace.id)
+    if (current !== undefined && current.rootPath === workspace.rootPath) return current.generation
+    const generation = ++this.nextWorkspaceGeneration
+    this.workspaceGenerations.set(workspace.id, { rootPath: workspace.rootPath, generation })
+    return generation
+  }
+
+  private workspaceGenerationOf(workspaceId: string): number | undefined {
+    return this.workspaceGenerations.get(workspaceId)?.generation
+  }
 
   /** 只有**中间态**走这条(目前是 `disable()`);终态一律直接 `deps.emitChanged()` */
   private notifyChanged(): void {
@@ -350,12 +549,50 @@ export class PluginManager {
     this.persist()
   }
 
-  async shutdown(): Promise<void> {
-    if (this.sleepTimer !== undefined) clearInterval(this.sleepTimer)
-    for (const [id, record] of this.records) {
-      if (record.status === 'active') await this.deactivate(id).catch(() => undefined)
+  /** 需求：退出/切账户在关窗与切库前排空文档请求；否决退出时可恢复文档调用。 */
+  async guardDocumentClose(discardChanges = false): Promise<() => void> {
+    if (this.documentsClosing) throw new CapabilityError('rejected', 'document sessions are closing')
+    this.documentsClosing = true
+    try {
+      // 需求：只有宿主拿到用户的明确丢弃确认才走此分支，普通退出永远只做 dirty 检查。
+      if (discardChanges) await this.deps.documents?.discardAll?.()
+      await withTimeout(this.deps.documents?.assertCanRelease?.() ?? Promise.resolve(), PLUGIN_TIMEOUT.REQUEST_MS)
+      return () => { this.documentsClosing = false }
+    } catch (error) {
+      this.documentsClosing = false
+      throw error
     }
-    this.deps.runtime.disposeAll()
+  }
+
+  async shutdown(guarded = false): Promise<void> {
+    if (!guarded) await this.guardDocumentClose()
+    else if (!this.documentsClosing) throw new CapabilityError('rejected', 'document close guard is not held')
+    try {
+      // 需求：安全检查在销毁插件之前完成，失败时仍可回到原插件保存文档。
+      if (this.sleepTimer !== undefined) clearInterval(this.sleepTimer)
+      /*
+        ★ 收尾 = 所有插件的在途调用(含流式命令)一起取消。这里不是「顺手」:
+        `runtime.disposeAll()` 之后宿主窗口全没了,而一个还在读网络的调用会让
+        主进程在退出路径上多留一会儿 —— 更糟的是它可能把一次写做完。
+      */
+      this.abortAllRequests()
+      for (const [id, record] of this.records) {
+        if (record.status === 'active') await this.deactivate(id).catch(() => undefined)
+        await this.deps.documents?.releasePlugin(id)
+      }
+      this.deps.runtime.disposeAll()
+    } catch (error) {
+      this.documentsClosing = false
+      throw error
+    }
+  }
+
+  /** 需求：原生 helper 沿用 process 的行为审批，不能只有能力授权就绕过既有执行确认。 */
+  async approveNativeHelper(pluginId: string, entry: string): Promise<boolean> {
+    const record = this.records.get(pluginId)
+    if (record === undefined || !record.enabled || !record.granted.includes('process')) return false
+    const approved = await this.deps.approve(pluginId, { kind: 'exec', detail: entry })
+    return approved && this.records.get(pluginId) === record && record.enabled && record.granted.includes('process')
   }
 
   catalog(): PluginCatalog {
@@ -387,6 +624,7 @@ export class PluginManager {
       name: t.name,
       externalName: this.deps.reserveName(pluginToolId(id, t.name))
     }))
+    const commandIcons = record.commandIcons
     return {
       id,
       manifest: record.manifest,
@@ -401,8 +639,43 @@ export class PluginManager {
       updatedAt: record.updatedAt,
       statusBar: [...record.statusBar.values()],
       ...(tools.length > 0 ? { tools } : {}),
+      ...(Object.keys(commandIcons).length > 0 ? { commandIcons } : {}),
       ...(pending.length > 0 ? { pendingPermissions: pending } : {})
     }
+  }
+
+  /**
+   * 读清单里每条命令的 `iconFile`,转成 data URL 随 catalog 下发。
+   *
+   * ★ **读不出来不是装载失败**。图标是装饰,一个被升级/迁移弄丢的 svg 不该把
+   * 整个插件顶成 `error` —— 丢的是这一条命令的图标,菜单回落到名字闭集,
+   * 诊断里留一条 warn 供作者排查。与 `publishLocaleBundles` 同一取向。
+   *
+   * ★ 尺寸上限在这里落:装载时读进内存、再随每次 catalog 广播整体复制,
+   * 不设限的话一个「图标」就是一条常驻的内存税。
+   */
+  private async readCommandIcons(
+    manifest: PluginManifest,
+    root: string,
+    diagnostics: PluginDiagnostic[]
+  ): Promise<Record<string, string>> {
+    const out: Record<string, string> = {}
+    const maxBytes = 32 * 1024
+    for (const command of manifest.contributes.commands) {
+      if (command.iconFile === undefined) continue
+      try {
+        const bytes = await fs.readFile(join(root, command.iconFile))
+        if (bytes.byteLength > maxBytes) {
+          diagnostics.push({ path: `contributes.commands.${command.command}.iconFile`, message: `icon file is larger than ${maxBytes} bytes; ignored`, level: 'warn' })
+          continue
+        }
+        const mime = command.iconFile.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : 'image/png'
+        out[command.command] = `data:${mime};base64,${bytes.toString('base64')}`
+      } catch (error) {
+        diagnostics.push({ path: `contributes.commands.${command.command}.iconFile`, message: `icon file could not be read: ${(error as Error).message}`, level: 'warn' })
+      }
+    }
+    return out
   }
 
   // ─────────────────────────── 装载 ───────────────────────────
@@ -439,7 +712,8 @@ export class PluginManager {
       modes: manifest.contributes.modes.length,
       themes: manifest.contributes.themes.length,
       slashCommands: manifest.contributes.slashCommands.length,
-      'views.location': manifest.contributes.views.filter((v) => (v.location ?? 'editor') !== 'editor').length
+      'views.location': manifest.contributes.views.filter((v) => (v.location ?? 'editor') !== 'editor').length,
+      documentEngines: manifest.contributes.documentEngines?.length ?? 0
     })) {
       diagnostics.push({ ...inactive, level: 'info' })
     }
@@ -506,6 +780,7 @@ export class PluginManager {
       touchedAt: 0,
       commands: new Set(),
       tools: new Map(),
+      commandIcons: await this.readCommandIcons(manifest, root, diagnostics),
       interceptor: false,
       contextProvider: false,
       appearanceSubscriber: false,
@@ -565,10 +840,25 @@ export class PluginManager {
    * 市场那一条的 slug,只有市场安装传。见 `PersistedPlugin.slug`。
    */
   async install(path: string, expectedSha256?: string, slug?: string): Promise<void> {
+    if (this.documentsClosing) throw new CapabilityError('rejected', 'document sessions are closing')
+    this.documentsClosing = true
+    try {
+      await this.installAfterDocuments(path, expectedSha256, slug)
+    } finally {
+      this.documentsClosing = false
+    }
+  }
+
+  private async installAfterDocuments(path: string, expectedSha256?: string, slug?: string): Promise<void> {
     const stat = await fs.stat(path)
+    // 需求：安装器识别目标清单后、替换目录前做定向检查，不能让 A 的脏文档挡住 B 的安装。
+    const beforeReplace = async (manifest: PluginManifest): Promise<void> => {
+      await this.deps.documents?.assertCanRelease?.(manifest.id)
+      await this.deps.documents?.releasePlugin(manifest.id)
+    }
     const installed = stat.isDirectory()
-      ? await installPluginDirectory(path, this.deps.pluginRoot)
-      : await installPluginZip(path, this.deps.pluginRoot, expectedSha256)
+      ? await installPluginDirectory(path, this.deps.pluginRoot, beforeReplace)
+      : await installPluginZip(path, this.deps.pluginRoot, expectedSha256, beforeReplace)
     /*
       ★★ **旧配置必须在 `disable()` 之前读出来。**
 
@@ -591,7 +881,10 @@ export class PluginManager {
     */
     this.suppressChanged = true
     try {
-      if (this.records.has(installed.manifest.id)) await this.disable(installed.manifest.id)
+      if (this.records.has(installed.manifest.id)) {
+        await this.deps.documents?.releasePlugin(installed.manifest.id)
+        await this.disableAfterDocuments(installed.manifest.id)
+      }
       await this.load(installed.target, 'global', persisted)
     } finally {
       this.suppressChanged = false
@@ -669,6 +962,21 @@ export class PluginManager {
   }
 
   private async disable(pluginId: string): Promise<void> {
+    // 需求：未装文档桥的旧宿主保留原来的同步下线时机，不能因 await undefined 延迟撤权。
+    if (this.deps.documents === undefined) return this.disableAfterDocuments(pluginId)
+    if (this.documentsClosing) throw new CapabilityError('rejected', 'document sessions are closing')
+    this.documentsClosing = true
+    try {
+      // 需求：禁用不等于丢弃。先排空在途操作并拒绝未保存内容，再撤销插件及引擎。
+      await this.deps.documents?.assertCanRelease?.(pluginId)
+      await this.deps.documents?.releasePlugin(pluginId)
+      await this.disableAfterDocuments(pluginId)
+    } finally {
+      this.documentsClosing = false
+    }
+  }
+
+  private async disableAfterDocuments(pluginId: string): Promise<void> {
     const record = this.records.get(pluginId)
     if (record === undefined) return
     if (record.status === 'active' || record.status === 'activating') {
@@ -701,6 +1009,15 @@ export class PluginManager {
     for (const id of record.progress) this.deps.emitProgress(pluginId, { id, done: true })
     record.progress.clear()
     record.watchGlobs = undefined
+    /*
+      ★ **这个插件没做完的调用在这里被取消。** 只靠超时是不够的:它的宿主窗口
+      下一步就没了,而一次卡在网络上的调用会活过插件的生命周期 —— 主进程替一个
+      已经不存在的插件把响应读完,甚至把文件写完。取消放在 `deactivate` **之后**:
+      先给插件一次在 `deactivate` 里收尾的机会,再收走它剩下的在途调用。
+    */
+    this.abortRequestsOf(pluginId)
+    this.abortExecStreamsOf(pluginId)
+    this.abortToolCallsOf(pluginId)
     this.deps.onToolsChanged()
     this.deps.runtime.dispose(pluginId)
     this.persist()
@@ -741,7 +1058,16 @@ export class PluginManager {
       能力门拒掉,而作者和用户都看不出为什么 —— 不如直接停下来。
     */
     if (record.manifest.permissions.some((p) => !record.granted.includes(p))) {
-      void this.disable(pluginId)
+      // 需求：撤权不是普通禁用，必须同步拒绝新调用；未保存模型保留，不能借 dirty 延迟撤权。
+      record.enabled = false
+      void this.disable(pluginId).catch(async (error: unknown) => {
+        record.diagnostics.push({ path: 'documents', message: `permissions revoked; document state retained: ${String(error)}`, level: 'warn' })
+        await this.disableAfterDocuments(pluginId)
+      }).catch((error: unknown) => {
+        this.deps.host.logger.warn(`[plugins] revoked plugin cleanup failed: ${String(error)}`)
+      })
+      this.persist()
+      this.deps.emitChanged()
       return
     }
     this.persist()
@@ -855,7 +1181,7 @@ export class PluginManager {
 
   // ─────────────────────────── 命令 ───────────────────────────
 
-  async runCommand(pluginId: string, commandId: string): Promise<void> {
+  async runCommand(pluginId: string, commandId: string, args?: Record<string, unknown>): Promise<void> {
     const record = this.records.get(pluginId)
     if (record === undefined) throw new Error(`unknown plugin: ${pluginId}`)
     if (!record.manifest.contributes.commands.some((c) => c.command === commandId)) {
@@ -876,7 +1202,11 @@ export class PluginManager {
     }
     await this.deps.runtime.invoke(
       pluginId,
-      { id: 0, kind: 'command.run', payload: { commandId } },
+      /*
+        args 是宿主**调用点上下文**(目前只有 `+` 菜单附带的 workspaceId),
+        不是插件的入参通道 —— 命令的语义由清单声明,这里只透传来源信息。
+      */
+      { id: 0, kind: 'command.run', payload: { commandId, ...(args === undefined ? {} : { args }) } },
       PLUGIN_TIMEOUT.COMMAND_MS
     )
   }
@@ -972,10 +1302,67 @@ export class PluginManager {
    * 插件那边 `await handle.done` 永远不 resolve,而它可能正挂在一次工具调用里。
    */
   private finishExec(pluginId: string, execId: string, code: number, timedOut: boolean): void {
+    const running = this.execStreams.get(execId)
     if (!this.execStreams.delete(execId)) return
+    running?.detach()
     void this.deps.runtime
       .invoke(pluginId, { id: 0, kind: 'event', payload: { event: 'process.exit', execId, code, timedOut } }, PLUGIN_TIMEOUT.COMMAND_MS)
       .catch(() => undefined)
+  }
+
+  /**
+   * 起一条流式命令,并把它挂到**它自己的**那张表上。
+   *
+   * ★ 这里是「流式命令生命期独立于启动 RPC」这条不变量的唯一落点,所以把它从
+   * `handleHostMethod` 里抽出来:`execStreams` 里的 `controller` 只做两件事 ——
+   * `process.execAbort` 和插件禁用 / shutdown。启动 RPC 的 30 秒期限**不进来**。
+   *
+   * ★ 但长命令仍然要有主人:
+   * - `toolSignal`(`ctx.toolSignal`,产生这次调用的那次工具的 abort)→ 用户点
+   *   停止时立刻杀,并且与 `controller` 一起进 spawn 的 signal;
+   * - `timeoutMs` → 命令自己的上限(与 `process.exec` 同一口径)。
+   *
+   * ★ `finishExec` 只从 spawn 的 resolve / reject 进来,而 spawn 拿到的三条
+   * abort 来源(controller、toolSignal、timeoutMs)都会让它 reject —— 所以
+   * 「真的结束了」和「被取消了」都只推一条 `process.exit`,`detach` 保证那条
+   * 工具 signal 上的 listener 一定被摘掉。
+   */
+  private startExecStream(
+    execId: string,
+    pluginId: string,
+    prepared: { command: string; line: string; cwd: string; shell: string; timeoutMs: number },
+    toolSignal: AbortSignal | undefined
+  ): void {
+    const controller = new AbortController()
+    const toolOnAbort = (): void => { controller.abort() }
+    const detachTool = (): void => { toolSignal?.removeEventListener('abort', toolOnAbort) }    /*
+      工具已经中止了(用户点得比命令起得还快)→ 直接 abort,别 spawn。
+      这不是「取消一条已经跑起来的命令」,那条命令根本没起 —— 它的 exit 走
+      spawn 的 reject 分支。
+    */
+    if (toolSignal !== undefined) {
+      if (toolSignal.aborted) controller.abort()
+      else toolSignal.addEventListener('abort', toolOnAbort, { once: true })
+    }
+    const pump = new OutputPump((stream, text, truncated) => {
+      void this.deps.runtime
+        .invoke(pluginId, { id: 0, kind: 'event', payload: { event: 'process.output', execId, stream, chunk: text, truncated } }, PLUGIN_TIMEOUT.COMMAND_MS)
+        .catch(() => undefined)
+    })
+    this.execStreams.set(execId, { pluginId, controller, detach: detachTool })
+    void this.deps.host
+      .spawn(prepared.line, {
+        cwd: prepared.cwd,
+        signal: controller.signal,
+        timeoutMs: prepared.timeoutMs,
+        shell: prepared.shell,
+        onOutput: ({ stream, text }) => { pump.push(stream, text) }
+      })
+      .then(
+        (result) => { pump.flush(); this.finishExec(pluginId, execId, result.code, false) },
+        // 中断 / 超时走这里:插件仍然要收到一条 exit,否则它的 `done` 永远挂着。
+        () => { pump.flush(); this.finishExec(pluginId, execId, TIMEOUT_EXIT_CODE, true) }
+      )
   }
 
   /**
@@ -992,12 +1379,13 @@ export class PluginManager {
    * d.ts 和文档里 —— 不写清楚的话,作者会把它当 watcher 用,然后在
    * 「为什么我在 VS Code 里改了没反应」上耗掉一天。
    */
-  notifyWorkspaceChanged(changes: readonly { path: string; kind: 'created' | 'modified' | 'deleted' }[]): void {
+  notifyWorkspaceChanged(changes: readonly { path: string; kind: 'created' | 'modified' | 'deleted' }[], workspaceId?: string): void {
     if (changes.length === 0) return
     for (const [pluginId, record] of this.records) {
       // 睡着的插件**不叫醒**:用户没在用它,一次文件保存不值得为它起一个进程
       // (同 `notifyAppearanceChanged` 的取向)。它醒来时自己重新读就是了。
       if (record.status !== 'active' || record.watchGlobs === undefined) continue
+      if (workspaceId !== undefined && record.watchWorkspaceId !== workspaceId) continue
       const mine = changes.filter((change) => matchesPathScope(record.watchGlobs, change.path))
       if (mine.length === 0) continue
       void this.deps.runtime
@@ -1071,6 +1459,67 @@ export class PluginManager {
     record.touchedAt = Date.now()
 
     /*
+      ★ **真实 deadline + 取消,而且必须真的在限时内返回。**
+      旧的 `withTimeout(invokeCapability(...))` 只有一条 `Promise.race`:到点回一条
+      timeout,**而那次工作还在跑**(网络读一半、子进程还活着、审批弹窗还开着)。
+
+      这条 controller 接住两件事 —— 到点取消,和插件被禁用 / 卸载 / shutdown 时
+      取消 —— 但**光有 abort 不够**:审批(`await deps.approve`)、文件 IO、宿主
+      方法都不认 signal,它们会一直 await 下去。所以下面每一条派发都用 `abortable`
+      把「这次调用自己的 signal」变成一次拒绝 —— 到点返回必须在**时限内**发生,
+      而不是等那个不理会 signal 的 await 自己结束。
+
+      ★ 清理(`untrackRequest` + 摘掉下游 listener)只有**一处**,在最外层的
+      `finally`:出口有成功 / 宿主方法 / 能力 / 抛错四条,抄四份的话漏掉哪一份的
+      症状都是「30 秒后 abort 一个早就没人等的 controller」和一个永远涨的
+      `liveRequests`。
+    */
+    let toolSignal: AbortSignal | undefined
+    try { toolSignal = this.toolSignalForRequest(pluginId, method, request.params) }
+    catch (error) {
+      if (error instanceof CapabilityError) return fail(error.code, error.message)
+      return fail('internal_error', error instanceof Error ? error.message : String(error))
+    }
+    const controller = new AbortController()
+    const deadlineTimer = setTimeout(() => {
+      // reason 带标记:只有 deadline 到点算「超时」,插件被禁用 / shutdown 是「被取消」。
+      controller.abort(TIMEOUT_ABORT_REASON)
+    }, PLUGIN_TIMEOUT.REQUEST_MS)
+    deadlineTimer.unref?.()
+    this.trackRequest(pluginId, controller, deadlineTimer)
+
+    /*
+      需求：**工作区相关(或恰好一次工具在跑)的调用要继承产生它的那次工具调用的
+      宿主 signal** —— 用户点停止时,已经跑出去的 spawn / fetch 必须立刻断,而不只
+      是「阻止下一次调用」。修法是把工具 signal 转发进这条调用的 controller。
+
+      ★ **不是** `controller = 工具的 signal`(那会一 abort 就全局作废、无法分辨
+      来源):这里用一条**派生的** controller,工具的 abort 只 abort 它,宿主自己
+      的 deadline / 禁用仍走 `controller`。两个上游都 abort 同一个派生 signal,
+      `checkActive` 按 reason 分出「超时」还是「被取消」。
+
+      ★ **只绑一个 live tool 时才继承。** 多个工具调用并发(同一插件)时插件没有
+      指明 callId,`resolveCallWorkspace` 会拒;这里也不替它挑一个 —— 绑错工具
+      的后果是 A 的 stop 掐断 B 的调用,正是需求里点名不能发生的事。
+    */
+    const derived = new AbortController()
+    const toolOnAbort = (): void => { derived.abort(TOOL_CANCELLED_REASON) }
+    if (toolSignal !== undefined) {
+      // 工具已经停止 → 这次调用一开始就是中止的(checkActive 会立刻拒)。
+      if (toolSignal.aborted) toolOnAbort()
+      else toolSignal.addEventListener('abort', toolOnAbort, { once: true })
+    }
+    controller.signal.addEventListener('abort', toolOnAbort, { once: true })
+    /*
+      ★ **清理监听器。** 不摘的话,一条 30 秒就结束的调用会在那个工具的 signal 上
+      （长命,挂在整轮 run 上)留一个永远不被调用的 listener,每次停止时逐个空跑。
+    */
+    const detachSignal = (): void => {
+      controller.signal.removeEventListener('abort', toolOnAbort)
+      toolSignal?.removeEventListener('abort', toolOnAbort)
+    }
+
+    /*
       能力上下文**在分派之前**就造好。
 
       ★ 它原本造在 `handleHostMethod` 之后,而 `process.execStream` 这类
@@ -1078,14 +1527,55 @@ export class PluginManager {
       门在 `rpc.ts`(纯函数、可直测),事件在这里(只有 manager 拿得到 runtime)。
       造两份 ctx 的话,两条路的 `allowedCommands` / 工作区根迟早会不一致。
       构造本身很便宜(全是闭包,scm 适配器也是用到才造)。
+
+      ★★ **工作区在这一次调用开始时就冻结。** 带 `callId` 的工作区类方法按产生
+      它的那次工具调用定位(见 `resolveCallWorkspace`);没有 callId 时按发起时的
+      当前工作区 —— 旧语义。两条路都算出一个「这次调用的工作区」,再把它的作用域
+      代号冻进 `checkActive`:调用中途那个工作区变成另一个根了,后续的复检就拒,
+      而不是把文件写进另一个工作区。
     */
-    const workspace = this.deps.currentWorkspace()
+    let workspace: { id: string; rootPath: string }
+    try {
+      workspace = this.resolveCallWorkspace(pluginId, method, request.params)
+    } catch (error) {
+      // 作用域解析失败 = 这次调用不该发生。把上游监听摘掉,这条调用不留痕迹。
+      detachSignal()
+      this.untrackRequest(pluginId, controller, deadlineTimer)
+      if (error instanceof CapabilityError) return fail(error.code, error.message)
+      return fail('internal_error', (error as Error).message)
+    }
+    const generation = this.markWorkspaceGeneration(workspace)
+    const workspaceId = workspace.id
+    const checkActive = (): void => {
+      /*
+        ★ 两条上游分开看,因为两者的「谁说的」不同:
+        - `controller.signal` 带 **reason**(deadline 到点是 `TIMEOUT_ABORT_REASON`);
+        - `derived.signal` 是「这条调用自己」的 signal,工具中止只 abort 它,
+          而它的 reason 一定是 `TOOL_CANCELLED_REASON` —— 拿它判超时永远为假。
+        只传 controller 会漏掉「工具被停止」这一路;只传 derived 会把超时误判成取消。
+      */
+      this.assertCallAlive(pluginId, record, controller.signal, derived.signal.aborted)
+      // 需求：工作区切走之后,仍在跑的那次调用不能再写 —— 它拿到的是旧作用域。
+      if (this.workspaceGenerationOf(workspaceId) !== generation) {
+        throw new CapabilityError('rejected', '[stale_scope] the call workspace changed while the call was running')
+      }
+    }
+    /*
+      ★★ **副作用从哪一刻起不可撤销,由真正动手的那一行决定,不是由方法名决定。**
+      `markSideEffectStarted` 由 `rpc.ts` 在写 / 删 / spawn / scm / 文档引擎之前
+      调用一次;在那之前被取消(审批还挂着、路径门被拒)走的都是普通取消 / 超时。
+    */
+    const sideEffect: SideEffectTracker = { started: false }
     const ctx: CapabilityContext = {
       pluginId,
       manifest: record.manifest,
       host: this.deps.host,
       workspaceRoot: workspace.rootPath,
       workspaceId: workspace.id,
+      signal: derived.signal,
+      ...(toolSignal === undefined ? {} : { toolSignal }),
+      checkActive,
+      markSideEffectStarted: () => { sideEffect.started = true },
       /*
         ★ 这里原本写死成 `[]`,而 `narrowCommand` 见到空白名单一律拒 ——
         于是**任何**插件的 `process.exec` 都在参数门被静默拒死,永远走不到
@@ -1098,9 +1588,51 @@ export class PluginManager {
       trash: (absolutePath) => this.deps.trash(absolutePath),
       openExternal: (url) => this.deps.openExternal(url),
       clipboard: this.deps.clipboard,
-      // ★ 适配器**用到时才造**,并且在这里绑定当前工作区 —— 插件传不进 workspaceId,它说了不算。
+      /*
+        ★ 适配器**用到时才造**,并且绑定这次调用**冻结的那个工作区** —— 插件传不进
+        workspaceId,它说了不算。
+
+        ★ 工作区相关方法(scm.* 全在 `WORKSPACE_SCOPED_METHODS` 里)的冻结工作区
+        已经由 `resolveCallWorkspace` 按可信 `callId` 定位过:带 callId 就是产生它
+        的那次工具调用的工作区,没有 callId 而恰好一次工具在跑也按那一次推断,
+        多次在跑直接拒。所以这里**不需要**再解析一次 callId —— 那只会是同一份值的
+        第二份来源,而两份来源迟早分叉。
+      */
       scm: () => this.deps.scmFor(workspace.id),
       kv: this.kvFor(pluginId)
+    }
+
+    /*
+      ★ **两个出口(宿主方法 / 能力)统一分类。** 它们都有副作用点、都要在
+      deadline 到点时结算、都要按「是否已越过副作用点」区分 result_unknown。
+      只有一处 `classifyAndFail` 才不会出现「同样是被取消,一条报 timeout、
+      另一条报 rejected」那种按分派路径变化的现象。
+    */
+    const classifyAndFail = (error: unknown): PluginResponse => {
+      const message = error instanceof Error ? error.message : String(error)
+      const timedOut = isTimeoutAbort(controller.signal) || message === 'plugin_timeout'
+      const cancelled = controller.signal.aborted || derived.signal.aborted || timedOut
+      /*
+        ★ **不能再报告「可安全重试」。** 越过副作用点之后被取消,重试会把副作用做
+        第二遍 —— 而且外部写 / 文档引擎那类**已经开始的工作取消不了**(我们只是
+        不等了),重试就是双份。给一条明确的「结果未知」,让重试由人决定。
+        也**不声称可回滚**:这里没有回滚,说清楚「不知道做没做」比编一句能撤销诚实。
+
+        ★ 副作用点**之前**的取消(比如审批还挂着)走普通取消 / 超时 —— 那种失败
+        重试是安全的,报 result_unknown 会平白吓住插件作者。
+      */
+      const unknown = sideEffect.started
+      if (unknown && cancelled) {
+        return fail(
+          timedOut ? 'timeout' : 'rejected',
+          '[result_unknown] the call was cancelled after it may have taken effect; verify the workspace before retrying'
+        )
+      }
+      // 参数门 / 行为门的拒绝:原样带出去(它们有各自明确的错误码)。
+      if (timedOut) return fail('timeout', 'the call timed out')
+      if (cancelled || message === 'the call was cancelled') return fail('rejected', 'the call was cancelled')
+      if (error instanceof CapabilityError) return fail(error.code, error.message)
+      return fail('internal_error', message)
     }
 
     /*
@@ -1111,15 +1643,38 @@ export class PluginManager {
       (工具注册表、命令表、授权状态),不碰文件系统也不走权限链。
       混进 `invokeCapability` 会让那个函数同时背两种职责,而它已经是
       整个系统里最需要一眼看懂的一段了。
+
+      ★ `abortable` 让这条出口即使卡在一个不理会 signal 的 await 上(比如
+      `permissions.request` 的授权弹窗),到点也会真的返回;兜底时按「副作用点之前」
+      分类 —— 登记类方法还没动手,报普通取消而不是 result_unknown。
     */
     let hostHandled: { data: unknown; summary: string } | undefined
+    let capabilityOutcome: CapabilityOutcome | undefined
+    let failure: PluginResponse | undefined
     try {
-      hostHandled = await this.handleHostMethod(pluginId, record, method, request.params, ctx)
+      hostHandled = await abortable(() => this.handleHostMethod(pluginId, record, method, request.params, ctx), derived.signal)
+      if (hostHandled === undefined) {
+        // ③ 参数门 + ④ 行为门都在 handler 里 —— 它们需要文件系统与权限链。
+        capabilityOutcome = await abortable(() => invokeCapability(method as PluginMethod, request.params as never, ctx), derived.signal)
+      }
     } catch (error) {
-      // execStream 的参数门/审批在这一层抛 CapabilityError,和下面那条路同样翻译。
-      if (error instanceof CapabilityError) return fail(error.code, error.message)
-      return fail('internal_error', (error as Error).message)
+      failure = classifyAndFail(error)
+    } finally {
+      /*
+        ★ **这里,也只有这里,收掉这条调用的全部痕迹:**
+        - deadline 定时器与 `liveRequests` 登记(漏了 = 30 秒后一条对着空
+          controller 的 abort + 一个永远涨的表);
+        - 挂在工具 signal 与派生 signal 上的两个 listener(漏了 = 一条 30 秒的
+          调用在整轮 run 上都留一个再也不用的 listener,用户每次点停止都空跑一遍)。
+        两条出口(宿主方法 / 能力)在同一个 `finally` 里收 —— 抄两份的话迟早只改
+        一份。`process.execStream` 起的命令**不在**这里收:它在自己的表里,
+        生命期以 `finishExec` 结束。
+      */
+      detachSignal()
+      this.untrackRequest(pluginId, controller, deadlineTimer)
     }
+    if (failure !== undefined) return failure
+
     if (hostHandled !== undefined) {
       recordActivity({
         ts: started,
@@ -1132,41 +1687,256 @@ export class PluginManager {
       return { id: request.id, ok: true, data: hostHandled.data }
     }
 
-    try {
-      // ③ 参数门 + ④ 行为门都在 handler 里 —— 它们需要文件系统与权限链。
-      const outcome = await withTimeout(
-        invokeCapability(method as PluginMethod, request.params as never, ctx),
-        PLUGIN_TIMEOUT.REQUEST_MS
-      )
-      recordActivity({
-        ts: started,
-        pluginId,
-        method,
-        summary: outcome.summary,
-        verdict: 'ok',
-        durationMs: Date.now() - started
-      })
-      /*
-        ★ 插件自己的写入也要进变更流,否则订阅者之间是**半聋**的:
-        A 插件改了一个文件,监听同一份文件的 B 插件收不到 —— 而同样的改动由
-        Agent 做出来时它收得到。同一件事有两种结果,是最难查的那类问题。
+    const outcome = capabilityOutcome as CapabilityOutcome
+    recordActivity({
+      ts: started,
+      pluginId,
+      method,
+      summary: outcome.summary,
+      verdict: 'ok',
+      durationMs: Date.now() - started
+    })
+    /*
+      ★ 插件自己的写入也要进变更流,否则订阅者之间是**半聋**的:
+      A 插件改了一个文件,监听同一份文件的 B 插件收不到 —— 而同样的改动由
+      Agent 做出来时它收得到。同一件事有两种结果,是最难查的那类问题。
 
-        通知放在**成功之后**:写失败了没有任何东西变过。
-      */
-      if (method === 'workspace.writeFile' || method === 'workspace.deleteFile') {
-        const path = (request.params as { path?: unknown } | null)?.path
-        if (typeof path === 'string') {
-          this.notifyWorkspaceChanged([
-            { path, kind: method === 'workspace.deleteFile' ? 'deleted' : 'modified' }
-          ])
-        }
+      通知放在**成功之后**:写失败了没有任何东西变过。
+
+      ★ **通知带回这次调用冻结的那个工作区。** 不带的后果是一次后台调用改了
+      A 的文件,而订阅 B 的插件收到了一条 `workspace.changed` —— 它按自己
+      订阅时的根去解释这条相对路径,于是又指到了另一个文件。
+    */
+    if (method === 'workspace.writeFile' || method === 'workspace.deleteFile') {
+      const path = (request.params as { path?: unknown } | null)?.path
+      if (typeof path === 'string') {
+        this.notifyWorkspaceChanged([
+          { path, kind: method === 'workspace.deleteFile' ? 'deleted' : 'modified' }
+        ], ctx.workspaceId)
       }
-      return { id: request.id, ok: true, data: outcome.data }
-    } catch (error) {
-      if (error instanceof CapabilityError) return fail(error.code, error.message)
-      if ((error as Error).message === 'plugin_timeout') return fail('timeout', 'the call timed out')
-      return fail('internal_error', (error as Error).message)
     }
+    return { id: request.id, ok: true, data: outcome.data }
+  }
+
+  /**
+   * 这次 RPC 该继承哪一条工具 signal。
+   *
+   * 规则与 `resolveCallWorkspace` 的作用域推导同源:**只有能唯一确定那次工具调用
+   * 时才返回**,否则返回 `undefined`(不继承)。
+   *
+   * - 非工作区类方法:不解析 —— `callId` 在那里只是普通数据(`diagnostics.log`
+   *   的同名字段绝不能把它打挂,也不能被当成 scope)。
+   * - 带 `callId`:本插件正在跑的那次调用(不存在 / 别人的 / 已 abort → 不继承,
+   *   调用本身也会在作用域那一关被拒)。
+   * - 不带 `callId`:本插件**恰好一次**工具调用在跑 → 用那一次;多次 → 不继承
+   *   (不替它赌一个,见 `resolveCallWorkspace` 的规则 4)。
+   * - 没有工具调用在跑:不继承。UI 代码(菜单 / 视图)的调用属于用户自己的动作,
+   *   它们本来就没有工具 signal 可言。
+   */
+  private toolSignalForRequest(pluginId: string, method: PluginMethod, rawParams: unknown): AbortSignal | undefined {
+    if (!resolvesCallId(method, rawParams)) return undefined
+    const callId = rawParams !== null && typeof rawParams === 'object' && !Array.isArray(rawParams)
+      ? (rawParams as Record<string, unknown>).callId
+      : undefined
+    if (callId !== undefined) {
+      if (typeof callId !== 'string' || callId === '') throw new CapabilityError('invalid_argument', 'callId is invalid')
+      const live = this.liveToolEmits.get(callId)
+      if (live === undefined || live.pluginId !== pluginId || live.signal.aborted) {
+        throw new CapabilityError('rejected', '[call_scope] the tool call is not active or not owned by this plugin')
+      }
+      return live.signal
+    }
+    const mine = [...this.liveToolEmits.values()].filter((live) => live.pluginId === pluginId)
+    if (mine.length > 1) throw new CapabilityError('rejected', '[call_scope] multiple tool calls are running; pass the callId')
+    return mine[0]?.signal
+  }
+
+  // ─────────────────────── 调用的存活与作用域 ───────────────────────
+
+  /** 登记一次在途 RPC(连同它的 deadline 定时器);与 `untrackRequest` 成对。 */
+  private trackRequest(pluginId: string, controller: AbortController, timer: NodeJS.Timeout): void {
+    let set = this.liveRequests.get(pluginId)
+    if (set === undefined) { set = new Set(); this.liveRequests.set(pluginId, set) }
+    set.add({ controller, timer })
+  }
+
+  private untrackRequest(pluginId: string, controller: AbortController, timer: NodeJS.Timeout): void {
+    // ★ 先清定时器再决定表怎么动:这条调用一旦结束,它那条 deadline 就不再有任何意义。
+    clearTimeout(timer)
+    const set = this.liveRequests.get(pluginId)
+    if (set === undefined) return
+    for (const entry of set) {
+      if (entry.controller === controller) set.delete(entry)
+    }
+    if (set.size === 0) this.liveRequests.delete(pluginId)
+  }
+
+  /**
+   * 取消这个插件此刻所有在途 RPC。禁用 / 卸载各调一次。
+   *
+   * ★ 只摘**它自己那一条**(按 pluginId)。顺手清空整张表的话,一个插件被禁用
+   * 会把别的插件正在跑的调用一起掐掉 —— 而它们之间看起来毫无关系。
+   *
+   * ★ 顺手把每条调用的 deadline 定时器一起收掉。留着的话,它们在 30 秒后各自
+   * 对着一个**早就没人等的** controller 再 abort 一次 —— 无害,但那是 30 秒的假活。
+   */
+  private abortRequestsOf(pluginId: string): void {
+    const set = this.liveRequests.get(pluginId)
+    if (set === undefined) return
+    for (const entry of set) {
+      clearTimeout(entry.timer)
+      entry.controller.abort()
+    }
+    this.liveRequests.delete(pluginId)
+  }
+
+  /** shutdown:所有插件的在途调用 + 所有流式命令一起取消。 */
+  private abortAllRequests(): void {
+    for (const set of this.liveRequests.values()) {
+      for (const entry of set) {
+        clearTimeout(entry.timer)
+        entry.controller.abort()
+      }
+    }
+    this.liveRequests.clear()
+    for (const running of this.execStreams.values()) running.controller.abort()
+    for (const [execId, running] of [...this.execStreams]) this.finishExec(running.pluginId, execId, TIMEOUT_EXIT_CODE, true)
+    this.execStreams.clear()
+    this.liveToolEmits.clear()
+  }
+
+  /**
+   * 取消这个插件正在跑的**流式命令**。
+   *
+   * ★ 一次性 RPC 由 `abortRequestsOf` 收,流式命令在**另一张表**里
+   * (`execStreams`)—— 它的生命期不以某一条 RPC 结束,而以子进程退出结束。
+   * 不单独收的话,一个被禁用的插件所起的构建会一直跑到它自己结束:它既没有主人
+   * 再读输出,也没有人能 `execAbort`(那条 RPC 会被能力门拒掉,插件已经禁用了)。
+   *
+   * ★ 收尾**复用** `finishExec`:成功、失败、被中断、超时四条路都要走到它,
+   * 漏掉任何一条的症状都是插件那边 `await handle.done` 永远不 resolve。
+   */
+  private abortExecStreamsOf(pluginId: string): void {
+    for (const [execId, running] of [...this.execStreams]) {
+      if (running.pluginId !== pluginId) continue
+      running.controller.abort()
+      this.finishExec(pluginId, execId, TIMEOUT_EXIT_CODE, true)
+    }
+  }
+
+  /** 工具调用结束(或被中止)时,把它名下的登记一起撤掉。 */
+  private abortToolCallsOf(pluginId: string): void {
+    for (const [callId, live] of this.liveToolEmits) {
+      if (live.pluginId !== pluginId) continue
+      this.liveToolEmits.delete(callId)
+    }
+  }
+
+  /**
+   * 「这次调用还算数吗」的判据本体。
+   *
+   * ★ 单独一个函数,是因为它有三类调用点:调用开始前的冻结、审批之后的复检、
+   * 以及网络重定向的每一跳。抄三份的话,「哪几种情况下该停」迟早只在其中一条
+   * 路上成立 —— 而那条路不会有测试为它失败。
+   */
+  private assertCallAlive(pluginId: string, record: PluginRecord, signal: AbortSignal, toolCancelled = false): void {
+    if (signal.aborted || toolCancelled) {
+      /*
+        ★ **两种 abort 要分开报。** 到点的 reason 是 `TIMEOUT_ABORT_REASON`;插件被
+        禁用 / 卸载 / shutdown 走的是普通 abort。混成一句「超时」的话,同一个原因
+        (用户关了插件)会因为「abort 在哪一步暴露出来」而给出两种不同的错误码:
+        停在审批里的那条报 timeout,已经 spawn 出去的那条报 rejected。插件作者
+        按其中一种写处理逻辑,另一种就会落空。
+
+        ★ `toolCancelled`(产生这次调用的工具被用户停止)同样是**取消**,不是超时;
+        但它来自另一条 signal,所以由调用方显式传进来。
+      */
+      throw isTimeoutAbort(signal)
+        ? new CapabilityError('rejected', 'plugin_timeout')
+        : new CapabilityError('rejected', 'the call was cancelled')
+    }
+    if (this.documentsClosing) throw new CapabilityError('rejected', 'document sessions are closing')
+    if (this.records.get(pluginId) !== record) throw new CapabilityError('rejected', 'the plugin is no longer installed')
+    if (!record.enabled || record.status === 'pending-approval') throw new CapabilityError('rejected', 'plugin is not enabled')
+    record.touchedAt = Date.now()
+  }
+
+  /**
+   * 这一次调用该按哪个工作区做 —— **受信作用域**的派生点。
+   *
+   * ## 规则
+   *
+   * 1. **不在工作区类方法里**:不解析。`callId` 在别的方法上是普通数据(工具
+   *    注册的表里没有它),去读它只会让一次 `storage.set` 因为一个同名字段而失败。
+   * 2. 带 `callId`:必须是**本插件正在跑**的一次工具调用,且它的工作区此刻在
+   *    本地可用。不成立就拒 —— **绝不回退到当前聚焦的工作区**(那正是「用户在
+   *    A 干活、文件写进 B」那条路)。
+   * 3. 不带 `callId`,而这个插件恰有**一次**工具调用在跑:按那一次推断。这是
+   *    安全的:插件无从选择,而它正在跑的那次调用只有一个工作区可言。
+   * 4. 不带 `callId`,而**多次**在跑:拒绝。挑一个等于替插件赌一个工作区。
+   * 5. 没有任何工具调用在跑:按发起时的当前工作区 —— 菜单 / 命令面板 / 视图里
+   *    的 UI 代码走这一条,与旧行为一致。
+   */
+  private resolveCallWorkspace(pluginId: string, method: PluginMethod, rawParams: unknown): { id: string; rootPath: string } {
+    if (!WORKSPACE_SCOPED_METHODS.has(method) || isGlobalStorageRequest(method, rawParams)) return this.deps.currentWorkspace()
+    return this.resolveScopedWorkspace(pluginId, rawParams)
+  }
+
+  private resolveScopedWorkspace(pluginId: string, rawParams: unknown): { id: string; rootPath: string } {
+    const callId = rawParams !== null && typeof rawParams === 'object' && !Array.isArray(rawParams)
+      ? (rawParams as Record<string, unknown>).callId
+      : undefined
+    if (callId !== undefined) {
+      if (typeof callId !== 'string' || callId === '') throw new CapabilityError('invalid_argument', 'callId is invalid')
+      const live = this.liveToolEmits.get(callId)
+      if (live === undefined || live.pluginId !== pluginId || live.signal.aborted) {
+        throw new CapabilityError('rejected', '[call_scope] the tool call is not active or not owned by this plugin')
+      }
+      return this.workspaceOfToolCall(live.workspaceId)
+    }
+    const mine = [...this.liveToolEmits.values()].filter((live) => live.pluginId === pluginId)
+    const only = mine[0]
+    // 恰好一次在跑,而插件无从选择 —— 按那一次推断是安全的。
+    // 没有 workspaceId 的调用(整体运行没有本地工作区)= 明确拒绝,不回退焦点。
+    if (mine.length === 1 && only !== undefined) {
+      if (only.signal.aborted) throw new CapabilityError('rejected', '[call_scope] the tool call is not active')
+      return this.workspaceOfToolCall(only.workspaceId)
+    }
+    if (mine.length > 1) {
+      throw new CapabilityError('rejected', '[call_scope] multiple tool calls are running; pass the callId to choose a workspace')
+    }
+    return this.deps.currentWorkspace()
+  }
+
+  /**
+   * 工具调用冻结下来的工作区 → 现在的本地工作区。
+   *
+   * ★ 判据用的是**工具调用开始时内核给的 id**,不是「重新读一次焦点」——
+   * 用户此刻在看哪个工作区和这次调用无关。解析 id 只用来回答「它还在、还是
+   * 本地的吗」,不在了就拒,绝不回退。
+   */
+  private workspaceOfToolCall(workspaceId: string | undefined): { id: string; rootPath: string } {
+    if (workspaceId === undefined || workspaceId === '') {
+      throw new CapabilityError('invalid_argument', '[unsupported_environment] the tool call has no local workspace')
+    }
+    const resolved = this.deps.resolveWorkspace?.(workspaceId) ?? null
+    if (resolved === null) {
+      throw new CapabilityError('invalid_argument', '[unsupported_environment] the workspace is not available locally')
+    }
+    return { id: resolved.id, rootPath: resolved.rootPath }
+  }
+
+  /**
+   * 从受信工具上下文派生 documents.* 的工作区作用域。
+   *
+   * 需求：后台 Agent 的文档请求必须跟随产生 callId 的那次工具调用，而不是跟随用户
+   * 此刻聚焦的工作区；callId 结束或属于别的插件时绝不能回退到前台。
+   * 不满足会怎样：用户在 A 工作区运行任务、切到 B 后，插件会静默把修改写进 B，
+   * 或者恶意插件借一个猜中的 callId 读到另一轮任务的文件。
+   */
+  private resolveDocumentScope(pluginId: string, rawParams: unknown): DocumentCallScope {
+    const workspace = this.resolveScopedWorkspace(pluginId, rawParams)
+    return { workspaceId: workspace.id, workspaceRoot: workspace.rootPath }
   }
 
   /**
@@ -1183,6 +1953,39 @@ export class PluginManager {
     rawParams: unknown,
     ctx: CapabilityContext
   ): Promise<{ data: unknown; summary: string } | undefined> {
+    if (method.startsWith('documents.')) {
+      if (this.documentsClosing) throw new CapabilityError('rejected', 'document sessions are closing')
+      const documents = this.deps.documents
+      if (documents === undefined) throw new CapabilityError('internal_error', 'document bridge is not configured')
+      /*
+        ★ `documents.*` 是**有限时**的一次调用,不是可以无限挂着的写。
+
+        路径:`handleHostMethod` 这一层只负责过桥与把结果翻成 `CapabilityError`;
+        真正在**动手之前**检查「这次调用还算不算数」的地方在 `document-rpc.ts`
+        (串行队列轮到它时,以及导出/保存那两处副作用点)。这里做两件事:
+
+        1. 加 `markSideEffectStarted` 钩子 —— 队列里可能已经排了几百毫秒,过期
+           之后才轮到的动作不该再执行(见 `document-rpc.ts` 的 EARLY 检查)。
+        2. 把 `ctx.signal` 传进去 —— 队列/引擎卡住时,派生 signal 一 abort,
+           `abortable` 就让这次 RPC 在 deadline 内返回,而不是永远 await。
+      */
+      const scope = this.resolveDocumentScope(pluginId, rawParams)
+      const documentScope = { ...scope, signal: ctx.signal, markSideEffectStarted: ctx.markSideEffectStarted }
+      try {
+        const result = await documents.handle(pluginId, record.manifest, method, rawParams, documentScope)
+        // 需求：只有成功写盘才通知，并保留请求最初的后台工作区而不是重新读焦点。
+        if (result.changed !== undefined) this.notifyWorkspaceChanged([result.changed], scope.workspaceId)
+        return result
+      } catch (error) {
+        if (error instanceof PluginCapabilityError) {
+          const code = error.code === 'invalid_argument' || error.code === 'rejected' || error.code === 'internal_error'
+            ? error.code
+            : 'internal_error'
+          throw new CapabilityError(code, error.message)
+        }
+        throw error
+      }
+    }
     switch (method) {
       case 'permissions.contains': {
         const p = rawParams as { permissions: PluginPermission[] }
@@ -1394,6 +2197,40 @@ export class PluginManager {
         return { data: { opened: true }, summary: `open browser ${hostOf(p.url)}` }
       }
 
+      /*
+        ───────── 打开终端 ─────────
+
+        与 `process.exec` 共用 `narrowCommand` 这一份白名单门 —— 能开进交互式
+        终端的命令不比能一次性执行的更宽,两处各挂一份清单迟早分叉。
+        「工作区存不存在、是不是远程」manager 判不了(它看不到工作区存储),
+        交给 `deps.launchTerminal`;那边的拒绝同样以 `opened: false` 回,
+        插件拿 reason 去给用户一句话。
+      */
+      case 'tabs.openTerminal': {
+        const p = rawParams as { workspaceId: string; command: string; args?: string[]; env?: Record<string, string>; title?: string }
+        if (typeof p.workspaceId !== 'string' || p.workspaceId === '') {
+          return { data: { opened: false, reason: 'declined' as const }, summary: 'rejected terminal: no workspace' }
+        }
+        const narrowed = narrowCommand(record.manifest.allowedCommands, p.command, p.args ?? [])
+        if (!narrowed.ok) return { data: { opened: false, reason: 'declined' as const }, summary: `rejected terminal command: ${narrowed.reason}` }
+        const env = narrowLaunchEnv(p.env)
+        if (!env.ok) return { data: { opened: false, reason: 'declined' as const }, summary: `rejected terminal env: ${env.reason}` }
+        const title = typeof p.title === 'string' && p.title.length > 0 && p.title.length <= 128 && p.title.startsWith('%') && p.title.endsWith('%')
+          ? p.title
+          : undefined
+        const result = this.deps.launchTerminal(pluginId, {
+          workspaceId: p.workspaceId,
+          command: narrowed.value.command,
+          args: narrowed.value.args,
+          env: env.value,
+          ...(title === undefined ? {} : { title })
+        })
+        return {
+          data: result,
+          summary: result.opened ? `open terminal: ${narrowed.value.command}` : `terminal declined: ${result.reason ?? 'unknown'}`
+        }
+      }
+
       case 'configuration.get':
         return { data: { values: this.configuration(pluginId) }, summary: 'configuration.get' }
 
@@ -1506,6 +2343,7 @@ export class PluginManager {
           .filter((glob): glob is string => typeof glob === 'string' && glob !== '')
           .slice(0, 32)
         record.watchGlobs = globs
+        record.watchWorkspaceId = ctx.workspaceId
         return { data: {}, summary: `subscribe changes ${globs.length === 0 ? '(all)' : globs.join(',')}` }
       }
 
@@ -1532,31 +2370,26 @@ export class PluginManager {
         if (this.execStreams.size >= MAX_CONCURRENT_EXEC_STREAMS) {
           throw new CapabilityError('rejected', 'too many concurrent streaming commands')
         }
-        const execId = `exec-${String(this.nextExecId++)}`
-        const controller = new AbortController()
-        this.execStreams.set(execId, { pluginId, controller })
         /*
-          ★ 输出**合批**再推:一条 `npm install` 能在一秒里触发上百次 data 事件,
-          逐条发等于一秒上百次跨进程 invoke,而插件那边根本看不出区别。
+          ★ **流式命令的生命期独立于启动它的那条 RPC 的 30 秒期限。**
+
+          它是「一条跑几十秒的命令」,而启动它的只是一次普通 RPC —— 把两者绑在
+          一起的话,每个 `npm run build` 都会在 30 秒时被 `execAbort` 的效果截断,
+          而插件作者看不见任何原因(那个 controller 是宿主的)。
+
+          但独立 ≠ 没人管:它仍然**跟随**(见 `startExecStream`)
+          1. 产生这次调用的工具调用的 abort(用户点停止 —— 长命令要真的停下来);
+          2. 插件被禁用 / 卸载(走 `controller`);
+          3. 自己的 `timeoutMs`;
+          并且**四条结束路径都要推一条 `process.exit`**,否则插件那边 `await done` 永远挂着。
+
+          这里的 `controller` 只保留 `execAbort` / 插件禁用两个来源 ——
+          `ctx.signal` 上那条 tool 的 abort 单独挂(`toolSignal`),不经过它。
         */
-        const pump = new OutputPump((stream, text, truncated) => {
-          void this.deps.runtime
-            .invoke(pluginId, { id: 0, kind: 'event', payload: { event: 'process.output', execId, stream, chunk: text, truncated } }, PLUGIN_TIMEOUT.COMMAND_MS)
-            .catch(() => undefined)
-        })
-        void this.deps.host
-          .spawn(prepared.line, {
-            cwd: prepared.cwd,
-            signal: controller.signal,
-            timeoutMs: prepared.timeoutMs,
-            shell: prepared.shell,
-            onOutput: ({ stream, text }) => { pump.push(stream, text) }
-          })
-          .then(
-            (result) => { pump.flush(); this.finishExec(pluginId, execId, result.code, false) },
-            // 中断 / 超时走这里:插件仍然要收到一条 exit,否则它的 `done` 永远挂着。
-            () => { pump.flush(); this.finishExec(pluginId, execId, TIMEOUT_EXIT_CODE, true) }
-          )
+        const execId = `exec-${String(this.nextExecId++)}`
+        // ★ 这里起的是一个**真的子进程** —— 越过它之后被取消就是 result_unknown。
+        ctx.markSideEffectStarted?.()
+        this.startExecStream(execId, pluginId, prepared, ctx.toolSignal)
         return { data: { execId }, summary: `execStream ${prepared.command}` }
       }
 
@@ -1582,6 +2415,12 @@ export class PluginManager {
         if (!record.manifest.contributes.commands.some((c) => c.command === p.commandId)) {
           return { data: { value: null }, summary: `refused cross-plugin command ${p.commandId}` }
         }
+        /*
+          ★ 这条 RPC 只是把工作**交给插件里的命令处理器**,而那次工作我们看不见也
+          取消不了(可能已经在改文件、起进程)。越过它之后的取消报 result_unknown,
+          免得插件把一条已经跑了一半的命令再做一遍。
+        */
+        ctx.markSideEffectStarted?.()
         const value = await this.deps.runtime.invoke(
           pluginId,
           { id: 0, kind: 'command.run', payload: { commandId: p.commandId, args: p.args } },
@@ -1622,6 +2461,11 @@ export class PluginManager {
         }
         await this.wake(p.target) // 依赖此刻可能在睡 —— 叫醒它
         if (target.status !== 'active') return { data: { value: null }, summary: `target ${p.target} not running` }
+        /*
+          ★ 同 `commands.execute`:真正的动作发生在**别的插件的上下文**里,我们
+          既看不见也取消不了。取消之后必须报 result_unknown。
+        */
+        ctx.markSideEffectStarted?.()
         const result = await this.deps.runtime.invoke(
           p.target,
           { id: 0, kind: 'api.call', payload: { method: p.method, args: Array.isArray(p.args) ? p.args : [], from: pluginId } },
@@ -1708,6 +2552,20 @@ export class PluginManager {
     return out
   }
 
+  /**
+   * 需求：模型装配工具表之前激活已启用的工具插件；声明 onTool 的插件
+   * 还没有运行期注册表项，若等到工具调用时才唤醒，它永远不会进模型工具清单。
+   * 每轮只唤醒声明了 onTool 的插件，休眠后下一轮能重新注册。
+   */
+  async prepareContributedTools(): Promise<void> {
+    for (const [id, record] of this.records) {
+      if (!record.enabled || record.status === 'error' || record.status === 'pending-approval') continue
+      const tool = record.manifest.contributes.tools.find((item) =>
+        record.manifest.activationEvents.includes(`onTool:${item.name}`))
+      if (tool !== undefined) await this.wake(id)
+    }
+  }
+
   contributedTools(): ToolRegistration[] {
     const out: ToolRegistration[] = []
     for (const [pluginId, record] of this.records) {
@@ -1716,11 +2574,25 @@ export class PluginManager {
       const cardViewTypes = new Set(record.manifest.contributes.cardViews.map((v) => v.viewType))
       for (const declaration of record.tools.values()) {
         out.push(
-          toolRegistrationFor(pluginId, declaration, async (name, input, callId, signal, emit) => {
+          toolRegistrationFor(pluginId, declaration, async (name, input, callId, signal, emit, workspaceId) => {
             // 工具调用本身也是一次「碰一下」,免得跑着跑着被休眠扫走。
             record.touchedAt = Date.now()
-            // 登记这次调用的 emit,让 `tool.progress` RPC 找得到它;结束即撤。
-            this.liveToolEmits.set(callId, { pluginId, emit })
+            /*
+              登记这次调用的 emit 与工作区作用域,让 `documents.*` 与工作区类 RPC
+              都找得到它;结束即撤。
+
+              ★ 只记 **id**,root 在每次 RPC 时经 `deps.resolveWorkspace` 现查
+              (和 `documents.*` 同一口径)。冻结 root 看起来更稳,但工具回调这一层
+              拿不到它,而自己读一次当前焦点会是**错的**那个值 —— 那正是这条机制
+              要修的东西。现查的代价只有一个:同一个 id 被重新指向另一个根时,
+              调用会写到新根上,而那个工作区此刻确实是它。
+            */
+            this.liveToolEmits.set(callId, {
+              pluginId,
+              ...(workspaceId === undefined ? {} : { workspaceId }),
+              signal,
+              emit
+            })
             // 交互式工具会挂起等用户点按钮,60s 太短 —— 放宽到宿主硬上限(fork B)。
             const timeoutMs = declaration.interactive === true ? PLUGIN_TIMEOUT.INTERACTIVE_TOOL_MS : PLUGIN_TIMEOUT.TOOL_MS
             const invocation = this.deps.runtime.invoke(

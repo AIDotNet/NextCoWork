@@ -11,7 +11,7 @@ import { Check } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { ImportCategory } from '../../../../../shared/domain/import'
 import { IMPORT_CATEGORIES } from '../../../../../shared/domain/import'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { cn } from '../../../lib/cn'
 import { useI18n, type TranslationKey } from '../../../i18n'
@@ -58,8 +58,8 @@ export function ImportSyncDialog({
       width={440}
       footer={
         <>
-          <Button onClick={onClose}>{t('import.cancel')}</Button>
-          <Button variant="accent" disabled={busy} onClick={() => onSave([...draft])}>
+          <Button size="sm" type="button" variant="secondary" onClick={onClose}>{t('import.cancel')}</Button>
+          <Button size="sm" type="button" variant="primary" disabled={busy} onClick={() => onSave([...draft])}>
             {t('import.save')}
           </Button>
         </>

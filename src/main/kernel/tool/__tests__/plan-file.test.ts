@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { PLAN_FILE_MAX_BYTES } from '../../../../shared/domain/plan-file'
 import { createWorkspacePaths } from '../../../environment/paths'
 import { activePlanFor, leavePlan, planToolAllowList } from '../../plan-run'
 import { nodeHost } from '../../host'
@@ -98,10 +99,15 @@ describe('file-backed Plan mode', () => {
     expect(readFileSync(active.absolutePath, 'utf8')).toContain('Implement and verify.')
   })
 
-  it('presents the saved Markdown and stops after approval', async () => {
+  it.each([
+    { name: 'short plan', plan: '# Approved plan' },
+    { name: '83062-byte UTF-8 plan', plan: '# Plan\n\n' + '步'.repeat(27_684) + '\n\n' },
+    { name: '1 MiB plan', plan: 'x'.repeat(1024 * 1024) }
+  ])('presents the saved $name and stops after approval', async ({ plan }) => {
     await enterPlanModeTool.execute({}, context())
     const active = activePlanFor({ runId, sessionId })!
-    await writeTool.execute({ file_path: active.absolutePath, content: '# Approved plan' }, context({ writeFileRestriction: active.absolutePath }))
+    const written = await writeTool.execute({ file_path: active.absolutePath, content: plan }, context({ writeFileRestriction: active.absolutePath }))
+    expect(written.isError).toBe(false)
 
     let presented: unknown
     const result = await exitPlanModeTool.execute({}, context({
@@ -110,11 +116,12 @@ describe('file-backed Plan mode', () => {
         return { id: 'interaction-1', kind: 'plan_approval', action: 'approve_current' }
       }
     }))
+    expect(result.isError).toBe(false)
     expect(presented).toMatchObject({
       kind: 'plan_approval',
       planId: active.planId,
       path: active.path,
-      plan: '# Approved plan'
+      plan
     })
     expect(result.stopRun).toBe(true)
     expect(JSON.parse(result.output.content)).toMatchObject({
@@ -125,6 +132,47 @@ describe('file-backed Plan mode', () => {
     })
     // 批准即终点:下一条计划要重新 EnterPlanMode
     expect(activePlanFor({ runId, sessionId })).toBeUndefined()
+  })
+
+  it.each([
+    { name: 'ASCII', plan: 'x'.repeat(PLAN_FILE_MAX_BYTES + 1) },
+    { name: 'UTF-8', plan: '步'.repeat(Math.floor(PLAN_FILE_MAX_BYTES / 3) + 1) }
+  ])('rejects an oversized $name plan before presenting it', async ({ plan }) => {
+    await enterPlanModeTool.execute({}, context())
+    const active = activePlanFor({ runId, sessionId })!
+    let presented: unknown
+    const ctx = context({
+      interact: async (request) => {
+        presented = request
+        return { id: 'interaction-1', kind: 'plan_approval', action: 'approve_current' }
+      }
+    })
+    await ctx.host.fs.writeFile(active.absolutePath, plan)
+
+    const result = await exitPlanModeTool.execute({}, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toBe(`The plan file is too large (${Buffer.byteLength(plan)} bytes; limit ${PLAN_FILE_MAX_BYTES}).`)
+    expect(presented).toBeUndefined()
+    expect(result.stopRun).not.toBe(true)
+    expect(activePlanFor({ runId, sessionId })?.planId).toBe(active.planId)
+  })
+
+  it('rejects a plan that exceeds the size limit while review is open', async () => {
+    await enterPlanModeTool.execute({}, context())
+    const active = activePlanFor({ runId, sessionId })!
+    const ctx = context({
+      interact: async () => {
+        await ctx.host.fs.writeFile(active.absolutePath, 'x'.repeat(PLAN_FILE_MAX_BYTES + 1))
+        return { id: 'interaction-1', kind: 'plan_approval', action: 'approve_current' }
+      }
+    })
+    await ctx.host.fs.writeFile(active.absolutePath, '# Draft plan')
+
+    const result = await exitPlanModeTool.execute({}, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toContain('became invalid before review completed')
+    expect(result.stopRun).not.toBe(true)
+    expect(activePlanFor({ runId, sessionId })?.planId).toBe(active.planId)
   })
 
   it('continues the same plan when the user requests a revision', async () => {

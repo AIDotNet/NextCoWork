@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { userMessage } from '../../../../shared/agent/message'
+import { toolResultMessage, userMessage } from '../../../../shared/agent/message'
 import { MAX_ATTACHMENT_BYTES } from '../../../../shared/domain/attachment'
 import { nodeHost, type KernelHost } from '../../host'
 import { encodeUpstream } from '../codec'
-import { ImageInputError, prepareRequestImages } from '../images'
+import { ImageInputError, imageUrlNote, prepareRequestImages } from '../images'
 import { REQUEST } from './openai-fixtures'
 
 let root: string
@@ -46,10 +46,53 @@ describe('upstream managed images', () => {
     expect(original).toEqual(before)
     expect(read).toHaveBeenCalledTimes(1)
     for (const protocol of ['anthropic', 'openai-chat', 'openai-responses'] as const) {
-      const body = encodeUpstream(protocol, prepared, 'model', 'test-key', { userId: context.workspaceId, cacheTtl: '5m' }).body
-      expect(JSON.stringify(body)).toContain(imageBytes.toString('base64'))
-      expect(JSON.stringify(body)).not.toContain('ncw://')
+      const body = JSON.stringify(encodeUpstream(protocol, prepared, 'model', 'test-key', { userId: context.workspaceId, cacheTtl: '5m' }).body)
+      expect(body).toContain(imageBytes.toString('base64'))
+      // 地址只能以那行文本出现;图像块本身必须是字节,不能是 ncw://(上游读不到)
+      expect(body).toContain(imageUrlNote(imageUrl))
+      expect(body.split(imageUrlNote(imageUrl)).join('')).not.toContain('ncw://')
     }
+  })
+
+  it('annotates each managed user image with its URL right after it, and leaves the transcript untouched', async () => {
+    await writeFile(join(root, 'attachments', 'sessions', 'session-a', 'image.png'), imageBytes)
+    const original = request()
+    const prepared = await prepareRequestImages(original, host, context, signal)
+    expect(prepared.messages[0]?.parts.map((p) => p.type)).toEqual(['text', 'image', 'text'])
+    expect(prepared.messages[0]?.parts[2]).toEqual({ type: 'text', text: '[Image URL: ncw://attachments/sessions/session-a/image.png]' })
+    expect(original.messages[0]?.parts).toHaveLength(2)
+  })
+
+  it('does not annotate inline data URL images, which have no address to give', async () => {
+    const prepared = await prepareRequestImages(request(`data:image/png;base64,${imageBytes.toString('base64')}`), host, context, signal)
+    expect(prepared.messages[0]?.parts.map((p) => p.type)).toEqual(['text', 'image'])
+  })
+
+  it('resolves ncw:// tool-result images to bytes and passes inline ones through', async () => {
+    await writeFile(join(root, 'attachments', 'sessions', 'session-a', 'image.png'), imageBytes)
+    const inline = `data:image/png;base64,${Buffer.from('inline').toString('base64')}`
+    const original = { ...REQUEST, messages: [toolResultMessage('t', [{
+      type: 'tool_result', callId: 'c1', isError: false,
+      output: { content: 'Generated 2 images.', images: [{ mime: 'image/png', dataRef: imageUrl }, { mime: 'image/png', dataRef: inline }] }
+    }], 0)] }
+    const before = structuredClone(original)
+    const prepared = await prepareRequestImages(original, host, context, signal)
+    const part = prepared.messages[0]?.parts[0]
+    expect(part?.type === 'tool_result' ? part.output.images : undefined).toEqual([
+      { mime: 'image/png', dataRef: `data:image/png;base64,${imageBytes.toString('base64')}` },
+      { mime: 'image/png', dataRef: inline }
+    ])
+    expect(original).toEqual(before)
+  })
+
+  it('rejects a tool-result ncw:// image owned by another session', async () => {
+    const original = { ...REQUEST, messages: [toolResultMessage('t', [{
+      type: 'tool_result', callId: 'c1', isError: false,
+      output: { content: 'x', images: [{ mime: 'image/png', dataRef: 'ncw://attachments/sessions/session-b/image.png' }] }
+    }], 0)] }
+    await expect(prepareRequestImages(original, host, context, signal)).rejects.toMatchObject({
+      error: { messageKey: 'attachment.error.foreignSession' }
+    })
   })
 
   it('reads uploaded images from the attachment root, not the active account profile', async () => {

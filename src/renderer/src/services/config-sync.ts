@@ -24,3 +24,8 @@ export function confirmInitial(): Promise<void> {
 export function resolve(id: string, useRemote: boolean): Promise<void> {
   return invoke('configSync:resolve', { id, useRemote })
 }
+
+// 需求：使用统计的多设备合并可单独关掉；关掉后概览只剩本机数据。
+export function setUsageSync(enabled: boolean): Promise<SyncStatus> {
+  return invoke('configSync:setUsage', { enabled })
+}

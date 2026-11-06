@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelAlias, UpstreamProvider } from '../provider'
+import { isChatModelAlias, isImageModelAlias, type ModelAlias, type UpstreamProvider } from '../provider'
 import {
+  chatModelCorrection,
+  firstChatModelAlias,
   modelBindingsFor,
   modelSelectionKey,
   parseModelSelectionKey,
@@ -57,6 +59,12 @@ describe('模型绑定选择', () => {
 })
 
 describe('下拉框复合键', () => {
+  it('空别名对应空选项，审核模型和目标判定模型不会显示成空白', () => {
+    expect(modelSelectionKey(undefined, '')).toBe('')
+    expect(parseModelSelectionKey(modelSelectionKey(undefined, '')))
+      .toEqual({ modelProviderId: undefined, alias: '' })
+  })
+
   it('别名里的斜杠原样保留 —— 只切第一个分隔符', () => {
     const key = modelSelectionKey('openrouter', 'openrouter/claude-sonnet-4')
     expect(parseModelSelectionKey(key))
@@ -118,5 +126,70 @@ describe('子代理选模型', () => {
   it('设置里是空白串时当作没配,而不是拿一个空别名去发请求', () => {
     expect(subagentModelSelection({}, { model: '  ' }, parent))
       .toEqual({ model: 'gpt-5.6-sol', modelProviderId: 'codex' })
+  })
+})
+
+// ── 对话模型 vs 图片模型:选择器过滤与「打开时校正」的判据 ──
+
+const imageByModality: ModelAlias = { ...model('routin', 'gpt-image-2'), modality: 'image' }
+const imageByCapability: ModelAlias = {
+  ...model('routin', 'seedream-4'),
+  capabilities: { tools: false, vision: true, thinking: false, caching: false, imageOutput: true }
+}
+const nonTextOutput: ModelAlias = {
+  ...model('routin', 'wanx-video'),
+  capabilities: { tools: false, vision: true, thinking: false, caching: false, textOutput: false }
+}
+
+describe('模态判据', () => {
+  it('isImageModelAlias:modality 或 imageOutput 任一命中即图片模型(缺一边都会漏一族)', () => {
+    expect(isImageModelAlias(imageByModality)).toBe(true)
+    expect(isImageModelAlias(imageByCapability)).toBe(true)
+    expect(isImageModelAlias(model('routin', 'gpt-5.6-sol'))).toBe(false)
+  })
+
+  it('isChatModelAlias:图片模型和显式不产文本的都不是对话模型', () => {
+    expect(isChatModelAlias(model('routin', 'gpt-5.6-sol'))).toBe(true)
+    expect(isChatModelAlias(imageByModality)).toBe(false)
+    expect(isChatModelAlias(imageByCapability)).toBe(false)
+    expect(isChatModelAlias(nonTextOutput)).toBe(false)
+  })
+})
+
+describe('firstChatModelAlias 校正兜底', () => {
+  it('沿输入顺序取第一个文本模型 —— 那正是选择器列表的显示顺序', () => {
+    const rows = [imageByModality, model('codex', 'claude-fable-5'), model('routin', 'gpt-5.6-sol')]
+    expect(firstChatModelAlias(rows, providers)?.alias).toBe('claude-fable-5')
+  })
+
+  it('停用的别名/供应商都不算 —— 落到一个发不出请求的模型比不校正更糟', () => {
+    expect(firstChatModelAlias([model('routin', 'off', false), model('codex', 'ok')], providers)?.alias).toBe('ok')
+    expect(firstChatModelAlias([model('gone', 'x'), model('codex', 'ok')], [routin, { ...codex, enabled: false }])).toBeNull()
+  })
+
+  it('全是图片模型时答 null —— 没有可落点,不瞎换', () => {
+    expect(firstChatModelAlias([imageByModality, imageByCapability], providers)).toBeNull()
+  })
+})
+
+describe('chatModelCorrection 打开选择器时的校正', () => {
+  const rows = [imageByModality, model('codex', 'claude-fable-5'), model('routin', 'gpt-5.6-sol')]
+
+  it('选中的是图片模型时换成第一个文本模型,别名与供应商成对给', () => {
+    expect(chatModelCorrection(rows, providers, 'gpt-image-2', 'routin'))
+      .toEqual({ alias: 'claude-fable-5', modelProviderId: 'codex' })
+  })
+
+  it('本来就是文本模型时不动', () => {
+    expect(chatModelCorrection(rows, providers, 'gpt-5.6-sol', 'routin')).toBeNull()
+  })
+
+  it('空选中(跟随对话这类空档)与悬空别名都不动 —— 悬空是 repairModelSelection 的活', () => {
+    expect(chatModelCorrection(rows, providers, '', undefined)).toBeNull()
+    expect(chatModelCorrection(rows, providers, 'deleted-alias', 'routin')).toBeNull()
+  })
+
+  it('一个文本模型都没有时不动配置', () => {
+    expect(chatModelCorrection([imageByModality], providers, 'gpt-image-2', 'routin')).toBeNull()
   })
 })

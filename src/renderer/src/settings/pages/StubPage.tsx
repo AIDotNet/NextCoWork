@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { EmptyState } from '../../components/ui/EmptyState'
+import { EmptyState } from '../../components/arc/empty-state/empty-state'
 import { SETTINGS_ICON } from '../icons'
 import type { SettingsPageId } from '../nav'
 import { useI18n } from '../../i18n'
@@ -23,7 +23,7 @@ export function StubPage({ page }: { page: SettingsPageId }): ReactNode {
       <EmptyState
         icon={<Icon size={26} />}
         title={key === undefined ? t('stub.default') : t(`stub.${key}.title` as 'stub.account.title' | 'stub.wallet.title' | 'stub.review.title' | 'stub.computer.title')}
-        hint={key === undefined ? undefined : t(`stub.${key}.hint` as 'stub.account.hint' | 'stub.wallet.hint' | 'stub.review.hint' | 'stub.computer.hint')}
+        description={key === undefined ? '' : t(`stub.${key}.hint` as 'stub.account.hint' | 'stub.wallet.hint' | 'stub.review.hint' | 'stub.computer.hint')}
       />
     </div>
   )

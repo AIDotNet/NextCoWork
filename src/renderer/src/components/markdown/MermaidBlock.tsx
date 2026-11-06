@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useI18n } from '../../i18n'
 import { useAppearance } from '../../theme/useAppearance'
 import type { MarkdownCodeProps } from './MarkdownProvider'
-import { CodeSource } from './CodeSource'
+import { CodeSource } from '../code/CodeSource'
 import { canRenderMermaid } from './mermaid-policy'
 
 // Mermaid has process-wide configuration. Serialize renders from different messages.

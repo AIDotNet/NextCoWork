@@ -139,7 +139,7 @@ function ProtocolBindingForm({
           type="button"
           disabled={!changed || busy}
           onClick={() => void save()}
-          className="rounded-[7px] bg-accent px-3 py-1.5 text-[11px] text-accent-fg disabled:opacity-50"
+          className="rounded-[8px] bg-accent px-3 py-1.5 text-[11px] text-accent-fg disabled:opacity-50"
         >
           {busy ? t("models.protocolSaving") : t("models.protocolSave")}
         </button>

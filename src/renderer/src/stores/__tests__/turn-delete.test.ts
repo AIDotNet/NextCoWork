@@ -22,18 +22,37 @@ vi.mock('../../services/app', () => ({
   persistInnerTabs: vi.fn(),
   persistOuterTabs: vi.fn(),
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: vi.fn()
+  persistSessionDraft: vi.fn()
 }))
 
-vi.mock('../../services/sessions', () => ({
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn(async (_sessionId: string): Promise<unknown> => null)
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...(detail as object), hasMore: false }
+    }),
   replaceHistory: vi.fn(async () => undefined),
-  getSession: vi.fn(async () => null)
-}))
+    editSessionMessage: vi.fn(async () => undefined),
+    deleteSessionTurn: vi.fn(async () => undefined),
+    deleteSessionReply: vi.fn(async () => undefined),
+  }
+})
 
-import { replaceHistory } from '../../services/sessions'
+import { deleteSessionReply, deleteSessionTurn, replaceHistory } from '../../services/sessions'
 import { releaseSession, sessionStore } from '../session'
 
 const mockReplaceHistory = vi.mocked(replaceHistory)
+const mockDeleteTurn = vi.mocked(deleteSessionTurn)
+const mockDeleteReply = vi.mocked(deleteSessionReply)
+/** 什么都没往主进程送:既没有按 id 删,也没有整段改写 */
+function expectNothingPersisted(): void {
+  expect(mockDeleteTurn).not.toHaveBeenCalled()
+  expect(mockDeleteReply).not.toHaveBeenCalled()
+  expect(mockReplaceHistory).not.toHaveBeenCalled()
+}
 
 /** 一轮带工具调用的问答:提问 → 调工具 → 回执 → 收尾发言。 */
 const turn = (n: string) => [
@@ -144,9 +163,9 @@ describe('删除一整轮', () => {
 
     await s.getState().deleteTurn('u1')
 
-    expect(mockReplaceHistory).toHaveBeenCalledTimes(1)
-    expect(mockReplaceHistory.mock.calls[0]?.[1].map((m) => m.id))
-      .toEqual(['u2', 'a2', 'r2', 'b2'])
+    // ★ 按 id 交给主进程在完整历史上删 —— 渲染层手里可能只有一页,不能拿它整段改写
+    expect(mockDeleteTurn).toHaveBeenCalledWith('d-persist', 'u1')
+    expect(mockReplaceHistory).not.toHaveBeenCalled()
   })
 
   it('运行中拒绝删除 —— 主进程正往这段历史里追加消息', async () => {
@@ -156,7 +175,7 @@ describe('删除一整轮', () => {
     await s.getState().deleteTurn('u1')
 
     expect(s.getState().transcript.messages).toHaveLength(4)
-    expect(mockReplaceHistory).not.toHaveBeenCalled()
+    expectNothingPersisted()
   })
 
   it('id 对不上时是空操作,不会误删别的东西', async () => {
@@ -165,7 +184,7 @@ describe('删除一整轮', () => {
     await s.getState().deleteTurn('u-nope')
 
     expect(s.getState().transcript.messages).toHaveLength(4)
-    expect(mockReplaceHistory).not.toHaveBeenCalled()
+    expectNothingPersisted()
   })
 
   it('传的是助手消息 id 时也是空操作 —— 锚点只能是提问', async () => {
@@ -174,6 +193,78 @@ describe('删除一整轮', () => {
     await s.getState().deleteTurn('b1')
 
     expect(s.getState().transcript.messages).toHaveLength(4)
-    expect(mockReplaceHistory).not.toHaveBeenCalled()
+    expectNothingPersisted()
+  })
+})
+
+describe('只删一条回复', () => {
+  it('提问留着,回复连同工具回执一起删', async () => {
+    const s = seeded('r-mid', [...turn('1'), ...turn('2')])
+
+    await s.getState().deleteReply('a1', 'b1')
+
+    expect(s.getState().transcript.messages.map((m) => m.id))
+      .toEqual(['u1', 'u2', 'a2', 'r2', 'b2'])
+    expect(mockDeleteReply).toHaveBeenCalledWith('r-mid', 'a1', 'b1')
+  })
+
+  it('回复以 tool_call 收尾时吃掉紧随其后的回执,不留失配的 tool_result', async () => {
+    const s = seeded('r-dangling', [
+      userMessage('u1', [{ type: 'text', text: '问题' }], 1),
+      assistantMessage('a1', [{ type: 'tool_call', callId: 'c1', name: 'Read', input: {} }], 2),
+      toolResultMessage('r1', [{ type: 'tool_result', callId: 'c1', output: { content: 'ok' }, isError: false }], 3),
+      ...turn('2')
+    ])
+
+    await s.getState().deleteReply('a1', 'a1')
+
+    expect(s.getState().transcript.messages.map((m) => m.id))
+      .toEqual(['u1', 'u2', 'a2', 'r2', 'b2'])
+  })
+
+  it('后台汇报引出的回复也能删,汇报本身留着', async () => {
+    const report = { ...userMessage('rep', [{ type: 'text', text: '子代理结果' }], 5), internal: true }
+    const s = seeded('r-report', [
+      ...turn('1'),
+      report,
+      assistantMessage('x1', [{ type: 'text', text: '收到汇报' }], 6)
+    ])
+
+    await s.getState().deleteReply('x1', 'x1')
+
+    expect(s.getState().transcript.messages.map((m) => m.id))
+      .toEqual(['u1', 'a1', 'r1', 'b1', 'rep'])
+  })
+
+  it('删末尾那条回复时清掉 error —— 它说的是已经不存在的回复', async () => {
+    const s = seeded('r-tail', [...turn('1')])
+    s.setState((state) => ({
+      transcript: { ...state.transcript, error: { code: 'unknown', message: '炸了', retryable: false } }
+    }))
+
+    await s.getState().deleteReply('a1', 'b1')
+
+    expect(s.getState().transcript.messages.map((m) => m.id)).toEqual(['u1'])
+    expect(s.getState().transcript.error).toBeUndefined()
+  })
+
+  it('锚点不是助手消息、或顺序颠倒时是空操作', async () => {
+    const s = seeded('r-bad', [...turn('1')])
+
+    await s.getState().deleteReply('u1', 'b1')
+    await s.getState().deleteReply('b1', 'a1')
+
+    expect(s.getState().transcript.messages).toHaveLength(4)
+    expectNothingPersisted()
+  })
+
+  it('运行中拒绝删除', async () => {
+    const s = seeded('r-running', [...turn('1')])
+    s.setState({ activeRunId: 'run-1' })
+
+    await s.getState().deleteReply('a1', 'b1')
+
+    expect(s.getState().transcript.messages).toHaveLength(4)
+    expectNothingPersisted()
   })
 })

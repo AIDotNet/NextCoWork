@@ -24,29 +24,31 @@ describe('内置工具卡片文案', () => {
     }
   })
 
-  it('★ 接线已生效:presenter 的标题走 translate(漏注入时这里会拿到 key 原文)', () => {
+  it('★ 接线已生效:presenter 的标签走 translate(漏注入时这里会拿到 key 原文)', () => {
     // 断言全用 translate 作对照而不是写死中文 —— 与当前 locale 解耦,单独跑这一条也成立
-    expect(presenterOf('Read').title({ file_path: '/w/src/main/index.ts' })).toBe(
-      translate('chat.tool.title.read', { target: 'index.ts' })
-    )
-    // 半截 JSON:target 为空串 → 文案表退化成「动词…」,而不是残句
-    expect(presenterOf('Read').title('{"file_p')).toBe(translate('chat.tool.title.read', { target: '' }))
+    const line = presenterOf('Read').line({ file_path: '/w/src/main/index.ts' })
+    expect(line.label).toBe(translate('chat.tool.title.read'))
+    // ★ 目标和目录是**两格**,不拼进标签:拼回去的话渲染层没法给它们不同亮度
+    expect(line.target).toBe('index.ts')
+    expect(line.context).toBe('w/src/main/')
+    // 半截 JSON:字段还没到 → 行里只剩标签,不留半个路径
+    expect(presenterOf('Read').line('{"file_p')).toEqual({ label: translate('chat.tool.title.read') })
     expect(
       presenterOf('Bash').summary?.({}, { content: 'Command exited with code 127.\nnot found' })
     ).toBe(translate('chat.tool.summary.exitCode', { code: '127' }))
   })
 
   it('★ 切语言不需要重建 presenter —— 注入的是 translate 本体,渲染时现查 locale', () => {
-    function Title(): string {
-      return presenterOf('Read').title({ file_path: '/a/b/c.ts' })
+    function Label(): string {
+      return presenterOf('Read').line({ file_path: '/a/b/c.ts' }).label
     }
-    const zh = renderToStaticMarkup(createElement(I18nProvider, { initialLocale: 'zh-CN', children: createElement(Title) }))
-    const en = renderToStaticMarkup(createElement(I18nProvider, { initialLocale: 'en-US', children: createElement(Title) }))
-    expect(zh).toContain('读取 c.ts')
-    expect(en).toContain('Reading c.ts')
+    const zh = renderToStaticMarkup(createElement(I18nProvider, { initialLocale: 'zh-CN', children: createElement(Label) }))
+    const en = renderToStaticMarkup(createElement(I18nProvider, { initialLocale: 'en-US', children: createElement(Label) }))
+    expect(zh).toContain('读取')
+    expect(en).toContain('Read')
   })
 
-  it('★ 任何内置工具的标题/摘要都不把 {param} 漏到界面上', () => {
+  it('★ 任何内置工具的标签/摘要都不把 {param} 漏到界面上', () => {
     // 覆盖两条最易漏参的路径:空入参(流式前)和典型入参(流式中)
     const typical: Record<string, unknown> = {
       file_path: '/a/b.ts',
@@ -66,7 +68,10 @@ describe('内置工具卡片文案', () => {
     for (const id of registeredToolIds()) {
       const p = presenterOf(id)
       for (const input of [{}, typical]) {
-        expect(p.title(input), id).not.toMatch(/\{\w+\}/)
+        const line = p.line(input)
+        expect(line.label, id).not.toMatch(/\{\w+\}/)
+        expect(line.label, id).not.toBe('')
+        expect(line.target ?? '', id).not.toMatch(/\{\w+\}/)
         const summary = p.summary?.(input, { content: 'Command exited with code 1.\nline' })
         if (summary !== undefined) expect(summary, id).not.toMatch(/\{\w+\}/)
       }

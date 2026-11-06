@@ -305,6 +305,8 @@ export function isModelCatalogDefinition(value: unknown): value is ModelCatalogD
   ) {
     return false
   }
+  if (tc['anthropicAdaptive'] !== undefined && typeof tc['anthropicAdaptive'] !== 'boolean') return false
+  if (tc['anthropicAdaptive'] === true && tc['mode'] !== 'effort') return false
   if (tc['mode'] === 'effort' && tc['defaultEffort'] === undefined) return false
   if (tc['mode'] === 'unsupported' && tc['defaultEnabled'] !== false) return false
   if (tc['mode'] === 'always' && tc['defaultEnabled'] !== true) return false
@@ -320,6 +322,8 @@ export function isModelCatalogDefinition(value: unknown): value is ModelCatalogD
   ) {
     return false
   }
+  if (tc['anthropicAdaptive'] === true && tc['defaultEnabled'] === false &&
+    (!Array.isArray(reasoningEfforts) || !reasoningEfforts.includes('none'))) return false
   if (Array.isArray(reasoningEfforts)) {
     const normalizedEfforts = reasoningEfforts as string[]
     if (new Set(normalizedEfforts).size !== normalizedEfforts.length) return false

@@ -14,9 +14,11 @@
  */
 import {
   ArrowUp,
+  Bot,
   BrainCircuit,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   Code2,
@@ -32,6 +34,7 @@ import {
   Percent,
   Paperclip,
   Plus,
+  Puzzle,
   RefreshCw,
   Server,
   Settings2,
@@ -45,12 +48,10 @@ import {
 import {
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import type { PermissionMode } from "../../../../shared/agent/permission";
 import {
   PERMISSION_MODES,
@@ -71,21 +72,42 @@ import {
   type ContextSegmentKind,
 } from "../../../../shared/agent/context-management";
 import { formatCostMicros, longContextSurcharge, findPricing, type RunCost } from "../../../../shared/domain/pricing";
-import { PRICING_SEED } from "../../../../shared/domain/pricing-seed";
+import { usePricingTable } from "../../services/pricing";
 import { formatTokensPerSecond } from "../../../../shared/agent/duration";
 import { formatTokenCount } from "../../../../shared/agent/tokens";
 import { findBuiltinModel } from "../../../../shared/domain/model-catalog-inventory";
-import { modelThinkingLevels, normalizeModelThinkingLevel } from "../../../../shared/domain/model-runtime";
+import { effectiveModelThinking, modelThinkingLevels, normalizeModelThinkingLevel } from "../../../../shared/domain/model-runtime";
 import type {
   Workspace,
   WorkspaceSettings,
 } from "../../../../shared/domain/workspace";
 import { normalizeEnvironmentRef } from "../../../../shared/domain/environment";
+import type { WorkspaceCompactionOverride } from "../../../../shared/domain/compaction-model";
+import {
+  INHERIT_THINKING,
+  SUBAGENT_THINKING_CHOICES,
+} from "../../../../shared/domain/subagent-thinking";
+import { parseModelSelectionKey } from "../../../../shared/domain/model-selection";
+import {
+  compactModelOptions,
+  compactModelPatch,
+  compactModelValue,
+  compactThinkingPatch,
+  compactThinkingValue,
+  FOLLOW_GLOBAL,
+  FOLLOW_SESSION,
+} from "./compact-choice";
 import type {
   ModelAlias,
   UpstreamProvider,
 } from "../../../../shared/domain/provider";
+import { isChatModelAlias } from "../../../../shared/domain/provider";
 import { ProviderIcon } from "../../components/brand/ProviderIcon";
+import {
+  ProviderModelMenu,
+  type ProviderModelMenuRow,
+} from "../../components/ProviderModelMenu";
+import { useChatModelGuard } from "../../components/useChatModelGuard";
 import {
   Menu,
   MenuItem,
@@ -96,12 +118,17 @@ import { Slider } from "../../components/ui/Slider";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { cn } from "../../lib/cn";
 import { GoalPanel, GoalPill } from './GoalPanel';
+import { ConversationCostDetails } from './ConversationCostDetails';
+import { CodingPlanQuotaSection } from './CodingPlanQuotaSection';
+import { codingPlanFamilyFor } from '../../../../shared/domain/coding-plan';
 import { parseGoalCommand, type ActiveGoal } from '../../../../shared/domain/goal';
 import { useI18n } from "../../i18n";
 import { updateWorkspace } from "../../services/app";
 import { listConnections, onConnectionsChanged } from "../../services/connections";
 import { previewContext } from "../../services/context";
 import { useModelsStore } from "../../stores/models";
+import { usePluginsStore } from "../../stores/plugins";
+import { pluginToolList } from './plugin-tool-list';
 import { AttachmentTray, type TrayItem } from "./AttachmentTray";
 import { MentionInput, type MentionInputHandle } from "./MentionInput";
 import { MentionPopup } from "./MentionPopup";
@@ -121,6 +148,8 @@ import { listModes, onModesChanged } from '../../services/modes';
 import { SkillPopup, type SlashItem } from './SkillPopup';
 import type { TranslationKey } from "../../i18n";
 import type { DraftSelection } from './rich-draft';
+import type { FileSuggestion as HotFile } from "../../../../shared/domain/file-tree";
+import { useComposerGhost } from './useComposerGhost';
 
 /**
  * 内置命令的副标题。★ 磁盘上的命令取 frontmatter 里的 `description`(那是用户
@@ -201,9 +230,13 @@ export function Composer({
   contextCompacting = false,
   onCompactContext,
   onGoalCommand,
+  onSkillifyCommand,
   goal,
   onManageMcp,
   conversationUsage,
+  suggestTrigger,
+  started = true,
+  mentionedFiles,
 }: {
   workspace: Workspace;
   /** 应用级默认模型(设置页那个)。工作区还没选过时用它兜底 */
@@ -273,13 +306,32 @@ export function Composer({
    */
   goal?: ActiveGoal;
   onGoalCommand?: (args: string, value: ComposerValue) => boolean | void | Promise<boolean | void>;
+  /**
+   * `/skillify [补充说明]` 的去处:把当前会话提炼成项目 Skill(另开一条提炼会话)。
+   * 缺省 = 这一刻提炼不了(草稿、还没聊过、或自己就是提炼会话),弹层里就不出现这一项 ——
+   * 不画一个注定被主进程拒绝的命令。
+   */
+  onSkillifyCommand?: (args: string) => void;
   /** 归因卡里 MCP 那一行的去处。缺省 = 那一行不可点。 */
   onManageMcp?: () => void;
   /** 整个会话的累计用量，以及最近一轮可计算的输出速度。 */
   conversationUsage?: ConversationUsageSummary;
+  /**
+   * 「刚刚看着一轮成功跑完」的那个 `runEndedAt`(见 `suggest-trigger.ts`)。每变一次,
+   * 输入框就为空草稿请求一次「建议下一步」。缺省 = 不建议。
+   */
+  suggestTrigger?: number;
+  /** 这条会话发过消息了没有。没有时占位符多教一句 `@` 和 `/` 怎么用 */
+  started?: boolean;
+  /** 本会话 `@` 过的文件 —— 热文件补全的来源之一 */
+  mentionedFiles?: readonly HotFile[];
 }): ReactNode {
   const { t } = useI18n();
   const [goalPanelOpen, setGoalPanelOpen] = useState(false);
+  // 需求：工具目录随插件启用/禁用更新；只订阅 catalog，不订阅活动日志等高频字段。
+  const pluginCatalog = usePluginsStore((state) => state.catalog);
+  const pluginTools = pluginToolList(pluginCatalog);
+  const [pluginToolsOpen, setPluginToolsOpen] = useState(false);
   const { models: configuredModels, providers, loaded, providerOf, load } = useModelsStore();
   const models = configuredModels.filter((m) => m.enabled !== false &&
     providers.some((p) => p.id === m.providerId && p.enabled));
@@ -552,6 +604,14 @@ export function Composer({
         if (args.trim() === '') setGoalPanelOpen(true);
         else void onGoalCommand(args, value);
       }
+    }]),
+    /*
+      `/skillify` 破例的理由同 `/goal`:它的效果是**另开一条会话**,不是往这条会话里发一段提示词 ——
+      展开成文本发出去,只会让当前会话里的 agent 口头总结一遍,Skill 文件一个都不会落地。
+    */
+    ...(onSkillifyCommand === undefined ? [] : [{
+      command: { name: 'skillify', description: t('composer.command.skillify'), prompt: '', scope: 'builtin' as const, source: '' },
+      run: (args: string): void => onSkillifyCommand(args)
     }])
   ];
   const slashItems: SlashItem[] = [
@@ -671,6 +731,22 @@ export function Composer({
   }
 
   /**
+   * 压缩那两栏的写回。
+   *
+   * ★ **不走上面的 `patch`**,因为它不是 `ComposerValue` 的一部分:那个对象描述的是
+   * 「这一条消息怎么发」,每次发送都读一遍;而压缩模型是工作区的一条常设配置,
+   * 只有自动压缩和 /compact 读它。混进去会让每次切权限档位都顺带重写一遍压缩配置。
+   * `toSettings` 不含这三个键,所以两条写回路径不会互相覆盖(主进程是浅合并)。
+   *
+   * 值直接读 `workspace.settings` —— 它由工作区 store 维持,写回成功后自己会更新。
+   */
+  function patchCompaction(p: Partial<WorkspaceSettings>): void {
+    void updateWorkspace({ id: workspace.id, settings: p }).catch((err: unknown) => {
+      console.error("[composer] 压缩配置写回失败:", err);
+    });
+  }
+
+  /**
    * 生效模型 = 工作区选过的 → 应用默认 → 列表第一个。
    *
    * **兜底结果不写回工作区**:用户没选过,那 `defaultModel` 就该继续是空的。
@@ -707,6 +783,25 @@ export function Composer({
     : mode.description;
   const selectedModeName = selectedMode === undefined ? value.mode : modeName(selectedMode);
 
+  /*
+    ── 灰字(Tab 接受):建议下一步 / 历史指令 / 热文件 / 打字续写 ──
+    ★ 弹层开着时一律不出灰字:那一刻 Tab 归弹层(见 `handleMentionKey` / `handleSkillKey`)。
+  */
+  const ghost = useComposerGhost({
+    input,
+    workspace,
+    sessionId: sessionId ?? null,
+    draft,
+    popupOpen: mention !== null || skillQuery !== null || skillPickerOpen,
+    attachments: attachments.length,
+    running,
+    model,
+    modelProviderId,
+    suggestTrigger,
+    mentionedFiles,
+    commands: [...commands.map((c) => c.name), ...skills.map((sk) => sk.name)],
+  });
+
   function submit(): void {
     const raw = draft.trim();
     // ★ 只有附件、没有文字也该能发 —— 拖一张图进来直接问「这是什么」是常见用法。
@@ -722,6 +817,9 @@ export function Composer({
     const action = call === null
       ? undefined
       : localActions.find((a) => a.command.name === call.name.toLowerCase());
+    // 需求:入口不可用时手输 /skillify 不能退化成普通模型请求;用户明确安装的同名模板仍可展开。
+    if (call?.name.toLowerCase() === 'skillify' && action === undefined
+      && !commands.some((command) => command.name.toLowerCase() === 'skillify')) return;
     if (action !== undefined) {
       /*
         ★ 把**此刻**药丸的值一起递出去：`/goal` 设立成功后要注入一条 kickoff，
@@ -744,6 +842,7 @@ export function Composer({
     // ★ `modelProviderId` 必须和 `model` 一起覆盖:两者都可能来自兜底而不在 `value` 里,
     //   只覆盖一半就会把「兜底的别名」配上「value 里那个陈旧的供应商」。
     onSend(text, { ...value, model, modelProviderId, thinking });
+    ghost.onSubmit(raw);
     onDraft("");
     // 草稿清空了,弹层也得跟着走 —— 不清的话它会挂在一个已经不存在的查询上
     dismissedAt.current = null;
@@ -788,11 +887,17 @@ export function Composer({
       {/*
         ★ `surface-input` 不是 `surface-raised`:深色下两者同值,浅色下输入框是**纯白**
         (#ffffff),而 raised 卡片是 #f2eee6。合并了浅色主题下输入框就沉进背景里。
+
+        背景和柔和阴影区分输入区,聚焦时略微抬高阴影。权限由药丸显示,
+        运行状态由停止按钮显示;只有拖入文件时才显示轮廓,提示可放置区域。
       */}
       <div
         className={cn(
-          "relative mx-auto w-full max-w-[760px] rounded-panel border bg-surface-input transition-colors",
-          dragging ? "border-accent" : "border-border",
+          // 苹果风格:大圆角玻璃输入框 —— 半透明底 + 浅色描边,聚焦时描边换成强调色。
+          // ★ 不能加 backdrop-blur:它会让这个框成为 fixed 定位的包含块,框里弹出的
+          //   上下文 / 权限等浮层就改成相对输入框定位,整块飞到右下角(见 ui/Menu.tsx 文件头)
+          "relative mx-auto w-full max-w-[760px] rounded-[22px] border border-[var(--border-strong)] bg-surface-input/80 shadow-[0_8px_24px_rgb(0_0_0/0.08)] transition-[border-color,box-shadow] duration-200 focus-within:border-accent/60 focus-within:shadow-[0_0_0_3px_var(--focus-outline),0_8px_24px_rgb(0_0_0/0.1)] motion-reduce:transition-none",
+          dragging && "ring-2 ring-accent/60",
         )}
         onDragOver={(e) => {
           if (onAttachFiles === undefined) return;
@@ -832,7 +937,15 @@ export function Composer({
           value={draft}
           handle={input}
           metrics={DRAFT_METRICS}
-          placeholder={running ? t("chat.queuePlaceholder") : t("chat.placeholder")}
+          placeholder={
+            ghost.view !== null && ghost.view.empty ? (
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="min-w-0 truncate">{ghost.view.display}</span>
+                {ghost.view.showHint && <GhostKey />}
+              </span>
+            ) : running ? t("chat.queuePlaceholder") : started ? t("chat.placeholder") : t("composer.placeholder.fresh")
+          }
+          ghost={ghost.view !== null && !ghost.view.empty ? ghost.view.display : undefined}
           skillDescriptions={Object.fromEntries(skills.map((skill) => [skill.name, skill.description]))}
           aria-expanded={mention !== null || skillQuery !== null}
           aria-controls={mention !== null ? mentionListId : skillQuery !== null ? skillListId : undefined}
@@ -846,22 +959,28 @@ export function Composer({
             lastCaret.current = caret;
             syncMention(text, caret);
             syncSkill(text, caret);
+            ghost.onInput(text, caret);
           }}
           // 点击 / 方向键挪动光标也要重算 —— `@` 的判据是位置不是按键
           onCaret={(text, caret) => {
             lastCaret.current = caret;
             syncMention(text, caret);
             syncSkill(text, caret);
+            ghost.onCaret(text, caret);
           }}
           onComposing={(v) => {
             composing.current = v;
+            ghost.onComposing(v);
           }}
-          onBlur={() => { setMention(null); setSkillQuery(null) }}
-          onPaste={handlePaste}
+          onFocus={ghost.onFocus}
+          onBlur={() => { setMention(null); setSkillQuery(null); ghost.onBlur() }}
+          onPaste={(e) => { ghost.onPaste(); handlePaste(e) }}
           onKeyDown={(e) => {
             // 弹层开着时方向键 / Enter / Tab / Esc 归它,先问一句
             if (handleMentionKey(e)) return;
             if (handleSkillKey(e)) return;
+            // 然后是灰字:Tab / → / ⌘→ / Esc。★ Enter 不在其中 —— 接受和发送是两个动作
+            if (ghost.handleKey(e)) return;
             // Enter 发送,Shift+Enter 换行。输入法组词期间的 Enter 是「上屏」,
             // 不是「发送」—— 少了 isComposing 这个判断,中文用户每打一个词就发一次。
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -882,7 +1001,6 @@ export function Composer({
           <Menu
             label={t("composer.permission")}
             width={280}
-            panelClassName="rounded-xl bg-surface-input p-1 shadow-lg shadow-black/10"
             triggerClassName="rounded-full focus-visible:outline-2 focus-visible:outline-accent"
             trigger={
               <Pill accent={value.permissionMode === "full"}>
@@ -910,7 +1028,7 @@ export function Composer({
                     {t(`permission.${m}` as "permission.ask" | "permission.auto" | "permission.full")}
                   </ComposerMenuItem>
                 ))}
-                <div className="mx-2 mt-1 border-t border-border pt-1.5 pb-1 text-[10px] leading-4 text-fg-faint">
+                <div className="mx-2 mt-2 pt-1.5 pb-1 text-[10px] leading-4 text-fg-faint">
                   {t("composer.approvalHint")}
                 </div>
               </>
@@ -921,7 +1039,7 @@ export function Composer({
           <Menu
             label={t("composer.more")}
             width={320}
-            panelClassName="rounded-xl bg-surface-input p-1 shadow-lg shadow-black/10"
+            onOpenChange={(open) => { if (!open) setPluginToolsOpen(false); }}
             triggerClassName="group rounded-full focus-visible:outline-2 focus-visible:outline-accent"
             trigger={
               <span className={cn(
@@ -935,7 +1053,24 @@ export function Composer({
               </span>
             }
           >
-            {(close) => (
+            {(close) => pluginToolsOpen ? (
+              <>
+                <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-fg hover:bg-tint focus-visible:outline-2 focus-visible:outline-accent" onClick={() => setPluginToolsOpen(false)}>
+                  <span aria-hidden="true">←</span>{t('pluginTools.back')}
+                </button>
+                <div className="px-2 pt-1.5 pb-1 text-[11px] text-fg-faint">{t('pluginTools.hint')}</div>
+                {pluginTools.map((plugin) => (
+                  <div key={plugin.pluginId} className="px-2 py-1">
+                    <div className="truncate text-[11px] font-medium text-fg-muted">{plugin.displayName}</div>
+                    {plugin.tools.map((tool) => (
+                      <div key={tool.name} className="truncate py-1 pl-3 text-[12px] text-fg" title={tool.name}>
+                        {t(tool.titleKey as Parameters<typeof t>[0])}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </>
+            ) : (
               <>
                 <div className="px-2 pt-1.5 pb-1 text-[11px] text-fg-faint">{t("composer.add")}</div>
                 <ComposerMenuItem
@@ -955,6 +1090,13 @@ export function Composer({
                     setSkillQuery(null); setMention(null); setSkillPickerQuery(''); setActiveSkill(0);
                     close(); setSkillPickerOpen(true);
                   }}>{t('composer.skills')}</ComposerMenuItem>
+                {pluginTools.length > 0 && (
+                  <ComposerMenuItem
+                    icon={<Puzzle size={16} />}
+                    description={t('pluginTools.hint')}
+                    onSelect={() => setPluginToolsOpen(true)}
+                  >{t('pluginTools.list')}</ComposerMenuItem>
+                )}
                 <MenuSeparator />
                 <div className="px-2 pt-1 pb-1 text-[11px] text-fg-faint">{t("common.settings")}</div>
                 <ComposerMenuItem
@@ -972,7 +1114,21 @@ export function Composer({
             )}
           </Menu>
 
-          <div className="flex-1" />
+          {/*
+            非空草稿上挂着灰字时,这一格说一句「Tab 接受」。★ 放在药丸行的空白里而不是叠在
+            文字上:灰字可能一直写到行尾,任何叠上去的提示都会盖住它。
+          */}
+          <div className="flex min-w-0 flex-1 items-center px-2">
+            {ghost.view !== null && !ghost.view.empty && ghost.view.showHint && (
+              <span className="flex items-center gap-1 truncate text-[11px] text-fg-faint">
+                <GhostKey />
+                {t("composer.ghost.accept")}
+              </span>
+            )}
+          </div>
+          <span className="sr-only" aria-live="polite">
+            {ghost.view !== null ? t("composer.ghost.announce", { text: ghost.view.announce }) : ""}
+          </span>
 
           {/*
             ── 右半边:「怎么想 / 装得下多少 / 发给谁」 ──
@@ -1023,6 +1179,12 @@ export function Composer({
             model={selectedModel}
             maxContext={value.maxContext}
             onMaxContext={(next) => patch({ maxContext: next })}
+            compaction={{
+              override: workspace.settings,
+              models,
+              providers,
+              onChange: patchCompaction,
+            }}
             running={running}
             compacting={contextCompacting}
             onCompact={onCompactContext}
@@ -1123,7 +1285,6 @@ export function Composer({
         <Menu
           label={t('composer.mode.label')}
           width={320}
-          panelClassName="rounded-xl bg-surface-input p-1 shadow-lg shadow-black/10"
           triggerClassName="rounded-full focus-visible:outline-2 focus-visible:outline-accent"
           trigger={
             <Pill accent={value.mode !== 'code'}>
@@ -1171,13 +1332,15 @@ export function Composer({
               >
                 {t('composer.mode.setDefault')}
               </ComposerMenuItem>
-              <ComposerMenuItem
-                icon={<Settings2 size={16} />}
-                description={t('composer.mode.manageHint')}
-                onSelect={() => { close(); onManageModes?.(); }}
-              >
-                {t('composer.mode.manage')}
-              </ComposerMenuItem>
+              {onManageModes !== undefined && (
+                <ComposerMenuItem
+                  icon={<Settings2 size={16} />}
+                  description={t('composer.mode.manageHint')}
+                  onSelect={() => { close(); onManageModes(); }}
+                >
+                  {t('composer.mode.manage')}
+                </ComposerMenuItem>
+              )}
             </>
           )}
         </Menu>
@@ -1191,7 +1354,7 @@ export function Composer({
             藏掉也不丢信息:每一轮的完整用量在转录里那张「任务用量」上。 */}
         {conversationUsage !== undefined && usageFits && (
           <div className="flex min-w-0 flex-1 justify-end pl-3">
-            <ConversationUsage usage={conversationUsage} />
+            <ConversationUsage usage={conversationUsage} sessionId={sessionId ?? null} />
           </div>
         )}
       </div>
@@ -1289,7 +1452,7 @@ function useUsageFits(ref: React.RefObject<HTMLElement | null>): boolean {
   return fits;
 }
 
-function ConversationUsage({ usage }: { usage: ConversationUsageSummary }): ReactNode {
+function ConversationUsage({ usage, sessionId }: { usage: ConversationUsageSummary; sessionId: string | null }): ReactNode {
   const { t, locale } = useI18n();
   const exact = (value: number): string => value.toLocaleString(locale);
   /*
@@ -1374,21 +1537,26 @@ function ConversationUsage({ usage }: { usage: ConversationUsageSummary }): Reac
         <Tooltip
           key={metric.key}
           align="center"
-          content={
-            <>
-              <div className="font-medium">{metric.label}</div>
-              {/* 缩写和精确值相同时（TPS、花费）不重复写一遍 */}
-              {metric.exact !== metric.value && (
-                <div className="tabular-nums text-fg-muted">{metric.exact}</div>
-              )}
-            </>
+          interactive={metric.key === "cost"}
+          contentClassName={metric.key === "cost" ? "max-h-[min(60vh,480px)] overflow-y-auto" : undefined}
+          content={metric.key === "cost"
+            // 需求：总费用悬停要展开当前会话的逐模型与逐类账目；其余读数保留原精确值提示。
+            ? <ConversationCostDetails sessionId={sessionId} cost={usage.cost}
+                revision={`${usage.inputTokens}:${usage.outputTokens}:${usage.cacheReadTokens}:${usage.cacheWriteTokens}:${usage.cost?.micros ?? ''}`} />
+            : <>
+                <div className="font-medium">{metric.label}</div>
+                {/* 原先 TPS、花费的精确值都不重复；现在花费另有明细，这里只处理普通读数。 */}
+                {metric.exact !== metric.value && (
+                  <div className="tabular-nums text-fg-muted">{metric.exact}</div>
+                )}
+              </>
           }
         >
           <span
             role="group"
             tabIndex={0}
             aria-label={`${metric.label}: ${metric.exact}`}
-            className="inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-fg-faint/50"
           >
             <span aria-hidden="true" className="text-fg-muted">{metric.icon}</span>
             <span>{metric.value}</span>
@@ -1400,6 +1568,15 @@ function ConversationUsage({ usage }: { usage: ConversationUsageSummary }): Reac
 }
 
 /** 输入框菜单的操作与开关共用一行布局，开关保持菜单展开以便连续调整。 */
+/** 灰字旁边那枚 `Tab` 键帽 —— 用户普遍不知道灰字能按 Tab 接受,接受过几次之后收起 */
+function GhostKey(): ReactNode {
+  return (
+    <kbd className="inline-flex h-[16px] shrink-0 items-center rounded-[4px] border border-[var(--border-strong)] px-1 font-sans text-[10px] leading-none text-fg-faint">
+      Tab
+    </kbd>
+  );
+}
+
 function ComposerMenuItem({
   children,
   icon,
@@ -1522,7 +1699,7 @@ function ThinkingPill({
 }): ReactNode {
   const { t } = useI18n();
   const levels = modelThinkingLevels(model);
-  const config = model?.thinkingConfig;
+  const config = model === undefined ? undefined : effectiveModelThinking(model).thinkingConfig;
   const label = (level: ThinkingLevel): string =>
     t(
       config?.mode === "toggle" && level === "medium"
@@ -1687,6 +1864,20 @@ function ThinkingPill({
 }
 
 /**
+ * 圆环菜单里压缩那两栏要的全部东西 —— `ContextRing` 和它的二级视图共用。
+ *
+ * ★ 一个对象而不是四个散 prop:它们是**一件事**的四个面(当前值 / 候选绑定 /
+ * 供应商名 / 怎么写回),拆开之后任何一次改动都要同时动两个组件的签名。
+ */
+interface CompactionMenuProps {
+  /** 当前工作区设置里那三项(三态见 `shared/domain/workspace.ts`)。 */
+  override: WorkspaceCompactionOverride;
+  models: readonly ModelAlias[];
+  providers: readonly UpstreamProvider[];
+  onChange: (patch: Partial<WorkspaceSettings>) => void;
+}
+
+/**
  * 上下文余量圆环 —— 同时是「最大上下文」开关和手动压缩的入口。
  *
  * ★ 分子是**最近一次请求**报回来的输入 token,不是整轮累加 ——
@@ -1709,6 +1900,7 @@ function ContextRing({
   model,
   maxContext,
   onMaxContext,
+  compaction,
   running,
   compacting,
   onCompact,
@@ -1723,6 +1915,14 @@ function ContextRing({
   model?: ModelAlias;
   maxContext: boolean;
   onMaxContext: (next: boolean) => void;
+  /**
+   * 压缩那两栏(工作区级覆盖)。
+   *
+   * ★ 一个对象而不是四个散 prop:这个组件的参数表已经很长,而这四样是**一件事**
+   * 的四个面(当前值 / 候选 / 候选的供应商名 / 怎么写回),拆开之后任何一次改动
+   * 都要同时动四处签名。
+   */
+  compaction: CompactionMenuProps;
   running: boolean;
   compacting: boolean;
   onCompact?: () => void;
@@ -1751,6 +1951,16 @@ function ContextRing({
   onManageMcp?: () => void;
 }): ReactNode {
   const { t } = useI18n();
+  const pricingTable = usePricingTable();
+  /*
+    菜单的三个视图。压缩模型 / 压缩档位各自是一张候选表,塞进主面板会把这张
+    「还装得下多少」的卡片撑成一屏下拉。
+
+    ★ 用**同一个 Menu 的内部视图**,不嵌 `Select`:这个 `Menu` 是自绘的,靠
+    「面板外 pointerdown 就关」收场,而 Radix 的 Select 把浮层 portal 到 body ——
+    点它的选项等于点在面板外,菜单会在选中的同一瞬间关掉。症状是「点了没反应」。
+  */
+  const [view, setView] = useState<"main" | "compactModel" | "compactThinking">("main");
   const protocolWindow = model?.contextWindow;
   const total = effectiveContextWindow(protocolWindow, maxContext);
   const tickRatio = longContextTickRatio(protocolWindow, maxContext);
@@ -1777,13 +1987,12 @@ function ContextRing({
   const pricing =
     pricingModelId === undefined
       ? null
-      : findPricing(PRICING_SEED, model?.providerId ?? null, pricingModelId, Date.now());
+      : findPricing(pricingTable, model?.providerId ?? null, pricingModelId, Date.now());
   const surcharge =
     pricingModelId === undefined
       ? undefined
-      : longContextSurcharge(PRICING_SEED, model?.providerId ?? null, pricingModelId, Date.now());
-  const protocolLabel = formatContextWindow(effectiveContextWindow(protocolWindow, true));
-  const maxContextHint = !canMax
+      : longContextSurcharge(pricingTable, model?.providerId ?? null, pricingModelId, Date.now());
+  const protocolLabel = formatContextWindow(effectiveContextWindow(protocolWindow, true));  const maxContextHint = !canMax
     ? t("composer.maxContextUnavailable", { window: protocolLabel })
     : surcharge !== undefined
       ? t("composer.maxContextHint", {
@@ -1799,6 +2008,32 @@ function ContextRing({
             threshold: formatContextWindow(LONG_CONTEXT_THRESHOLD),
           });
 
+  /*
+    菜单行上显示**当前落在哪一档**,而不是一句「去设置」。
+    ★ 缺省态也要显示出来(「跟随全局设置」):看不见落点,用户就无从判断自己
+    上次到底改没改过 —— 而这两栏的缺省态恰恰是绝大多数会话的实际状态。
+  */
+  const compactModelKey = compactModelValue(compaction.override);
+  const compactModelLabel =
+    compactModelKey === FOLLOW_GLOBAL
+      ? t("compaction.followGlobal")
+      : compactModelKey === FOLLOW_SESSION
+        ? t("compaction.followSession")
+        : compactModelOptions(compaction.models, compaction.providers).find(
+            (o) => o.value === compactModelKey,
+          )?.label
+          // 配过的那条绑定现在查不到了(供应商被删/别名改名):显示别名本身,
+          // 而不是退回「跟随全局」—— 那会让人以为自己没配过。真正的回落发生在
+          // 主进程压缩那一刻(`kernel/compaction/binding.ts`),这里只是如实显示配置。
+          ?? parseModelSelectionKey(compactModelKey).alias;
+  const compactThinkingKey = compactThinkingValue(compaction.override);
+  const compactThinkingLabel =
+    compactThinkingKey === FOLLOW_GLOBAL
+      ? t("compaction.followGlobal")
+      : compactThinkingKey === INHERIT_THINKING
+        ? t("compaction.thinkingInherit")
+        : t(`chat.thinkingLevel.${compactThinkingKey as ThinkingLevel}`);
+
   return (
     <Menu
       label={compacting
@@ -1808,6 +2043,9 @@ function ContextRing({
       align="end"
       onOpenChange={(open) => {
         if (open) onMenuOpen?.();
+        // 关掉时回到主视图 —— 下次打开不该停在上一次翻到的那一页(`Menu` 的这个
+        // prop 正是为此存在的,见它的注释)。
+        else setView("main");
       }}
       /*
         双击 = 立刻压缩,保住改造之前就有的肌肉记忆。为什么不能直接包
@@ -1885,6 +2123,19 @@ function ContextRing({
     >
       {(close) => (
         <>
+          {/*
+            ── 二级视图:压缩模型 / 压缩思考强度 ──
+            选完回主视图而不是关菜单:这两栏常常要一起调(换了便宜模型多半也想换档位),
+            每选一项就把面板关掉等于让人重开一次。
+          */}
+          {view !== "main" ? (
+            <CompactionChoiceView
+              kind={view}
+              compaction={compaction}
+              onBack={() => setView("main")}
+            />
+          ) : (
+          <>
           <MenuLabel>
             {t("composer.contextHeadline", {
               used: used === undefined ? "—" : formatContextWindow(used),
@@ -1938,6 +2189,16 @@ function ContextRing({
                   }
             }
           />
+          {/*
+            ── 套餐额度 ──
+            需求:GLM Coding Plan 订阅按 5 小时 / 每周窗口扣额度,跑满时请求会失败。
+            圆环回答「窗口装不装得下」,这一块回答「套餐放不放行」—— 两个不同的
+            门槛,后者在订阅制供应商上才存在(判据收口在 shared/domain/coding-plan.ts)。
+            数据与设置页账号行同源(账号行 quota 快照),这里只是第二个视口。
+          */}
+          {model !== undefined && codingPlanFamilyFor(model.providerId) !== null && (
+            <CodingPlanQuotaSection providerId={model.providerId} />
+          )}
           <MenuSeparator />
           <ComposerMenuItem
             icon={<Maximize2 size={16} />}
@@ -1950,6 +2211,26 @@ function ContextRing({
             }}
           >
             {t("composer.maxContext")}
+          </ComposerMenuItem>
+          <MenuSeparator />
+          {/*
+            压缩用谁、想多深 —— 和上面那颗「最大上下文」同属「这条会话的上下文怎么管」,
+            所以放在同一张菜单里、紧挨「压缩上下文」那条动作。这两栏是**工作区级**的,
+            缺省跟随设置 › 通用 › Agent 里的全局值。
+          */}
+          <ComposerMenuItem
+            icon={<Bot size={16} />}
+            description={compactModelLabel}
+            onSelect={() => setView("compactModel")}
+          >
+            {t("compaction.model")}
+          </ComposerMenuItem>
+          <ComposerMenuItem
+            icon={<BrainCircuit size={16} />}
+            description={compactThinkingLabel}
+            onSelect={() => setView("compactThinking")}
+          >
+            {t("compaction.thinking")}
           </ComposerMenuItem>
           <MenuSeparator />
           <ComposerMenuItem
@@ -1974,9 +2255,75 @@ function ContextRing({
           >
             {t("composer.compactNow")}
           </ComposerMenuItem>
+          </>
+          )}
         </>
       )}
     </Menu>
+  );
+}
+
+/**
+ * 圆环菜单的二级视图:压缩模型 / 压缩思考强度的候选表。
+ *
+ * ★ 每一项都带勾,而且「跟随全局设置」「跟随会话模型」也在表里占一行 ——
+ *   它们是**缺省态**,不是「没选」:看不见当前落在哪一档,用户就没法判断
+ *   自己上次到底改没改过。
+ */
+function CompactionChoiceView({
+  kind,
+  compaction,
+  onBack,
+}: {
+  kind: "compactModel" | "compactThinking";
+  compaction: CompactionMenuProps;
+  onBack: () => void;
+}): ReactNode {
+  const { t } = useI18n();
+  const isModel = kind === "compactModel";
+  const current = isModel
+    ? compactModelValue(compaction.override)
+    : compactThinkingValue(compaction.override);
+  const options: { value: string; label: string }[] = isModel
+    ? [
+        { value: FOLLOW_GLOBAL, label: t("compaction.followGlobal") },
+        { value: FOLLOW_SESSION, label: t("compaction.followSession") },
+        ...compactModelOptions(compaction.models, compaction.providers),
+      ]
+    : [
+        { value: FOLLOW_GLOBAL, label: t("compaction.followGlobal") },
+        ...SUBAGENT_THINKING_CHOICES.map((value) => ({
+          value,
+          label:
+            value === INHERIT_THINKING
+              ? t("compaction.thinkingInherit")
+              : t(`chat.thinkingLevel.${value}`),
+        })),
+      ];
+
+  return (
+    <>
+      <MenuLabel>{t(isModel ? "compaction.model" : "compaction.thinking")}</MenuLabel>
+      <MenuItem icon={<ChevronLeft size={14} />} onSelect={onBack}>
+        {t("compaction.back")}
+      </MenuItem>
+      <MenuSeparator />
+      {options.map((option) => (
+        <MenuItem
+          key={option.value}
+          checked={option.value === current}
+          // 选完回主视图,不关菜单 —— 理由见调用点那段注释。
+          onSelect={() => {
+            compaction.onChange(
+              isModel ? compactModelPatch(option.value) : compactThinkingPatch(option.value),
+            );
+            onBack();
+          }}
+        >
+          {option.label}
+        </MenuItem>
+      ))}
+    </>
   );
 }
 
@@ -2044,10 +2391,10 @@ function ContextBreakdown({
           /*
             ★ 这一行才是整张卡的由头:下面六行是「占掉的那些是什么」(分母是已用量),
             这一行是「还没开口就已经占掉多少窗口」(分母是窗口)。两个分母不一样,
-            所以它在线上面、措辞也不同 —— 混进去会让人把 42% 读成 42% 的窗口。
+            所以它单独放在明细之前、措辞也不同 —— 混进去会让人把 42% 读成 42% 的窗口。
           */
           <div
-            className="mb-1.5 flex items-center gap-2 border-b border-border pb-1.5"
+            className="mb-2 flex items-center gap-2 pb-1.5"
             title={t("composer.contextPreviewNote")}
           >
             <span className="min-w-0 flex-1 truncate text-fg-muted">
@@ -2100,11 +2447,11 @@ function ContextBreakdown({
         })}
         {cacheHitRate !== undefined && (
           /*
-            ★ 它和上面六行**不是一件事**,所以隔一条线:上面说的是「窗口被谁占了」,
+            ★ 它和上面六行**不是一件事**,所以用留白分组:上面说的是「窗口被谁占了」,
             这一行说的是「这些 token 里有多少是从缓存读的」(便宜那部分)。
             并排列进去会让人以为缓存也是六档里的一档。
           */
-          <div className="mt-1 flex items-center gap-2 border-t border-border pt-1.5">
+          <div className="mt-2 flex items-center gap-2 pt-1.5">
             <span className="min-w-0 flex-1 truncate text-fg-muted">
               {t("composer.contextCacheHit")}
             </span>
@@ -2122,6 +2469,11 @@ function ContextBreakdown({
 /**
  * 模型选择采用两级结构：第一次打开先选供应商，进入供应商后再选模型。
  * 这样模型别名很多时不会把所有供应商混在一个长菜单里。
+ *
+ * ★ 这一对下拉的定位/子菜单机制现在是共享组件 `ProviderModelMenu`
+ * (`components/ProviderModelMenu.tsx`)——设置页「通用 → Agent」的默认模型/
+ * 默认子代理是它的第二个调用方,原因和搬迁细节写在那个文件的文件头。这里只负责
+ * 把 composer 自己的 `providers`/`models` 翻译成它要的 `rows`。
  *
  * ★ 这里曾经还挂着一个「模型配置 ›」二级页(只有思考强度一项)。它被拆成了
  * 工具栏上的 `ThinkingPill` —— 一个每轮都要调的旋钮不该埋在第四层。
@@ -2146,209 +2498,61 @@ function ModelPicker({
   onModel: (model: string, modelProviderId: string) => void;
 }): ReactNode {
   const { t } = useI18n();
-  const [providerId, setProviderId] = useState<string | null>(null);
-  const [submenuAnchor, setSubmenuAnchor] = useState<HTMLButtonElement | null>(
-    null,
+  // 打开选择器时校正存量的「选中了图片模型」(见 useChatModelGuard 文件头的需求说明)
+  const guardChatModel = useChatModelGuard(
+    models,
+    providers,
+    { model, modelProviderId },
+    onModel,
   );
-  const providerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const submenuRef = useRef<HTMLDivElement>(null);
-  const closeMenuRef = useRef<() => void>(() => {});
+  // ★ 对话输入框只列文本模型:图片模型发不出对话请求,出现在这里就是一个选了就废的
+  // 选项(判据收口在 `isChatModelAlias`,别在下面的过滤里再写一份)。
+  const chatModels = models.filter(isChatModelAlias);
   const availableProviders = providers.filter((p) =>
-    models.some((m) => m.providerId === p.id),
+    chatModels.some((m) => m.providerId === p.id),
   );
-  const openProviderSubmenu = (id: string): void => {
-    setProviderId(id);
-    setSubmenuAnchor(providerRefs.current[id] ?? null);
-  };
+  const rows: ProviderModelMenuRow[] = availableProviders.map((p) => {
+    const providerModels = chatModels.filter((m) => m.providerId === p.id);
+    return {
+      id: p.id,
+      label: p.name,
+      description: t("chat.availableModels", { count: providerModels.length }),
+      selected: p.id === provider?.id,
+      models: providerModels.map((m) => ({
+        value: m.alias,
+        label: m.alias,
+        // ★ 必须带上 providerId:同一个别名在两家的子菜单里都会出现,只比别名的话
+        //   **两边同时打勾**,用户会以为自己选了两个。
+        selected: m.alias === model && m.providerId === modelProviderId,
+      })),
+    };
+  });
 
   return (
-    <>
-      <Menu
-        label={t("chat.modelPicker")}
-        width={300}
-        align="end"
-        // 这一排里**只有模型名可以退让** —— 其余药丸都是短词,压缩它们只会换行。
-        className="min-w-0"
-        triggerClassName="min-w-0"
-        trigger={
-          <Pill className="min-w-0 shrink">
-            <ProviderIcon
-              name={[model, provider?.name, provider?.id]}
-              size={13}
-            />
-            <span className="min-w-0 max-w-[150px] truncate">{modelLabel}</span>
-            <ChevronRight size={12} className="ml-0.5 shrink-0 text-fg-faint" />
-          </Pill>
-        }
-        onOpenChange={(open) => {
-          if (!open) {
-            setProviderId(null);
-            setSubmenuAnchor(null);
-          }
-        }}
-        containsTarget={(target) =>
-          submenuRef.current?.contains(target) ?? false
-        }
-      >
-        {(close) => {
-          closeMenuRef.current = close;
-          return (
-            <>
-              <MenuLabel>
-                <span className="flex items-center gap-1.5">
-                  <Settings2 size={12} />
-                  {t("chat.selectProvider")}
-                </span>
-              </MenuLabel>
-              {!loaded ? (
-                <MenuLabel>{t("common.loading")}</MenuLabel>
-              ) : availableProviders.length === 0 ? (
-                <MenuLabel>{t("chat.noModelsConfigured")}</MenuLabel>
-              ) : (
-                availableProviders.map((p) => {
-                  const count = models.filter(
-                    (m) => m.providerId === p.id,
-                  ).length;
-                  return (
-                    <MenuItem
-                      key={p.id}
-                      checked={p.id === provider?.id}
-                      description={t("chat.availableModels", { count })}
-                      buttonRef={(node) => {
-                        providerRefs.current[p.id] = node;
-                      }}
-                      onHover={() => openProviderSubmenu(p.id)}
-                      onSelect={() => openProviderSubmenu(p.id)}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate">
-                          {p.name}
-                        </span>
-                        <ChevronRight size={13} className="text-fg-faint" />
-                      </span>
-                    </MenuItem>
-                  );
-                })
-              )}
-            </>
-          );
-        }}
-      </Menu>
-      {submenuAnchor !== null &&
-      providerId !== null &&
-      typeof document !== "undefined"
-        ? createPortal(
-            <ModelSubmenu
-              anchor={submenuAnchor}
-              panelRef={(node) => {
-                submenuRef.current = node;
-              }}
-              provider={providers.find((p) => p.id === providerId)}
-              models={models.filter((m) => m.providerId === providerId)}
-              model={model}
-              modelProviderId={modelProviderId}
-              onSelect={(alias, selectedProviderId) => {
-                onModel(alias, selectedProviderId);
-                closeMenuRef.current();
-                setSubmenuAnchor(null);
-                setProviderId(null);
-              }}
-            />,
-            document.body,
-          )
-        : null}
-    </>
-  );
-}
-
-function ModelSubmenu({
-  anchor,
-  panelRef,
-  provider,
-  models,
-  model,
-  modelProviderId,
-  onSelect,
-}: {
-  anchor: HTMLElement;
-  panelRef: (node: HTMLDivElement | null) => void;
-  provider?: UpstreamProvider;
-  models: ModelAlias[];
-  model: string;
-  modelProviderId?: string;
-  onSelect: (alias: string, modelProviderId: string) => void;
-}): ReactNode {
-  const { t } = useI18n();
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const width = 300;
-  const panelNode = useRef<HTMLDivElement | null>(null);
-
-  useLayoutEffect(() => {
-    const measure = (): void => {
-      const rect = anchor.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const panelHeight = Math.min(
-        panelNode.current?.scrollHeight ?? 0,
-        Math.max(0, viewportHeight - 16),
-      );
-      const preferredLeft =
-        rect.right + 6 + width <= viewportWidth
-          ? rect.right + 6
-          : rect.left - width - 6;
-      const left = Math.max(
-        8,
-        Math.min(preferredLeft, viewportWidth - width - 8),
-      );
-      // 与触发项顶部对齐；下方空间不足时向上推，确保整个弹层留在视口内。
-      const top = Math.max(
-        8,
-        Math.min(rect.top, viewportHeight - panelHeight - 8),
-      );
-      setPosition({ top, left });
-    };
-    measure();
-    const resizeObserver = new ResizeObserver(measure);
-    if (panelNode.current !== null) resizeObserver.observe(panelNode.current);
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
-    };
-  }, [anchor, models.length]);
-
-  return (
-    <div
-      ref={(node) => {
-        panelNode.current = node;
-        panelRef(node);
-      }}
-      role="menu"
-      style={{
-        width,
-        top: position.top,
-        left: position.left,
-        maxHeight: "calc(100vh - 16px)",
-      }}
-      className="app-no-drag scroll-thin fixed z-[60] overflow-y-auto rounded-card border border-border bg-surface-raised p-1 shadow-2xl shadow-black/40"
-    >
-      <MenuLabel>{provider?.name ?? t("chat.modelPicker")}</MenuLabel>
-      {models.map((m) => {
-        return (
-          <MenuItem
-            key={`${m.providerId}/${m.alias}`}
-            // ★ 必须带上 providerId:同一个别名在两家的子菜单里都会出现,只比别名的话
-            //   **两边同时打勾**,用户会以为自己选了两个。
-            checked={m.alias === model && m.providerId === modelProviderId}
-            onSelect={() => onSelect(m.alias, m.providerId)}
-          >
-            {m.alias}
-          </MenuItem>
-        );
-      })}
-    </div>
+    <ProviderModelMenu
+      trigger={
+        <Pill className="min-w-0 shrink">
+          <ProviderIcon
+            name={[model, provider?.name, provider?.id]}
+            size={13}
+          />
+          <span className="min-w-0 max-w-[150px] truncate">{modelLabel}</span>
+          <ChevronRight size={12} className="ml-0.5 shrink-0 text-fg-faint" />
+        </Pill>
+      }
+      // 这一排里**只有模型名可以退让** —— 其余药丸都是短词,压缩它们只会换行。
+      triggerClassName="min-w-0"
+      align="end"
+      width={300}
+      menuLabel={t("chat.selectProvider")}
+      menuIcon={<Settings2 size={12} />}
+      loaded={loaded}
+      loadingLabel={t("common.loading")}
+      emptyLabel={t("chat.noModelsConfigured")}
+      rows={rows}
+      onSelectModel={(selectedProviderId, alias) => onModel(alias, selectedProviderId)}
+      onOpenChange={guardChatModel}
+    />
   );
 }
 

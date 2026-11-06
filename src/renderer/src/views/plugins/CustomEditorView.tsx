@@ -21,10 +21,11 @@ import { AlertTriangle } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { InnerTab } from '../../../../shared/domain/tab'
 import { isRunnable } from '../../../../shared/plugin/state'
-import { EmptyState } from '../../components/ui/EmptyState'
+import { EmptyState } from '../../components/arc/empty-state/empty-state'
 import { useI18n } from '../../i18n'
 import { activatePluginEditor } from '../../services/plugins'
 import { PluginViewFrame } from '../../shell/PluginViewFrame'
+import { DocumentEngineFrame } from './DocumentEngineFrame'
 import { usePluginsStore } from '../../stores/plugins'
 
 export function CustomEditorView({
@@ -70,7 +71,7 @@ export function CustomEditorView({
           icon={<AlertTriangle size={26} />}
           title={t('customEditor.unavailable')}
           // ★ 说清「是哪个插件」。只说「编辑器不可用」的话,用户根本不知道去禁用列表里找谁。
-          hint={t('customEditor.unavailableHint', { plugin: tab.ref.pluginId })}
+          description={t('customEditor.unavailableHint', { plugin: tab.ref.pluginId })}
         />
       </div>
     )
@@ -81,15 +82,20 @@ export function CustomEditorView({
     `contributes.customEditors` 声明的是「我能打开哪种文件」,
     `contributes.views` 声明的是「我的 UI 在哪个文件里」—— 两者是两张表。
     一个编辑器没有配套视图时同样降级,而不是加载一个不存在的 HTML。
+    编辑器声明了 `viewId` 时按它取(清单解析已保证它指向一个 location=editor 的视图):
+    一个插件贡献 Writer / Sheets 两种编辑器时,取第一个视图会让表格打开成文字处理的界面。
+    没声明时保留原先取第一个的行为,旧插件不受影响(计划 §7.1 约束 1)。
   */
-  const view = plugin.manifest.contributes.views[0]
+  const view = editor.viewId === undefined
+    ? plugin.manifest.contributes.views[0]
+    : plugin.manifest.contributes.views.find((item) => item.id === editor.viewId)
   if (view === undefined) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-canvas">
         <EmptyState
           icon={<AlertTriangle size={26} />}
           title={t('customEditor.noView')}
-          hint={t('customEditor.noViewHint', { plugin: tab.ref.pluginId })}
+          description={t('customEditor.noViewHint', { plugin: tab.ref.pluginId })}
         />
       </div>
     )
@@ -102,6 +108,25 @@ export function CustomEditorView({
   */
   if (!woken) {
     return <div className="flex min-h-0 flex-1 flex-col bg-canvas" />
+  }
+
+  /*
+    绑定了文档引擎的编辑器(Office / PDF)走会话通道,不走下面的整文件文本通道 ——
+    那条通道对 OOXML 只会送空串,存回去就是一个空文件。
+  */
+  if (editor.documentEngine !== undefined) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-canvas">
+        <DocumentEngineFrame
+          pluginId={plugin.id}
+          viewType={editor.viewType}
+          viewPath={view.path}
+          label={`${plugin.manifest.displayName} — ${tab.ref.path}`}
+          workspaceId={workspaceId}
+          path={tab.ref.path}
+        />
+      </div>
+    )
   }
 
   return (

@@ -65,6 +65,56 @@ const DEFAULT_MAX_DEPTH = 32
 const DEFAULT_DEADLINE_MS = 5_000
 /** 每处理这么多项查一次中断与时间。太密会拖慢,太疏会让停止按钮迟钝。 */
 const CHECK_EVERY = 128
+/**
+ * 同时在列的目录数,以及同时在做 realpath 的子目录数。
+ *
+ * 需求:SSH 工作区上每次 `readDir` / `resolveWithin` 都是网络往返(后者还是两次),
+ * 原先逐个目录串行等,几百个目录就能吃掉 1 秒以上,而 `Grep` 的 5 秒预算是
+ * 遍历和读文件**共用**的 —— 遍历慢了,留给读文件的时间就少,结果就被截断。
+ */
+const WALK_CONCURRENCY = 8
+
+/** 这些错误码 = 这一个目录没法进(没权限 / 刚被删掉 / 断链),跳过它,不让整次遍历失败 */
+const SKIPPABLE_CODES = ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM']
+
+type Listing = { ok: true; items: Array<{ name: string; isDir: boolean }> } | { ok: false; error: unknown }
+
+/**
+ * ★ 把异常装进返回值,而不是让 Promise reject。列表是**预取**的:
+ * 遍历中途因为超时 / 截断提前 return 时,还在途的预取没人 await,
+ * 一个 reject 的预取就成了 unhandled rejection。
+ */
+async function listDir(fs: WalkOptions['fs'], abs: string): Promise<Listing> {
+  try {
+    return { ok: true, items: await fs.readDir(abs) }
+  } catch (error) {
+    return { ok: false, error }
+  }
+}
+
+/**
+ * 以 `limit` 路并发对 `items` 逐个跑 `fn`,结果**按原顺序**返回。
+ * 有一个抛错就让其余 worker 停止领取新项,等在途的收尾后再抛 —— 不留后台请求。
+ */
+async function mapOrdered<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  let failure: { error: unknown } | null = null
+  const worker = async (): Promise<void> => {
+    while (next < items.length && failure === null) {
+      const i = next++
+      try {
+        out[i] = await fn(items[i] as T)
+      } catch (error) {
+        failure ??= { error }
+        return
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  if (failure !== null) throw (failure as { error: unknown }).error
+  return out
+}
 
 /**
  * 广度优先。
@@ -73,6 +123,9 @@ const CHECK_EVERY = 128
  * BFS 留下的是靠近根的那些文件(通常正是模型想要的),DFS 留下的是
  * 第一棵子树钻到底的那一串 —— 用户搜 `*.ts` 拿回来的可能全是
  * `packages/a/src/...` 下的,而根目录的 `index.ts` 一个都没有。
+ *
+ * 目录列表与子目录的 realpath 是**并发取、按顺序用**的(见 `WALK_CONCURRENCY`):
+ * `entries` 的顺序、截断落点、软链去重谁先谁后,都和串行时逐项一致。
  */
 export async function walk(opts: WalkOptions): Promise<WalkResult> {
   const {
@@ -102,23 +155,52 @@ export async function walk(opts: WalkOptions): Promise<WalkResult> {
   frontier.push({ rel: start, abs: startAbs, depth: 0 })
   visited.add(startAbs)
 
+  /**
+   * 子目录的 realpath;`null` = 这个子目录不进(越界软链 / 进不去)。
+   *
+   * ★ 只有**要往里走**的目录才付这次 realpath 的钱。
+   * 放到每一项上做的话,一个 5 万文件的仓库要多 5 万次系统调用。
+   */
+  const realOf = async (rel: string): Promise<string | null> => {
+    try {
+      return opts.path ? await opts.path.resolveWithin(root, rel) : resolveInWorkspace(root, rel)
+    } catch (err) {
+      // 软链指到工作区外面。跳过它,但**不中止遍历** —— 一个越界的软链
+      // 不该让「搜一下这个仓库」整体失败。
+      if (err instanceof PathEscapeError) return null
+      if (opts.path && !SKIPPABLE_CODES.includes(String((err as { code?: unknown })?.code))) throw err
+      return null
+    }
+  }
+
   while (frontier.length > 0) {
+    const level = frontier
     const next: typeof frontier = []
 
-    for (const dir of frontier) {
+    // 滑动窗口预取:始终有 WALK_CONCURRENCY 个目录的列表在途,消费仍按顺序
+    const listings: Array<Promise<Listing>> = []
+    const prefetch = (i: number): void => {
+      const d = level[i]
+      if (d !== undefined) listings[i] = listDir(fs, d.abs)
+    }
+    for (let i = 0; i < WALK_CONCURRENCY; i++) prefetch(i)
+
+    for (let di = 0; di < level.length; di++) {
+      const dir = level[di] as (typeof level)[number]
       if (signal.aborted) throw abortError()
       if (now() > deadline) return { entries, truncated, timedOut: true }
 
-      let listing: Array<{ name: string; isDir: boolean }>
-      try {
-        listing = await fs.readDir(dir.abs)
-      } catch (error) {
-        if (opts.path && !['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(String((error as { code?: unknown })?.code))) throw error
+      const listed = await (listings[di] as Promise<Listing>)
+      prefetch(di + WALK_CONCURRENCY)
+      if (!listed.ok) {
+        const error = listed.error
+        if (opts.path && !SKIPPABLE_CODES.includes(String((error as { code?: unknown })?.code))) throw error
         // 没权限 / 刚被删掉 / 是个断链。跳过这一个目录,不让整次遍历失败。
         continue
       }
 
-      for (const item of listing) {
+      const subdirs: Array<{ rel: string; abs: string }> = []
+      for (const item of listed.items) {
         if (++seen % CHECK_EVERY === 0) {
           if (signal.aborted) throw abortError()
           if (now() > deadline) {
@@ -143,25 +225,18 @@ export async function walk(opts: WalkOptions): Promise<WalkResult> {
           truncated = true
           continue
         }
+        subdirs.push({ rel, abs })
+      }
 
-        /*
-          ★ 只有**要往里走**的目录才付这次 realpath 的钱。
-          放到每一项上做的话,一个 5 万文件的仓库要多 5 万次系统调用。
-        */
-        let real: string
-        try {
-          real = opts.path ? await opts.path.resolveWithin(root, rel) : resolveInWorkspace(root, rel)
-        } catch (err) {
-          // 软链指到工作区外面。跳过它,但**不中止遍历** —— 一个越界的软链
-          // 不该让「搜一下这个仓库」整体失败。
-          if (err instanceof PathEscapeError) continue
-          if (opts.path && !['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(String((err as { code?: unknown })?.code))) throw err
-          continue
-        }
+      // realpath 并发取,去重按列表顺序做 —— 两条软链指向同一目录时,留下的仍是排在前面那条
+      const reals = await mapOrdered(subdirs, WALK_CONCURRENCY, (s) => realOf(s.rel))
+      for (let si = 0; si < subdirs.length; si++) {
+        const real = reals[si]
+        const sub = subdirs[si] as (typeof subdirs)[number]
+        if (real === null || real === undefined) continue
         if (visited.has(real)) continue
         visited.add(real)
-
-        next.push({ rel, abs, depth: dir.depth + 1 })
+        next.push({ rel: sub.rel, abs: sub.abs, depth: dir.depth + 1 })
       }
     }
 

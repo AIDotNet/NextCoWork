@@ -8,6 +8,7 @@ import {
   getUsageModelStats,
   getUsageProviderStats,
   getUsageRequestLogs,
+  getSessionUsageAttempts,
   getUsageSummary,
   recordUsageAttempt,
   updateUsageToolsForRun
@@ -109,6 +110,15 @@ describe('usage repository', () => {
       errorKind: 'rate_limit',
       errorMessage: 'too many requests'
     })
+  })
+
+  it('returns every attempt for only the requested session, including fallback models and failed retries', () => {
+    recordUsageAttempt(attempt('a', 1_000))
+    recordUsageAttempt(attempt('b', 2_000, { runId: 'run-a', upstreamModel: 'model-b', ok: false, costMicros: null, currency: null }))
+    recordUsageAttempt(attempt('foreign', 3_000, { sessionId: 'session-2' }))
+    expect(getSessionUsageAttempts('session-1').map((row) => [row.id, row.upstreamModel, row.costMicros]))
+      .toEqual([['a', 'model-a', 1_500_000], ['b', 'model-b', null]])
+    expect(getSessionUsageAttempts('session-2').map((row) => row.id)).toEqual(['foreign'])
   })
 
   it('aggregates token, cache, cost, latency, model, provider, and tool totals', () => {

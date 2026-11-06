@@ -21,6 +21,9 @@ export const pluginSkillsZh = {
   // ── 市场:卡片与安装确认 ──
   'plugins.marketSkills': '自带 Skill',
   'plugins.marketSkillsHint': '装上后这些 Skill 会进入模型的可用清单,出现在你之后的每一轮对话里。可以在 Skill 页里单独关掉。',
+  'plugins.marketPage': ({ page }: Params) => `第 ${page} 页`,
+  'plugins.marketPreviousPage': '上一页',
+  'plugins.marketNextPage': '下一页',
 
   // ── 已安装插件的详情页 ──
   'plugins.skills': '提供的 Skill',
@@ -36,6 +39,9 @@ export const pluginSkillsZh = {
 export const pluginSkillsEn = {
   'plugins.marketSkills': 'Bundled Skills',
   'plugins.marketSkillsHint': 'Once installed, these Skills join the model’s catalog and are present in every later turn. You can switch them off individually on the Skills page.',
+  'plugins.marketPage': ({ page }: Params) => `Page ${page}`,
+  'plugins.marketPreviousPage': 'Previous',
+  'plugins.marketNextPage': 'Next',
 
   'plugins.skills': 'Skills provided',
   'plugins.skillsHint': 'Skills this plugin brings along. Disable the plugin and they leave the model’s catalog with it.',

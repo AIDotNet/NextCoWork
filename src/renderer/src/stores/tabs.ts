@@ -14,14 +14,14 @@ import { translate } from '../i18n'
 import type { InnerTab, InnerTabKind, InnerTabState, TabPane } from '../../../shared/domain/tab'
 import { chatKey, paneOf, reorderInPane, tabsInPane } from '../../../shared/domain/tab'
 import { ulid } from '../../../shared/util/id'
-import { getInnerTabs, persistInnerTabs } from '../services/app'
+import { getInnerTabs } from '../services/app'
 import { killTerminal } from '../services/terminal'
 import { closeBrowserTab } from '../services/browser'
 import { adoptDraftSession, isSessionUntouched, releaseSession } from './session'
 import type { WorkspaceFileMutationRequest } from '../../../shared/domain/workspace-file'
 import { isWithinPath } from './documents'
 import { findGroup, migrateLegacyInnerTabs, normalizeDockState, splitGroup, moveTab as moveDockTab, reorderTab as reorderDockTab, resizeSplit, closeTab as closeDockTab, closeGroup as closeDockGroupState, addTabToGroup, type DockDirection, type DockNode } from '../../../shared/domain/dock'
-import { useWindowStore } from './window'
+import { installShellTabsPort, shellWindow } from './shell-port'
 import { usePluginsStore } from './plugins'
 import { pickCustomEditor } from '../../../shared/plugin/custom-editor'
 import type { SessionChange } from '../../../shared/domain/session'
@@ -68,6 +68,12 @@ export interface TabInit {
   /** 给 changes(改动审查)用:定位到哪一轮 run 的改动集 */
   runId?: string
   sessionId?: string
+  /**
+   * 插件终端(`tabs.openTerminal`):主进程按这个 id 备好了启动 spec(env + argv),
+   * Tab 必须原样引用。★ 不传(普通新建终端)就本地铸一个 —— 换 id 的症状是
+   * create 起了一个裸 shell,插件注入的配置**静默丢失**,零报错。
+   */
+  terminalId?: string
 }
 
 /**
@@ -96,7 +102,7 @@ function makeTab(kind: InnerTabKind, pane: TabPane, init: TabInit = {}): InnerTa
       */
       return { id, kind, pane, title: init.title ?? translate('tab.newChat'), ref: { sessionId: null } }
     case 'terminal':
-      return { id, kind, pane, title: init.title ?? translate('tab.terminal'), ref: { terminalId: ulid() } }
+      return { id, kind, pane, title: init.title ?? translate('tab.terminal'), ref: { terminalId: init.terminalId ?? ulid() } }
     case 'doc':
       return { id, kind, pane, title: init.title ?? translate('tab.untitledDoc'), ref: { path } }
     case 'draw':
@@ -188,6 +194,8 @@ interface TabsState {
    * ——截图里从来没有空 Tab 条。异步但签名是 void,它挂在 effect 上。
    */
   ensure: (workspaceId: string) => void
+  /** 专注会话窗口的临时布局:只放入目标会话,不读取或写回主窗口布局。 */
+  openFocusedSession: (workspaceId: string, sessionId: string, title?: string) => void
   open: (workspaceId: string, kind: InnerTabKind, pane?: TabPane, init?: TabInit) => void
   /** 在已有会话上打开一个新 Tab（侧边栏历史会话使用）。 */
   openSession: (workspaceId: string, sessionId: string, title?: string) => void
@@ -295,6 +303,7 @@ interface TabsState {
     tabs: ReadonlyArray<{
       id: string
       clientTabId?: string
+      ownerSessionId?: string
       url: string
       title: string
       source: 'user' | 'agent'
@@ -444,10 +453,35 @@ export const useTabsStore = create<TabsState>((set, get) => {
     }
     return { ...state, tabs: dock.tabs, dock }
   }
+  /**
+   * 需求:右侧工作台 / 底部面板里最后一个 Tab 没了之后,开关必须跟着落回收起态。
+   *
+   * 那一格空掉以后 `visibleDockNode` 就把它当空组滤掉了(见 shell/dock-layout.ts),
+   * 屏幕上什么都没有,而 `rightPanelOpen` 还留着 true。不满足会怎样:表现为
+   * 「展开右侧工作区要点两下」—— 第一下只是把这个已经没有画面的 true 翻成 false
+   * (看上去毫无反应),第二下才真的展开(`AppShell.toggleDockEdge` 只在 opening
+   * 那一支才补 Tab),期间顶栏那颗开关一直亮着「已展开」。
+   *
+   * ★ 只同步 **有 → 没有** 这个跳变,不能无条件写 false:`openPath` /
+   * `openSubagentSession` / `openChangeReview` 都是**先**掀开面板、**再** write
+   * 补 Tab 的,无条件写会把它们刚打开的开关当场抹掉。
+   */
+  const syncEmptyEdgePanels = (workspaceId: string, before: readonly InnerTab[], after: readonly InnerTab[]): void => {
+    const win = shellWindow()
+    if (win === null) return
+    for (const pane of ['right', 'bottom'] as const) {
+      if (tabsInPane(before, pane).length === 0 || tabsInPane(after, pane).length > 0) continue
+      if (pane === 'right') win.setRightPanelForWorkspace(workspaceId, false)
+      else win.setBottomPanelForWorkspace(workspaceId, false)
+    }
+  }
   const write = (workspaceId: string, next: InnerTabState): void => {
+    const before = get().byWorkspace[workspaceId]?.tabs ?? []
     const normalized = withDock(next)
     set({ byWorkspace: { ...get().byWorkspace, [workspaceId]: normalized } })
-    persistInnerTabs(workspaceId, normalized)
+    // 专注会话窗口的工作台只在本窗口有效，不能覆盖主窗口的项目布局。
+    shellWindow()?.persistInnerTabs(workspaceId, normalized)
+    syncEmptyEdgePanels(workspaceId, before, normalized.tabs)
   }
 
   /** 正在取持久化布局的工作区。`ensure` 挂在 effect 上,会被重入。 */
@@ -658,6 +692,11 @@ export const useTabsStore = create<TabsState>((set, get) => {
 
     ensure(workspaceId) {
       if (get().byWorkspace[workspaceId] !== undefined || loading.has(workspaceId)) return
+      if (shellWindow()?.windowKind() === 'quick') {
+        const chat = makeTab('chat', 'main')
+        write(workspaceId, { tabs: [chat], activeTabId: chat.id, bottomActiveTabId: null, rightActiveTabId: null })
+        return
+      }
       loading.add(workspaceId)
       void loadOrSeed(workspaceId)
         .catch((err: unknown) => {
@@ -680,6 +719,33 @@ export const useTabsStore = create<TabsState>((set, get) => {
         })
     },
 
+    openFocusedSession(workspaceId, sessionId, title) {
+      const current = get().byWorkspace[workspaceId]
+      const first = current?.tabs.length === 1 ? current.tabs[0] : undefined
+      if (current !== undefined && first?.kind === 'chat' && first.ref.sessionId === sessionId) {
+        if (title !== undefined && first.title !== title) {
+          set({ byWorkspace: { ...get().byWorkspace, [workspaceId]: { ...current, tabs: [{ ...first, title }] } } })
+        }
+        return
+      }
+      const chat: InnerTab = {
+        id: ulid(),
+        kind: 'chat',
+        pane: 'main',
+        title: title?.trim() ?? '',
+        ref: { sessionId }
+      }
+      const state = withDock({
+        tabs: [chat],
+        activeTabId: chat.id,
+        bottomActiveTabId: null,
+        rightActiveTabId: null
+      })
+      dockCache.delete(workspaceId)
+      set({ byWorkspace: { ...get().byWorkspace, [workspaceId]: state } })
+      applyPendingBrowser(workspaceId)
+    },
+
     open(workspaceId, kind, pane = 'main', init) {
       const cur = get().stateOf(workspaceId)
       const tab = makeTab(kind, pane, init)
@@ -696,8 +762,8 @@ export const useTabsStore = create<TabsState>((set, get) => {
       if (existing !== undefined) {
         // The conversation may live in a collapsed panel; activating it alone
         // would look like the sidebar click did nothing.
-        if (paneOf(existing) === 'right') useWindowStore.getState().setRightPanelForWorkspace(workspaceId, true)
-        if (paneOf(existing) === 'bottom') useWindowStore.getState().setBottomPanelForWorkspace(workspaceId, true)
+        if (paneOf(existing) === 'right') shellWindow()?.setRightPanelForWorkspace(workspaceId, true)
+        if (paneOf(existing) === 'bottom') shellWindow()?.setBottomPanelForWorkspace(workspaceId, true)
         const groupId = groupContainingTab(get().dockOf(workspaceId), existing.id)
         if (groupId) get().activateDockTab(workspaceId, groupId, existing.id)
         return
@@ -737,7 +803,7 @@ export const useTabsStore = create<TabsState>((set, get) => {
       const cur = get().stateOf(workspaceId)
       // 文件打开属于当前工作区的右侧工作台。后台工作区也只展开自己的面板，
       // 不会改变窗口当前正在看的工作区。
-      useWindowStore.getState().setRightPanelForWorkspace(workspaceId, true)
+      shellWindow()?.setRightPanelForWorkspace(workspaceId, true)
       let dock = get().dockOf(workspaceId)
       /*
         ★ **只按 path 去重,不比 kind。** 同一个文件可能被不同的 kind 打开
@@ -814,7 +880,7 @@ export const useTabsStore = create<TabsState>((set, get) => {
     openSubagentSession(workspaceId, sessionId, title, parent) {
       const cur = get().stateOf(workspaceId)
       // 和 `openPath` 一样:后台工作区也只展开它自己的面板,不改当前在看的工作区
-      useWindowStore.getState().setRightPanelForWorkspace(workspaceId, true)
+      shellWindow()?.setRightPanelForWorkspace(workspaceId, true)
       let dock = get().dockOf(workspaceId)
       const existing = cur.tabs.find((t) => t.kind === 'chat' && t.ref.sessionId === sessionId)
       if (existing !== undefined) {
@@ -865,7 +931,7 @@ export const useTabsStore = create<TabsState>((set, get) => {
     openChangeReview(workspaceId, runId, sessionId, selectedPath) {
       const cur = get().stateOf(workspaceId)
       // 和 `openPath` 一样:后台工作区也只展开它自己的面板
-      useWindowStore.getState().setRightPanelForWorkspace(workspaceId, true)
+      shellWindow()?.setRightPanelForWorkspace(workspaceId, true)
       const dock = get().dockOf(workspaceId)
       const existing = cur.tabs.find(
         (t): t is Extract<InnerTab, { kind: 'changes' }> => t.kind === 'changes' && t.ref.runId === runId
@@ -999,7 +1065,8 @@ export const useTabsStore = create<TabsState>((set, get) => {
 
       /*
         「关掉最后一个就补一个空对话」**只对主区成立**。底部那条空掉是合法状态 ——
-        它对应「把底部面板关掉」这个动作(AppShell 看到最后一个被关就收起面板)。
+        它对应「把底部面板关掉」这个动作(收起开关由上面的 `syncEmptyEdgePanels`
+        在这一格空掉时同步;原注释说的是 AppShell,那条逻辑已经不在 AppShell 里了)。
         照搬到底部的话,面板就永远关不掉:关一个补一个。
       */
       if (pane === 'main' && !tabs.some((tab) => tab.kind === 'chat' && paneOf(tab) === 'main')) {
@@ -1061,6 +1128,16 @@ export const useTabsStore = create<TabsState>((set, get) => {
     },
 
     syncBrowserTabs(workspaceId, remoteTabs) {
+      if (shellWindow()?.windowKind() === 'quick') {
+        const current = get().byWorkspace[workspaceId]
+        // 全局浏览器广播不能让专注窗口恢复其他项目或其他会话的工作台。
+        if (current === undefined) return
+        const sessions = new Set(current.tabs.flatMap((tab) => tab.kind === 'chat' && tab.ref.sessionId !== null ? [tab.ref.sessionId] : []))
+        remoteTabs = remoteTabs.filter((remote) =>
+          (remote.ownerSessionId !== undefined && sessions.has(remote.ownerSessionId))
+          || current.tabs.some((tab) => tab.kind === 'browser' && (tab.ref.browserId === remote.id || tab.id === remote.clientTabId))
+        )
+      }
       if (get().byWorkspace[workspaceId] === undefined) {
         pendingBrowser.set(workspaceId, [...remoteTabs])
         get().ensure(workspaceId)
@@ -1233,4 +1310,12 @@ export const useTabsStore = create<TabsState>((set, get) => {
       set({ byWorkspace: next })
     }
   }
+})
+
+/*
+  ★ 这一半由本模块自己装到 port 上(见 `shell-port.ts`)。`window` store 那一半
+  在它自己的文件里装。两边都**不 import 对方**,`forget` 却仍然能调到。
+*/
+installShellTabsPort({
+  forgetTabsForWorkspace: (workspaceId) => useTabsStore.getState().forget(workspaceId)
 })

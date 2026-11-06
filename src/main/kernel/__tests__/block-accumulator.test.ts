@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentPart } from '../../../shared/agent/message'
 import type { ProviderStreamEvent } from '../../../shared/agent/stream'
+import { applyEvents, emptyTranscript } from '../../../shared/agent/transcript'
 import { BlockAccumulator } from '../block-accumulator'
 
 /** 把一串事件喂进去,拿回收尾结果 */
@@ -302,5 +303,98 @@ describe('finalize 是只读且幂等的', () => {
 
     acc.apply({ type: 'text_delta', index: 0, text: '截' })
     expect(acc.finalize().parts).toEqual([{ type: 'text', text: '半截' }])
+  })
+})
+
+describe('思考卡片:用时与 token', () => {
+  /** 模拟 session 的 `acc.apply(ev, clock.now())`:每条事件带主进程时钟 */
+  function runAt(events: ReadonlyArray<readonly [ProviderStreamEvent, number]>): ContentPart[] {
+    const acc = new BlockAccumulator()
+    for (const [e, at] of events) acc.apply(e, at)
+    return acc.finalize().parts
+  }
+  const end = (reasoningTokens?: number): ProviderStreamEvent => ({
+    type: 'message_end',
+    stopReason: 'end_turn',
+    usage: { inputTokens: 10, outputTokens: 500, ...(reasoningTokens === undefined ? {} : { reasoningTokens }) }
+  })
+  const thinkingOf = (parts: ContentPart[]): Array<Extract<ContentPart, { type: 'thinking' }>> =>
+    parts.filter((p): p is Extract<ContentPart, { type: 'thinking' }> => p.type === 'thinking')
+
+  /**
+   * ★ OpenAI Responses 这类上游先在服务端闷头推理 30 秒,最后才吐一小段摘要。
+   * 按首个思考增量起算的话,卡片会写「思考 1 秒」。
+   */
+  it('起点取 message_start 而不是首个思考增量,服务端闷头推理的那段也算思考', () => {
+    const parts = runAt([
+      [{ type: 'message_start', model: 'm' }, 1_000],
+      [{ type: 'thinking_delta', index: 0, text: '摘要' }, 31_000],
+      [{ type: 'thinking_delta', index: 0, text: '续' }, 32_000],
+      [{ type: 'text_delta', index: 1, text: '答' }, 33_000],
+      [end(), 34_000]
+    ])
+    expect(thinkingOf(parts)[0]?.durationMs).toBe(31_000)
+  })
+
+  it('交错思考的第二块从上一个块的最后一个增量起算,止于自己最后一个增量', () => {
+    const parts = runAt([
+      [{ type: 'message_start', model: 'm' }, 0],
+      [{ type: 'thinking_delta', index: 0, text: 'a' }, 100],
+      [{ type: 'text_delta', index: 1, text: 'b' }, 500],
+      [{ type: 'thinking_delta', index: 2, text: 'c' }, 900],
+      [{ type: 'thinking_delta', index: 2, text: 'd' }, 1_400],
+      [{ type: 'block_opaque', index: 2, opaque: { signature: 's' } }, 5_000]
+    ])
+    expect(thinkingOf(parts).map((p) => p.durationMs)).toEqual([100, 900])
+  })
+
+  it('不传时钟就不写 durationMs —— 与旧转录一样「没有事实就不画」', () => {
+    expect(run([{ type: 'thinking_delta', index: 0, text: '嗯' }]).parts[0]).not.toHaveProperty('durationMs')
+  })
+
+  it('这次回复只有一块有正文的思考时,上游 reasoningTokens 归给它', () => {
+    const parts = runAt([
+      [{ type: 'message_start', model: 'm' }, 0],
+      [{ type: 'thinking_delta', index: 0, text: '想' }, 10],
+      [{ type: 'text_delta', index: 1, text: '答' }, 20],
+      [end(321), 30]
+    ])
+    expect(thinkingOf(parts)[0]?.tokens).toBe(321)
+  })
+
+  /** 按长度摊派出来的「真值」比明说是约数更误导人 —— 交给渲染层按正文估算 */
+  it('多块思考时不摊派 reasoningTokens', () => {
+    const parts = runAt([
+      [{ type: 'thinking_delta', index: 0, text: '一' }, 10],
+      [{ type: 'thinking_delta', index: 1, text: '二' }, 20],
+      [end(321), 30]
+    ])
+    expect(thinkingOf(parts).every((p) => p.tokens === undefined)).toBe(true)
+  })
+
+  it('上游没报 reasoningTokens 时不写 tokens', () => {
+    const parts = runAt([[{ type: 'thinking_delta', index: 0, text: '想' }, 10], [end(), 20]])
+    expect(thinkingOf(parts)[0]).not.toHaveProperty('tokens')
+  })
+
+  /**
+   * ★ 渲染层的实时计时(`transcript.ts` 的 LiveBlock.startedAt/endedAt)和这里落盘的
+   * durationMs 是两份实现。口径一旦分叉,提交那一刻卡片上的秒数就会跳 —— 这条把两边钉在一起。
+   */
+  it('与渲染层 reducer 的实时计时同口径,提交前后时长不跳', () => {
+    const events: Array<readonly [ProviderStreamEvent, number]> = [
+      [{ type: 'message_start', model: 'm' }, 1_000],
+      [{ type: 'tool_call_start', index: 0, callId: 'c', name: 'read' }, 1_500],
+      [{ type: 'tool_call_delta', index: 0, callId: 'c', argsDelta: '{}' }, 2_000],
+      [{ type: 'thinking_delta', index: 1, text: '想' }, 4_000],
+      [{ type: 'thinking_delta', index: 1, text: '完' }, 6_500],
+      [{ type: 'text_delta', index: 2, text: '答' }, 7_000]
+    ]
+    const live = applyEvents(emptyTranscript(), events.map(([delta, at]) => ({ type: 'stream', delta, at })))
+      .live.find((b) => b.kind === 'thinking')
+    const committed = thinkingOf(runAt(events))[0]
+    expect(live?.startedAt).toBeDefined()
+    expect(committed?.durationMs).toBe((live?.endedAt ?? 0) - (live?.startedAt ?? 0))
+    expect(committed?.durationMs).toBe(4_500)
   })
 })

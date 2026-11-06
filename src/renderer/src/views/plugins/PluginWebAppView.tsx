@@ -27,7 +27,7 @@ import { isLocalEnvironment } from '../../../../shared/domain/environment'
 import { browserPartition } from '../../../../shared/domain/browser'
 import { matchesHostPermission } from '../../../../shared/plugin/manifest'
 import { isRunnable } from '../../../../shared/plugin/state'
-import { EmptyState } from '../../components/ui/EmptyState'
+import { EmptyState } from '../../components/arc/empty-state/empty-state'
 import { IconButton } from '../../components/ui/IconButton'
 import { useI18n } from '../../i18n'
 import { openExternal } from '../../services/app'
@@ -107,7 +107,7 @@ export function PluginWebAppView({
         <EmptyState
           icon={<AlertTriangle size={26} />}
           title={t('pluginWebApp.unavailable')}
-          hint={t('pluginWebApp.unavailableHint', { plugin: tab.ref.pluginId })}
+          description={t('pluginWebApp.unavailableHint', { plugin: tab.ref.pluginId })}
         />
       </div>
     )

@@ -27,7 +27,8 @@ export function toOpenAIChatMessages(messages: readonly AgentMessage[]): ChatMes
     let reasoning: string | undefined
     // Tool receipts must immediately follow the assistant call, before any user reminders.
     for (const part of message.parts) {
-      if (part.type === 'goal_status') continue // UI-only: no content or message on the wire.
+      // UI-only: no content or message on the wire.(边界的摘要在同一条消息的 text 块里)
+      if (part.type === 'goal_status' || part.type === 'compact_boundary') continue
       if (part.type === 'tool_result') {
         out.push({ role: 'tool', tool_call_id: part.callId, content: part.output.content })
         // Chat Completions tool messages cannot carry image parts. Keep every receipt first,

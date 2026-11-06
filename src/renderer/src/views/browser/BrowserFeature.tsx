@@ -15,7 +15,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 import type { BrowserProfile } from '../../../../shared/domain/browser'
 import { isLocalEnvironment } from '../../../../shared/domain/environment'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { IconButton } from '../../components/ui/IconButton'
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/Menu'
@@ -219,7 +219,8 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
             <p className="mt-1 text-[11px] leading-4 text-fg-faint">{t('browser.profileHint')}</p>
           </div>
 
-          <Button size="sm" icon={<Plus size={14} />} onClick={() => setDialogOpen(true)} className="mt-3 w-full">
+          <Button variant="secondary" type="button" size="sm" onClick={() => setDialogOpen(true)} className="mt-3 w-full">
+            <Plus size={14} />
             {t('browser.newProfile')}
           </Button>
 
@@ -241,7 +242,7 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
                     isSelected ? 'bg-tint-strong' : 'hover:bg-tint-hover'
                   )}
                 >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-tint text-fg-muted">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-tint text-fg-muted">
                     <Globe2 size={14} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -350,7 +351,8 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
           )}
           <div className="flex items-center justify-between">
             <h2 className="text-[14px] font-medium text-fg">{t('browser.automationTitle')}</h2>
-            <Button size="sm" icon={<Plus size={14} />} onClick={openBrowser}>
+            <Button variant="secondary" type="button" size="sm" onClick={() => openBrowser()}>
+              <Plus size={14} />
               {t('browser.manualCreate')}
             </Button>
           </div>
@@ -364,7 +366,7 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
                 <div className="text-[13px] text-fg">{t('browser.switchChat')}</div>
                 <p className="mt-0.5 text-[11px] text-fg-faint">{t('browser.automationHint')}</p>
               </div>
-              <Button size="sm" onClick={openBrowser}>
+              <Button variant="secondary" type="button" size="sm" onClick={() => openBrowser()}>
                 {t('browser.open')}
               </Button>
             </div>
@@ -382,7 +384,8 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
               <span className="rounded-pill bg-tint px-2 py-1 text-[11px] text-fg-faint">
                 {t('browser.notConnected')}
               </span>
-              <Button size="sm" variant="ghost" icon={<Unplug size={13} />} disabled>
+              <Button type="button" size="sm" variant="secondary" disabled>
+                <Unplug size={13} />
                 {t('browser.connect')}
               </Button>
             </div>
@@ -404,12 +407,13 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
         width={420}
         footer={
           <>
-            <Button size="sm" onClick={() => setDialogOpen(false)}>
+            <Button variant="secondary" type="button" size="sm" onClick={() => setDialogOpen(false)}>
               {t('common.cancel')}
             </Button>
             <Button
+              type="button"
               size="sm"
-              variant="accent"
+              variant="primary"
               disabled={name.trim() === '' || busy}
               onClick={() => {
                 void create()
@@ -431,7 +435,7 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={t('browser.profileNamePlaceholder')}
-              className="mt-1 h-9 w-full rounded-[9px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-accent"
+              className="apple-field mt-1 h-9 w-full rounded-[8px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-fg-faint"
             />
           </label>
           <label className="block text-[12px] text-fg-muted">
@@ -440,7 +444,7 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
               value={domains}
               onChange={(event) => setDomains(event.target.value)}
               placeholder={t('browser.profileDomainsPlaceholder')}
-              className="mt-1 h-9 w-full rounded-[9px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-accent"
+              className="apple-field mt-1 h-9 w-full rounded-[8px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-fg-faint"
             />
           </label>
           <label className="block text-[12px] text-fg-muted">
@@ -449,7 +453,7 @@ function LocalBrowserFeature({ onClose }: { onClose?: () => void }): ReactNode {
               value={startUrl}
               onChange={(event) => setStartUrl(event.target.value)}
               placeholder={t('browser.profileStartUrlPlaceholder')}
-              className="mt-1 h-9 w-full rounded-[9px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-accent"
+              className="apple-field mt-1 h-9 w-full rounded-[8px] border border-hairline bg-canvas px-2.5 text-[12px] text-fg outline-none focus:border-fg-faint"
             />
           </label>
         </div>

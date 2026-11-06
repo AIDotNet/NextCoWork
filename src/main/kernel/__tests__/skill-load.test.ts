@@ -332,7 +332,8 @@ describe('★ 不可信输入的消毒与封顶', () => {
   })
 
   it('前置块里不支持的语法被记成诊断,而不是让整条失败', async () => {
-    put(globalRoot, 'commit', '---\ndescription: d\nnested:\n  a: 1\n---\n正文\n')
+    // 两层嵌套 —— 一层的 `metadata:` 现在是支持的形状,不再进诊断
+    put(globalRoot, 'commit', '---\ndescription: d\nnested:\n  a:\n    b: 1\n---\n正文\n')
 
     const r = await scan()
 

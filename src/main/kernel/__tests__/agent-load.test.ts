@@ -70,10 +70,30 @@ describe('基本形状', () => {
     expect(a?.prompt).toBe('你只看,不改。')
     expect(a?.source.kind).toBe('global')
     expect(a?.source.path).toContain('researcher.md')
-    // 三个可选字段都没写 —— 省略,不是 undefined 占位
+    // 四个可选字段都没写 —— 省略,不是 undefined 占位
     expect(a?.tools).toBeUndefined()
     expect(a?.model).toBeUndefined()
     expect(a?.permissionMode).toBeUndefined()
+    expect(a?.thinking).toBeUndefined()
+  })
+
+  it('thinking: 大小写不敏感,合法档位落到定义上', async () => {
+    put(globalRoot, 'deep.md', '---\ndescription: 想得深一点\nthinking: HIGH\n---\n慢慢想。\n')
+
+    const r = await scan()
+
+    expect(r.agents.find((x) => x.name === 'deep')?.thinking).toBe('high')
+  })
+
+  it('thinking: 认不出的值 —— 子代理仍然加载,诊断里提到它,字段留空', async () => {
+    put(globalRoot, 'deep.md', '---\ndescription: 想得深一点\nthinking: on\n---\n慢慢想。\n')
+
+    const r = await scan()
+
+    const a = r.agents.find((x) => x.name === 'deep')
+    expect(a).toBeDefined()
+    expect(a?.thinking).toBeUndefined()
+    expect(said(r, 'thinking')).toBe(true)
   })
 
   it('★ 一个子代理都没有时,内建那几条仍然在', async () => {

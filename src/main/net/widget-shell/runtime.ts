@@ -54,7 +54,10 @@ const MESSAGE = {
   theme: 'ncw:widget:theme',
   loading: 'ncw:widget:loading',
   ready: 'ncw:widget:ready',
-  height: 'ncw:widget:height'
+  height: 'ncw:widget:height',
+  env: 'ncw:widget:env',
+  call: 'ncw:widget:call',
+  reply: 'ncw:widget:reply'
 } as const satisfies WidgetMessageNames
 
 const root = document.getElementById('ncw-root')
@@ -89,9 +92,25 @@ function reportHeight(): void {
   heightScheduled = true
   requestAnimationFrame(() => {
     heightScheduled = false
-    const height = root === null ? 0 : Math.ceil(root.getBoundingClientRect().height)
-    post({ type: MESSAGE.height, height })
+    post({ type: MESSAGE.height, height: measure() })
   })
+}
+
+/**
+ * 内容的下沿。
+ *
+ * ★ 除了 `#ncw-root`,还要算上**挂在 body 上的弹层**:`nextcowork/ui` 的 Select /
+ * Tooltip 走 Radix 的 portal,弹层不在根节点里。只量根节点的话,下拉框一打开就被
+ * iframe 的下沿切掉,而用户看到的是"选项点不到"。
+ * ★ 仍然不量 `document.body` 本身 —— 理由见上。
+ */
+function measure(): number {
+  if (root === null) return 0
+  let bottom = root.getBoundingClientRect().bottom
+  for (const layer of document.querySelectorAll('[data-radix-popper-content-wrapper], [data-ncw-widget-layer]')) {
+    bottom = Math.max(bottom, layer.getBoundingClientRect().bottom)
+  }
+  return Math.ceil(bottom + window.scrollY)
 }
 
 function post(message: Record<string, unknown>): void {
@@ -104,7 +123,12 @@ function post(message: Record<string, unknown>): void {
  * `document.getElementById(...)`,元素没进树它拿到的是 null,而那种失败
  * 表现为"图没画出来但也不报错"。
  */
-function onContent(html: string, final: boolean): void {
+function onContent(html: string, final: boolean, format: string): void {
+  if (format === 'tsx') {
+    // ★ TSX 没有"半截也能渲染"这回事 —— 生成期只留加载提示,收尾那一帧整体挂载
+    if (final) mountTsx(html)
+    return
+  }
   if (loading !== null) loading.hidden = true
   contentSeen = true
   if (root !== null) {
@@ -114,13 +138,116 @@ function onContent(html: string, final: boolean): void {
   reportHeight()
 }
 
+/**
+ * TSX 的挂载。`compiled` 是主进程用 sucrase 编好的 CJS(`widget-compile.ts`)。
+ *
+ * ## 为什么是一段内联 module 脚本
+ *
+ * CSP 不给 `unsafe-eval`、也不给 `blob:` 脚本 —— 能执行模型代码的只有带 nonce 的内联
+ * `<script>`。用 `type="module"` 是为了那几行 `import`:它们经外壳页面里的 import map
+ * 解析到 `/__react.js` 等运行时文件。模型自己的代码被包进 `function (require, module, exports)`,
+ * `require` 查的是事先 import 好的那张表 —— 白名单之外的名字在这里再拦一次。
+ *
+ * ★ 只 import 编译产物里真的 `require` 到的模块:没用到图表的 widget 不该为 charts
+ * 多读几百 KB。`nextcowork/widget` 总是要的 —— 挂载函数在它里面。
+ */
+let mountedCode: string | null = null
+function mountTsx(compiled: string): void {
+  if (mountedCode === compiled) return
+  if (mountedCode !== null) {
+    // 同一个 iframe 换了一份代码(重新渲染):干净地重来,宿主会在 ready 之后重推
+    location.reload()
+    return
+  }
+  mountedCode = compiled
+  contentSeen = true
+  document.documentElement.dataset['widgetFormat'] = 'tsx'
+
+  const sheet = document.createElement('link')
+  sheet.rel = 'stylesheet'
+  sheet.href = '/__ui.css'
+  document.head.appendChild(sheet)
+
+  const names = new Set<string>(['nextcowork/widget'])
+  for (const match of compiled.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)) names.add(match[2] as string)
+  const list = [...names].filter((name) => ALLOWED_MODULES.has(name))
+  const imports = list.map((name, index) => `import * as __m${String(index)} from ${JSON.stringify(name)};`).join('\n')
+  const table = list.map((name, index) => `${JSON.stringify(name)}: __m${String(index)}`).join(', ')
+  const widgetIndex = list.indexOf('nextcowork/widget')
+
+  const script = document.createElement('script')
+  script.type = 'module'
+  script.nonce = nonce
+  /*
+    ★ textContent 而不是 innerHTML:前者不经 HTML 解析,代码里出现 `</script>` 也不会提前截断。
+    ★ 卸掉加载提示放在挂载函数里(`__mountWidget`),不在这里 —— 运行时文件还在加载的那
+    几百毫秒里,用户应该看到的是提示而不是一块空白。
+  */
+  script.textContent =
+    `${imports}\n` +
+    `__m${String(widgetIndex)}.__mountWidget(document.getElementById('ncw-root'), { ${table} }, ` +
+    `function (require, module, exports) {\n${compiled}\n});\n`
+  // 依赖的运行时文件取不到时,错误事件落在**脚本元素**上,不冒到 window
+  script.addEventListener('error', () => {
+    showMountError('The widget runtime failed to load.')
+  })
+  document.body.appendChild(script)
+}
+
+function showMountError(message: string): void {
+  if (root === null || root.childElementCount > 0) return
+  if (loading !== null) loading.hidden = true
+  const line = document.createElement('div')
+  line.className = 'ncw-widget-error'
+  line.textContent = message
+  root.appendChild(line)
+  reportHeight()
+}
+
+/** 与 `shared/domain/widget.ts` 的 `WIDGET_MODULES` 一致 —— 同 `MESSAGE` 的理由,这里不按值 import。 */
+const ALLOWED_MODULES: ReadonlySet<string> = new Set([
+  'react',
+  'react/jsx-runtime',
+  'nextcowork/widget',
+  'nextcowork/charts',
+  'lucide-react'
+])
+
+/**
+ * 运行时文件取不到、模块求值抛错 —— 这些发生在 React 接手之前,ErrorBoundary 管不到。
+ * 没挂上之前的错误直接写进根节点,至少让用户知道"这里本该有东西,而它坏了"。
+ */
+window.addEventListener('error', (event) => {
+  if (mountedCode === null) return
+  showMountError(event.message)
+})
+
+/**
+ * 宿主推来的环境(状态 / 数据 / 交互 / 动作)。
+ *
+ * ★ 存在这里而不是交给 `nextcowork/widget` 自己收:环境往往在**模块还没加载完**时就到了,
+ * 那时没有任何监听器,消息就丢了。这里留住最后一份,挂载函数起来后先读它,之后的
+ * 变化经 `ncw:widget:env` 事件转发。
+ */
+function onEnv(env: unknown): void {
+  ;(window as unknown as { __ncwWidgetEnv?: unknown }).__ncwWidgetEnv = env
+  window.dispatchEvent(new CustomEvent('ncw:widget:env', { detail: env }))
+}
+
 /** 主题变量。宿主推来的是**已经算好的具体色值**,这里不做任何解释。 */
-function onTheme(tokens: Record<string, string>, appearance: string): void {
+function onTheme(tokens: Record<string, string>, appearance: string, motion: string): void {
   const style = document.documentElement.style
   for (const [name, value] of Object.entries(tokens)) style.setProperty(name, value)
   document.documentElement.style.colorScheme = appearance === 'light' ? 'light' : 'dark'
   // 背景保持透明:widget 要看起来长在对话里,而不是嵌了一张白纸进去。
   document.documentElement.dataset['appearance'] = appearance
+  /*
+    ★ `data-theme` / `data-theme-motion` 是 `nextcowork/ui` 那批控件认的两个属性
+    (同插件视图的垫片);少了它们,TSX widget 里的控件停在 theme.css 的静态深色默认值上。
+  */
+  document.documentElement.dataset['theme'] = appearance === 'light' ? 'light' : 'dark'
+  document.documentElement.dataset['themeMotion'] = motion
+  window.dispatchEvent(new CustomEvent('ncw:theme'))
   reportHeight()
 }
 
@@ -135,12 +262,22 @@ window.addEventListener('message', (event: MessageEvent) => {
   // ★ 只认父窗口发来的消息。`origin` 在这里用不了(不透明源是 "null"),
   // 所以判据是身份:这个窗口的 parent 只能有一个。
   if (event.source !== window.parent) return
-  const data = event.data as { type?: unknown; html?: unknown; final?: unknown; tokens?: unknown; appearance?: unknown; message?: unknown }
+  const data = event.data as {
+    type?: unknown
+    html?: unknown
+    final?: unknown
+    format?: unknown
+    tokens?: unknown
+    appearance?: unknown
+    motion?: unknown
+    message?: unknown
+    env?: unknown
+  }
   if (data === null || typeof data !== 'object') return
 
   switch (data.type) {
     case MESSAGE.content:
-      if (typeof data.html === 'string') onContent(data.html, data.final === true)
+      if (typeof data.html === 'string') onContent(data.html, data.final === true, typeof data.format === 'string' ? data.format : 'html')
       return
     case MESSAGE.theme: {
       const tokens = data.tokens
@@ -149,12 +286,15 @@ window.addEventListener('message', (event: MessageEvent) => {
         for (const [name, value] of Object.entries(tokens as Record<string, unknown>)) {
           if (typeof value === 'string') flat[name] = value
         }
-        onTheme(flat, typeof data.appearance === 'string' ? data.appearance : 'dark')
+        onTheme(flat, typeof data.appearance === 'string' ? data.appearance : 'dark', typeof data.motion === 'string' ? data.motion : 'full')
       }
       return
     }
     case MESSAGE.loading:
       if (typeof data.message === 'string') onLoading(data.message)
+      return
+    case MESSAGE.env:
+      onEnv(data.env)
       return
     default:
       // 未知类型一律忽略 —— 前向兼容:宿主将来加的东西,旧外壳安静地不受影响。
@@ -166,6 +306,8 @@ window.addEventListener('message', (event: MessageEvent) => {
 if (root !== null && typeof ResizeObserver === 'function') {
   new ResizeObserver(reportHeight).observe(root)
 }
+// 弹层挂在 body 上、不在根节点里 —— 它们出现与消失也要重新量(见 `measure`)。
+new MutationObserver(reportHeight).observe(document.body, { childList: true })
 
 // 告诉宿主"可以推了"。宿主不一定会等它(推晚了这条只是让它重推一次),
 // 但有了它,外壳与宿主的启动顺序就不需要靠定时器去猜。

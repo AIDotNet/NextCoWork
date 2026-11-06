@@ -1,7 +1,7 @@
 import { ArrowRight, Building2, UserRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { ClientAuthState, ClientTeamOption } from '../../../shared/domain/client-auth'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Mark } from '../components/brand/Mark'
 import { useI18n } from '../i18n'
 import { selectClientTeam } from '../services/client-auth'
@@ -27,7 +27,7 @@ export function ClientTeamSelectionView({ auth, onComplete }: { auth: ClientAuth
   }
 
   return (
-    <main className="relative flex h-full items-center justify-center overflow-hidden bg-[#171918] text-white">
+    <main className="relative flex h-full items-center justify-center overflow-hidden bg-[#1c1c1e] text-white">
       <div className="app-drag absolute inset-x-0 top-0 h-10" aria-hidden="true" />
       <div className="relative flex w-[min(520px,calc(100%-32px))] flex-col px-6 py-10">
         <div className="mb-8 flex items-center gap-3 text-[24px] font-semibold tracking-[-0.04em]">
@@ -40,12 +40,13 @@ export function ClientTeamSelectionView({ auth, onComplete }: { auth: ClientAuth
           {teams.map((team) => (
             <Button
               key={team.id}
-              variant="ghost"
+              type="button"
+              variant="secondary"
               disabled={busy !== null}
               onClick={() => void choose(team)}
               className="group flex h-auto w-full items-center justify-start gap-3 rounded-[12px] border border-white/10 bg-white/[.045] px-4 py-3 text-left text-white hover:border-accent/50 hover:bg-white/[.09]"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-white/[.08] text-accent">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-white/[.08] text-accent">
                 {team.type === 'Personal' ? <UserRound size={17} /> : <Building2 size={17} />}
               </span>
               <span className="min-w-0 flex-1">

@@ -51,9 +51,22 @@ export function copyText(text: string): Promise<void> {
   return invoke('app:copyText', { text })
 }
 
+/** 把一张图写进系统剪贴板。`base64` 是**原图字节**,不带 `data:` 前缀。 */
+export function copyImage(base64: string): Promise<void> {
+  return invoke('app:copyImage', { base64 })
+}
+
 /** 另存为。`defaultName` 只是建议名,落点由主进程弹出的系统对话框决定;取消返回 null。 */
 export function saveTextFile(defaultName: string, text: string): Promise<{ path: string } | null> {
   return invoke('app:saveTextFile', { defaultName, text })
+}
+
+/**
+ * 另存一张图片。`base64` **不带** `data:image/png;base64,` 前缀;取消返回 null。
+ * 扩展名由主进程按字节判 —— 调用方给的 `defaultName` 只是名字,不必带对扩展名。
+ */
+export function saveImageFile(defaultName: string, base64: string): Promise<{ path: string } | null> {
+  return invoke('app:saveImageFile', { defaultName, base64 })
 }
 
 export function openSessionWindow(workspaceId: string, sessionId: string): Promise<void> {
@@ -158,13 +171,14 @@ export function getSessionInput(sessionId: string): Promise<SessionInputState | 
 }
 
 /**
- * ★ `immediate` 两档(协议里写了完整理由):草稿按键走防抖,
- * 队列的增删改走立即落盘 —— 丢一整条排队消息与丢半个词的代价不对等。
+ * 草稿落盘。★ `immediate` 两档:按键走主进程 500ms 防抖;绑定会话、撤回到输入框这类
+ * 离散动作立即写。**只有草稿** —— 队列由主进程独占(见 `services/agent.ts` 的
+ * `queueSessionInput`),渲染层整份覆盖会把已经续跑掉的排队消息写回去。
  */
-export function persistSessionInput(
+export function persistSessionDraft(
   sessionId: string,
-  state: SessionInputState,
+  draft: string,
   immediate = false
 ): void {
-  send('session:persistInput', { sessionId, state, immediate })
+  send('session:persistDraft', { sessionId, draft, immediate })
 }

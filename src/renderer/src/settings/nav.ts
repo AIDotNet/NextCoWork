@@ -21,8 +21,10 @@ export type SettingsPageId =
   | 'usage'
   | 'review'
   | 'connection'
+  | 'devices'
   | 'computer'
   | 'data'
+  | 'experimental'
   | 'about'
 
 export interface SettingsSub {
@@ -35,11 +37,17 @@ export interface SettingsPage {
   label: string
   /** 子 Tab(参考图里「通用」下的 应用|Agent|任务)。没有就是单页 */
   subs?: readonly SettingsSub[]
+  /**
+   * 只在登录 NextCoWork 账户后出现在导航与搜索里。
+   * 需求：钱包的一切（余额、充值、消费记录）都属于账户，本地模式下这一页没有任何能做的事 ——
+   * 画出来就是一个点进去只剩「请登录」的入口。过滤只在 `visibleSettingsPages` 一处做。
+   */
+  requiresSignIn?: true
 }
 
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'account', label: '账户' },
-  { id: 'wallet', label: '钱包' },
+  { id: 'wallet', label: '钱包', requiresSignIn: true },
   {
     id: 'general',
     label: '通用',
@@ -124,12 +132,36 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       { id: 'network', label: '网络' }
     ]
   },
+  /**
+   * 第十三页:控制端本地的「已配对设备」。它和「连接」页的 SSH/MCP 是两回事 —— 那些是这台设备
+   * 去连别的东西,这一页是这台电脑去控制别的 NextCoWork 设备。
+   */
+  { id: 'devices', label: '设备' },
   { id: 'computer', label: '电脑操作' },
   { id: 'data', label: '数据' },
+  /**
+   * 尚未定型的功能,每一项都出厂关闭(见 `ExperimentalSettings`)。
+   * 放在「关于」前面、所有常规页之后:它不该是用户找东西时先看到的那一页。
+   */
+  { id: 'experimental', label: '实验' },
   { id: 'about', label: '关于' }
 ]
 
 export const DEFAULT_SETTINGS_PAGE: SettingsPageId = 'general'
+
+/** 当前登录态下导航里该出现的页。`SETTINGS_PAGES` 仍是全集（搜索目录、文案校验都按全集）。 */
+export function visibleSettingsPages(signedIn: boolean): SettingsPage[] {
+  return SETTINGS_PAGES.filter((p) => signedIn || p.requiresSignIn !== true)
+}
+
+/**
+ * 真正要渲染的页。需求：未登录时即便有人请求钱包页（登录在浮层开着时失效、
+ * 或旧的深链），也不能落在一个导航里看不见的页上 —— 送去账户页，那里有登录入口。
+ */
+export function resolveSettingsPage(page: SettingsPageId, signedIn: boolean): SettingsPageId {
+  const def = SETTINGS_PAGES.find((p) => p.id === page)
+  return def?.requiresSignIn === true && !signedIn ? 'account' : page
+}
 
 export const PAGE_LABEL: Readonly<Record<SettingsPageId, string>> = Object.fromEntries(
   SETTINGS_PAGES.map((p) => [p.id, p.label])
@@ -196,6 +228,24 @@ export const SETTINGS_INDEX: readonly SettingsRow[] = [
     sub: 'agent',
     title: '自动上下文压缩',
     keywords: ['compact', 'compression', '压缩']
+  },
+  {
+    page: 'general',
+    sub: 'agent',
+    title: '回合结束后建议下一步',
+    keywords: ['suggestion', 'autocomplete', 'ghost', 'tab', 'prompt', '补全', '建议', '灰字', '提示']
+  },
+  {
+    page: 'general',
+    sub: 'agent',
+    title: '历史与文件补全',
+    keywords: ['history', 'file', 'autocomplete', 'tab', '补全', '历史', '文件']
+  },
+  {
+    page: 'general',
+    sub: 'agent',
+    title: '打字时续写',
+    keywords: ['inline', 'autocomplete', 'completion', 'copilot', 'tab', '续写', '补全']
   },
   {
     page: 'general',
@@ -422,6 +472,18 @@ export const SETTINGS_INDEX: readonly SettingsRow[] = [
   { page: 'data', title: '清空对话历史', keywords: ['delete', 'history', '清空', '对话'] },
   { page: 'data', title: '删除并退出', keywords: ['delete', 'reset', '退出', '删除'] },
 
+  // ── 实验 ──
+  {
+    page: 'experimental',
+    title: 'Workflow 工作流',
+    keywords: ['experimental', 'labs', 'beta', 'workflow', 'canvas', '实验', '工作流', '画布', '编排']
+  },
+  {
+    page: 'experimental',
+    title: '运行前确认',
+    keywords: ['workflow', 'confirm', 'approval', '工作流', '确认', '审批']
+  },
+
   // ── 关于 ──
   { page: 'about', title: '版本', keywords: ['version', 'about', '版本'] }
 ]
@@ -440,9 +502,12 @@ export function matchRows(query: string): SettingsRow[] {
   })
 }
 
-/** 页面本身命中(用户打「关于」时那一页没有任何行,但页名该出现) */
-export function matchPages(query: string): SettingsPage[] {
+/**
+ * 页面本身命中(用户打「关于」时那一页没有任何行,但页名该出现)。
+ * `signedIn` 必填而不给默认值:漏传就会把钱包页搜给本地模式的用户,而那一页导航里看不见。
+ */
+export function matchPages(query: string, signedIn: boolean): SettingsPage[] {
   const q = query.trim().toLowerCase()
   if (q === '') return []
-  return SETTINGS_PAGES.filter((p) => p.label.toLowerCase().includes(q))
+  return visibleSettingsPages(signedIn).filter((p) => p.label.toLowerCase().includes(q))
 }

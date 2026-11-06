@@ -17,6 +17,8 @@
 
 @source '../components/ui/**/*.tsx';
 @source '../plugin-ui/**/*.{ts,tsx}';
+/* TSX widget 的展示组件(`nextcowork/widget`)。它们的 class 只出现在这里,不扫就不会生成 */
+@source '../widget-kit/**/*.{ts,tsx}';
 
 /*
   ★ 这里**不做** `--ncw-*` → `--color-*` 的映射,尽管看上去正该如此。

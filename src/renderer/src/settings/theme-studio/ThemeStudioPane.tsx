@@ -4,10 +4,10 @@ import type { ThemePreference } from '../../../../shared/domain/settings'
 import { IMAGE_THEMES, resolveImageTheme, resolveColorTheme, THEME_TOKENS, type ImageTheme, type ThemeProfile, type ThemeToken, type ThemeWallpaper } from '../../../../shared/domain/theme'
 import { createThemeProfile, DEFAULT_PROFILE_ID, DEFAULT_SURFACES, resolveProfile, SURFACE_REGIONS, wallpaperFor } from '../../../../shared/domain/theme-profile'
 import { prefixedId } from '../../../../shared/util/id'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { Menu, MenuItem } from '../../components/ui/Menu'
-import { Segmented } from '../../components/ui/Segmented'
+import SegmentedControl from '../../components/arc/segmented-control/segmented-control'
 import { TextInput } from '../../components/ui/TextInput'
 import { useI18n, type TranslationKey } from '../../i18n'
 import { builtinThemeNameKey } from '../../i18n/themes'
@@ -116,12 +116,12 @@ export function ThemeStudioPane({ settings, patch }: Omit<SettingsPageProps, 'su
   return <div className="theme-studio flex min-h-0 flex-1 flex-col gap-3 py-3">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div><h2 className="text-[18px] font-semibold text-fg">{t('themeStudio.title')}</h2><p className="mt-1 text-[12px] text-fg-muted">{t('themeStudio.hint')}</p></div>
-      <div className="flex gap-2"><Button size="sm" variant="ghost" disabled={busy || !dirty} onClick={() => active && studio.edit(active)}>{t('common.cancel')}</Button><Button size="sm" variant="accent" disabled={busy || (!dirty && profile.id === active?.id)} onClick={save}>{t('themeStudio.saveApply')}</Button></div>
+      <div className="flex gap-2"><Button type="button" variant="secondary" disabled={busy || !dirty} onClick={() => active && studio.edit(active)}>{t('common.cancel')}</Button><Button type="button" variant="primary" disabled={busy || (!dirty && profile.id === active?.id)} onClick={save}>{t('themeStudio.saveApply')}</Button></div>
     </header>
     {error && <p role="alert" className="text-[12px] text-danger">{t('themeStudio.error')}</p>}
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
       <TextInput ariaLabel={t('themeStudio.name')} value={displayName} onChange={(value) => update({ name: value.slice(0, 80) })} className="max-w-[240px]" />
-      <Segmented size="sm" label={t('preference.appearance')} value={settings.theme} options={(['system', 'light', 'dark'] as const).map((value) => ({ value, label: t(`preference.${value}`) }))} onChange={(theme: ThemePreference) => patch({ theme })} />
+      <SegmentedControl label={t('preference.appearance')} value={settings.theme} options={(['system', 'light', 'dark'] as const).map((value) => ({ value, label: t(`preference.${value}`) }))} onValueChange={(theme) => patch({ theme: theme as ThemePreference })} />
     </div>
     <div className="theme-studio-layout">
       <nav className="theme-studio-library" aria-label={t('themeStudio.library')}>
@@ -144,17 +144,17 @@ export function ThemeStudioPane({ settings, patch }: Omit<SettingsPageProps, 'su
             </>}</Menu>
           </div>
         </article>)}</div>
-        <Button size="sm" className="mt-3 w-full" icon={<Upload size={13} />} disabled={busy} onClick={upload}>{t('themeStudio.upload')}</Button>
+        <Button type="button" variant="secondary" className="mt-3 w-full" disabled={busy} onClick={upload}><Upload size={13} />{t('themeStudio.upload')}</Button>
       </nav>
       <section className="theme-studio-center min-w-0"><DesktopPreview profile={profile} images={images} />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-fg-muted"><span>{dirty ? t('themeStudio.unsaved') : t('themeStudio.saved')}</span><Button size="sm" variant="ghost" onClick={() => useThemeProfiles.setState({ fullPreview: !studio.fullPreview })}>{t(studio.fullPreview ? 'themeStudio.exitFull' : 'themeStudio.fullDesktop')}</Button></div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-fg-muted"><span>{dirty ? t('themeStudio.unsaved') : t('themeStudio.saved')}</span><Button type="button" variant="secondary" onClick={() => useThemeProfiles.setState({ fullPreview: !studio.fullPreview })}>{t(studio.fullPreview ? 'themeStudio.exitFull' : 'themeStudio.fullDesktop')}</Button></div>
         {palette.warnings.length > 0 && <p role="status" className="mt-2 text-[11px] text-danger">{t('themeStudio.contrastWarning', { count: palette.warnings.length })}</p>}
       </section>
       <section className="theme-studio-inspector min-w-0 border-l border-hairline pl-3">
         <div className="mb-3 flex flex-wrap gap-1">{GROUPS.map((g) => <button type="button" key={g} aria-pressed={group === g} className={cn('rounded-md px-2 py-1.5 text-[11px]', group === g ? 'bg-tint text-fg' : 'text-fg-muted hover:bg-tint-hover')} onClick={() => setGroup(g)}>{t(`themeStudio.${g}`)}</button>)}</div>
         <div className="space-y-3">
           {group === 'wallpaper' && <>
-            <select aria-label={t('themeStudio.wallpaperAsset')} className="studio-select" value={profile.wallpaper?.assetId ?? ''} onChange={(e) => changeWallpaper(resolveImageTheme(e.target.value, images))}><option value="">{t('themeStudio.noWallpaper')}</option>{[...IMAGE_THEMES, ...images].map((i) => {
+            <select aria-label={t('themeStudio.wallpaperAsset')} className="studio-select apple-field" value={profile.wallpaper?.assetId ?? ''} onChange={(e) => changeWallpaper(resolveImageTheme(e.target.value, images))}><option value="">{t('themeStudio.noWallpaper')}</option>{[...IMAGE_THEMES, ...images].map((i) => {
               const key = i.source.kind === 'builtin' ? builtinThemeNameKey('image', i.id) : null
               return <option value={i.id} key={i.id}>{key ? t(key) : i.name}</option>
             })}</select>
@@ -164,7 +164,7 @@ export function ThemeStudioPane({ settings, patch }: Omit<SettingsPageProps, 'su
                 <AssetImage image={image} /><span className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-accent shadow" style={{ left: `${profile.wallpaper.position.x}%`, top: `${profile.wallpaper.position.y}%` }} />
               </div>
               {image?.unavailable && <p className="text-[11px] text-danger">{t('themeStudio.unavailable')}</p>}
-              <Button size="sm" variant="ghost" onClick={() => setWallpaper({ position: { x: 50, y: 50 } })}>{t('themeStudio.autoFocus')}</Button>
+              <Button type="button" variant="secondary" onClick={() => setWallpaper({ position: { x: 50, y: 50 } })}>{t('themeStudio.autoFocus')}</Button>
               <SelectField label={t('themeStudio.fit')} value={profile.wallpaper.fit} options={['cover', 'contain']} prefix="themeStudio.fit" onChange={(fit) => setWallpaper({ fit })} />
               <SelectField label={t('themeStudio.crop')} value={profile.wallpaper.crop} options={['original', '16:9', '4:3', '1:1']} prefix="themeStudio.crop" onChange={(crop) => setWallpaper({ crop })} />
               <Range label={t('themeStudio.zoom')} value={profile.wallpaper.scale} min={1} max={3} onChange={(scale) => setWallpaper({ scale })} />
@@ -183,7 +183,7 @@ export function ThemeStudioPane({ settings, patch }: Omit<SettingsPageProps, 'su
             <p className="text-[11px] text-fg-muted">{t('themeStudio.colorHint')}</p>
             <SelectField label={t('themeStudio.colorScope')} value={colorScope} options={['tokens', 'light', 'dark']} prefix="themeStudio.colorScope" onChange={setColorScope} />
             <label className="flex items-center justify-between text-[12px]">{t('themeStudio.seed')}<input type="color" aria-label={t('themeStudio.seed')} value={seedColor} onChange={(e) => update({ palette: { ...profile.palette, source: 'manual', seed: e.target.value, base: undefined } })} /></label>
-            <Button size="sm" variant="ghost" onClick={() => update({ palette: { ...profile.palette, source: 'auto', seed: image?.seed ?? profile.palette.seed, tokens: {}, light: {}, dark: {} } })}>{t('themeStudio.autoColors')}</Button>
+            <Button type="button" variant="secondary" onClick={() => update({ palette: { ...profile.palette, source: 'auto', seed: image?.seed ?? profile.palette.seed, tokens: {}, light: {}, dark: {} } })}>{t('themeStudio.autoColors')}</Button>
             {[COMMON_TOKENS, THEME_TOKENS.filter((k) => !COMMON_TOKENS.includes(k))].map((keys, i) => {
               const controls = <div className="space-y-2">{keys.map((key) => <label key={key} className="flex items-center justify-between gap-2 text-[11px] text-fg-muted"><span>{t(`themeStudio.token.${key}` as TranslationKey)}</span><input type="color" aria-label={t(`themeStudio.token.${key}` as TranslationKey)} value={profile.palette[colorScope]?.[key] ?? palette.tokens[key]} onChange={(e) => update({ palette: { ...profile.palette, [colorScope]: { ...profile.palette[colorScope], [key]: e.target.value } } })} /></label>)}</div>
               return i === 0 ? <div key={i}>{controls}</div> : <details key={i}><summary className="mb-2 cursor-pointer text-[12px]">{t('themeStudio.advancedTokens')}</summary>{controls}</details>
@@ -214,12 +214,12 @@ export function ThemeStudioPane({ settings, patch }: Omit<SettingsPageProps, 'su
             <p className="text-[11px] text-fg-muted">{t('themeStudio.contrastHint')}</p>
             {palette.warnings.map((w) => <p key={`${w.token}-${w.background}`} className="text-[10px] text-danger">{t('themeStudio.contrastPair', { token: w.token, background: w.background, ratio: w.ratio.toFixed(2), target: w.target })}</p>)}
           </>}
-          <div className="flex flex-wrap gap-1 border-t border-hairline pt-3"><Button size="sm" variant="ghost" onClick={resetGroup}>{t('themeStudio.resetGroup')}</Button><Button size="sm" variant="ghost" onClick={() => update(createThemeProfile(profile.id, profile.name))}>{t('themeStudio.restoreDefault')}</Button></div>
+          <div className="flex flex-wrap gap-1 border-t border-hairline pt-3"><Button type="button" variant="secondary" onClick={resetGroup}>{t('themeStudio.resetGroup')}</Button><Button type="button" variant="secondary" onClick={() => update(createThemeProfile(profile.id, profile.name))}>{t('themeStudio.restoreDefault')}</Button></div>
         </div>
       </section>
     </div>
-    <Dialog open={pending !== null} title={t('themeStudio.unsaved')} onClose={() => setPending(null)} footer={<><Button variant="ghost" onClick={() => setPending(null)}>{t('common.cancel')}</Button><Button onClick={() => { pending?.(); setPending(null) }}>{t('themeStudio.discard')}</Button></>}><p>{t('themeStudio.discardHint')}</p></Dialog>
-    <Dialog open={deletion !== null} title={t('themeStudio.deleteTitle')} onClose={() => setDeletion(null)} footer={<><Button variant="ghost" onClick={() => setDeletion(null)}>{t('common.cancel')}</Button><Button disabled={busy} onClick={remove}>{t('common.delete')}</Button></>}><p>{t(deletion?.asset ? 'themeStudio.deleteAssetHint' : 'themeStudio.deleteHint')}</p></Dialog>
+    <Dialog open={pending !== null} title={t('themeStudio.unsaved')} onClose={() => setPending(null)} footer={<><Button type="button" variant="secondary" onClick={() => setPending(null)}>{t('common.cancel')}</Button><Button type="button" variant="secondary" onClick={() => { pending?.(); setPending(null) }}>{t('themeStudio.discard')}</Button></>}><p>{t('themeStudio.discardHint')}</p></Dialog>
+    <Dialog open={deletion !== null} title={t('themeStudio.deleteTitle')} onClose={() => setDeletion(null)} footer={<><Button type="button" variant="secondary" onClick={() => setDeletion(null)}>{t('common.cancel')}</Button><Button type="button" variant="secondary" disabled={busy} onClick={remove}>{t('common.delete')}</Button></>}><p>{t(deletion?.asset ? 'themeStudio.deleteAssetHint' : 'themeStudio.deleteHint')}</p></Dialog>
   </div>
 }
 

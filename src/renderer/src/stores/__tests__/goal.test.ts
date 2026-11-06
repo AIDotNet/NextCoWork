@@ -1,5 +1,5 @@
 /**
- * `applyGoalChange` —— 目标状态跨到渲染层的唯一入口,以及它那条「检查一下再发」的分支。
+ * `applyGoalChange` —— 目标状态跨到渲染层的唯一入口。
  *
  * 这个函数要做的事只有两件,而两件都容易悄悄坏:
  *
@@ -8,10 +8,10 @@
  *    用户正在看的半句话凭空消失,而屏幕上不会有任何异常。所以这里同时断言
  *    「标记合进了那条已有的助手消息」和「`transcript.live` 一个字没动」。
  *
- * 2. **带 `input` 的那条要走既有通道。** 它不是用户写的消息,是判定器催出来的一句话:
- *    走 `send(..., internal = true, goalId)` 才能既进模型上下文又不冒充用户发言,
- *    也不会顺手清掉输入框里已经写了一半的草稿。而**过期的那些必须被挡在门外** ——
- *    目标可能已经换代、会话可能已经被删,那时发出去的是给一个不存在的目标做的检查。
+ * 2. **渲染层绝不替目标开跑。** 空闲时的目标检查由主进程的会话运行时直接起那一轮
+ *    (`main/goal/runtime.ts` 的 `wakeGoal`,语义由 `main/__tests__/session-runtime.test.ts`
+ *    钉住)—— 没有窗口在看这条会话时它也得发生。这里一条变更既不该建 store,
+ *    也不该发出任何东西,哪怕它带着(旧主进程才会发的)`input`。
  *
  * 失败模式都是「不报错,只是做错」,所以每条断言都钉在具体的那一格状态上。
  *
@@ -37,27 +37,34 @@ vi.mock('../../services/agent', () => ({
 
 vi.mock('../../services/app', () => ({
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: vi.fn()
+  persistSessionDraft: vi.fn()
 }))
 
-vi.mock('../../services/sessions', () => ({
-  getSession: vi.fn(async () => null),
-  replaceHistory: vi.fn(async () => {})
-}))
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn(async (_sessionId: string): Promise<unknown> => null)
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...(detail as object), hasMore: false }
+    }),
+    replaceHistory: vi.fn(async () => {})
+  }
+})
 
 vi.mock('../../services/goal', () => ({
   getGoal: vi.fn(),
   onGoalChanged: vi.fn(() => () => {})
 }))
 
-import { interjectRun, startRun } from '../../services/agent'
+import { startRun } from '../../services/agent'
 import { getGoal } from '../../services/goal'
 import { getSession } from '../../services/sessions'
 import { getSessionInput } from '../../services/app'
-import { applyGoalChange, releaseSession, refreshHydratedSessions, sessionStore, useRunIndex } from '../session'
+import { applyGoalChange, releaseSession, sessionStore, useRunIndex } from '../session'
 
 const mockStartRun = vi.mocked(startRun)
-const mockInterjectRun = vi.mocked(interjectRun)
 const mockGetGoal = vi.mocked(getGoal)
 
 /** 标注成 `SendOptions`,不要写 `as const` —— 队列条目要的是可变数组(同 session.test.ts) */
@@ -118,7 +125,7 @@ async function session(id: string): Promise<ReturnType<typeof sessionStore>> {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockStartRun.mockResolvedValue(undefined)
+  mockStartRun.mockResolvedValue({ started: true })
   mockGetGoal.mockResolvedValue(undefined)
   vi.mocked(getSessionInput).mockResolvedValue(null)
   // 回填历史会读一次库。给一份最小的详情,免得每次都在日志里留一条解析失败
@@ -187,8 +194,8 @@ describe('状态更新:留在状态里', () => {
   })
 })
 
-describe('带 input 的变更:走既有的 internal 通道', () => {
-  it('★ 走 send(..., internal, goalId):不是用户消息,草稿原地保留', async () => {
+describe('目标检查不经过渲染层', () => {
+  it('★ 带 input 的变更也不发:检查由主进程起,渲染层只更新目标状态', async () => {
     mockGetGoal.mockResolvedValue(GOAL)
     const store = await session('g-input')
     store.getState().setDraft('写了一半的草稿')
@@ -196,60 +203,19 @@ describe('带 input 的变更:走既有的 internal 通道', () => {
     applyGoalChange({ sessionId: 'g-input', goal: GOAL, input: { goalId: GOAL.id, parts: CHECKIN, options: OPTS } })
     await settle()
 
-    expect(mockStartRun).toHaveBeenCalledTimes(1)
-    expect(mockStartRun.mock.calls[0]?.[0]).toMatchObject({
-      sessionId: 'g-input',
-      input: CHECKIN,
-      // ★ 这两个标记缺一个,这条检查就会以用户的名义出现在对话里
-      inputInternal: true,
-      inputGoalId: GOAL.id
-    })
-    // 输入框里那半句话不是这条检查的正文,也不该被它吃掉
+    expect(mockStartRun).not.toHaveBeenCalled()
+    expect(store.getState().goal).toEqual(GOAL)
     expect(store.getState().draft).toBe('写了一半的草稿')
-    const sent = store.getState().transcript.messages[0]
-    expect(sent).toMatchObject({ role: 'user', internal: true })
-    expect(visibleText(sent!)).toBe('目标检查:转录里还没看到测试输出。')
+    expect(store.getState().transcript.messages).toEqual([])
   })
 
-  it('★ 判定回来时目标已经换了一代,这一条不发', async () => {
-    await session('g-stale')
-    mockGetGoal.mockResolvedValue({ ...GOAL, id: 'goal-newer' })
-
-    applyGoalChange({ sessionId: 'g-stale', goal: GOAL, input: { goalId: GOAL.id, parts: CHECKIN, options: OPTS } })
+  it('★ 没打开过的会话不为一次目标变更建 store —— 关掉的会话不该被它重新拉进内存', async () => {
+    applyGoalChange({ sessionId: 'g-closed', goal: GOAL, input: { goalId: GOAL.id, parts: CHECKIN, options: OPTS } })
     await settle()
 
-    expect(mockGetGoal).toHaveBeenCalled()
     expect(mockStartRun).not.toHaveBeenCalled()
-  })
-
-  it('★ 会话已经被删掉:连问都不去问,更不会发', async () => {
-    const store = await session('g-deleted')
-    await refreshHydratedSessions({ kind: 'deleted', sessionIds: ['g-deleted'] })
-    const asked = mockGetGoal.mock.calls.length
-
-    applyGoalChange({ sessionId: 'g-deleted', goal: GOAL, input: { goalId: GOAL.id, parts: CHECKIN, options: OPTS } })
-    await settle()
-
-    expect(mockGetGoal).toHaveBeenCalledTimes(asked)
-    expect(mockStartRun).not.toHaveBeenCalled()
-    expect(store.getState().queuedInputs).toEqual([])
-  })
-
-  it('★ 正在跑的时候插进主进程信箱,排队里的用户消息一条都不动', async () => {
-    mockGetGoal.mockResolvedValue(GOAL)
-    const store = await session('g-busy')
-    await store.getState().send('第一条', OPTS)
-    await store.getState().send('排队的', OPTS)
-
-    applyGoalChange({ sessionId: 'g-busy', goal: GOAL, input: { goalId: GOAL.id, parts: CHECKIN, options: OPTS } })
-    await settle()
-
-    // 检查不走队列,也不并发第二个 run
-    expect(mockStartRun).toHaveBeenCalledTimes(1)
-    const [runId, items] = mockInterjectRun.mock.calls[0]!
-    expect(runId).toBe(store.getState().activeRunId)
-    expect(items).toEqual([{ id: expect.any(String), parts: CHECKIN, internal: true, goalId: GOAL.id }])
-    expect(store.getState().queuedInputs.map((q) => q.text)).toEqual(['排队的'])
+    // 建过 store 的话,懒创建会顺手发起历史回填
+    expect(vi.mocked(getSession)).not.toHaveBeenCalledWith('g-closed')
   })
 })
 

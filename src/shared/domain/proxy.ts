@@ -219,6 +219,82 @@ const SCHEME_BY_PAC_TOKEN: Record<string, ProxyScheme | undefined> = {
 }
 
 /**
+ * 子进程那套代理变量**默认**的直连名单:回环三件套。
+ *
+ * 为什么不是 `DIRECT_BYPASS` 整张表:那张表是**手动代理**下交给 Chromium 的
+ * (`proxyBypassRules`);跟随系统时,系统自己的排除列表我们读不到,替用户把
+ * 一堆 `*.cn` 塞进 NO_PROXY 等于替他改了网络策略。回环三条必须保留 ——
+ * `npm run dev` 起的本地服务、`curl localhost`,多数代理根本不肯转发到回环地址,
+ * 少了它们的表现是「开了代理之后,Agent 连本地端口都连不上」。
+ */
+export const LOCAL_ONLY_BYPASS: readonly string[] = ['localhost', '127.0.0.1', '::1']
+
+export interface ChildProxyEnvOptions {
+  /** NO_PROXY 的条目;缺省用上面的回环名单 */
+  bypass?: readonly string[]
+  /**
+   * 同时产出小写副本(curl 只认小写的 `http_proxy`,Java/Go 一类只认大写,两套都要)。
+   * win32 的环境变量不分大小写,小写副本会和大写在子进程环境块里撞名,那边传 `false`。
+   */
+  lowercase?: boolean
+}
+
+/**
+ * 代理端点 → 子进程的代理环境变量(`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`)。
+ *
+ * 需求:Agent 的 shell 命令(Bash 工具、后台 shell、本地钩子)默认跟随应用/系统代理。
+ * CLI 工具只认环境变量,不看 macOS 的系统代理设置;而 Electron 从 Finder/Dock 启动时
+ * `process.env` 里根本没有这些变量 —— 于是「模型跑 `npm install` 一直超时」和
+ * 「同一条命令在用户自己的终端里好好的」可以同时成立,且没有任何报错指向代理。
+ *
+ * ★ **只补父进程没有的键,大小写不敏感。** 用户自己 export 过的代理变量永远赢:
+ *   那是他显式写的,比「默认跟随」更具体;盖掉它等于替他换了一条网络路径,
+ *   而设置页上什么都看不出来。
+ *
+ * ★★ **凭据永远不进来。** `PROXY_PASSWORD_REF` 的不变式是明文只活在 `net/proxy.ts`
+ *   的调用栈里;环境变量会被每一条子进程读走(`env`、`ps eww`、崩溃转储),一旦带
+ *   密码,Agent 一条 `env | grep -i proxy` 就能把密码抄进转录。需要认证的代理在这条
+ *   路上表现为 407 —— 那是**可见**的失败,比静默泄漏好。要给 CLI 配带密码的代理,
+ *   用户在自己 shell 里 export 即可,上面的「父进程优先」保证它生效。
+ *
+ * ★ 直连(`endpoint === null`)返回**空对象**,不清空任何已有变量:与
+ *   `proxyConfigFor` 的「关闭 = 跟随系统」同一条道理 —— 没有结论时维持继承的现状,
+ *   主动清空反而是替用户做了「无视已有配置」的决定。
+ *
+ * ★ 环境变量表达不了按目标分流(PAC 那种),所以调用方只探一次;通配符 / CIDR
+ *   形式的 bypass 条目只有部分工具认(curl ≥ 7.86 认 CIDR),认不出的条目只是
+ *   不生效,不会误伤别的条目 —— 这是这套机制力所能及的边界。
+ */
+export function childProxyEnv(
+  endpoint: ProxyEndpoint | null,
+  parent: Readonly<Record<string, string | undefined>>,
+  options: ChildProxyEnvOptions = {}
+): Record<string, string> {
+  if (endpoint === null) return {}
+  const url = composeProxyUrl(endpoint)
+  // socks 代理塞进 HTTP_PROXY 大多数工具不认,那两个变量只发 http(s) 代理;
+  // ALL_PROXY 谁都发 —— curl/git 认 socks5://,不认的工具自己忽略它
+  const entries: Array<[string, string]> = [
+    ['ALL_PROXY', url],
+    ['NO_PROXY', (options.bypass ?? LOCAL_ONLY_BYPASS).join(',')]
+  ]
+  if (endpoint.scheme === 'http' || endpoint.scheme === 'https') {
+    entries.unshift(['HTTP_PROXY', url], ['HTTPS_PROXY', url])
+  }
+  const emit = options.lowercase === false
+    ? entries
+    : [...entries, ...entries.map(([name, value]) => [name.toLowerCase(), value] as [string, string])]
+
+  const taken = new Set(Object.keys(parent).map((name) => name.toLowerCase()))
+  const out: Record<string, string> = {}
+  for (const [name, value] of emit) {
+    if (taken.has(name.toLowerCase())) continue
+    out[name] = value
+  }
+  return out
+}
+
+/**
  * 这台主机是不是**明摆着在本地网络里**。
  *
  * 需求:ssh 跟随系统代理之后,连局域网机器(NAS、跳板机、办公室那台开发机)必须仍然直连。

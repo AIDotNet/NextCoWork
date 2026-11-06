@@ -2,9 +2,9 @@ import { ArrowLeft, Copy, Workflow } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { MarkdownResourceFile, MarkdownResourceScope } from '../../../../../shared/domain/markdown-resource'
 import { isBuiltinModeId, MODE_ID_RE, type ModeDefinition } from '../../../../../shared/domain/mode'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Segmented } from '../../../components/ui/Segmented'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { TextInput } from '../../../components/ui/TextInput'
 import { useI18n } from '../../../i18n'
 import { listModes, onModesChanged } from '../../../services/modes'
@@ -152,7 +152,7 @@ function BuiltinModeView({ mode, onBack, onCopy }: { mode: ModeDefinition; onBac
       <IconButton label={t('ext.back')} size={26} width={34} onClick={onBack} className="rounded-pill bg-tint"><ArrowLeft size={14} /></IconButton>
       <span className="text-[13px] text-fg">{name}</span>
       <span className="text-[11px] text-fg-faint">{t('ext.modes.readOnly')}</span>
-      <Button size="sm" variant="accent" icon={<Copy size={13} />} className="ml-auto" onClick={onCopy}>{t('ext.modes.copy')}</Button>
+      <Button type="button" variant="primary" size="sm" className="ml-auto" onClick={onCopy}><Copy size={13} />{t('ext.modes.copy')}</Button>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto p-4">
       <p className="mb-4 text-[12px] text-fg-muted">{mode.description}</p>
@@ -194,7 +194,7 @@ function ModeEditor({ file, tools, taken, saving, error, onSave, onDelete, onClo
       onBody={setBody} onSave={() => { if (!invalid) onSave(payload()) }} onDelete={onDelete} onClose={onClose}
       saving={saving} error={error} fields={<>
         <div className="mb-3 flex items-center justify-between"><span className="text-[12px] text-fg-muted">{t('ext.modes.sourceHint')}</span>
-          <Button size="sm" onClick={() => setSourceMode(false)}>{t('ext.modes.form')}</Button></div>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setSourceMode(false)}>{t('ext.modes.form')}</Button></div>
         {fields}
       </>} />
   }
@@ -203,9 +203,9 @@ function ModeEditor({ file, tools, taken, saving, error, onSave, onDelete, onClo
     <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-4 py-2">
       <IconButton label={t('ext.back')} size={26} width={34} onClick={onClose} className="rounded-pill bg-tint"><ArrowLeft size={14} /></IconButton>
       <span className="truncate text-[13px] text-fg">{id}</span>
-      <Button size="sm" className="ml-auto" onClick={() => setSourceMode(true)}>{t('ext.modes.source')}</Button>
-      <Button size="sm" variant="danger" onClick={onDelete}>{t('ext.delete')}</Button>
-      <Button size="sm" variant="accent" disabled={invalid || saving} onClick={() => onSave(payload())}>{t('ext.save')}</Button>
+      <Button type="button" variant="secondary" size="sm" className="ml-auto" onClick={() => setSourceMode(true)}>{t('ext.modes.source')}</Button>
+      <Button type="button" variant="danger" size="sm" onClick={onDelete}>{t('ext.delete')}</Button>
+      <Button type="button" variant="primary" size="sm" disabled={invalid || saving} onClick={() => onSave(payload())}>{t('ext.save')}</Button>
     </div>
     {(error !== null || invalid) && <p className="shrink-0 border-b border-hairline px-4 py-1.5 text-[11px] text-danger" role="alert">
       {error ?? (idTaken ? t('ext.error.modeIdTaken') : t('ext.error.modeInvalid'))}
@@ -215,14 +215,14 @@ function ModeEditor({ file, tools, taken, saving, error, onSave, onDelete, onClo
         <label className="text-[12px] text-fg-muted">{t('ext.modes.id')}</label>
         <TextInput value={id} onChange={setId} ariaLabel={t('ext.modes.id')} invalid={!MODE_ID_RE.test(id) || isBuiltinModeId(id) || idTaken} />
         <label className="text-[12px] text-fg-muted">{t('ext.modes.scope')}</label>
-        <Segmented value={scope} onChange={setScope} label={t('ext.modes.scope')} options={[
+        <SegmentedControl value={scope} onValueChange={(value) => setScope(value as MarkdownResourceScope)} label={t('ext.modes.scope')} options={[
           { value: 'global', label: t('ext.scope.global') },
           { value: 'project', label: t('ext.scope.project') }
         ]} />
       </div>
       <div className="mt-4 max-w-3xl">{fields}</div>
       <label className="mt-4 mb-1 block text-[12px] text-fg-muted">{t('ext.modes.prompt')}</label>
-      <textarea className="selectable min-h-56 w-full max-w-3xl rounded-lg border border-border bg-surface-field p-3 text-[13px] leading-5 text-fg outline-none focus:border-accent"
+      <textarea className="apple-field selectable min-h-56 w-full max-w-3xl rounded-lg border border-border bg-surface-field p-3 text-[13px] leading-5 text-fg outline-none focus:border-fg-faint"
         value={body} onChange={(event) => setBody(event.target.value)} aria-label={t('ext.modes.prompt')} />
     </div>
   </div>

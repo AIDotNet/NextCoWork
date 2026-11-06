@@ -31,6 +31,7 @@ import { pick } from '../../../../shared/domain/tool-presenter'
 import { useI18n } from '../../i18n'
 import { OutputBlock, type DetailProps } from './ToolDetail'
 import { WidgetFrame } from './WidgetFrame'
+import { inferWidgetFormat } from '../../../../shared/domain/widget'
 
 /**
  * 半截入参里的字符串数组。
@@ -58,13 +59,20 @@ export function WidgetDetail({ input, output, isError }: DetailProps): ReactNode
   */
   if (isError) return <OutputBlock output={output} isError maxLines={20} />
 
+  const code = pick(input, 'widget_code')
+  const loading = strings(input, 'loading_messages')
+  // `visualize_edit_widget` 生成期没有代码也没有提示 —— 不画一块空白,等成品卡片
+  if (code === '' && loading.length === 0) return null
+  const declared = pick(input, 'format')
+  // tsx 生成期只显示加载提示(半截 TSX 不可渲染),html/svg 照旧边写边画
+  const format = declared === 'tsx' || declared === 'html' || declared === 'svg' ? declared : inferWidgetFormat(code)
   return (
     <WidgetFrame
-      code={pick(input, 'widget_code')}
+      code={code}
       final={false}
-      title={title === '' ? t('chat.widget.untitled') : title}
-      loadingMessages={strings(input, 'loading_messages')}
-      className="min-h-[60px]"
+      format={format}
+      title={title === '' ? t('widget.untitled') : title}
+      loadingMessages={loading}
     />
   )
 }

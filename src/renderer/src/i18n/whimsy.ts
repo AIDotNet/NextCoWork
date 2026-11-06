@@ -42,6 +42,15 @@ export const whimsyZh: Record<WhimsyBucket, Whimsy> = {
     '顺着想…', '反着想…', '再想想…', '想深一层…', '推演中…', '权衡中…',
     '找漏洞…', '自我辩论…', '反复横跳…', '钻牛角尖…', '理因果…', '解扣中…'
   ],
+  /*
+    对话内生视频。★ 与生图分开:这一段描述的是**后台在跑一个几分钟的任务**,
+    而"生成中"那个词放在视频上比放在图片上更准(用户确实要等很久)。
+    必须有这一项 —— `WhimsyBucket` 是从 `ToolShape` 派生的,新增形态会编译期要求它。
+  */
+  video: [
+    '生成视频…', '渲染中…', '合成中…', '出片中…', '剪片中…', '等渲染…',
+    '还在画…', '帧在排队…', '导出中…', '出成片…'
+  ],
   // 正文在流:已经开始写了
   writing: [
     '下笔中…', '码字中…', '打字中…', '组织语言…', '斟酌用词…', '一字一句…',
@@ -85,6 +94,21 @@ export const whimsyZh: Record<WhimsyBucket, Whimsy> = {
   widget: [
     '画图中…', '勾勒中…', '描线中…', '配色中…', '布局中…', '打样中…',
     '排布中…', '上色中…'
+  ],
+  // 生图:等的是上游把整张图交回来 —— 用户在卡片上看着加载格,词往"出片"上靠
+  image: [
+    '出图中…', '显影中…', '调色中…', '构图中…', '落笔中…', '冲洗中…',
+    '洗照片…', '等出片…'
+  ],
+  // 页面截图:等的是浏览器把当前视口交回来,词往"按快门"上靠
+  screenshot: [
+    '截图…', '瞄准中…', '取景中…', '对焦中…', '按下快门…', '定格里…',
+    '咔嚓…', '成像中…'
+  ],
+  // 工作流:一群子代理在按图干活,词往"调度/编排"上靠
+  workflow: [
+    '编排中…', '调度中…', '分派中…', '并行推进…', '接力中…', '汇总中…',
+    '排兵布阵…', '流水作业…'
   ],
   // 兜底的兜底:知道在跑,但说不出在跑什么(参数还在流、工具还没开跑)
   working: [
@@ -183,6 +207,18 @@ export const whimsyEn: Record<WhimsyBucket, Whimsy> = {
     'Reasoning…', 'Deducing…', 'Inferring…', 'Unpacking…', 'Backtracking…', 'Rechecking…',
     'Zooming in…', 'Arguing…', 'Doubting…', 'Connecting…'
   ],
+  /*
+    Video generation. It runs for minutes in the background, so the words are about
+    rendering/exporting rather than "drawing".
+  */
+  /*
+    ★ 英文压在 14 字符以内(`i18n/index.test.ts` 钉着这个数):
+    这句话右边紧跟着「· 队列 2」和用量读数,长一个字符整排就左右抖。
+  */
+  video: [
+    'Rendering…', 'Encoding…', 'Compositing…', 'Frames…', 'Cutting…',
+    'Waiting…', 'Still going…', 'Exporting…', 'Almost…', 'Assembling…'
+  ],
   writing: [
     'Writing…', 'Drafting…', 'Typing…', 'Composing…', 'Phrasing…', 'Wording it…',
     'Penning…', 'Polishing…', 'Wrapping up…'
@@ -221,6 +257,18 @@ export const whimsyEn: Record<WhimsyBucket, Whimsy> = {
   widget: [
     'Sketching…', 'Drawing…', 'Plotting…', 'Charting…', 'Composing…',
     'Rendering…', 'Coloring…', 'Diagramming…'
+  ],
+  image: [
+    'Painting…', 'Developing…', 'Framing…', 'Exposing…', 'Imagining…',
+    'Brushing…', 'Composing…', 'Printing…'
+  ],
+  screenshot: [
+    'Capturing…', 'Aiming…', 'Framing…', 'Focusing…', 'Shutter…', 'Snapping…',
+    'Click…', 'Freezing it…'
+  ],
+  workflow: [
+    'Orchestrating…', 'Dispatching…', 'Fanning out…', 'In parallel…', 'Relaying…',
+    'Merging…', 'Arranging…', 'Pipelining…'
   ],
   working: [
     'Working…', 'Wrangling…', 'Hustling…', 'Cranking…', 'Grinding…', 'Wrenching…',

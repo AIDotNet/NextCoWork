@@ -285,6 +285,34 @@ describe('mergeLegacyRows', () => {
     ])
   })
 
+  it('迁入的正文和工具内容同事务进入 FTS，撤销不留幽灵索引', () => {
+    const target = new DatabaseSync(targetPath)
+    target.exec('CREATE VIRTUAL TABLE messages_fts USING fts5(message_id UNINDEXED, session_id UNINDEXED, title, content)')
+    target.prepare('INSERT INTO messages_fts VALUES (?, ?, ?, ?)').run('m-old', 's-old', '原标题', 'keepneedle')
+    target.close()
+    const source = new DatabaseSync(sourcePath)
+    source.prepare('UPDATE messages SET parts = ? WHERE id = ?').run(JSON.stringify([
+      { type: 'text', text: 'migrationneedle' },
+      { type: 'tool_call', name: 'LegacyTool', input: { path: 'legacyneedle.ts' } },
+      { type: 'tool_result', output: { content: 'resultneedle' } }
+    ]), 'm-new-1')
+    source.prepare('UPDATE messages SET parts = ? WHERE id = ?').run('{broken', 'm-new-2')
+    source.close()
+
+    const result = merge()
+    expect(rows(targetPath, "SELECT message_id FROM messages_fts WHERE messages_fts MATCH 'migrationneedle OR legacyneedle OR resultneedle'"))
+      .toEqual([{ message_id: 'm-new-1' }])
+    expect(rows(targetPath, "SELECT content FROM messages_fts WHERE message_id = 'm-new-2'"))
+      .toEqual([{ content: '' }])
+    expect(rows(targetPath, "SELECT title, content FROM messages_fts WHERE message_id = 'm-old'"))
+      .toEqual([{ title: '原标题', content: 'keepneedle' }])
+    expect(merge().sessions).toBe(0)
+    expect(rows(targetPath, "SELECT message_id FROM messages_fts WHERE session_id = 's-new'")).toHaveLength(2)
+    undoMerge(targetPath, { at: 1, source: sourceDir, sessions: result.createdSessions, workspaces: result.createdWorkspaces, files: [] })
+    expect(rows(targetPath, "SELECT message_id FROM messages_fts WHERE session_id = 's-new'")).toEqual([])
+    expect(rows(targetPath, "SELECT message_id FROM messages_fts WHERE session_id = 's-old'")).toEqual([{ message_id: 'm-old' }])
+  })
+
   it('每条已提交会话与归属清单同事务落盘，后续失败不会丢掉前半批 id', () => {
     /*
       ★ 制造「第二条会话必然失败」的手段换过一次:原来靠「第二条会话的消息 id 已经在

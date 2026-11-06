@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Capacity, Occupancy, ParentSignalSource } from '../subagent-queue'
-import { MAX_QUEUED_PER_PARENT, QUEUE_MAX_WAIT_MS, SubagentQueue } from '../subagent-queue'
+import { MAX_QUEUED_PER_PARENT, SubagentQueue } from '../subagent-queue'
 
 /** 假注册表:childRunId → parentRunId,只装「还在跑的」 */
 class World implements Occupancy {
@@ -199,14 +199,13 @@ describe('SubagentQueue', () => {
     expect(next.positions).toHaveLength(1)
   })
 
-  it('等太久就退回拒绝,让模型有出路', async () => {
+  it('排队没有时间上限:前面的跑半小时,后面的就等半小时', async () => {
     const p = fakeParent('p')
     await dispatch(p, { id: 'a' }).slot
-    const { slot } = dispatch(p)
+    dispatch(p)
 
-    await vi.advanceTimersByTimeAsync(QUEUE_MAX_WAIT_MS)
-    expect(await slot).toEqual({ ok: false, reason: 'timeout' })
-    expect(queue.size).toBe(0)
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(queue.size).toBe(1)
   })
 
   it('排队的太多就拒,不让模型一口气堆上百个', async () => {

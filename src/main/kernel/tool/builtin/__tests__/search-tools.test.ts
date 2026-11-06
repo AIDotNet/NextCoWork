@@ -5,8 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nodeHost } from '../../../host'
 import { EnvironmentError } from '../../../../environment/errors'
 import type { ToolContext } from '../../registry'
+import { defaultSkip } from '../ignore'
 import { redosRisk } from '../redos'
-import { globTool, grepTool } from '../search'
+import { setGrepBackendsForTest } from '../grep-native'
+import { globTool, grepTool, SEARCH_LIMITS } from '../search'
+import { walk } from '../walk'
 
 /**
  * `Glob` / `Grep` 的真 IO 测试。
@@ -332,6 +335,76 @@ describe('Grep · 过滤与选项', () => {
   })
 })
 
+// ────────────────────────────── Grep · 并发扫描 ──────────────────────────────
+
+/**
+ * 文件是并发在搜的,但输出必须和串行时逐字节一致 —— 同一次搜索跑两遍顺序不同,
+ * 模型会以为仓库变了;撞上限时截在哪个文件也不能随「谁先读完」漂移。
+ */
+describe('Grep · 并发扫描', () => {
+  // JS 引擎自己的并发调度,原生后端关掉
+  beforeEach(() => { setGrepBackendsForTest([]) })
+  afterEach(() => { setGrepBackendsForTest(null) })
+
+  it('keeps traversal order and cuts at the match cap exactly where a serial scan would', async () => {
+    // 每个文件 10 条命中,40 个文件 → 上限 200 恰好落在第 20 个文件
+    for (let i = 0; i < 40; i++) put(`f${String(i).padStart(2, '0')}.txt`, 'hit\n'.repeat(10))
+    const listed = await walk({
+      fs: nodeHost().fs, root, signal: new AbortController().signal, now: () => Date.now(), skip: defaultSkip
+    })
+    const expected = listed.entries.filter((e) => !e.isDir).slice(0, 20).map((e) => `${e.rel}:10`)
+
+    for (let run = 0; run < 3; run++) {
+      const r = await grepTool.execute({ pattern: 'hit', output_mode: 'count' }, ctx())
+      expect(r.output.content.split('\n\n')[0]?.split('\n')).toEqual(expected)
+      expect(r.output.content).toContain('match cap')
+    }
+  })
+
+  it('reports line numbers that agree with split-by-newline, including the last line without a newline', async () => {
+    put('a.txt', 'x\nneedle one\n\nneedle two')
+    const r = await grepTool.execute({ pattern: 'needle', output_mode: 'content', '-n': true }, ctx())
+    expect(r.output.content.split('\n')).toEqual(['a.txt:2:needle one', '--', 'a.txt:4:needle two'])
+  })
+
+  it('still finds a hit at the end of a file larger than the single-read threshold', async () => {
+    put('big.txt', `${'filler line\n'.repeat(40_000)}needleAtTheEnd\n`)
+    const r = await grepTool.execute({ pattern: 'needleAtTheEnd', output_mode: 'content', '-n': true }, ctx())
+    expect(r.output.content).toBe('big.txt:40001:needleAtTheEnd')
+  })
+
+  it('skips a large file whose first bytes contain NUL', async () => {
+    writeFileSync(join(root, 'big.bin'), Buffer.concat([Buffer.from([0]), Buffer.from('needle\n'.repeat(60_000))]))
+    put('a.ts', 'needle\n')
+    const r = await grepTool.execute({ pattern: 'needle' }, ctx())
+    expect(r.output.content.split('\n')).toEqual(['a.ts'])
+  })
+
+  it('stops claiming files once a remote failure happens mid-scan, and surfaces it', async () => {
+    for (let i = 0; i < 60; i++) put(`f${String(i)}.txt`, 'needle\n')
+    const host = nodeHost()
+    let statCalls = 0
+    const remoteHost = {
+      ...host,
+      remote: true,
+      fs: {
+        ...host.fs,
+        stat: async (abs: string) => {
+          // 第 1 次是 run() 对搜索根本身的 stat;之后第 5 次起模拟断线
+          if (++statCalls > 5) throw new EnvironmentError('disconnected')
+          return host.fs.stat(abs)
+        }
+      }
+    }
+    const r = await grepTool.execute({ pattern: 'needle' }, ctx({ host: remoteHost }))
+    expect(r.isError).toBe(true)
+    expect(r.output.content).toContain('disconnected')
+    // 给「后台还在跑的 worker」留出时间:没停手的话它们会继续把剩下的文件 stat 完
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(statCalls).toBeLessThanOrEqual(1 + SEARCH_LIMITS.GREP_CONCURRENCY)
+  })
+})
+
 // ────────────────────────────── ReDoS ──────────────────────────────
 
 /**
@@ -342,6 +415,10 @@ describe('Grep · 过滤与选项', () => {
  * 谁把 `redos.ts` 那道筛查去掉,这里会直接超时,而不是给出一个错误答案。
  */
 describe('★ Grep · 灾难性回溯', () => {
+  // 静态筛查只挡 JS 这条路 —— 原生程序在独立进程里,卡住了由 spawn 超时整树杀掉
+  beforeEach(() => { setGrepBackendsForTest([]) })
+  afterEach(() => { setGrepBackendsForTest(null) })
+
   const EVIL: string[] = ['(a+)+$', '^(a+)+$', '(\\s*\\w+)*$', '(a{2,})+$', '((a+)b)+$']
 
   it('嵌套无界量词被静态筛查拦下', () => {

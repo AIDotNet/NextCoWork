@@ -3,7 +3,8 @@ import type { ContentPart } from '../../shared/agent/message'
 import type { RunRequest } from '../../shared/agent/run-request'
 import { nextScheduledOccurrence, SCHEDULED_PERMISSION_MODE, type ScheduledRun, type ScheduledTask } from '../../shared/domain/scheduled'
 import { ulid } from '../../shared/util/id'
-import { runAgent } from '../runtime'
+import { getRouter, runAgent } from '../runtime'
+import { normalizeModelThinkingLevel } from '../../shared/domain/model-runtime'
 import { runs } from '../kernel/run-registry'
 import { store } from '../state/store'
 import { windows } from '../window/registry'
@@ -12,6 +13,7 @@ import { toAgentError } from '../ipc/errors'
 let timer: NodeJS.Timeout | null = null
 let stopped = true
 const runningTasks = new Set<string>()
+const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 function emit(kind: 'task' | 'run', taskId?: string, runId?: string, status?: ScheduledRun['status']): void {
   windows.emitToAll('scheduled:changed', { kind, ...(taskId === undefined ? {} : { taskId }), ...(runId === undefined ? {} : { runId }), ...(status === undefined ? {} : { status }) })
@@ -23,7 +25,9 @@ function reschedule(): void {
   if (stopped) return
   const next = store.listScheduledTasks().filter((task) => task.enabled && task.nextRunAt !== null).sort((a, b) => (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity))[0]
   if (next === undefined || next.nextRunAt === null) return
-  timer = setTimeout(() => { void tick(false) }, Math.max(0, next.nextRunAt - Date.now()))
+  // Node 对超过有符号 32 位的延迟会改成 1ms；分段唤醒后仍由 tick 判断是否到期。
+  const delay = Math.min(MAX_TIMER_DELAY_MS, Math.max(0, next.nextRunAt - Date.now()))
+  timer = setTimeout(() => { void tick(false) }, delay)
 }
 
 async function tick(reconcileOnly: boolean): Promise<void> {
@@ -74,7 +78,9 @@ async function execute(task: ScheduledTask, scheduledAt: number, trigger: 'sched
   try {
     const workspace = store.getWorkspace(task.workspaceId)
     if (workspace === undefined) throw new Error('scheduled.workspaceUnavailable')
-    const session = store.createSession({ id: sessionId, workspaceId: task.workspaceId, title: task.name, origin: 'scheduled', model: task.model, modelProviderId: task.modelProviderId, mode: workspace.settings.defaultMode, thinking: workspace.settings.defaultThinking, rootPathAtCreation: workspace.rootPath })
+    const model = getRouter().resolveModel(task.model, task.modelProviderId)
+    const thinking = normalizeModelThinkingLevel(workspace.settings.defaultThinking, model)
+    const session = store.createSession({ id: sessionId, workspaceId: task.workspaceId, title: task.name, origin: 'scheduled', model: task.model, modelProviderId: task.modelProviderId, mode: workspace.settings.defaultMode, thinking, rootPathAtCreation: workspace.rootPath })
     void session
     const startedAt = Date.now()
     const runningRun = store.putScheduledRun({ ...run, status: 'running', startedAt })
@@ -82,7 +88,7 @@ async function execute(task: ScheduledTask, scheduledAt: number, trigger: 'sched
     const request: RunRequest = {
       runId, sessionId, workspaceId: task.workspaceId, depth: 0,
       input: [{ type: 'text', text: task.prompt }], mode: workspace.settings.defaultMode,
-      thinking: workspace.settings.defaultThinking, webSearch: workspace.settings.webSearch,
+      thinking, webSearch: workspace.settings.webSearch,
       // 定时任务没有输入框,唯一档位来源就是工作区默认值 —— 漏了这行,用户开了
       // 「最大上下文」但半夜的任务仍按 272K 压缩,且无处可查。
       maxContext: workspace.settings.maxContext === true,
@@ -90,7 +96,9 @@ async function execute(task: ScheduledTask, scheduledAt: number, trigger: 'sched
       skillIds: workspace.settings.activeSkillIds, skillSelectionMode: workspace.settings.skillSelectionMode
     }
     const handle = runs.create(request)
+    const release = runs.retainSessionForRun(handle)
     try { await runAgent(handle, request) } catch (error) { handle.finish('error', toAgentError(error)) }
+    finally { release() }
     // `runAgent` is expected to resolve only after AgentSession has finished.
     // Keep the scheduler from leaving a durable row stuck in `running` if a
     // future driver violates that contract.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SshConnectionProfile } from '../../../shared/domain/environment'
 import { POSIX_PROBE, powershellQuote, remoteCommand, remoteExecutable, remoteProcessRequest, shellQuote, sshTargetArgs } from '../ssh/command'
-import { sshProcessEnvironment } from '../ssh/transport'
+import { sshExecutableCandidates, sshProcessEnvironment } from '../ssh/transport'
 
 const profile: SshConnectionProfile = { id: 'test', kind: 'ssh', name: 'test', enabled: true, platform: 'auto', revision: 1,
   createdAt: 0, updatedAt: 0, target: { kind: 'config', host: 'my-alias' } }
@@ -13,10 +13,16 @@ describe('native SSH command construction', () => {
     expect(environment).toEqual({ PATH: '/usr/bin', HOME: '/home/user', SSH_AUTH_SOCK: '/agent', SSH_ASKPASS: '/app/helper', NCW_SSH_AUTH_SECRET: '/tmp/ncw/token' })
   })
 
-  /** overrides 也要过 deny：调用方不该有能力把 NODE_OPTIONS 塞进 ssh 子进程。 */
+  /**
+   * overrides 也要过 deny：调用方不该有能力把 NODE_OPTIONS 塞进 ssh 子进程。
+   *
+   * ★ `ELECTRON_RUN_AS_NODE` 是这条规则上**唯一**的例外,而且只对 overrides 开:
+   * Windows 的 askpass helper 靠它让同一个 exe 以 node 形态启动(那边 SSH_ASKPASS
+   * 只能是 exe,没有 `sh` 可以包一层)。从继承环境里来的那份照样丢掉 —— 见上一条用例。
+   */
   it('refuses Node injection flags even when a caller passes them as overrides', () => {
     const environment = sshProcessEnvironment({ NODE_OPTIONS: '--require=bad', ELECTRON_RUN_AS_NODE: '1' }, { PATH: '/usr/bin' })
-    expect(environment).toEqual({ PATH: '/usr/bin' })
+    expect(environment).toEqual({ PATH: '/usr/bin', ELECTRON_RUN_AS_NODE: '1' })
   })
 
   /**
@@ -53,6 +59,19 @@ describe('native SSH command construction', () => {
   it('matches Windows variables case-insensitively and keeps the system spelling', () => {
     const environment = sshProcessEnvironment({}, { SYSTEMROOT: 'C:\\Windows', ProgramFiles: 'C:\\Program Files', username: 'token' })
     expect(environment).toEqual({ SYSTEMROOT: 'C:\\Windows', ProgramFiles: 'C:\\Program Files', username: 'token' })
+  })
+
+  /**
+   * Windows 上支持 ControlMaster 的 ssh 必须排在系统自带的前面。
+   * 系统自带的一开 ControlMaster 就是 `getsockname failed: Not a socket`,
+   * 排反了的话,装了 Git 的机器也会退回去每条命令重新认证。
+   */
+  it('prefers a multiplexing ssh over the Windows built-in client', () => {
+    if (process.platform !== 'win32') return
+    const candidates = sshExecutableCandidates()
+    const git = candidates.findIndex((path) => path.toLowerCase().includes('\\git\\usr\\bin\\ssh.exe'))
+    const builtin = candidates.findIndex((path) => path.toLowerCase().includes('\\windows\\system32\\openssh\\'))
+    if (git >= 0 && builtin >= 0) expect(git).toBeLessThan(builtin)
   })
 
   it('passes the original alias and config file to OpenSSH', () => {

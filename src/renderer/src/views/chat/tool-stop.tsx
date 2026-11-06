@@ -1,5 +1,5 @@
 /**
- * 「停掉这一次工具调用」这个动作的传递口。
+ * 「停掉这一次工具调用」「把这一次工具调用转去后台」这两个动作的传递口。
  *
  * ★ 为什么是 context 而不是一路往下传 prop(同 `subagent-open.tsx` 的理由):
  * 卡片挂在 `Thread → AssistantTurn → ToolTimeline → ToolGroup → ToolCallCard` 的底部,
@@ -13,13 +13,32 @@
 import { createContext, useContext, type ReactNode } from 'react'
 
 export type StopToolCall = (callId: string) => void
+export type BackgroundToolCall = (callId: string) => void
 
 const ToolStopContext = createContext<StopToolCall | undefined>(undefined)
+const ToolBackgroundContext = createContext<BackgroundToolCall | undefined>(undefined)
 
-export function ToolStopProvider({ stop, children }: { stop: StopToolCall | undefined; children: ReactNode }): ReactNode {
-  return <ToolStopContext.Provider value={stop}>{children}</ToolStopContext.Provider>
+export function ToolStopProvider({
+  stop,
+  background,
+  children
+}: {
+  stop: StopToolCall | undefined
+  /** 缺省 = 这里转不了后台,卡片不画那颗按钮(同 `stop` 的理由) */
+  background?: BackgroundToolCall | undefined
+  children: ReactNode
+}): ReactNode {
+  return (
+    <ToolStopContext.Provider value={stop}>
+      <ToolBackgroundContext.Provider value={background}>{children}</ToolBackgroundContext.Provider>
+    </ToolStopContext.Provider>
+  )
 }
 
 export function useStopToolCall(): StopToolCall | undefined {
   return useContext(ToolStopContext)
+}
+
+export function useBackgroundToolCall(): BackgroundToolCall | undefined {
+  return useContext(ToolBackgroundContext)
 }

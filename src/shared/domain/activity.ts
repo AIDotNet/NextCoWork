@@ -236,6 +236,6 @@ function lastSettled(transcript: TranscriptState): ToolCallState | undefined {
 }
 
 function contextOf(transcript: TranscriptState): ActivitySnapshot['context'] {
-  if (transcript.contextStatus?.phase === 'preparing') return 'compacting'
+  if (transcript.contextStatus?.phase === 'compacting') return 'compacting'
   return transcript.contextUsage?.shouldCompact === true ? 'tight' : 'ok'
 }

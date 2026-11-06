@@ -2,7 +2,60 @@ import type { BuiltinModelRecord } from '../types'
 import { model, textCapabilities, visionCapabilities, imageCapabilities, videoCapabilities, effortThinking, efforts, openAiModernEfforts, openAiAstraEfforts } from '../helpers'
 
 export const OPENAI: readonly BuiltinModelRecord[] = [
+  /*
+   * 需求:2026-09-29 用户点名收录 gpt-6.1-sol。窗口 / 最大输出 / effort 集合这次
+   * 有**一手依据**(官方 model 页当日核对):1,050,000 / 128,000 /
+   * reasoning.effort = low|medium(默认)|high|xhigh|max,不支持 none / minimal
+   * —— 与 openAiAstraEfforts 逐值相同。不满足会怎样见下面 gpt-6-sol 那条注释。
+   * 费率录在 `pricing-seed.ts` 的 OpenAI 段。
+   */
+  model('openai', 'gpt-6.1-sol', 'GPT-6.1 Sol', {
+    capabilities: visionCapabilities({
+      thinking: true,
+      webSearch: true,
+      batch: true,
+    }),
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    thinkingConfig: effortThinking('reasoning.effort'),
+    reasoningEfforts: openAiAstraEfforts,
+    source: { url: 'https://developers.openai.com/api/docs/models/gpt-6.1-sol', fetchedAt: '2026-09-29' },
+    verificationStatus: 'official-api',
+  }),
   model('openai', 'gpt-6-astra', 'GPT-6 Astra', {
+    capabilities: visionCapabilities({
+      thinking: true,
+      webSearch: true,
+      batch: true,
+    }),
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    thinkingConfig: effortThinking('reasoning.effort'),
+    reasoningEfforts: openAiAstraEfforts,
+    verificationStatus: 'official-api',
+  }),
+  /*
+   * 需求:2026-09-23 收录 GPT-6 的两个平价型号,id 与费率来自官方 pricing 页
+   * (用户提供的截图,费率录在 `pricing-seed.ts` 的 OpenAI 段)。
+   * ★ 窗口 / 最大输出 / effort 集合**没有一手依据**,是按同代 gpt-6-astra 推的 ——
+   * 同族同代是本仓库既有的推法(Anthropic 段的 id 也是这么推的)。
+   * 不满足会怎样:effort 集合里出现上游不认的取值,表现为一次可读的 400;
+   * 窗口推大了才会静默(上游 400 由 `validateModelRuntime` 兜,不是无声失败),
+   * 所以真要改这两项,先拿官方 model 页来核,别照本文件其他行「对齐」。
+   */
+  model('openai', 'gpt-6-sol', 'GPT-6 Sol', {
+    capabilities: visionCapabilities({
+      thinking: true,
+      webSearch: true,
+      batch: true,
+    }),
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    thinkingConfig: effortThinking('reasoning.effort'),
+    reasoningEfforts: openAiAstraEfforts,
+    verificationStatus: 'official-api',
+  }),
+  model('openai', 'gpt-6-luna', 'GPT-6 Luna', {
     capabilities: visionCapabilities({
       thinking: true,
       webSearch: true,
@@ -267,6 +320,37 @@ export const OPENAI: readonly BuiltinModelRecord[] = [
 ]
 
 export const OPENAI_MEDIA: readonly BuiltinModelRecord[] = [
+  /*
+   * 需求:把 GPT-Image-2.5 世代补进目录(2026-09-25 从官方模型页核对)。
+   * 没有这两行的症状:「模型管理」里查不到它们,登录/拉列表拿到这两个 ID 时
+   * `model-binding` 目录落空 —— modality 保持 text、imageOutput 保持 false,
+   * 于是它们既不出现在「图片生成」页,也不会被识别成生图模型。
+   *
+   * ★ 两款只走 `v1/images/generations` 与 `v1/images/edits`,**chat/completions
+   * 与 responses 都是 Not supported**(官方 Endpoints 表)—— 目录不记协议,
+   * 发错端点的表现是上游一句 404/405,读不出和「这模型不走对话端点」的关系。
+   * ★ 计价按 token(图输出 $30/1M),不是按张;`pricingModelId` 沿用 id。
+   */
+  model('openai', 'gpt-image-2.5-sunburst', 'GPT Image 2.5 Sunburst', {
+    modality: 'image',
+    capabilities: imageCapabilities({
+      vision: true,
+      visionInput: true,
+      fileInput: true,
+    }),
+    source: { url: 'https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst', fetchedAt: '2026-09-25' },
+    verificationStatus: 'official-api',
+  }),
+  model('openai', 'gpt-image-2.5-flare', 'GPT Image 2.5 Flare', {
+    modality: 'image',
+    capabilities: imageCapabilities({
+      vision: true,
+      visionInput: true,
+      fileInput: true,
+    }),
+    source: { url: 'https://developers.openai.com/api/docs/models/gpt-image-2.5-flare', fetchedAt: '2026-09-25' },
+    verificationStatus: 'official-api',
+  }),
   model('openai', 'gpt-image-2', 'GPT Image 2', {
     modality: 'image',
     capabilities: imageCapabilities({

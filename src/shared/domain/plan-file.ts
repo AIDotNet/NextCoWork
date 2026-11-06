@@ -1,4 +1,5 @@
-export const PLAN_FILE_MAX_BYTES = 64 * 1024
+// Bound full-file reads for plan review and execution without blocking detailed plans.
+export const PLAN_FILE_MAX_BYTES = 1024 * 1024
 
 export type PlanApprovalAction =
   | 'approve_current'

@@ -53,7 +53,13 @@ export interface WorkspaceEnvironment extends WorkspaceHost {
    *   远程实现忽略这个字段：kill 走 SSH channel，没有本地进程组这回事。
    */
   openProcess(command: string, args: readonly string[], options: { cwd: string; env?: Record<string, string>; detached?: boolean; windowsVerbatimArguments?: boolean }): Promise<EnvironmentProcess>
-  openTerminal(options: { cwd: string; cols: number; rows: number }): Promise<TerminalDriver>
+  /**
+   * `env` 是**额外注入**的环境变量(`tabs.openTerminal` 的启动 spec 带来的,
+   * 见 `main/terminal-host.ts` 的 launchSpecs),合在实现自己的默认 env 之后
+   * —— 插件值赢过默认值。远程实现可以忽略它:一期插件终端仅本地
+   * (远程拒绝在 `ipc/plugins.ts` 的 launchTerminal 里做,这里忽略只是兜底)。
+   */
+  openTerminal(options: { cwd: string; cols: number; rows: number; env?: Record<string, string> }): Promise<TerminalDriver>
   openTcp?(hostname: string, port: number): Promise<Socket>
 }
 

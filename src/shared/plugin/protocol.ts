@@ -24,6 +24,36 @@
  * 插件作者拼错一个方法名会收到一条完全误导的错误。
  */
 import type { PluginPermission } from './permission'
+import type { DocumentApplyResult, DocumentCapabilities, DocumentFormat, DocumentOperation, DocumentQuery } from '../document-engine/protocol'
+import type { DocumentSessionSnapshot } from '../document-engine/session'
+
+/** 需求：callId 只是查找受信工具上下文的索引，插件不能直接指定 workspaceId。 */
+type DocumentSessionParams = { sessionId: string; callId?: string }
+
+/**
+ * 每次调用可选的**工作区作用域凭据**。工作区类方法(`workspace.*` / `process.*` /
+ * `scm.*` / `storage.*`)都可以带上它。
+ *
+ * ## 它解决什么
+ *
+ * Agent 在后台工作区跑一个工具(`ctx.workspaceId = A`),而用户此刻正看着 B。
+ * 此前这类 RPC 一律按「当前聚焦的工作区」定位,于是插件给 A 画的图**写进了 B**,
+ * 而用户看到的是「我明明在 A 里点的新建」。这条凭据让那次调用绑定在**产生它的
+ * 那次工具调用**的工作区上 —— 与 `documents.*` 的 callId 是同一套东西。
+ *
+ * ## ★ 它不能用来指定任意工作区
+ *
+ * 值必须是**本插件正在跑**的一次工具调用的 callId(宿主核对主人、存活、
+ * 以及那次调用有没有本地工作区)。插件填一个不存在的 callId 只会收到一条
+ * `rejected` / `invalid_argument`,**不会**回退到当前聚焦的工作区。
+ *
+ * ## 不给也能工作
+ *
+ * 没有 callId 时:本插件**恰好一次**工具调用在跑 → 按那一次推断(安全:插件
+ * 无从选择);**多次**在跑 → 拒绝,不随机挑一个。没有任何工具调用在跑(菜单、
+ * 命令面板、视图里的 UI 代码)→ 仍按「发起时的工作区」语义,与旧行为一致。
+ */
+export type PluginScopeParam = { callId?: string }
 
 // ─────────────────────────── 方法表 ───────────────────────────
 
@@ -56,25 +86,25 @@ export interface PluginMethodMap {
   'permissions.request': { params: { permissions: PluginPermission[]; reasonKey: string }; result: { granted: boolean } }
   'permissions.remove': { params: { permissions: PluginPermission[] }; result: Record<string, never> }
 
-  // storage —— 独立 kv,单插件配额
-  'storage.get': { params: { scope: 'global' | 'workspace'; key: string }; result: { value: string | null } }
-  'storage.set': { params: { scope: 'global' | 'workspace'; key: string; value: string | null }; result: Record<string, never> }
-  'storage.keys': { params: { scope: 'global' | 'workspace' }; result: { keys: string[] } }
+  // storage —— 独立 kv,单插件配额。`scope: 'workspace'` 的键按调用作用域的工作区分桶
+  'storage.get': { params: PluginScopeParam & { scope: 'global' | 'workspace'; key: string }; result: { value: string | null } }
+  'storage.set': { params: PluginScopeParam & { scope: 'global' | 'workspace'; key: string; value: string | null }; result: Record<string, never> }
+  'storage.keys': { params: PluginScopeParam & { scope: 'global' | 'workspace' }; result: { keys: string[] } }
 
   // secrets —— 程序主密钥加密,key 强制前缀
   'secrets.get': { params: { key: string }; result: { value: string | null } }
   'secrets.set': { params: { key: string; value: string | null }; result: Record<string, never> }
 
-  // workspace —— 全部限在工作区根内,过 path-guard
-  'workspace.folders': { params: Record<string, never>; result: { folders: { id: string; name: string; path: string }[] } }
-  'workspace.readFile': { params: { path: string; encoding?: 'utf8' | 'base64' }; result: { data: string; revision: number } }
-  'workspace.writeFile': { params: { path: string; data: string; encoding?: 'utf8' | 'base64'; revision?: number }; result: { revision: number } }
-  'workspace.deleteFile': { params: { path: string }; result: Record<string, never> }
-  'workspace.stat': { params: { path: string }; result: { kind: 'file' | 'dir' | 'missing'; size: number; mtimeMs: number } }
-  'workspace.findFiles': { params: { glob: string; limit?: number }; result: { paths: string[] } }
+  // workspace —— 全部限在工作区根内,过 path-guard。可选 callId 把作用域钉在产生它的那次工具调用上
+  'workspace.folders': { params: PluginScopeParam; result: { folders: { id: string; name: string; path: string }[] } }
+  'workspace.readFile': { params: PluginScopeParam & { path: string; encoding?: 'utf8' | 'base64' }; result: { data: string; revision: number } }
+  'workspace.writeFile': { params: PluginScopeParam & { path: string; data: string; encoding?: 'utf8' | 'base64'; revision?: number }; result: { revision: number } }
+  'workspace.deleteFile': { params: PluginScopeParam & { path: string }; result: Record<string, never> }
+  'workspace.stat': { params: PluginScopeParam & { path: string }; result: { kind: 'file' | 'dir' | 'missing'; size: number; mtimeMs: number } }
+  'workspace.findFiles': { params: PluginScopeParam & { glob: string; limit?: number }; result: { paths: string[] } }
 
   // process —— 非交互,argv[0] 查白名单,走权限链
-  'process.exec': { params: { command: string; args: string[]; cwd?: string; timeoutMs?: number }; result: { code: number; stdout: string; stderr: string } }
+  'process.exec': { params: PluginScopeParam & { command: string; args: string[]; cwd?: string; timeoutMs?: number }; result: { code: number; stdout: string; stderr: string } }
   /**
    * 流式跑一条命令 —— 输出经 `kind: 'event'` 边跑边推,而不是等它结束。
    *
@@ -84,14 +114,22 @@ export interface PluginMethodMap {
    * ★ **审批只在 start 时问一次**(同 `process.exec`),不逐 chunk 问 ——
    * 逐 chunk 问的结果是用户为了一条命令点二十次「允许」。
    */
-  'process.execStream': { params: { command: string; args: string[]; cwd?: string; timeoutMs?: number }; result: { execId: string } }
+  'process.execStream': { params: PluginScopeParam & { command: string; args: string[]; cwd?: string; timeoutMs?: number }; result: { execId: string } }
   'process.execAbort': { params: { execId: string }; result: Record<string, never> }
 
-  // net —— 逐 URL 匹配 hostPermissions,response 剥成数据
-  'net.fetch': { params: { url: string; method?: string; headers?: Record<string, string>; body?: string }; result: { status: number; headers: Record<string, string>; body: string } }
+  /*
+    net —— 逐 URL 匹配 hostPermissions,response 剥成数据。
+
+    ★ 这里的 `callId` **不是**工作区作用域(net.fetch 与工作区无关,作用域是
+    `hostPermissions`),而是**取消凭据**:带上产生这次调用的工具调用的 callId,
+    宿主就把宿主的 `ToolContext.signal` 接给这次请求 —— 用户点停止时,已经发出去
+    的请求立刻断,而不只是「阻止下一次调用」。携带与作用域同一个 `PluginScopeParam`,
+    是为了让「哪些方法认 callId」在我们这边只有一套形状。
+  */
+  'net.fetch': { params: PluginScopeParam & { url: string; method?: string; headers?: Record<string, string>; body?: string }; result: { status: number; headers: Record<string, string>; body: string } }
 
   // scm —— 读类要 scm.read;写类要 scm.write,并且走既有审批链(isMutatingPermission)
-  'scm.status': { params: Record<string, never>; result: { branch: string; staged: string[]; unstaged: string[] } }
+  'scm.status': { params: PluginScopeParam; result: { branch: string; staged: string[]; unstaged: string[] } }
   /**
    * 一个文件的 diff。
    *
@@ -99,14 +137,14 @@ export interface PluginMethodMap {
    * 无上限的输出,而「哪些文件变了」`scm.status` 已经回答了。这条也因此能原样
    * 落在 `ipc/git.ts` 的 `getGitDiff` 上(含未跟踪文件那条支线),不必另起一套。
    */
-  'scm.diff': { params: { path: string; staged?: boolean }; result: { diff: string; binary: boolean; truncated: boolean } }
-  'scm.log': { params: { limit?: number }; result: { commits: { hash: string; subject: string; author: string; at: number }[] } }
-  'scm.branches': { params: Record<string, never>; result: { current: string; branches: string[] } }
-  'scm.stage': { params: { paths: string[] }; result: Record<string, never> }
-  'scm.commit': { params: { message: string }; result: { hash: string } }
+  'scm.diff': { params: PluginScopeParam & { path: string; staged?: boolean }; result: { diff: string; binary: boolean; truncated: boolean } }
+  'scm.log': { params: PluginScopeParam & { limit?: number }; result: { commits: { hash: string; subject: string; author: string; at: number }[] } }
+  'scm.branches': { params: PluginScopeParam; result: { current: string; branches: string[] } }
+  'scm.stage': { params: PluginScopeParam & { paths: string[] }; result: Record<string, never> }
+  'scm.commit': { params: PluginScopeParam & { message: string }; result: { hash: string } }
   /** `checkout: true` = 建完就切过去(`git switch -c`)。 */
-  'scm.createBranch': { params: { name: string; checkout?: boolean }; result: Record<string, never> }
-  'scm.checkout': { params: { name: string }; result: Record<string, never> }
+  'scm.createBranch': { params: PluginScopeParam & { name: string; checkout?: boolean }; result: Record<string, never> }
+  'scm.checkout': { params: PluginScopeParam & { name: string }; result: Record<string, never> }
   /*
     ★ **没有 push / pull。** 它们会把本机凭据用到远端,而失败形态(冲突、鉴权、
     远端 hook 拒绝)不是一条 RPC 的返回值能如实回答的 —— 插件只看到「失败了」,
@@ -128,6 +166,33 @@ export interface PluginMethodMap {
    * 「B 站插件」可以在应用内打开任何网站,而用户在安装界面上看到的域名只有 B 站。
    */
   'tabs.openBrowser': { params: { url: string; open?: 'tab' | 'feature' | 'right' }; result: { opened: boolean } }
+  /**
+   * 在**当前工作区根目录**开一个终端 Tab,并在里面启动插件指定的命令。
+   *
+   * 需求:claude-code / codex 这类 CLI 插件的落点 —— 「点一下菜单,工作区里
+   * 起一个带着我的配置的交互式 CLI」。`process.exec` 是一次性取回输出的,
+   * 给不了交互式 TTY,所以这是另一条方法,而不是一个参数。
+   *
+   * ★ 能力 `process` + 参数门(`capabilities.ts` 的 `narrowCommand`,argv[0]
+   * 必须命中清单 `allowedCommands`)两道都要过,与 `process.exec` 同一套白名单
+   * —— 放行到交互式终端的命令不会比一次性执行更宽松。`env` 的键数与单值长度
+   * 有上限(防借环境变量夹带),`cwd` **不接受插件指定**:恒为工作区根,
+   * 由宿主解析。「cwd 想指哪就指哪」等于绕过工作区边界。
+   *
+   * ★ 一期仅本地工作区:远程环境返回 `{ opened: false, reason: 'remote' }`,
+   * env 无法直接注入远程 pty(见 `main/terminal-host.ts` 的 launchSpecs)。
+   */
+  'tabs.openTerminal': {
+    params: {
+      workspaceId: string
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+      /** `%key%` 形式的 l10n key 片段,渲染层拼 `plugin.<id>.<key>` 后作为 Tab 标题 */
+      title?: string
+    }
+    result: { opened: boolean; reason?: 'remote' | 'declined' }
+  }
   /*
     ★ **没有 `tabs.openView`。** `contributes.views` 里 location 为 sidebar/panel 的
     视图这一版还打不开,理由见 `shared/plugin/ui-request.ts` 里 `PluginTabTarget`:
@@ -212,6 +277,31 @@ export interface PluginMethodMap {
    * 后者就是「关 Tab 静默丢图」。
    */
   'customEditors.setDirty': { params: { documentId: string; path: string; dirty: boolean }; result: Record<string, never> }
+
+  // documents —— 类型描述调用契约，document-rpc 仍逐项校验运行时的不可信输入。
+  'documents.open': {
+    params: { path: string; engine?: string; callId?: string }
+    result: { sessionId: string; viewId: string; path: string; snapshot: DocumentSessionSnapshot; capabilities: DocumentCapabilities }
+  }
+  'documents.apply': {
+    params: DocumentSessionParams & { generation: number; modelRevision: number; operationId: string; operations: DocumentOperation[] }
+    result: DocumentApplyResult
+  }
+  'documents.save': { params: DocumentSessionParams; result: { snapshot: DocumentSessionSnapshot } }
+  'documents.export': {
+    params: DocumentSessionParams & { path: string; format: DocumentFormat; overwrite?: boolean }
+    result: { snapshot: DocumentSessionSnapshot; path: string }
+  }
+  'documents.getState': { params: DocumentSessionParams; result: DocumentSessionSnapshot }
+  'documents.query': {
+    params: DocumentSessionParams & { request: DocumentQuery }
+    result: { generation: number; modelRevision: number; result: unknown }
+  }
+  'documents.getOperation': {
+    params: DocumentSessionParams & { operationId: string }
+    result: { status: 'missing' } | { status: 'applied'; sessionId: string; result: DocumentApplyResult } | { status: 'rejected'; sessionId: string; code: string } | { status: 'unknown'; sessionId: string }
+  }
+  'documents.close': { params: DocumentSessionParams; result: { closed: boolean; dirty: boolean } }
 
   /**
    * 设置项 —— 用户在插件详情页里拨的那些开关。
@@ -312,6 +402,12 @@ export const PLUGIN_METHOD_PERMISSION = {
   */
   'tabs.openWebApp': null,
   'tabs.openBrowser': 'tabs.browser',
+  /*
+    ★ 与 `process.exec` 同一条能力、同一份 `allowedCommands` 白名单:能被开进
+    交互式终端的命令,没有理由比能一次性执行的更宽。两处门若各挂一份清单,
+    「exec 批了、terminal 没批」这类不一致迟早出现。
+  */
+  'tabs.openTerminal': 'process',
 
   'workspace.subscribeChanges': 'workspace.read',
   'workspace.unsubscribeChanges': 'workspace.read',
@@ -336,6 +432,16 @@ export const PLUGIN_METHOD_PERMISSION = {
 
   'customEditors.register': 'workspace.read',
   'customEditors.setDirty': null,
+
+  'documents.open': 'workspace.read',
+  'documents.apply': 'workspace.write',
+  'documents.save': 'workspace.write',
+  'documents.export': 'workspace.write',
+  'documents.getState': 'workspace.read',
+  'documents.query': 'workspace.read',
+  'documents.getOperation': 'workspace.read',
+  'documents.close': 'workspace.read',
+
   /*
     读能力就够:它打开的是一个**只读到文件内容**的编辑器视图。
     真正的写发生在视图保存时,那条路由渲染层按 Tab 绑定的文件代发,

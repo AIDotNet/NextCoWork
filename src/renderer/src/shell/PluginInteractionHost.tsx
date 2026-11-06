@@ -20,7 +20,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { PluginInteractionRequest } from '../../../shared/plugin/ui-request'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Dialog } from '../components/ui/Dialog'
 import { useI18n, type TranslationKey } from '../i18n'
 import { on } from '../services/ipc'
@@ -84,9 +84,10 @@ export function PluginInteractionHost(): ReactNode {
       footer={
         current.request.kind === 'quickPick' ? undefined : (
           <>
-            <Button variant="ghost" onClick={cancel}>{t('pluginAsk.cancel')}</Button>
+            <Button type="button" variant="secondary" onClick={cancel}>{t('pluginAsk.cancel')}</Button>
             <Button
-              variant={current.request.kind === 'confirm' && current.request.danger === true ? 'danger' : 'accent'}
+              type="button"
+              variant={current.request.kind === 'confirm' && current.request.danger === true ? 'danger' : 'primary'}
               onClick={() => { answer(current.request.kind === 'confirm' ? true : draft) }}
             >
               {current.request.kind === 'confirm' ? t('pluginAsk.confirm') : t('pluginAsk.submit')}

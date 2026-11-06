@@ -28,6 +28,11 @@ export const pluginUiZh = {
   */
   'pluginWebApp.featureFallback': '这个插件想开一个独立标签页,当前版本先在工作区里打开',
 
+  // ── Agent 插件工具目录（仅展示，不更改工具授权） ──
+  'pluginTools.list': '插件工具列表',
+  'pluginTools.back': '返回',
+  'pluginTools.hint': '已启用插件提供的 Agent 工具',
+
   // ── 插件要问你一句话 ──
   'pluginAsk.title': (p: Params): string => `${String(p.plugin)} 想问你`,
   'pluginAsk.confirm': '确定',
@@ -53,6 +58,10 @@ export const pluginUiEn = {
   'pluginWebApp.openedExternally': (p: Params): string =>
     `${String(p.url)} is outside the domains this plugin declared, so it opened in your system browser`,
   'pluginWebApp.featureFallback': 'This plugin asked for a standalone tab; for now it opens inside the workspace',
+
+  'pluginTools.list': 'Plugin tools',
+  'pluginTools.back': 'Back',
+  'pluginTools.hint': 'Agent tools from enabled plugins',
 
   'pluginAsk.title': (p: Params): string => `${String(p.plugin)} is asking`,
   'pluginAsk.confirm': 'Confirm',

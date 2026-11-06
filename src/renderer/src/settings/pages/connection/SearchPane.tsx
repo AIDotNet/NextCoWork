@@ -36,9 +36,9 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { SearchProviderStatus } from "../../../../../shared/domain/search";
 import { searchMeta } from "../../../../../shared/domain/search";
-import { Button } from "../../../components/ui/Button";
+import { Button } from "../../../components/arc/button/button";
 import { TextInput } from "../../../components/ui/TextInput";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { useI18n } from "../../../i18n";
 import { cn } from "../../../lib/cn";
 import { openExternal } from "../../../services/app";
@@ -249,44 +249,40 @@ function ProviderRow({
                       disabled={busy}
                     />
                   </div>
-                  <Button
-                    size="sm"
-                    variant="accent"
+                  <Button size="sm"
+                    type="button"
+                    variant="primary"
                     disabled={busy || draft.trim() === ""}
                     onClick={save}
                   >
                     {t("common.save")}
                   </Button>
                   {meta !== undefined && (
-                    <Button
-                      size="sm"
-                      icon={<ExternalLink size={12} />}
+                    <Button size="sm"
+                      type="button"
+                      variant="secondary"
                       onClick={() => void openExternal(meta.keyUrl)}
                     >
+                      <ExternalLink size={12} />
                       {t("connection.search.get")}
                     </Button>
                   )}
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5">
-                  <Button size="sm" onClick={() => setEditing(true)}>
+                  <Button size="sm" type="button" variant="secondary" onClick={() => setEditing(true)}>
                     {t("connection.search.replaceKey")}
                   </Button>
-                  <Button size="sm" onClick={onClearKey}>
+                  <Button size="sm" type="button" variant="secondary" onClick={onClearKey}>
                     {t("connection.search.clear")}
                   </Button>
-                  <Button
-                    size="sm"
-                    icon={
-                      busy ? (
-                        <Spinner size="xs" />
-                      ) : (
-                        <Search size={12} />
-                      )
-                    }
+                  <Button size="sm"
+                    type="button"
+                    variant="secondary"
                     disabled={busy}
                     onClick={test}
                   >
+                    {busy ? <Spinner size="xs" /> : <Search size={12} />}
                     {t("connection.search.test")}
                   </Button>
                   {tested !== null && (
@@ -301,11 +297,11 @@ function ProviderRow({
         </div>
 
         <div className="shrink-0 pt-0.5">
-          <Toggle
-            label={t("connection.search.enable", { name: meta?.name ?? id })}
+          <Switch
+            aria-label={t("connection.search.enable", { name: meta?.name ?? id })}
             checked={status.config.enabled}
             disabled={blocked !== undefined}
-            onChange={onToggle}
+            onCheckedChange={onToggle}
           />
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { IpcError, NotImplementedError, toAgentError } from '../errors'
+import { DatabaseBusyError } from '../../db'
 
 describe('toAgentError', () => {
   it('IpcError 的分类原样带过去', () => {
@@ -24,6 +25,10 @@ describe('toAgentError', () => {
       messageParams: { name: 'photo.png', limit: 32 },
       retryable: false
     })
+  })
+
+  it('异步事务占用数据库是可重试的冲突，不冒充未知故障', () => {
+    expect(toAgentError(new DatabaseBusyError())).toMatchObject({ code: 'conflict', retryable: true })
   })
 
   it('NotImplementedError 是 unknown,但消息指向实施顺序', () => {

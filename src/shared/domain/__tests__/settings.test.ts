@@ -81,7 +81,7 @@ describe('mergeSettings', () => {
       subagent: { globalLimit: 8 },
       proxy: { host: '127.0.0.1', port: 7890 }
     })
-    expect(s.subagent).toEqual({ model: '', perSessionLimit: 4, globalLimit: 8 })
+    expect(s.subagent).toEqual({ model: '', thinking: 'inherit', perSessionLimit: 4, globalLimit: 8 })
     // 只给了两段,另外六段是缺省值 —— 这一条钉的就是「兄弟属性还在」
     expect(s.proxy).toEqual({
       ...DEFAULT_PROXY,
@@ -114,6 +114,18 @@ describe('mergeSettings', () => {
  * 主题那两块单拎出来:它们是「主题」页上**紧挨着的两组控件**,
  * 而这一页正是最容易连点的一页(挑一张卡、再挑一个渲染方式、再重掷一次随机)。
  */
+describe('mergeSettings · 实验', () => {
+  it('老库里只存了 workflow 的,运行前确认按出厂值开着', () => {
+    const merged = mergeSettings(DEFAULT_SETTINGS, { experimental: { workflow: true } } as never)
+    expect(merged.experimental).toEqual({ workflow: true, workflowConfirm: true })
+  })
+
+  it('两项各改各的,互不覆盖', () => {
+    const off = mergeSettings(DEFAULT_SETTINGS, { experimental: { workflowConfirm: false } } as never)
+    expect(off.experimental).toEqual({ workflow: false, workflowConfirm: false })
+  })
+})
+
 describe('mergeSettings · 主题', () => {
   /**
    * ★ 这一条就是 `imageTheme.id` 写成可空**字段**、而不是把整块写成可空的理由。
@@ -274,6 +286,10 @@ describe('mergeSettings 的模型配对', () => {
     defaultModel: 'shared', defaultModelProviderId: 'codex',
     permissionReviewerModel: 'shared', permissionReviewerModelProviderId: 'codex',
     goalEvaluatorModel: 'shared', goalEvaluatorModelProviderId: 'codex',
+    compactModel: 'shared', compactModelProviderId: 'codex',
+    imageModel: 'shared', imageModelProviderId: 'codex',
+    completionModel: 'shared', completionModelProviderId: 'codex',
+    inlineCompletionModel: 'shared', inlineCompletionModelProviderId: 'codex',
     subagent: { ...base().subagent, model: 'shared', modelProviderId: 'codex' }
   })
 
@@ -291,6 +307,15 @@ describe('mergeSettings 的模型配对', () => {
     expect(next.subagent.perSessionLimit).toBe(DEFAULT_SETTINGS.subagent.perSessionLimit)
   })
 
+  it('思考档位:合法值落库,坏值退回当前值而不是默认值', () => {
+    let s = mergeSettings(base(), { subagent: { thinking: 'high' } })
+    expect(s.subagent.thinking).toBe('high')
+    // ★ 当前值是 'high'(上一步刚写的),不是 DEFAULT_SETTINGS 的 'inherit' ——
+    //   坏值要回落到「合并前那一刻」的值,而不是无条件重置成默认档。
+    s = mergeSettings(s, { subagent: { thinking: 'deep' as unknown as AppSettings['subagent']['thinking'] } })
+    expect(s.subagent.thinking).toBe('high')
+  })
+
   it('★ 审核模型同理', () => {
     const next = mergeSettings(pinned(), { permissionReviewerModel: 'other' })
     expect(next.permissionReviewerModel).toBe('other')
@@ -303,17 +328,79 @@ describe('mergeSettings 的模型配对', () => {
     expect(next.goalEvaluatorModelProviderId).toBeUndefined()
   })
 
+  it('★ 压缩模型同理 —— 只给别名时旧供应商被清掉', () => {
+    const next = mergeSettings(pinned(), { compactModel: 'other' })
+    expect(next.compactModel).toBe('other')
+    expect(next.compactModelProviderId).toBeUndefined()
+  })
+
+  it('★ 生图模型同理 —— 只给别名时旧供应商被清掉', () => {
+    const next = mergeSettings(pinned(), { imageModel: 'other' })
+    expect(next.imageModel).toBe('other')
+    expect(next.imageModelProviderId).toBeUndefined()
+  })
+
+  /**
+   * 生图开关:出厂开启(选了模型就是要生图);只认布尔,坏值退回当前值 ——
+   * 一个非布尔值落库后桥的 `=== true` 会把它静默读成「关」,症状又是「工具不见了」。
+   * 关掉开关不动所选模型:「要不要画」和「用谁画」是两件事。
+   */
+  it('生图开关:默认开启,只认布尔,坏值退回当前值,且不牵动所选模型', () => {
+    expect(DEFAULT_SETTINGS.imageGenerationEnabled).toBe(true)
+    let s = mergeSettings(pinned(), { imageGenerationEnabled: false })
+    expect(s.imageGenerationEnabled).toBe(false)
+    expect(s.imageModel).toBe('shared')
+    expect(s.imageModelProviderId).toBe('codex')
+    s = mergeSettings(s, { imageGenerationEnabled: 'yes' as unknown as boolean })
+    expect(s.imageGenerationEnabled).toBe(false)
+  })
+
+  /**
+   * 压缩档位和子代理那一栏同一条规则:坏值退回**当前值**。
+   * 静默改成 'inherit' 会让用户以为自己选的档位在生效,而账单在按另一档走。
+   */
+  it('压缩思考档位:合法值落库,坏值退回当前值', () => {
+    let s = mergeSettings(base(), { compactThinking: 'minimal' })
+    expect(s.compactThinking).toBe('minimal')
+    s = mergeSettings(s, { compactThinking: 'deep' as unknown as AppSettings['compactThinking'] })
+    expect(s.compactThinking).toBe('minimal')
+  })
+
+  it('★ 输入框补全的两个模型同理 —— 只给别名时旧供应商被清掉', () => {
+    let next = mergeSettings(pinned(), { completionModel: 'other' })
+    expect(next.completionModel).toBe('other')
+    expect(next.completionModelProviderId).toBeUndefined()
+    next = mergeSettings(pinned(), { inlineCompletionModel: '' })
+    expect(next.inlineCompletionModel).toBe('')
+    expect(next.inlineCompletionModelProviderId).toBeUndefined()
+  })
+
+  /**
+   * 三个补全开关:建议下一步与本地补全出厂开,打字续写出厂关(每次停顿都发一次请求);
+   * 只认布尔,坏值退回当前值。
+   */
+  it('补全开关:出厂值、只认布尔、坏值退回当前值', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ promptSuggestions: true, localCompletion: true, inlineCompletion: false, completionModel: '', inlineCompletionModel: '' })
+    let s = mergeSettings(base(), { promptSuggestions: false, inlineCompletion: true })
+    expect(s).toMatchObject({ promptSuggestions: false, inlineCompletion: true })
+    s = mergeSettings(s, { promptSuggestions: 'yes' as unknown as boolean, localCompletion: 0 as unknown as boolean })
+    expect(s).toMatchObject({ promptSuggestions: false, localCompletion: true })
+  })
+
   it('成对给出时两个都写进去', () => {
     const next = mergeSettings(pinned(), { defaultModel: 'other', defaultModelProviderId: 'routin' })
     expect(next).toMatchObject({ defaultModel: 'other', defaultModelProviderId: 'routin' })
   })
 
-  it('没提到模型的 patch 不动这四对', () => {
+  it('没提到模型的 patch 不动这五对', () => {
     const next = mergeSettings(pinned(), { theme: 'dark' })
     expect(next.defaultModelProviderId).toBe('codex')
     expect(next.subagent.modelProviderId).toBe('codex')
     expect(next.permissionReviewerModelProviderId).toBe('codex')
     expect(next.goalEvaluatorModelProviderId).toBe('codex')
+    expect(next.compactModelProviderId).toBe('codex')
+    expect(next.completionModelProviderId).toBe('codex')
+    expect(next.inlineCompletionModelProviderId).toBe('codex')
   })
 })
 
@@ -468,5 +555,29 @@ describe('resolveMaxOutputTokens', () => {
 
   it('查不到模型(无窗口)时原样下发设置值', () => {
     expect(resolveMaxOutputTokens(32_000, undefined)).toBe(32_000)
+  })
+})
+
+/** 文件树右键第一行「在 X 中打开」的 X。机器本地的选择,坏值保留当前值(同 shell)。 */
+describe('mergeSettings · 默认打开方式', () => {
+  it('旧设置里没有这一项时落回空串(= 自动)', () => {
+    const legacy = structuredClone(DEFAULT_SETTINGS) as Partial<AppSettings>
+    delete legacy.defaultOpenTarget
+    expect(mergeSettings(DEFAULT_SETTINGS, legacy).defaultOpenTarget).toBe('')
+  })
+
+  it('合法 id 原样落库,改回空串也能落库', () => {
+    const zed = mergeSettings(base(), { defaultOpenTarget: 'zed' })
+    expect(zed.defaultOpenTarget).toBe('zed')
+    expect(mergeSettings(zed, { defaultOpenTarget: '' }).defaultOpenTarget).toBe('')
+  })
+
+  it.each([
+    ['非字符串', 42],
+    ['带路径的串', '/Applications/Zed.app']
+  ])('%s 时保留当前选择', (_label, value) => {
+    const current = mergeSettings(base(), { defaultOpenTarget: 'vscode' })
+    const next = mergeSettings(current, { defaultOpenTarget: value } as unknown as AppSettingsPatch)
+    expect(next.defaultOpenTarget).toBe('vscode')
   })
 })

@@ -37,6 +37,20 @@ export interface TokenUsage {
   reasoningTokens?: number
 }
 
+/** 两份用量逐项相加。`a` 缺省时原样返回 `b`;可选项两边都没有时保持缺省 */
+export function addTokenUsage(a: TokenUsage | undefined, b: TokenUsage): TokenUsage {
+  if (a === undefined) return { ...b }
+  const sum = (x: number | undefined, y: number | undefined): number | undefined =>
+    x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0)
+  const out: TokenUsage = { inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens }
+  const optional = ['cacheCreationInputTokens', 'cacheReadInputTokens', 'cacheCreation1hInputTokens', 'reasoningTokens'] as const
+  for (const key of optional) {
+    const v = sum(a[key], b[key])
+    if (v !== undefined) out[key] = v
+  }
+  return out
+}
+
 export type ProviderStreamEvent =
   /**
    * `model` 是上游回包里的**真实模型名**(不是别名);`providerId` 由

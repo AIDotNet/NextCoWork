@@ -104,7 +104,7 @@ it.skipIf(!integration || process.platform === 'win32')('uses native config, enc
       const path = join(directory, 'remote-roundtrip')
       await fs.writeFile(path, 'via native SSH')
       expect(await fs.readFile(path)).toBe('via native SSH')
-    } finally { fs.close(); subsystem.kill() }
+    } finally { fs.close(); if ('kill' in subsystem) subsystem.kill() }
     expect(prompts).toBe(1)
   } finally {
     await transport?.close()

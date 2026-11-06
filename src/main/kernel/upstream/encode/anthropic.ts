@@ -9,7 +9,8 @@ import { fileRefMarkdown } from '../../../../shared/agent/message'
 import type { ToolInfo } from '../../../../shared/agent/tool'
 import {
   normalizeAnthropicCacheTtl,
-  type AnthropicCacheTtl
+  type AnthropicCacheTtl,
+  type ReasoningReplay
 } from '../../../../shared/domain/provider'
 import type { CanonicalRequest } from '../canonical'
 
@@ -109,6 +110,11 @@ function toBlock(p: ContentPart): unknown | null {
       // 「上一轮没达成」辩解 —— 既没用,又占窗口。
       return null
 
+    case 'compact_boundary':
+      // 压缩边界只是一枚书签:摘要正文就在同一条消息的 text 块里,模型读那一份。
+      // 把这里的 summary 也编码上去,等于把摘要发两遍。
+      return null
+
     default:
       return null
   }
@@ -153,10 +159,22 @@ export interface EncodedRequest {
   body: unknown
 }
 
-export interface AnthropicEncodeOptions {
+/**
+ * 编码期的上游事实 —— 由路由器判定,随请求下发给编码器。
+ *
+ * 原先叫 `AnthropicEncodeOptions`,但它早就不只服务 Anthropic:经 `codec.ts` 同时
+ * 传给三家编码器,`reasoningReplay` 进来之后再叫那个名字就是撒谎了。
+ * `applyAnthropicRequestOptions` 保持原名 —— 那个函数是真的只做 Anthropic 边界。
+ */
+export interface UpstreamEncodeOptions {
   /** Stable opaque workspace identifier; never a path, API key, name, or email. */
   userId: string
   cacheTtl: AnthropicCacheTtl
+  /**
+   * Responses 协议回传历史思考的方言,判定见 `reasoningReplayFor`。
+   * 缺席 = `opaque-only`;其余协议不读它。
+   */
+  reasoningReplay?: ReasoningReplay
 }
 
 type AnthropicCacheControl = { type: 'ephemeral'; ttl?: '1h' }
@@ -199,7 +217,7 @@ function withoutCacheBreakpoints(value: unknown): unknown {
  */
 export function applyAnthropicRequestOptions(
   body: unknown,
-  options: AnthropicEncodeOptions
+  options: UpstreamEncodeOptions
 ): Record<string, unknown> {
   const source = record(body)
   if (source === undefined) throw new TypeError('Anthropic 请求体必须是一个对象')
@@ -260,13 +278,13 @@ export function encodeAnthropic(
   req: CanonicalRequest,
   upstreamModel: string,
   apiKey: string,
-  options: AnthropicEncodeOptions
+  options: UpstreamEncodeOptions
 ): EncodedRequest
 export function encodeAnthropic(
   req: CanonicalRequest,
   upstreamModel: string,
   apiKey: string,
-  options?: AnthropicEncodeOptions
+  options?: UpstreamEncodeOptions
 ): EncodedRequest {
   // Keep the three-argument form source-compatible for older gateway callers.
   // Production routing always supplies a validated workspace id. Older callers

@@ -1,143 +1,163 @@
-import type { ContextCheckpoint, ContextPreview } from '../../shared/agent/context-management'
+import type { ContextPreview } from '../../shared/agent/context-management'
 import { effectiveContextWindow } from '../../shared/agent/context-management'
+import { messagesForModel } from '../../shared/agent/compaction'
 import { normalizeEnvironmentRef } from '../../shared/domain/environment'
 import type { ContextPreviewRequest } from '../../shared/ipc/contract'
 import { resolveMaxOutputTokens } from '../../shared/agent/run-request'
+import type { AgentMessage } from '../../shared/agent/message'
 import { userMessage } from '../../shared/agent/message'
+import { ulid } from '../../shared/util/id'
 import { agentRegistry } from '../kernel/agent/registry'
 import { modePromptFor, modeRegistry } from '../kernel/mode/registry'
 import { skillRegistry } from '../kernel/skill/registry'
 import { taskTool } from '../kernel/tool/builtin/task'
 import { ToolRegistry } from '../kernel/tool/registry'
-import {
-  COMPACTION_SYSTEM,
-  assemble,
-  buildCompactionPrompt,
-  compactionDigestBudget,
-  estimateMessages,
-  projectContextWindow,
-  sanitizeSummaryNote,
-  summaryOutputTokens
-} from '../kernel/context-assembler'
+import { resolveAnywhere } from '../kernel/tool/path-guard'
+import { assemble, estimateMessages } from '../kernel/context-assembler'
+import { compactConversation } from '../kernel/compaction/compact'
+import { resolveCompactBinding } from '../kernel/compaction/binding'
+import { readAttachableFile, type AttachmentToolNames } from '../kernel/compaction/attachments'
 import { connectedWorkspaceMcpTools, getHost, getRouter, getTools, loadInstructions } from '../runtime'
 import { store } from '../state/store'
-
-export function listContextCheckpoints(req: { sessionId: string }): ContextCheckpoint[] {
-  return store.listContextCheckpoints(req.sessionId)
-}
-
-export function updateContextCheckpoint(req: { checkpointId: string; note: string; revision: number }): ContextCheckpoint {
-  /*
-    ★ 走 `sanitizeSummaryNote`,不再就地写一条正则。原来那条
-    `replace(/[\u0000-\u001f\u007f]/g, '')` 的字符区间**连换行一起削** —— 用户在
-    分隔线里分好段落的笔记一存就被压成一整段,而界面上不会有任何提示。
-    摘要本身现在是八节 Markdown,更加丢不起换行。
-  */
-  const note = sanitizeSummaryNote(req.note)
-  if (note === '') throw new Error('上下文笔记不能为空')
-  return store.updateContextCheckpoint(req.checkpointId, note, req.revision, Date.now())
-}
+import { runs } from '../kernel/run-registry'
+import { currentConfigScope } from '../db/config-profile'
+import { IpcError } from './errors'
 
 const SUMMARY_TIMEOUT_MS = 180_000
 
 /**
- * 手动压缩 —— `AgentSession` 那条自动路径的同胞,区别只在触发者是用户。
+ * 手动压缩(/compact)—— `AgentSession.compact` 那条自动路径的同胞,区别只在触发者
+ * 是用户、可以带一句「重点保留什么」,以及续接语不要求模型接着干(用户会自己发下一句)。
  *
- * ★ 提示词、digest、输出上限、消毒**四样都和自动那条读同一份**
- * (`context-assembler.ts` 的「摘要压缩」一节)。这里原先有它们的一整套副本,
- * 而两份已经开始分头演化 —— 只改一侧的结果是「自动压出来有八节、手动压出来只有一段」,
- * 且不报任何错。
+ * ★ 摘要提示词、PTL 重试、重附件、边界消息的形状全部来自 `kernel/compaction/compact.ts`,
+ * 和自动那条读同一份 —— 原先这里有旧摘要提示词和 digest 的一整套副本,两份各自演化。
  *
- * ★ 落的是一条普通的 `ContextCheckpoint`,**不动 `messages`**。下一次 run 的构造
- * 函数会自己挑出 `windowIndex` 最大的那条并套上 `withSummary`;在这里顺手把历史也
- * 裁掉的话,完整转录就没了 —— 而那正是「双轨」一直守住的东西。
+ * ★ 结果是一条**提交进转录**的边界消息,不再是另一张表里的检查点:下一次 run 从
+ * `messagesForModel` 读到的就是它,重开会话也一样;完整转录仍在,界面照常画出边界之前的对话。
+ *
+ * ★ 只在会话空闲时调用(界面在生成中禁用了入口):跑着的 run 把上下文冻在内存里,
+ * 此时插一条边界会和它随后提交的消息交错。
  */
-export async function compactContext(req: { sessionId: string }): Promise<{
-  checkpoint: ContextCheckpoint
+export async function compactContext(req: { sessionId: string; instructions?: string }): Promise<{
+  message: AgentMessage
+  inputTokens: number
+}> {
+  const release = runs.acquireSessionOperation(req.sessionId)
+  try { return await compactSessionContext(req) } finally { release() }
+}
+
+async function compactSessionContext(req: { sessionId: string; instructions?: string }): Promise<{
+  message: AgentMessage
   inputTokens: number
 }> {
   const session = store.getSession(req.sessionId)
   if (session === undefined) throw new Error('会话不存在')
-
   const history = store.getHistory(req.sessionId)
   if (history.length === 0) throw new Error('这段对话还没有可压缩的内容')
+  const scope = currentConfigScope()
+  const revision = JSON.stringify(history)
 
-  const previous = [...store.listContextCheckpoints(req.sessionId)]
-    .sort((a, b) => b.windowIndex - a.windowIndex)[0]
-  const now = getHost().clock.now()
+  const signal = AbortSignal.timeout(SUMMARY_TIMEOUT_MS)
+  const root = session.rootPathAtCreation
+  const workspace = store.getWorkspace(session.workspaceId)
+  // 远端工作区的文件在另一台机器上,这条菜单路径不为重附件去租一条 SSH 连接 —— 少附文件,摘要照常。
+  const local = workspace === undefined || normalizeEnvironmentRef(workspace.environment).kind !== 'connection'
 
   /*
-    ★ 这条路径不知道会话有没有开「最大上下文」——那是 `RunRequest` 上的字段,
-    而这里来自一次菜单点击。按**关**算:预算取小只会让 digest 更紧,不会让请求超窗。
-  */
-  const alias = getRouter().resolveModel(session.model, session.modelProviderId)
-  const window = effectiveContextWindow(alias?.contextWindow, false)
+    需求:压缩可以配成另一个模型、另一个思考档位(设置 › 通用 › Agent,工作区可覆盖)。
+    解析、回落(配置的模型当前解析不到就静默换回会话模型)与档位归一化和自动压缩
+    **共用同一份** —— `kernel/compaction/binding.ts`。各写一份的话,两条路径会分头演化,
+    而症状是「菜单里压出来的摘要和自动压出来的不是一个模型写的」,没有任何报错。
 
-  let note = ''
-  for await (const ev of getRouter().stream(
-    {
-      model: session.model,
-      // 摘要要和正文走同一家:它读的是同一段对话,漂到另一家既换了口径也换了账单。
-      ...(session.modelProviderId === undefined ? {} : { modelProviderId: session.modelProviderId }),
-      system: COMPACTION_SYSTEM,
-      messages: [userMessage(
-        `${req.sessionId}:context-input:${String(now)}`,
-        [{
-          type: 'text',
-          text: buildCompactionPrompt({
-            messages: history,
-            ...(previous === undefined ? {} : { previousNote: previous.note }),
-            budget: compactionDigestBudget(window)
-          })
-        }],
-        now
-      )],
-      tools: [],
-      maxOutputTokens: summaryOutputTokens(alias?.maxOutputTokens, window),
-      thinkingLevel: 'off' as const
+    ★ `'inherit'` 在这条路径上落到 `session.thinking`:手动 /compact 时没有 run,
+    「本轮档位」这个东西不存在,会话记录上那个才是用户此刻选的。
+  */
+  const settings = store.getSettings()
+  const binding = resolveCompactBinding({
+    resolveModel: (model, modelProviderId) => getRouter().resolveModel(model, modelProviderId),
+    settings: {
+      model: settings.compactModel,
+      ...(settings.compactModelProviderId === undefined ? {} : { modelProviderId: settings.compactModelProviderId }),
+      thinking: settings.compactThinking
     },
-    AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
-    { workspaceId: session.workspaceId, runId: `${req.sessionId}:context:manual`, sessionId: req.sessionId }
-  )) {
-    if (ev.type === 'text_delta') note += ev.text
-    if (ev.type === 'error') throw new Error(ev.error.message)
-  }
+    ...(workspace === undefined ? {} : { workspace: workspace.settings }),
+    session: {
+      model: session.model,
+      ...(session.modelProviderId === undefined ? {} : { modelProviderId: session.modelProviderId }),
+      thinking: session.thinking
+    },
+    maxOutputTokens: settings.maxOutputTokens,
+    warn: (message) => { getHost().logger.warn(message) }
+  })
+  if (binding === undefined) throw new Error('压缩模型不可用')
 
-  note = sanitizeSummaryNote(note)
-  if (note === '') throw new Error('模型没有返回可用的摘要')
-
-  const windowIndex = (previous?.windowIndex ?? 0) + 1
-  const id = `${req.sessionId}:context:${String(windowIndex)}`
-  const first = history[0]
-  const last = history.at(-1)
-  /*
-    ★ 「省了多少」必须按**下一次 run 真的会发出去的那一份**算,所以这里走
-    `projectContextWindow` —— 和 `AgentSession` 恢复检查点时是同一个函数、同一套
-    切点规则。自己再拼一遍 `withSummary(compactMessages(...))` 的话,这个数会
-    偏大一整段被裁掉的历史,而用户看到的「省下 N」是纯编的。
-    覆盖锚点给最后一条:摘要读的就是到此为止的全部转录。
-  */
-  const projected = projectContextWindow({
+  const result = await compactConversation({
     messages: history,
-    summary: { note, id, ...(last === undefined ? {} : { coveredThroughMessageId: last.id }) },
-    now
-  }).messages
-  const checkpoint: ContextCheckpoint = {
-    id,
-    sessionId: req.sessionId,
-    windowIndex,
-    note,
-    source: 'manual',
-    ...(first === undefined ? {} : { coveredFromMessageId: first.id }),
-    ...(last === undefined ? {} : { coveredThroughMessageId: last.id }),
-    inputTokensBefore: estimateMessages(history),
-    inputTokensAfter: estimateMessages(projected),
-    createdAt: now,
-    updatedAt: now,
-    revision: 1
+    trigger: 'manual',
+    ...(req.instructions === undefined ? {} : { instructions: req.instructions }),
+    preTokens: estimateMessages(messagesForModel(history)),
+    autoContinue: false,
+    // 协议窗口:摘要请求只受**压缩模型**真实上限约束,和「最大上下文」计费开关无关。
+    protocolWindow: binding.protocolWindow,
+    summaryMaxOutputTokens: binding.maxOutputTokens,
+    summaryThinking: binding.thinking,
+    summaryModel: {
+      model: binding.model,
+      ...(binding.modelProviderId === undefined ? {} : { modelProviderId: binding.modelProviderId }),
+      thinking: binding.thinking,
+      fellBack: binding.fellBack
+    },
+    send: (request) => getRouter().stream(
+      {
+        model: binding.model,
+        /*
+          摘要**默认**和正文走同一家:它读的是同一段对话,漂到另一家既换了口径也换了账单。
+          这条理由没变 —— 变的是它现在由配置表达(`compactModel` 出厂是空串 = 跟随会话),
+          只有用户显式选了别的压缩模型,这里才会是另一家。
+        */
+        ...(binding.modelProviderId === undefined ? {} : { modelProviderId: binding.modelProviderId }),
+        system: request.system,
+        messages: request.messages,
+        tools: [],
+        maxOutputTokens: request.maxOutputTokens,
+        thinkingLevel: request.thinkingLevel
+      },
+      signal,
+      { workspaceId: session.workspaceId, runId: `${req.sessionId}:compact:manual`, sessionId: req.sessionId }
+    ),
+    attachments: {
+      tools: attachmentTools(),
+      readFile: async (path) => {
+        if (!local) return undefined
+        try {
+          return await readAttachableFile(getHost().fs, resolveAnywhere(root, path).abs)
+        } catch {
+          return undefined
+        }
+      }
+    },
+    newId: () => ulid(),
+    now: getHost().clock.now(),
+    signal
+  })
+  if (!result.ok) throw new Error(result.error.message)
+  // 目标状态、导入同步等并非 run，也可能改写历史。旧摘要不能隐藏这期间的新消息。
+  if (currentConfigScope() !== scope || store.getSession(req.sessionId)?.workspaceId !== session.workspaceId
+    || JSON.stringify(store.getHistory(req.sessionId)) !== revision) {
+    throw new IpcError('conflict', '摘要期间会话内容已变化，请重新压缩上下文')
   }
-  store.upsertContextCheckpoint(checkpoint)
-  return { checkpoint, inputTokens: checkpoint.inputTokensAfter ?? 0 }
+  store.commitMessage(req.sessionId, result.message)
+  return { message: result.message, inputTokens: result.boundary.postTokens }
+}
+
+/** 同 `AgentSession.attachmentTools`:外部名从注册表查,撞名加后缀时字面量会静默失配。 */
+function attachmentTools(): AttachmentToolNames {
+  const registry = getTools()
+  const name = (id: string): string | undefined => registry.byInternalId(id)?.externalName
+  const file = new Set([name('Read'), name('Write'), name('Edit')].filter((n): n is string => n !== undefined))
+  const todo = name('TodoWrite')
+  const skill = name('Skill')
+  return { file, ...(todo === undefined ? {} : { todo }), ...(skill === undefined ? {} : { skill }) }
 }
 
 /**
@@ -204,7 +224,8 @@ export async function previewContext(req: ContextPreviewRequest): Promise<Contex
     预览要回答的是「我下一条发出去会占多少」,所以把那条消息先摆上是**更准**不是更假;
     它自己只贡献一份消息开销(几个 token),落在 `messages` 档里,也是真花的。
   */
-  const history = req.sessionId === '' ? [] : store.getHistory(req.sessionId)
+  // 只算最后一条压缩边界之后的那段 —— 那才是下一次请求真会发出去的。
+  const history = req.sessionId === '' ? [] : messagesForModel(store.getHistory(req.sessionId))
   const messages = history.length > 0
     ? history
     : [userMessage('preview', [{ type: 'text', text: '' }], 0)]

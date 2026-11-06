@@ -144,6 +144,7 @@ async function makeActiveManager(invoke: PluginRuntime['invoke']): Promise<Plugi
     // 用到 scm 的测试自己换掉它 —— 静默返回空状态会让断言在"没接上"时依然是绿的
     scmFor: () => { throw new Error('scm adapter is not wired in this test') },
     openTab: () => {},
+    launchTerminal: () => ({ opened: true }),
     // 没有窗口可问 = 一律取消。用到交互的测试自己换掉它
     requestInteraction: async () => null,
     emitProgress: () => {},

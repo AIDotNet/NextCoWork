@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { ArrowUpRight, Check, Copy, Download, FileText, Pencil } from 'lucide-react'
 import type {
@@ -6,11 +6,12 @@ import type {
   InteractionResponse,
   PendingInteraction
 } from '../../../../shared/agent/interaction'
+import { workflowLayers } from '../../../../shared/agent/workflow'
 import { useI18n, type Translate } from '../../i18n'
 import { AgentMarkdown } from '../../components/markdown'
 import { CheckboxCards, RadioCards, type ChoiceOption } from '../../components/ui/ChoiceCards'
 import { ActionIconButton, useTransientStatus } from '../../components/ui/ActionIconButton'
-import { Segmented } from '../../components/ui/Segmented'
+import SegmentedControl from '../../components/arc/segmented-control/segmented-control'
 import { listInteractions, onAgentEvent, respondInteraction } from '../../services/agent'
 import { onGoalChanged } from '../../services/goal'
 import { copyText, saveTextFile } from '../../services/app'
@@ -96,24 +97,20 @@ function useRespond(onAnswered: () => void, onResolved?: () => void): {
   }
 }
 
-const BUTTON = 'rounded-lg border border-border px-3 py-1.5 text-[12px] transition-colors disabled:opacity-50'
-const GHOST_BUTTON = `${BUTTON} hover:bg-tint`
-const PRIMARY_BUTTON = `${BUTTON} bg-accent text-accent-fg hover:opacity-90`
+// 苹果风格:胶囊按钮 / 玻璃输入框,样式在 theme.css 的 .apple-btn / .apple-field
+const GHOST_BUTTON = 'apple-btn'
+const PRIMARY_BUTTON = 'apple-btn-primary'
 const FIELD = [
-  'w-full resize-none rounded-[8px] border border-border bg-surface-field px-2.5 py-2 text-[13px]',
-  'leading-[1.6] text-fg outline-none transition-colors placeholder:text-fg-faint focus:border-accent',
+  'apple-field w-full resize-none py-2 text-[13px] leading-[1.6]',
   'disabled:opacity-40'
 ].join(' ')
 
 /**
- * 三类交互共用的外壳:标题、可滚动的主体、错误行、底部一条。
- *
- * ★ **底部放什么由卡片自己决定。** 以前这里硬写了「次要 + 主要」两颗按钮,
- * 于是批准计划这种有四条去向的卡只能把四颗一字排开,谁都看不出默认是哪个。
- * 现在动作由主体里的行承担,底部只剩「退出」和键盘提示。
+ * 交互卡共用的外壳:标题、可滚动的主体、可选的固定操作区、错误行和底部一条。
+ * 工具授权的动作放在 actions 中,长参数只滚动正文,不会把授权选项推到看不见的地方。
  */
 function CardShell({
-  kind, title, header, children, errorKey, busy, onSubmit, onKeyDown, bodyClassName, footer, takeFocus = false,
+  kind, title, header, children, actions, errorKey, busy, onSubmit, onKeyDown, bodyClassName, footer, takeFocus = false,
   preview = false
 }: {
   kind: PendingInteraction['kind']
@@ -121,6 +118,8 @@ function CardShell({
   /** 标题下面那条固定不滚动的东西(多题时的切换条) */
   header?: ReactNode
   children: ReactNode
+  /** 正文之外的操作区,不随参数预览或编辑器滚动。 */
+  actions?: ReactNode
   errorKey: string | null
   busy: boolean
   onSubmit: (event: FormEvent) => void
@@ -150,6 +149,20 @@ function CardShell({
 }): ReactNode {
   const { t } = useI18n()
   const form = useRef<HTMLFormElement>(null)
+  const hasActions = actions !== undefined
+  useLayoutEffect(() => {
+    if (!hasActions) return
+    const card = form.current
+    const viewport = card?.closest('[data-testid="thread"]')
+    if (card === null || !(viewport instanceof HTMLElement)) return
+    // 限制整张卡的高度,由 flex 同步压缩正文;编辑或报错时不再分两帧改正文高度。
+    // 64px 留给聊天区的状态行与底部留白。
+    const measure = (): void => { card.style.maxHeight = `${Math.max(0, viewport.clientHeight - 64)}px` }
+    const observer = new ResizeObserver(measure)
+    observer.observe(viewport)
+    measure()
+    return () => { observer.disconnect(); card.style.maxHeight = '' }
+  }, [hasActions])
   useEffect(() => {
     if (!takeFocus || preview || isEditableTarget(document.activeElement)) return
     form.current?.focus({ preventScroll: true })
@@ -159,17 +172,19 @@ function CardShell({
       onSubmit={onSubmit} onKeyDown={onKeyDown}
       data-testid={preview ? 'agent-interaction-preview' : 'agent-interaction'}
       {...(preview ? { 'data-preview-kind': kind } : { 'data-interaction-kind': kind })}
-      className="mb-2 overflow-hidden rounded-card border border-stroke bg-surface-raised/80 text-fg outline-none">
+      className={`mb-2 flex min-h-0 flex-col rounded-card border border-stroke bg-surface-raised/80 text-fg outline-none ${hasActions ? 'scroll-thin overflow-y-auto' : 'overflow-hidden'}`}>
       {/* 需求：审批卡用一块中性表面承载内容，把强调色留给选择与主动作；
           标题和多题导航固定在上方，切题或展开输入区时不能一起滚走。 */}
-      <div className="border-b border-hairline px-3 py-2.5">
+      <div className="shrink-0 border-b border-hairline px-3 py-2.5">
         <h2 className="text-[13px] font-medium">{title}</h2>
         {header !== undefined && <div className="mt-2">{header}</div>}
       </div>
-      <div className={`scroll-thin overflow-auto px-3 pt-3 pb-0.5 ${bodyClassName ?? 'max-h-[30vh]'}`}>{children}</div>
-      {errorKey !== null && <p role="alert" className="px-3 pt-2 text-[12px] text-danger">{t(errorKey)}</p>}
-      {busy && <p className="px-3 pt-2 text-[12px] text-fg-muted">{t('agent.interaction.sending')}</p>}
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline bg-surface/35 px-3 py-2.5">{footer}</div>
+      <div data-testid="interaction-body"
+        className={`scroll-thin min-h-0 overflow-auto px-3 pt-3 pb-0.5 ${bodyClassName ?? 'max-h-[30vh]'}`}>{children}</div>
+      {hasActions && <div data-testid="interaction-actions" className="shrink-0 border-t border-hairline px-3 pt-2.5">{actions}</div>}
+      {errorKey !== null && <p role="alert" className="shrink-0 px-3 pt-2 text-[12px] text-danger">{t(errorKey)}</p>}
+      {busy && <p className="shrink-0 px-3 pt-2 text-[12px] text-fg-muted">{t('agent.interaction.sending')}</p>}
+      <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-hairline bg-surface/35 px-3 py-2.5">{footer}</div>
     </form>
   )
 }
@@ -192,7 +207,32 @@ function InteractionCard({ interaction, workspaceId, onOpenPlan, onExecute, onAn
   if (interaction.kind === 'ask_user') return <AskUserCard interaction={interaction} onAnswered={onAnswered} />
   if (interaction.kind === 'plan_approval') return <PlanApprovalCard interaction={interaction} workspaceId={workspaceId}
     onOpenPlan={onOpenPlan} onExecute={onExecute} onAnswered={onAnswered} />
+  if (interaction.kind === 'workflow_approval') return <WorkflowApprovalCard interaction={interaction} onAnswered={onAnswered} />
+  if (interaction.kind === 'widget_submit') return <WidgetSubmitNotice interaction={interaction} onAnswered={onAnswered} />
   return <ToolApprovalCard interaction={interaction} onAnswered={onAnswered} />
+}
+
+/**
+ * 交互模式的 widget 在等提交。**题面就是对话里那张图**,这里不再画一张卡 —— 只留一行
+ * 说明 run 为什么停着,和一个"不提交了"的出口(否则用户只能停掉整轮)。
+ */
+function WidgetSubmitNotice({ interaction, onAnswered }: {
+  interaction: Extract<PendingInteraction, { kind: 'widget_submit' }>
+  onAnswered: () => void
+}): ReactNode {
+  const { t } = useI18n()
+  const { busy, errorKey, respond } = useRespond(onAnswered)
+  return (
+    <div data-testid="agent-interaction" data-interaction-kind="widget_submit"
+      className="mb-2 flex items-center gap-2 px-1 text-[12px] text-fg-muted">
+      <span className="min-w-0 flex-1 truncate">{t('widget.submit.waiting', { title: interaction.title.replace(/_/g, ' ') })}</span>
+      {errorKey !== null && <span role="alert" className="text-danger">{t(errorKey)}</span>}
+      <button type="button" disabled={busy} className={GHOST_BUTTON}
+        onClick={() => respond({ id: interaction.id, kind: 'widget_submit', value: null })}>
+        {t('widget.submit.dismiss')}
+      </button>
+    </div>
+  )
 }
 
 function GoalProposalCard({ interaction, onAnswered }: {
@@ -357,18 +397,18 @@ function QuestionTabs({ questions, answers, active, disabled, onChange }: {
   // 题头可能长,窄窗口下让它横向滚,而不是把卡片撑破
   return (
     <div className="scroll-thin overflow-x-auto pb-0.5">
-      <Segmented
-        size="sm"
-        disabled={disabled}
-        label={t('agent.interaction.question')}
-        value={String(active)}
-        onChange={(value) => onChange(Number(value))}
-        options={questions.map((question, index) => ({
-          value: String(index),
-          // 打钩的那道已经答过 —— 切换条同时是进度表
-          label: (answers[index] ?? []).length > 0 ? `✓ ${question.header}` : question.header
-        }))}
-      />
+      <fieldset disabled={disabled} className="contents">
+        <SegmentedControl
+          label={t('agent.interaction.question')}
+          value={String(active)}
+          onValueChange={(value) => onChange(Number(value))}
+          options={questions.map((question, index) => ({
+            value: String(index),
+            // 打钩的那道已经答过 —— 切换条同时是进度表
+            label: (answers[index] ?? []).length > 0 ? `✓ ${question.header}` : question.header
+          }))}
+        />
+      </fieldset>
     </div>
   )
 }
@@ -498,13 +538,16 @@ function ToolApprovalCard({ interaction, onAnswered }: {
   const original = JSON.stringify(interaction.input, null, 2)
   const [editing, setEditing] = useState(false)
   const [input, setInput] = useState(original)
+  const editor = useRef<HTMLTextAreaElement>(null)
   const rule = interaction.suggestedRule
+  useLayoutEffect(() => {
+    // 原生 autoFocus 会滚动聊天区来露出整个 textarea,打断 Thread 的贴底跟随。
+    if (editing) editor.current?.focus({ preventScroll: true })
+  }, [editing])
 
   const rows: ActionRowSpec[] = [
     { value: 'allow_once', label: t('agent.interaction.allowOnce') },
-    // ★ 正在改参数时**撤掉**这一行:它写进本机配置的是**原始**那份参数,
-    //   摆在一份改了一半的 JSON 旁边,看起来却像「按现在这样一直允许」。
-    ...(rule === undefined || editing ? [] : [{
+    ...(rule === undefined ? [] : [{
       value: 'allow_always',
       label: t('agent.interaction.allowAlways'),
       // 「会往本机配置里写一条规则」是这一项的全部代价,必须跟着它,而不是
@@ -518,6 +561,12 @@ function ToolApprovalCard({ interaction, onAnswered }: {
       expands: true
     }
   ]
+
+  function cancelEditing(): void {
+    setEditing(false)
+    setInput(original)
+    setErrorKey(null)
+  }
 
   function run(value: string): void {
     if (value === 'allow_once') {
@@ -538,45 +587,49 @@ function ToolApprovalCard({ interaction, onAnswered }: {
     title={t('agent.interaction.permission', { tool: interaction.toolName })}
     errorKey={errorKey}
     busy={busy}
+    actions={editing ? (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button type="button" disabled={busy} className={GHOST_BUTTON} onClick={cancelEditing}>
+          {t('agent.interaction.keepOriginal')}
+        </button>
+        <button type="button" disabled={busy} className={PRIMARY_BUTTON} onClick={() => run('allow_edited')}>
+          {t('agent.interaction.allowOnce')}
+        </button>
+      </div>
+    ) : (
+      <ActionRows rows={rows} disabled={busy}
+        ariaLabel={t('agent.interaction.permission', { tool: interaction.toolName })}
+        onRun={run} onExpandedChange={() => setEditing(true)} />
+    )}
     footer={<>
-      <KeyboardHint show={!busy} />
+      <KeyboardHint show={!busy && !editing} />
       <button type="button" disabled={busy} className={`${GHOST_BUTTON} ml-auto`}
         onClick={() => respond({ id: interaction.id, kind: 'tool_permission', decision: { kind: 'deny' } })}>
         {t('agent.interaction.deny')}
       </button>
     </>}
     onSubmit={(event) => { event.preventDefault() }}
+    onKeyDown={(event) => {
+      if (!editing || busy || event.defaultPrevented) return
+      const action = resolveRowKey(event, {
+        count: 0,
+        active: 0,
+        inEditable: isEditableTarget(event.target),
+        expanded: true,
+        onOtherButton: isSelfHandlingButton(event.target)
+      })
+      if (action === null) return
+      event.preventDefault()
+      if (action.kind === 'collapse') cancelEditing()
+      else if (action.kind === 'run') run('allow_edited')
+    }}
   >
     {interaction.destructive && <p className="mb-2 text-[12px] text-fg-muted">{t('agent.interaction.changes')}</p>}
-    {/* 展开编辑时收起只读预览 —— 同一份参数同时摆两遍,改的是哪一份说不清。 */}
-    {!editing && <pre className="selectable mb-2 whitespace-pre-wrap break-all text-[12px]">{input}</pre>}
-    <ActionRows
-      rows={rows}
-      disabled={busy}
-      ariaLabel={t('agent.interaction.permission', { tool: interaction.toolName })}
-      onRun={run}
-      onExpandedChange={(value) => {
-        setEditing(value === 'allow_edited')
-        // 收起等于放弃这次修改:下次展开应该从原始参数重新开始,而不是
-        // 接着上一次改了一半的那份。
-        if (value === null) { setInput(original); setErrorKey(null) }
-      }}
-      renderExpanded={(value, collapse) => value !== 'allow_edited' ? null : (
-        <>
-          <textarea autoFocus aria-label={t('agent.interaction.arguments')} value={input}
-            onChange={(event) => setInput(event.target.value)} disabled={busy} rows={6}
-            className={`${FIELD} font-mono text-[12px]`} />
-          <div className="mt-1.5 flex items-center justify-end gap-2">
-            <button type="button" disabled={busy} className={GHOST_BUTTON} onClick={collapse}>
-              {t('agent.interaction.keepOriginal')}
-            </button>
-            <button type="button" disabled={busy} className={PRIMARY_BUTTON} onClick={() => run('allow_edited')}>
-              {t('agent.interaction.allowOnce')}
-            </button>
-          </div>
-        </>
-      )}
-    />
+    {/* 编辑器与预览共用正文滚动区;编辑态只提交修改后的参数,不提供持久授权。 */}
+    {editing ? <textarea ref={editor} aria-label={t('agent.interaction.arguments')} value={input}
+      onChange={(event) => setInput(event.target.value)} disabled={busy} rows={6}
+      className={`${FIELD} font-mono text-[12px]`} />
+      : <pre className="selectable mb-2 whitespace-pre-wrap break-all text-[12px]">{input}</pre>}
   </CardShell>
 }
 
@@ -730,6 +783,88 @@ function PlanApprovalCard({ interaction, workspaceId, onOpenPlan, onExecute, onA
                 说不出「还差什么」,而这里差的东西就在上面那个空框里。 */}
             {feedback.trim() !== '' && <button type="button" disabled={disabled} className={PRIMARY_BUTTON}
               onClick={() => { void decide('request_revision') }}>
+              {t('agent.interaction.sendRevision')}
+            </button>}
+          </div>
+        </>
+      )}
+    />
+  </CardShell>
+}
+
+/**
+ * 工作流开跑前的确认。对话里那张画布已经把图画出来了(入参推出来的全 `pending` 结构),
+ * 这里只按层列一份清单 —— 再画一张画布,同一屏就有两张一模一样的图。
+ *
+ * ★ 按层列而不是按入参顺序:用户要确认的恰恰是「谁和谁同时跑、谁等谁」,
+ *   截图里那种「汇总节点和被汇总的排在同一层」一眼就能看出来。
+ */
+function WorkflowApprovalCard({ interaction, onAnswered }: {
+  interaction: Extract<PendingInteraction, { kind: 'workflow_approval' }>
+  onAnswered: () => void
+}): ReactNode {
+  const { t } = useI18n()
+  const { busy, errorKey, respond } = useRespond(onAnswered)
+  const [feedback, setFeedback] = useState('')
+  const { workflow } = interaction
+  const byId = new Map(workflow.nodes.map((node) => [node.id, node]))
+  const layers = workflowLayers(workflow.nodes.map((node) => ({ id: node.id, depends_on: node.dependsOn })))
+    ?? [workflow.nodes.map((node) => node.id)]
+  const decide = (action: 'run' | 'revise' | 'cancel'): void => {
+    if (busy) return
+    respond({ id: interaction.id, kind: 'workflow_approval', action,
+      ...(action === 'revise' && feedback.trim() !== '' ? { feedback: feedback.trim() } : {}) })
+  }
+  return <CardShell
+    kind="workflow_approval"
+    title={t('workflow.approval.title', { title: workflow.title })}
+    errorKey={errorKey}
+    busy={busy}
+    footer={<>
+      <KeyboardHint show={!busy} />
+      <button type="button" disabled={busy} className={`${GHOST_BUTTON} ml-auto`} onClick={() => decide('cancel')}>
+        {t('workflow.approval.cancel')}
+      </button>
+    </>}
+    onSubmit={(event) => { event.preventDefault() }}
+  >
+    <p className="mb-2 text-[12px] text-fg-muted">{t('workflow.approval.body', { count: workflow.nodes.length })}</p>
+    <ol data-testid="workflow-approval-layers" className="mb-2 space-y-1.5">
+      {layers.map((layer, index) => (
+        <li key={layer.join('|')} className="flex gap-2 text-[12px]">
+          <span className="w-12 shrink-0 tabular-nums text-fg-faint">{t('workflow.approval.step', { n: index + 1 })}</span>
+          <span className="flex min-w-0 flex-wrap gap-1">
+            {layer.map((id) => {
+              const node = byId.get(id)!
+              return <span key={id} title={node.model === undefined ? node.agent : `${node.agent} · ${node.model}`}
+                className="rounded-[6px] border border-stroke bg-app px-1.5 py-0.5 text-fg">
+                {node.title}
+                {node.mapOver !== undefined && <span className="ml-1 text-fg-faint">· {t('workflow.node.each')}</span>}
+              </span>
+            })}
+          </span>
+        </li>
+      ))}
+    </ol>
+    <ActionRows
+      disabled={busy}
+      ariaLabel={t('workflow.approval.title', { title: workflow.title })}
+      rows={[
+        { value: 'run', label: t('workflow.approval.run') },
+        { value: 'revise', label: t('workflow.approval.revise'), icon: <Pencil aria-hidden size={13} className="text-fg-faint" />, expands: true }
+      ]}
+      onRun={(value) => { if (value === 'run') decide('run') }}
+      renderExpanded={(value, collapse) => value !== 'revise' ? null : (
+        <>
+          <textarea autoFocus aria-label={t('workflow.approval.feedback')} placeholder={t('workflow.approval.feedback')}
+            value={feedback} onChange={(event) => setFeedback(event.target.value)} rows={3} maxLength={32000}
+            disabled={busy} className={FIELD} />
+          <div className="mt-1.5 flex items-center justify-end gap-2">
+            <button type="button" disabled={busy} className={GHOST_BUTTON} onClick={collapse}>
+              {t('agent.interaction.cancelRevision')}
+            </button>
+            {feedback.trim() !== '' && <button type="button" disabled={busy} className={PRIMARY_BUTTON}
+              onClick={() => decide('revise')}>
               {t('agent.interaction.sendRevision')}
             </button>}
           </div>

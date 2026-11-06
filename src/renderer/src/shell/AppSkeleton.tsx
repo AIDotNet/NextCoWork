@@ -29,13 +29,13 @@ function Bar({ className }: { className?: string }): ReactNode {
   return <div className={cn('rounded-md bg-tint', className)} />
 }
 
-export function AppSkeleton(): ReactNode {
+export function AppSkeleton({ focusMode = false }: { focusMode?: boolean }): ReactNode {
   return (
     <div className="app-ground flex h-full bg-app p-2">
       {/* 侧边栏面板 —— 宽度和圆角同 Sidebar 的 <aside> */}
       <div
         data-theme-region="sidebar"
-        className="mr-2 flex w-[297px] shrink-0 flex-col overflow-hidden rounded-panel bg-surface"
+        className={cn('mr-2 flex shrink-0 flex-col overflow-hidden rounded-panel bg-surface', focusMode ? 'w-[240px]' : 'w-[297px]')}
       >
         {/*
           34px 表头。macOS 上红绿灯就落在这一条的左端(hiddenInset),所以和
@@ -43,26 +43,29 @@ export function AppSkeleton(): ReactNode {
         */}
         <div className={cn('h-[34px] shrink-0', IS_MAC ? 'pl-[74px]' : 'pl-2')} />
 
-        {/* 品牌行:Mark + 字标 */}
-        <div className="flex items-center gap-2 px-4 pt-1 pb-4">
-          <Bar className="size-5 rounded-full" />
-          <Bar className="h-3.5 w-[104px]" />
-        </div>
+        {/* 专注窗口不预留品牌行和全局导航，首屏轮廓与实际侧边栏一致。 */}
+        {!focusMode && (
+          <div className="flex items-center gap-2 px-4 pt-1 pb-4">
+            <Bar className="size-5 rounded-full" />
+            <Bar className="h-3.5 w-[104px]" />
+          </div>
+        )}
 
-        {/* 上半:新建对话 / 搜索 / 四个功能入口 */}
-        <div className="flex flex-col gap-1.5 px-3">
-          <Bar className="h-8" />
-          <Bar className="h-8" />
+        <div className={cn('flex gap-1.5 px-3', focusMode ? 'items-center pt-2' : 'flex-col')}>
+          <Bar className={focusMode ? 'h-8 flex-1' : 'h-8'} />
+          <Bar className={focusMode ? 'size-8 shrink-0' : 'h-8'} />
         </div>
-        <div className="mt-4 flex flex-col gap-1 px-3">
-          <Bar className="h-7 w-[72%]" />
-          <Bar className="h-7 w-[64%]" />
-          <Bar className="h-7 w-[78%]" />
-          <Bar className="h-7 w-[58%]" />
-        </div>
+        {!focusMode && (
+          <div className="mt-4 flex flex-col gap-1 px-3">
+            <Bar className="h-7 w-[72%]" />
+            <Bar className="h-7 w-[64%]" />
+            <Bar className="h-7 w-[78%]" />
+            <Bar className="h-7 w-[58%]" />
+          </div>
+        )}
 
         {/* 下半:会话区。占满剩下的高度,让面板底边不出现一段突兀的空白 */}
-        <div className="mt-6 flex min-h-0 flex-1 flex-col gap-1 px-3">
+        <div className={cn('flex min-h-0 flex-1 flex-col gap-1 px-3', focusMode ? 'mt-4' : 'mt-6')}>
           <Bar className="mb-1 h-3 w-[84px]" />
           <Bar className="h-7 w-[88%]" />
           <Bar className="h-7 w-[70%]" />

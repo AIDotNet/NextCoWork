@@ -1,0 +1,80 @@
+/*
+ * 代码呈现的样式底座 —— markdown 围栏、工具卡代码块、diff 三处共用这一份。
+ *
+ * 需求:同一段代码出现在聊天正文、工具展开详情和 diff 里时,必须是同一套字号、
+ * 同一套配色。这些规则原先整段挂在 `.agent-markdown` 下面(markdown.css),于是
+ * 任何脱离 markdown 正文的代码卡都得额外套一层 `agent-markdown` 才有颜色 ——
+ * 连带继承整套正文排版(13.5px/1.8、overflow-wrap: anywhere),而它们并不想要。
+ *
+ * ★ 作用域类是 `.code-scope`,`.tok-*` 配色**只在作用域内生效**。去掉作用域类,
+ *   高亮 span 照样渲染出来,但一个颜色都不会生效 —— 表现为「高亮好像没跑」,
+ *   而且全程零报错。`.agent-markdown` 一并算作用域:markdown 正文里的围栏
+ *   不必再多包一层。
+ *
+ * 苹果风格分支:配色换成 Xcode 默认主题(Default Light / Default Dark)的语法色。
+ */
+
+:is(.agent-markdown, .code-scope) {
+  --md-keyword: #ff7ab2;
+  --md-string: #ff8170;
+  --md-number: #d9c97c;
+  --md-type: #5dd8ff;
+  --md-comment: #7f8c98;
+}
+
+:root[data-theme='light'] :is(.agent-markdown, .code-scope) {
+  --md-keyword: #ad3da4;
+  --md-string: #c41a16;
+  --md-number: #1c00cf;
+  --md-type: #0b4f79;
+  --md-comment: #5d6c79;
+}
+
+:is(.agent-markdown, .code-scope) .tok-keyword,
+:is(.agent-markdown, .code-scope) .tok-operator { color: var(--md-keyword); }
+:is(.agent-markdown, .code-scope) .tok-string,
+:is(.agent-markdown, .code-scope) .tok-string2 { color: var(--md-string); }
+:is(.agent-markdown, .code-scope) .tok-number,
+:is(.agent-markdown, .code-scope) .tok-bool,
+:is(.agent-markdown, .code-scope) .tok-literal { color: var(--md-number); }
+:is(.agent-markdown, .code-scope) .tok-typeName,
+:is(.agent-markdown, .code-scope) .tok-className,
+:is(.agent-markdown, .code-scope) .tok-function,
+:is(.agent-markdown, .code-scope) .tok-propertyName,
+:is(.agent-markdown, .code-scope) .tok-tagName { color: var(--md-type); }
+:is(.agent-markdown, .code-scope) .tok-comment,
+:is(.agent-markdown, .code-scope) .tok-meta { color: var(--md-comment); }
+:is(.agent-markdown, .code-scope) .tok-deleted { color: var(--color-danger); }
+:is(.agent-markdown, .code-scope) .tok-inserted { color: var(--color-accent); }
+
+/* 静态代码正文。行号栏要和它**逐像素**对齐,所以 12px/1.75 这两个值在
+   CodeBlock 的 GUTTER_CLASS 里又出现了一次 —— 改这里就要同步改那边。 */
+:is(.agent-markdown, .code-scope) .code-source {
+  margin: 0;
+  padding: 13px 15px;
+  overflow: auto;
+  max-height: 480px;
+  font: 12px/1.75 var(--font-mono);
+  color: var(--color-fg);
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+:is(.agent-markdown, .code-scope) .code-source code { padding: 0; border: 0; background: none; font: inherit; color: inherit; }
+:is(.agent-markdown, .code-scope) .code-source[data-wrap] { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Beautiful UI 的产物卡层级,但继续使用本项目的 token、高亮器和流式渲染。 */
+.code-card { min-width: 0; margin: 1em 0; border: 1px solid var(--color-stroke); border-radius: 10px; overflow: hidden; background: var(--color-canvas); }
+.code-card-toolbar { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px 6px 12px; background: color-mix(in srgb, var(--color-surface-raised) 82%, transparent); border-bottom: 1px solid var(--color-hairline); font: 11px/1.5 var(--font-sans); color: var(--color-fg-muted); user-select: none; }
+.code-card-language { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); color: var(--color-fg); }
+.code-card-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.code-card-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 25px; padding: 3px 7px; border-radius: 6px; cursor: pointer; transition: color 120ms ease, background-color 120ms ease; }
+.code-card-toolbar button:hover { background: var(--color-tint-hover); color: var(--color-fg); }
+.code-card-toolbar button:disabled { cursor: default; opacity: 0.5; }
+.code-card-toolbar button[aria-pressed='true'] { color: var(--color-fg); background: var(--color-tint); }
+.code-card-views { display: flex; gap: 2px; flex-shrink: 0; padding: 2px; border: 1px solid var(--color-hairline); border-radius: 7px; background: color-mix(in srgb, var(--color-surface-input) 55%, transparent); }
+
+@media (max-width: 600px) {
+  .code-card-toolbar { gap: 6px; padding-left: 10px; }
+  :is(.agent-markdown, .code-scope) .code-source { padding: 12px; }
+}

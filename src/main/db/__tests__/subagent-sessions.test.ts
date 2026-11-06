@@ -142,15 +142,13 @@ describe('子代理转录不进任何面向用户的枚举', () => {
 })
 
 describe('删父会话时整棵子树一起回收', () => {
-  it('任意深度的子转录、它们的消息、run 记录与检查点全部消失', () => {
+  // 检查点那一档随 `context_checkpoints` 表一并删除(schema V26):压缩边界现在是
+  // 转录里的一条消息,跟着 `getHistory` 一起被回收,不再需要单独断言。
+  it('任意深度的子转录、它们的消息与 run 记录全部消失', () => {
     seedTree()
     for (const id of [PARENT, CHILD, GRANDCHILD]) {
       repo.commitMessage(id, say(`m-${id}`, `deleteneedle ${id}`))
       repo.setRunRecord(`run-${id}`, id, 'done', 1, 2)
-      repo.upsertContextCheckpoint({
-        id: `cp-${id}`, sessionId: id, windowIndex: 0, note: 'n',
-        source: 'auto', createdAt: 1, updatedAt: 1, revision: 1
-      })
     }
 
     expect(repo.deleteSession(PARENT).sort()).toEqual([CHILD, GRANDCHILD, PARENT].sort())
@@ -158,7 +156,6 @@ describe('删父会话时整棵子树一起回收', () => {
     for (const id of [PARENT, CHILD, GRANDCHILD]) {
       expect(repo.getSession(id)).toBeUndefined()
       expect(repo.getHistory(id)).toEqual([])
-      expect(repo.listContextCheckpoints(id)).toEqual([])
     }
     // FTS 是虚表,没有外键管得着它 —— 漏删的话搜索会一直返回幽灵结果
     expect(repo.searchAll('deleteneedle')).toEqual([])
@@ -210,14 +207,14 @@ describe('第 10 条迁移:把已经泄漏进侧边栏的存量脏行清掉', ()
     )
     const putMessage = raw.prepare(
       `INSERT INTO messages (id, session_id, ordinal, role, parts, schema_version, created_at)
-       VALUES (?, ?, 0, 'assistant', '[]', 1, 1)`
+       VALUES (?, ?, 0, 'assistant', ?, 1, 1)`
     )
     const putFts = raw.prepare(
       `INSERT INTO messages_fts (message_id, session_id, title, content) VALUES (?, ?, '新对话', 'leakneedle')`
     )
     for (const id of [PARENT, CHILD, GRANDCHILD]) {
       putSession.run(id)
-      putMessage.run(`m-${id}`, id)
+      putMessage.run(`m-${id}`, id, JSON.stringify([{ type: 'text', text: 'leakneedle' }]))
       putFts.run(`m-${id}`, id)
     }
     raw.close()

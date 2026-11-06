@@ -12,13 +12,13 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { SkillInstallScope, SkillListItem, SkillScope } from '../../../../shared/domain/skill'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { IconButton } from '../../components/ui/IconButton'
-import { Segmented } from '../../components/ui/Segmented'
+import SegmentedControl from '../../components/arc/segmented-control/segmented-control'
 import { Select } from '../../components/ui/Select'
 import { TextInput } from '../../components/ui/TextInput'
-import { Toggle } from '../../components/ui/Toggle'
+import { Switch } from '../../components/arc/switch/switch'
 import { cn } from '../../lib/cn'
 import { FeatureFrame } from '../../shell/FeatureFrame'
 import { useI18n, type Translate } from '../../i18n'
@@ -35,6 +35,7 @@ import {
 } from '../../services/skills'
 import type { SkillMarketItem } from '../../../../shared/domain/skill'
 import { useSkillInWorkspace } from './use-skill'
+import { skillErrorDetail, skillErrorKey } from './skill-error'
 
 type ViewMode = 'market' | 'mine'
 /**
@@ -76,19 +77,9 @@ export function SkillsFeature({
 }): ReactNode {
   const { t } = useI18n()
   const skillError = (error: unknown): string => {
-    const key = error instanceof Error ? error.message : ''
-    const known = [
-      'skills.authRequired',
-      'skills.clientAssetsUnavailable',
-      'skills.scopeRequired',
-      'skills.versionUnavailable',
-      'skills.networkFailed',
-      'skills.digestMismatch',
-      'skills.packageTooLarge'
-    ] as const
-    return (known as readonly string[]).includes(key)
-      ? t(key as (typeof known)[number])
-      : t('skills.operationFailed')
+    const key = skillErrorKey(error)
+    const detail = key === 'skills.operationFailed' ? skillErrorDetail(error) : null
+    return detail === null ? t(key) : `${t(key)}（${detail}）`
   }
   const workspaceId = useWindowStore((state) => state.activeWorkspaceId)
   const items = useSkillsStore((state) => state.items)
@@ -301,18 +292,22 @@ export function SkillsFeature({
           </>
         )}
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" icon={<RefreshCw size={13} />} onClick={refresh} disabled={loading}>
+          <Button variant="secondary" type="button" size="sm" onClick={refresh} disabled={loading}>
+            <RefreshCw size={13} />
             {t('common.refresh')}
           </Button>
           <Button
+            type="button"
             size="sm"
+            variant="secondary"
             onClick={() => setInstallScope((scope) => (scope === 'global' ? 'project' : 'global'))}
           >
             {installScope === 'global' ? t('skills.global') : t('skills.project')}
           </Button>
           <Button
+            type="button"
             size="sm"
-            icon={<Package size={13} />}
+            variant="secondary"
             onClick={() => {
               void pickSkillZip().then(
                 (picked) =>
@@ -323,6 +318,7 @@ export function SkillsFeature({
               )
             }}
           >
+            <Package size={13} />
             {t('skills.install')}
           </Button>
         </div>
@@ -332,27 +328,24 @@ export function SkillsFeature({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-5">
         <div className="mx-auto flex min-h-0 w-full max-w-[1080px] flex-1 flex-col">
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Segmented
+            <SegmentedControl
               value={view}
-              onChange={(mode) => {
-                setView(mode)
+              onValueChange={(v) => {
+                setView(v as ViewMode)
                 setCategory('')
                 setScopeFilter('all')
                 setStatusFilter('all')
               }}
-              shape="pill"
               label={t('skills.viewMode')}
               options={(['market', 'mine'] as const).map((mode) => ({
                 value: mode,
-                label: (
-                  <>
-                    {t(mode === 'market' ? 'skills.market' : 'skills.mine')}
-                    <span className="ml-1 text-fg-faint tabular-nums">
-                      {mode === 'market'
-                        ? marketItems.length
-                        : items.filter((x) => x.sourceKind !== 'builtin').length}
-                    </span>
-                  </>
+                label: t(mode === 'market' ? 'skills.market' : 'skills.mine'),
+                accessory: (
+                  <span className="ml-1 text-fg-faint tabular-nums">
+                    {mode === 'market'
+                      ? marketItems.length
+                      : items.filter((x) => x.sourceKind !== 'builtin').length}
+                  </span>
                 )
               }))}
             />
@@ -431,7 +424,8 @@ export function SkillsFeature({
             {view === 'market' && marketError && (
               <div className="mt-4 shrink-0 rounded-[10px] border border-danger/30 bg-danger/5 px-3 py-2 text-[12px] text-danger">
                 {t('skills.marketLoadFailed')}
-                <Button
+                <Button variant="secondary"
+                  type="button"
                   size="sm"
                   className="ml-2"
                   onClick={() => setMarketNonce((value) => value + 1)}
@@ -501,7 +495,8 @@ export function SkillsFeature({
             {selected !== null &&
               (view === 'market' && !selectedInstalled ? (
                 <Button
-                  variant="accent"
+                  type="button"
+                  variant="primary"
                   disabled={marketDetail === null}
                   onClick={() => {
                     void installMarketSkill(
@@ -532,7 +527,7 @@ export function SkillsFeature({
                     (§5「不做防御式 UI」:接不了的操作就别画控件)。
                   */}
                   {selected.pluginId === undefined ? (
-                    <Button variant="danger" onClick={() => setConfirmUninstall(true)}>
+                    <Button type="button" variant="danger" onClick={() => setConfirmUninstall(true)}>
                       {t('skills.uninstall')}
                     </Button>
                   ) : (
@@ -542,7 +537,8 @@ export function SkillsFeature({
                   )}
                   {workspaceId !== null && (
                     <Button
-                      variant="accent"
+                      type="button"
+                      variant="primary"
                       disabled={!!selected.unavailableReason}
                       onClick={() => {
                         void useSkillInWorkspace(workspaceId, selected.name).then((opened) => {
@@ -557,7 +553,7 @@ export function SkillsFeature({
                   )}
                 </>
               ))}
-            <Button variant="ghost" onClick={() => setSelected(null)}>
+            <Button type="button" variant="secondary" onClick={() => setSelected(null)}>
               {t('common.done')}
             </Button>
           </>
@@ -651,10 +647,11 @@ export function SkillsFeature({
         title={t('skills.confirmUninstall')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setConfirmUninstall(false)}>
+            <Button type="button" variant="secondary" onClick={() => setConfirmUninstall(false)}>
               {t('common.cancel')}
             </Button>
             <Button
+              type="button"
               variant="danger"
               onClick={() => {
                 if (!selected) return
@@ -781,12 +778,11 @@ function MineDashboard({
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Segmented
+        <SegmentedControl
           value={scopeFilter}
-          onChange={onScopeChange}
-          size="sm"
+          onValueChange={(v) => onScopeChange(v as ScopeFilter)}
           label={t('skills.scopeFilter')}
-          options={scopeOptions}
+          options={[...scopeOptions]}
         />
         <Select
           value={statusFilter}
@@ -849,11 +845,11 @@ function MineDashboard({
                 {scopeLabel(item.scope, t)}
               </span>
               <div className="flex items-center gap-2">
-                <Toggle
+                <Switch
                   checked={item.activeInWorkspace}
-                  onChange={() => onWorkspace(item)}
+                  onCheckedChange={() => onWorkspace(item)}
                   disabled={busy !== null || !!item.unavailableReason}
-                  label={t('skills.workspaceToggle')}
+                  aria-label={t('skills.workspaceToggle')}
                 />
                 <span className="text-[11px] text-fg-muted">
                   {item.unavailableReason
@@ -879,11 +875,11 @@ function MineDashboard({
                 >
                   <Pencil size={12} />
                 </IconButton>
-                <Toggle
+                <Switch
                   checked={item.globalEnabled}
-                  onChange={() => onGlobal(item)}
+                  onCheckedChange={() => onGlobal(item)}
                   disabled={busy !== null}
-                  label={t('skills.globalToggle')}
+                  aria-label={t('skills.globalToggle')}
                 />
               </div>
             </div>
@@ -994,22 +990,22 @@ function SkillCard({
         </div>
         <div className="flex items-center gap-2">
           {onInstall !== undefined ? (
-            <Button size="sm" variant="accent" onClick={onInstall}>
+            <Button type="button" size="sm" variant="primary" onClick={onInstall}>
               {t('skills.install')}
             </Button>
           ) : (
             <>
-              <Toggle
+              <Switch
                 checked={item.globalEnabled}
-                onChange={onGlobal}
+                onCheckedChange={onGlobal}
                 disabled={busy !== null}
-                label={t('skills.globalToggle')}
+                aria-label={t('skills.globalToggle')}
               />
-              <Toggle
+              <Switch
                 checked={item.activeInWorkspace}
-                onChange={onWorkspace}
+                onCheckedChange={onWorkspace}
                 disabled={busy !== null || !!item.unavailableReason}
-                label={t('skills.workspaceToggle')}
+                aria-label={t('skills.workspaceToggle')}
               />
               <Settings2 size={14} className="text-fg-faint" />
             </>

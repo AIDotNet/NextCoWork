@@ -94,14 +94,14 @@ function pick(source: WidgetSourceVars, name: keyof WidgetSourceVars, fallback: 
  * 这类容易回归的规则正好能用断言钉住。
  */
 export function widgetTokens(appearance: WidgetAppearance, source: WidgetSourceVars): Record<string, string> {
-  const fg = pick(source, '--color-fg', appearance === 'light' ? '#181c19' : '#ececec')
-  const fgMuted = pick(source, '--color-fg-muted', appearance === 'light' ? '#72736f' : '#959897')
-  const fgFaint = pick(source, '--color-fg-faint', appearance === 'light' ? '#96958f' : '#7b7d7c')
-  const accent = pick(source, '--color-accent', appearance === 'light' ? '#2d4739' : '#36d285')
-  const danger = pick(source, '--color-danger', appearance === 'light' ? '#c4412c' : '#d9614e')
-  const panel = pick(source, '--color-surface', appearance === 'light' ? '#f6f4ef' : '#232726')
-  const card = pick(source, '--color-surface-input', appearance === 'light' ? '#ffffff' : '#2a2d2b')
-  const deep = pick(source, '--color-canvas', appearance === 'light' ? '#faf9f5' : '#1e2020')
+  const fg = pick(source, '--color-fg', appearance === 'light' ? '#1d1d1f' : '#f5f5f7')
+  const fgMuted = pick(source, '--color-fg-muted', appearance === 'light' ? '#5f5f64' : '#aeaeb2')
+  const fgFaint = pick(source, '--color-fg-faint', appearance === 'light' ? '#8e8e93' : '#8e8e93')
+  const accent = pick(source, '--color-accent', appearance === 'light' ? '#0071e3' : '#0071e3')
+  const danger = pick(source, '--color-danger', appearance === 'light' ? '#e0352b' : '#ff453a')
+  const panel = pick(source, '--color-surface', appearance === 'light' ? '#f5f5f7' : '#202022')
+  const card = pick(source, '--color-surface-input', appearance === 'light' ? '#ffffff' : '#2c2c2e')
+  const deep = pick(source, '--color-canvas', appearance === 'light' ? '#ffffff' : '#1c1c1e')
 
   /** Claude 的边框就是文字色的 40/30/15%。见文件头。 */
   const border = (percent: number): string => `color-mix(in srgb, ${fg} ${String(percent)}%, transparent)`
@@ -111,7 +111,7 @@ export function widgetTokens(appearance: WidgetAppearance, source: WidgetSourceV
     '--color-text-primary': fg,
     '--color-text-secondary': fgMuted,
     '--color-text-tertiary': fgFaint,
-    '--color-text-inverse': pick(source, '--color-accent-fg', appearance === 'light' ? '#ffffff' : '#0a2615'),
+    '--color-text-inverse': pick(source, '--color-accent-fg', appearance === 'light' ? '#ffffff' : '#ffffff'),
     '--color-text-info': accent,
     '--color-text-danger': danger,
     '--color-text-success': BORROWED.success.text,

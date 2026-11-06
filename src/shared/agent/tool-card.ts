@@ -25,6 +25,8 @@
  * 而不是让一个畸形 card 把卡片渲染打崩。
  */
 
+import type { WidgetAction, WidgetFormat } from '../domain/widget'
+
 /** 语义色调 —— 渲染层映射到主题 token,插件不能直接给颜色。 */
 export type CardTone = 'neutral' | 'info' | 'ok' | 'warn' | 'danger'
 
@@ -87,7 +89,27 @@ export type ToolCard =
    * widget 上限是 `visualize.ts` 里的 128K。要给插件放开这条路,得先给
    * 消毒器写一条自己的策略(白名单域名之类),而不是把 `kind` 加进白名单了事。
    */
-  | { kind: 'widget'; title: string; code: string }
+  | {
+      kind: 'widget'
+      title: string
+      /** 模型写的源码(html / svg / tsx 原文)。复制源码、`visualize_edit_widget` 都读它 */
+      code: string
+      /** 缺省 = 按 `code` 开头推断 html/svg —— 旧转录里的卡片没有这个字段 */
+      format?: WidgetFormat
+      /** `tsx` 才有:主进程用 sucrase 编好的 CJS。iframe 只执行它,不在页面里编译 */
+      compiled?: string
+      /** 交互模式:工具挂起等 widget 里 `submit()`,提交值作为工具结果回给模型 */
+      interactive?: boolean
+      /** 交互模式下已提交的值(JSON 文本)。有它 = 这张卡已经交过卷 */
+      submitted?: string
+      /** 预先声明、widget 可按 id 触发的动作 */
+      actions?: WidgetAction[]
+    }
+  /**
+   * `visualize_update_widget` 推给某张 widget 的一份数据(按 `title` 认领)。
+   * 同 `widget`:插件伪造不出这一种(`sanitizeToolCard` 不认)。
+   */
+  | { kind: 'widget_data'; title: string; data: unknown }
 
 // ─────────────────────────── 校验上限 ───────────────────────────
 

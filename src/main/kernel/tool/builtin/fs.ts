@@ -44,7 +44,7 @@ function mustReadFirst(rel: string): string {
   )
 }
 
-function restrictedWrite(ctx: ToolContext, abs: string, rel: string) {
+export function restrictedWrite(ctx: ToolContext, abs: string, rel: string) {
   if (ctx.writeFileRestriction === undefined || abs === ctx.writeFileRestriction) return undefined
   return toolFail(
     `Plan mode may only modify its active Markdown plan. ${rel} is outside that file; no changes were made.`

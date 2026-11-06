@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ProviderStreamEvent } from '../../../../shared/agent/stream'
-import type { ModelAlias, UpstreamProvider } from '../../../../shared/domain/provider'
+import { IMPORTED_ALIAS_DEFAULTS, type ModelAlias, type ThinkingConfig, type UpstreamProvider } from '../../../../shared/domain/provider'
+import { modelBindingResolver } from '../../../../shared/domain/model-binding'
 import { CLIENT_PROVIDER_ID } from '../../../../shared/domain/presets'
 import type { UnpricedUsageAttempt } from '../../../../shared/domain/usage'
 import type { RunCost } from '../../../../shared/domain/pricing'
@@ -687,6 +688,73 @@ describe('UpstreamRouter · 正常路径', () => {
     expect(bodies[0]?.system).toEqual([
       { type: 'text', text: 'stable prefix', cache_control: { type: 'ephemeral' } }
     ])
+  })
+
+  it.each([
+    ['claude-opus-5', 'auto', 'high'],
+    ['claude-opus-5', 'high', 'high'],
+    ['claude-opus-5-5', 'auto', 'medium'],
+    ['claude-opus-5-5', 'high', 'high'],
+    ['claude-haiku-5-5', 'auto', 'medium'],
+    ['claude-haiku-5-5', 'high', 'high'],
+    ['claude-sonnet-5-5', 'auto', 'high'],
+    ['claude-sonnet-5-5', 'high', 'high'],
+    ['gateway/claude-opus-6-1', 'auto', 'high'],
+    ['gateway/claude-opus-6-1', 'high', 'high']
+  ] as const)('%s %s → effort %s，解析绑定后 adaptive 且不带预算', async (upstreamModel, level, effort) => {
+    const resolved = modelBindingResolver().resolve({
+      ...structuredClone(IMPORTED_ALIAS_DEFAULTS),
+      alias: 'm', providerId: 'p1', upstreamModel
+    })
+    const { router, bodies } = rig({
+      providers: [provider('p1')], aliases: [resolved], responses: [ok(sseBody({ text: 'x' }))]
+    })
+    const output = await drainRequest(router, { ...REQ, thinkingLevel: level, maxOutputTokens: 8_192 })
+    expect(bodies[0]?.thinking).toEqual({ type: 'adaptive' })
+    expect(bodies[0]?.output_config).toEqual({ effort })
+    expect(JSON.stringify(bodies[0])).not.toContain('budget_tokens')
+    expect(bodies[0]?.max_tokens).toBe(8_192)
+    expect(output.at(-1)).toMatchObject({ type: 'message_end' })
+  })
+
+  it.each([
+    ['claude-opus-5', 'auto', 'high'],
+    ['claude-opus-5', 'low', 'low'],
+    ['claude-opus-5', 'medium', 'medium'],
+    ['claude-opus-5', 'high', 'high'],
+    ['claude-opus-5', 'higher', 'xhigh'],
+    ['claude-opus-5', 'max', 'max'],
+    ['claude-opus-5-5', 'auto', 'medium'],
+    ['claude-opus-5-5', 'low', 'low'],
+    ['claude-opus-5-5', 'medium', 'medium'],
+    ['claude-opus-5-5', 'high', 'high'],
+    ['claude-opus-5-5', 'higher', 'xhigh'],
+    ['claude-opus-5-5', 'max', 'max']
+  ] as const)('%s 已保存预算 %s 在 1024 输出下仍是 effort %s，预算不发出且配置不变', async (upstreamModel, level, effort) => {
+    const saved: ThinkingConfig = {
+      mode: 'budget',
+      defaultEnabled: true,
+      defaultBudgetTokens: 60_000,
+      parameterPath: 'thinking.budget_tokens'
+    }
+    const resolved = modelBindingResolver().resolve({
+      ...structuredClone(IMPORTED_ALIAS_DEFAULTS),
+      alias: 'm', providerId: 'p1', upstreamModel,
+      thinkingConfig: structuredClone(saved),
+      catalogOverrides: ['thinkingConfig']
+    })
+    expect(resolved.thinkingConfig).toEqual(saved)
+    expect(resolved.catalogOverrides).toContain('thinkingConfig')
+    const { router, bodies } = rig({
+      providers: [provider('p1')], aliases: [resolved], responses: [ok(sseBody({ text: 'x' }))]
+    })
+    const output = await drainRequest(router, { ...REQ, thinkingLevel: level, maxOutputTokens: 1024 })
+    expect(bodies[0]?.thinking).toEqual({ type: 'adaptive' })
+    expect(bodies[0]?.output_config).toEqual({ effort })
+    expect(JSON.stringify(bodies[0])).not.toContain('budget_tokens')
+    expect(bodies[0]?.max_tokens).toBe(1024)
+    expect(resolved.thinkingConfig).toEqual(saved)
+    expect(output.at(-1)).toMatchObject({ type: 'message_end' })
   })
 
   it('目录 ThinkingConfig 在 Anthropic 请求体上真实生效', async () => {

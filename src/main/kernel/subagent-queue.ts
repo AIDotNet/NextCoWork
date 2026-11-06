@@ -11,7 +11,7 @@
  */
 
 /** 排不进去时的理由。每一种在 runtime 里都会被翻成一句给模型看的人话。 */
-export type SlotRefusal = 'disabled' | 'deadlock' | 'timeout' | 'cancelled' | 'overflow'
+export type SlotRefusal = 'disabled' | 'deadlock' | 'cancelled' | 'overflow'
 
 export type SlotResult<T> = { ok: true; value: T } | { ok: false; reason: SlotRefusal }
 
@@ -72,8 +72,11 @@ export interface SlotRequest<T> {
 /** 队列非空时的兜底重扫周期。 */
 const TICK_MS = 1000
 
-/** 排队的墙钟上限。超过就退回拒绝，让模型换条路。 */
-export const QUEUE_MAX_WAIT_MS = 5 * 60_000
+/*
+  ★ 排队**没有**墙钟上限。子代理一跑半小时是常事,排在它后面的就得等它跑完 ——
+  以前的 5 分钟上限会把这种正常排队报成失败(Workflow 一扇出就撞上)。
+  不会永久挂住靠的是别的出口:父 run 中断/结束即取消、死锁当场拒绝、队列溢出直接拒绝。
+*/
 
 /** 队列长度上限，防模型一口气派上百个。 */
 export const MAX_QUEUED_PER_PARENT = 16
@@ -89,7 +92,7 @@ interface Waiter {
   onQueued: ((ahead: number) => void) | undefined
   /** 上一次报给调用方的排位，用来抑制重复的进度事件 */
   reported: number
-  /** 摘掉 abort / run_end 监听与超时定时器 */
+  /** 摘掉 abort / run_end 监听 */
   cleanup: () => void
 }
 
@@ -154,7 +157,7 @@ export class SubagentQueue {
 
       场景:`globalLimit = 2`,子代理 A、B 都在跑,B 已经卡在队列里等孙代理,
       现在 A 也要派孙代理。先判后入队的话,救兵集合里还剩一个 A —— 判成「再等等」,
-      可 A 正是提问的那个人,它一挂就真的没人能动了,白等满一个超时。
+      可 A 正是提问的那个人,它一挂就真的没人能动了,永远等下去。
       只有前台派发算数,理由见 `SlotRequest.blocking`。
     */
     const deadlock = this.deadlockReason(parentRunId, capacity, req.blocking)
@@ -262,7 +265,6 @@ export class SubagentQueue {
           reject(error)
         },
         cleanup: () => {
-          clearTimeout(timer)
           req.parent.signal.removeEventListener('abort', cancel)
           off()
         }
@@ -276,11 +278,6 @@ export class SubagentQueue {
       const cancel = (): void => {
         finishWith('cancelled')
       }
-
-      const timer = setTimeout(() => {
-        finishWith('timeout')
-      }, QUEUE_MAX_WAIT_MS)
-      if (typeof timer.unref === 'function') timer.unref()
 
       /*
         ★ abort 和 run_end **两个都要挂**，缺一不可。

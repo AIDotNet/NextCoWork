@@ -1,5 +1,5 @@
 import type { BuiltinModelRecord } from '../types'
-import { model, textCapabilities, visionCapabilities, source } from '../helpers'
+import { model, textCapabilities, visionCapabilities, source , videoCapabilities } from '../helpers'
 
 export const MINIMAX: readonly BuiltinModelRecord[] = [
   model('minimax', 'MiniMax-M3', 'MiniMax M3', {
@@ -89,5 +89,46 @@ export const MINIMAX: readonly BuiltinModelRecord[] = [
   }),
   model('minimax', 'MiniMax-01', 'MiniMax 01', {
     capabilities: textCapabilities({ tools: false }),
+  }),
+  /*
+   * 需求:视频档案表按目录型号查绑定。H3 / H3 Max 走 `/v2/video_generation`,
+   * Hailuo 系列走 v1(成功后还要按 file_id 再取一次下载地址)—— 两条 profile,
+   * 这里只负责让型号在目录里认得出。
+   */
+  model('minimax', 'MiniMax-H3', 'MiniMax H3', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-v2-create', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('minimax', 'MiniMax-H3-Max', 'MiniMax H3 Max', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-v2-create', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('minimax', 'MiniMax-Hailuo-2.3', 'MiniMax Hailuo 2.3', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-t2v', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('minimax', 'MiniMax-Hailuo-02', 'MiniMax Hailuo 02', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-t2v', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('minimax', 'T2V-01', 'MiniMax T2V-01', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-t2v', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('minimax', 'T2V-01-Director', 'MiniMax T2V-01 Director', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://platform.minimax.io/docs/api-reference/video-generation-t2v', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
   }),
 ]

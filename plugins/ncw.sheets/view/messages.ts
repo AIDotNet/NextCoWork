@@ -1,0 +1,83 @@
+/**
+ * 表格编辑器视图的界面文案(中 / 英)。理由同 `plugins/ncw.writer/view/messages.ts`:
+ * 视图拿不到宿主的 i18n 表,按 `navigator.language` 选一套,缺哪条两边一起补。
+ */
+const zh = {
+  save: '保存',
+  saving: '正在保存…',
+  saved: '已保存',
+  unsaved: '未保存',
+  readOnly: '只读',
+  opening: '正在打开表格…',
+  openFailed: '打不开这份表格',
+  zoom: '缩放',
+  canvas: '表格内容',
+  crashed: '文档引擎已停止,请关闭后重新打开这份表格',
+  failed: '操作失败',
+  ribbon: '功能区',
+  undo: '撤销',
+  redo: '重做',
+  font: '字体',
+  fontSize: '字号',
+  bold: '加粗',
+  italic: '倾斜',
+  underline: '下划线',
+  strikethrough: '删除线',
+  fontColor: '字体颜色',
+  automatic: '自动',
+  alignLeft: '左对齐',
+  alignCenter: '居中',
+  alignRight: '右对齐',
+  justify: '两端对齐',
+  merge: '合并单元格',
+  wrap: '自动换行',
+  currency: '货币格式',
+  percent: '百分比格式',
+  nameBox: '名称框',
+  formula: '编辑栏',
+  sheets: '工作表',
+  columnHeaders: '列标',
+  rowHeaders: '行号'
+}
+
+const en: typeof zh = {
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved',
+  unsaved: 'Unsaved',
+  readOnly: 'Read-only',
+  opening: 'Opening spreadsheet…',
+  openFailed: 'This spreadsheet could not be opened',
+  zoom: 'Zoom',
+  canvas: 'Spreadsheet content',
+  crashed: 'The document engine stopped. Close and reopen this spreadsheet.',
+  failed: 'The operation failed',
+  ribbon: 'Ribbon',
+  undo: 'Undo',
+  redo: 'Redo',
+  font: 'Font',
+  fontSize: 'Font size',
+  bold: 'Bold',
+  italic: 'Italic',
+  underline: 'Underline',
+  strikethrough: 'Strikethrough',
+  fontColor: 'Font color',
+  automatic: 'Automatic',
+  alignLeft: 'Align left',
+  alignCenter: 'Center',
+  alignRight: 'Align right',
+  justify: 'Justify',
+  merge: 'Merge cells',
+  wrap: 'Wrap text',
+  currency: 'Currency format',
+  percent: 'Percent format',
+  nameBox: 'Name box',
+  formula: 'Formula bar',
+  sheets: 'Sheets',
+  columnHeaders: 'Column headers',
+  rowHeaders: 'Row headers'
+}
+
+export type Messages = typeof zh
+
+export const text: Messages = navigator.language.toLowerCase().startsWith('zh') ? zh : en

@@ -151,8 +151,11 @@ export async function installSkillZip(
   )
     throw new Error("SKILL.md 元数据无效");
   const target = resolve(root, name);
+  // 版本号三个来源,由强到弱:顶层 `version`、`metadata:` 下的 `version`
+  // (市场上的包多半写在这儿)、最后才是文件名 —— 文件名是用户能随手改的。
   const version =
     fmString(fm, "version") ??
+    fmString(fm, "metadata.version") ??
     basename(zipPath).match(/v?(\d+\.\d+\.\d+)/)?.[1];
   const rootResolved = resolve(root);
   if (!(target === rootResolved || target.startsWith(rootResolved + sep)))

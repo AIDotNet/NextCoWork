@@ -1,46 +1,154 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { findGroup, type DockNode } from '../../../shared/domain/dock'
-import type { InnerTabKind } from '../../../shared/domain/tab'
+import type { InnerTab, InnerTabKind } from '../../../shared/domain/tab'
 import type { TabMenuItem } from '../../../shared/plugin/contribution'
 import type { Workspace } from '../../../shared/domain/workspace'
-import { EmptyState } from '../components/ui/EmptyState'
+import { EmptyState } from '../components/arc/empty-state/empty-state'
 import type { FallbackModel } from '../views/chat/Composer'
 import { cn } from '../lib/cn'
 import { useI18n } from '../i18n'
+import type { Presence } from '../lib/usePresence'
 import { InnerView } from '../views/registry'
 import { AllTabsMenu, InnerTabBar } from './InnerTabBar'
 import { useTabsStore } from '../stores/tabs'
 import { confirmDocumentChanges, useDocumentsStore } from '../stores/documents'
-import { DOCK_TAB_MIME, dockDropZone, groupPane, groupTabs, visibleDockNode, type DockDropZone } from './dock-layout'
+import { DOCK_TAB_MIME, dockDropZone, edgeHidden, groupPane, groupTabs, visibleDockNode, type DockDropZone } from './dock-layout'
 import { useTabMenu } from './tab-menu'
 import { submitTabRename } from './tab-rename-actions'
 import { usePluginsStore } from '../stores/plugins'
 
-export function DockRoot({ workspace, fallbackModel, maxOutputTokens, runningSessionIds, rightVisible = true, bottomVisible = true }: { workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string>; rightVisible?: boolean; bottomVisible?: boolean }): ReactNode {
+export function DockRoot({ workspace, fallbackModel, maxOutputTokens, runningSessionIds, right, bottom }: { workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string>; right: Presence; bottom: Presence }): ReactNode {
   const dock = useTabsStore((state) => state.dockOf(workspace.id))
-  const root = visibleDockNode(dock.root, dock.tabs, rightVisible, bottomVisible)
+  /*
+    ★ 结构树一律按「两面全开」投影,开关**不参与结构**。
+    原先开关一变就把树摊平,key 跟着换,整块主区跟着重挂载 —— 表现为关一次
+    右栏,聊天滚动位置就丢了,且全程零报错。空组 / hidden 组照旧滤掉(那是
+    结构性的、和开关无关);开关只在下面的 split 里决定某侧是 ghost 还是
+    absent,key 因此在开合之间纹丝不动,开合动画才有稳定的挂载点。
+  */
+  const structural = visibleDockNode(dock.root, dock.tabs, true, true)
+  /*
+    根整棵被开关藏起来(主区一个 Tab 都不剩、只剩右栏这类结构)才退回空态。
+    ★ 判据用 shown 而不是 mounted:根没有「父级 split」能替它包 ghost 壳,
+    留到动画结束才消失反而像坏了。这种结构本来就没有可播动画的邻居,瞬时是对的。
+  */
+  const root = structural !== null && edgeHidden(structural, dock.tabs, right.shown, bottom.shown) ? null : structural
   const { t } = useI18n()
-  return <div data-dock-root className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{root ? <DockNodeView key={root.id} node={root} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} /> : <EmptyState title={t('common.empty')} />}</div>
+  return <div data-dock-root className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{root ? <DockNodeView key={root.id} node={root} tabs={dock.tabs} right={right} bottom={bottom} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} /> : <EmptyState title={t('common.empty')} description="" />}</div>
 }
 
-function DockNodeView({ node, workspace, fallbackModel, maxOutputTokens, runningSessionIds }: { node: DockNode; workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string> }): ReactNode {
+function DockNodeView({ node, tabs, right, bottom, workspace, fallbackModel, maxOutputTokens, runningSessionIds }: { node: DockNode; tabs: readonly InnerTab[]; right: Presence; bottom: Presence; workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string> }): ReactNode {
   if (node.type === 'split') {
-    const horizontal = node.direction === 'horizontal'
-    return (
-      <div
-        data-dock-split-id={node.id}
-        className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
-        style={horizontal
-          ? { gridTemplateColumns: `minmax(0, ${node.ratio}fr) 4px minmax(0, ${1 - node.ratio}fr)` }
-          : { gridTemplateRows: `minmax(0, ${node.ratio}fr) 4px minmax(0, ${1 - node.ratio}fr)` }}
-      >
-        <DockNodeView key={node.first.id} node={node.first} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} />
-        <DockSplitter workspaceId={workspace.id} splitId={node.id} direction={node.direction} ratio={node.ratio} />
-        <DockNodeView key={node.second.id} node={node.second} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} />
-      </div>
-    )
+    return <DockSplitView node={node} tabs={tabs} right={right} bottom={bottom} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} />
   }
   return <DockGroup key={node.id} node={node} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} />
+}
+
+/**
+ * 右/底部面板开合动画的落点(设计见 AppShell 的 PANEL_MS 与 usePresence)。
+ *
+ * 需求:开合是一次 280ms 的过渡,而不是开关一翻轨道就瞬时重排、主区瞬间变宽。
+ *
+ * ★ 三轨结构恒定(两头 minmax + 中间 4px),开关只改轨里的数 ——
+ * `grid-template-columns/rows` 只在**结构相同**的两串之间插值,少一段就动画不出来,
+ * 所以收尾帧的几何必须和静止态逐帧对上,交接时才看不出跳变。
+ *
+ * ★ ghost 侧的内层钉死为目标像素宽、由轨道格裁 —— 和侧边栏「裁切不挤扁」
+ * 同一条理由:否则文件面板收的过程里工具条可用宽跌破 400px,会在动画中途
+ * 自己折成 `…`,UI 换了一套(那套溢出逻辑在 FilesView 的 TOOLBAR_FULL_WIDTH)。
+ */
+function DockSplitView({ node, tabs, right, bottom, workspace, fallbackModel, maxOutputTokens, runningSessionIds }: { node: Extract<DockNode, { type: 'split' }>; tabs: readonly InnerTab[]; right: Presence; bottom: Presence; workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string> }): ReactNode {
+  const horizontal = node.direction === 'horizontal'
+  const stateOf = (child: DockNode): 'live' | 'ghost' | 'absent' => {
+    if (edgeHidden(child, tabs, right.mounted, bottom.mounted)) return 'absent'
+    if (edgeHidden(child, tabs, right.shown, bottom.shown)) return 'ghost'
+    return 'live'
+  }
+  const first = stateOf(node.first)
+  const second = stateOf(node.second)
+  const ghostSlot = first === 'ghost' ? 1 : second === 'ghost' ? 3 : null
+
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [frozen, setFrozen] = useState<number | null>(null)
+  /*
+    ghost 侧的目标宽 = 本侧占比 × (整格 − 分隔条),整格在开合期间不变
+    (主区总宽不因 dock 内部的此消彼长而变),所以开播当帧量一次就够。
+    不挂依赖:ghost 期间每次 commit 都重量,顺带跟上罕见的中途变化;
+    收尾 setFrozen(null) 只是把状态归位,多余的一次渲染没有可见后果。
+  */
+  useLayoutEffect(() => {
+    if (ghostSlot === null) {
+      if (frozen !== null) setFrozen(null)
+      return
+    }
+    const rect = gridRef.current?.getBoundingClientRect()
+    if (rect === undefined) return
+    const fraction = ghostSlot === 1 ? node.ratio : 1 - node.ratio
+    const size = (horizontal ? rect.width : rect.height) - 4
+    const target = size * fraction
+    setFrozen((prev) => (prev === target ? prev : target))
+  })
+
+  /*
+    ★ 只在 usePresence 的 animating 窗口里挂 transition:拖分隔条时 ratio 每帧
+    都在写,常开过渡等于每拖一帧排一次插值,手感像拉皮筋(usePresence 文件头
+    记的正是这条)。280 必须和 AppShell 的 PANEL_MS 同一个数 —— 四条曲线只要
+    有一条不同步,看着就是「分好几批到位」。
+  */
+  const animating = right.animating || bottom.animating
+  const filling = second === 'live' ? 'minmax(0, 0fr) 0px minmax(0, 1fr)' : 'minmax(0, 1fr) 0px minmax(0, 0fr)'
+  const tracks = first !== 'live' || second !== 'live'
+    ? (horizontal ? { gridTemplateColumns: filling } : { gridTemplateRows: filling })
+    : horizontal
+      ? { gridTemplateColumns: `minmax(0, ${node.ratio}fr) 4px minmax(0, ${1 - node.ratio}fr)` }
+      : { gridTemplateRows: `minmax(0, ${node.ratio}fr) 4px minmax(0, ${1 - node.ratio}fr)` }
+
+  const pane = (child: DockNode, slot: 1 | 3, state: 'live' | 'ghost', childNode: ReactNode): ReactNode => (
+    <div
+      key={child.id}
+      className={cn('flex min-h-0 min-w-0', !horizontal && 'flex-col', state === 'ghost' && 'overflow-hidden')}
+      style={horizontal ? { gridColumn: slot } : { gridRow: slot }}
+    >
+      <div
+        className={cn('flex min-h-0 min-w-0 flex-col', state === 'live' ? 'flex-1' : 'shrink-0')}
+        style={state === 'ghost' ? (horizontal ? { width: frozen ?? 0 } : { height: frozen ?? 0 }) : undefined}
+      >
+        {childNode}
+      </div>
+    </div>
+  )
+  const pass = (child: DockNode): ReactNode => <DockNodeView node={child} tabs={tabs} right={right} bottom={bottom} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} runningSessionIds={runningSessionIds} />
+  return (
+    <div
+      ref={gridRef}
+      data-dock-split-id={node.id}
+      className={cn(
+        'grid min-h-0 min-w-0 flex-1 overflow-hidden',
+        animating && (horizontal ? 'transition-[grid-template-columns] duration-280 ease-panel' : 'transition-[grid-template-rows] duration-280 ease-panel')
+      )}
+      style={tracks}
+    >
+      {first !== 'absent' && pane(node.first, 1, first, pass(node.first))}
+      {/*
+        分隔条只在两侧都还在时画。★ 宽高不写死 w-1/h-1,交给网格拉伸填轨道 ——
+        轨道在开合动画里要收到 0px,写死 4px 的话它会孤零零地多留一截。
+        ghost 期间置 inert:轨道收成 0 后它没有可点面积,留着 tabIndex 只会
+        让 Tab 键跳进一个看不见的分隔条。
+      */}
+      {first !== 'absent' && second !== 'absent' && (
+        <DockSplitter
+          key="splitter"
+          workspaceId={workspace.id}
+          splitId={node.id}
+          direction={node.direction}
+          ratio={node.ratio}
+          style={horizontal ? { gridColumn: 2 } : { gridRow: 2 }}
+          inert={ghostSlot !== null}
+        />
+      )}
+      {second !== 'absent' && pane(node.second, 3, second, pass(node.second))}
+    </div>
+  )
 }
 
 function DockGroup({ node, workspace, fallbackModel, maxOutputTokens, runningSessionIds }: { node: Extract<DockNode, { type: 'group' }>; workspace: Workspace; fallbackModel: FallbackModel; maxOutputTokens: number; runningSessionIds: ReadonlySet<string> }): ReactNode {
@@ -81,7 +189,8 @@ function DockGroup({ node, workspace, fallbackModel, maxOutputTokens, runningSes
       return
     }
     if (item.pluginId === undefined) return
-    void usePluginsStore.getState().runCommand(item.pluginId, item.action.commandId)
+    // args 带上菜单所在的工作区:插件终端这类能力要知道「在哪个工作区里起」。
+    void usePluginsStore.getState().runCommand(item.pluginId, item.action.commandId, { workspaceId: workspace.id })
   }
   const onClose = async (id: string): Promise<void> => {
     const target = tabs.find((tab) => tab.id === id)
@@ -180,7 +289,7 @@ function DockContent({ tabs, active, workspace, fallbackModel, maxOutputTokens, 
   emptyTitle: string
 }): ReactNode {
   const browsers = tabs.filter((tab) => tab.kind === 'browser')
-  if (active === undefined) return <EmptyState title={emptyTitle} className="py-6" />
+  if (active === undefined) return <EmptyState title={emptyTitle} description="" className="py-6" />
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
       {active.kind !== 'browser' && <InnerView key={active.id} tab={active} workspace={workspace} fallbackModel={fallbackModel} maxOutputTokens={maxOutputTokens} />}
@@ -218,7 +327,7 @@ function DropOverlay({ zone }: { zone: DockDropZone }): ReactNode {
   return <div className={cn(cls, 'inset-2')} />
 }
 
-function DockSplitter({ workspaceId, splitId, direction, ratio }: { workspaceId: string; splitId: string; direction: 'horizontal' | 'vertical'; ratio: number }): ReactNode {
+function DockSplitter({ workspaceId, splitId, direction, ratio, style, inert = false }: { workspaceId: string; splitId: string; direction: 'horizontal' | 'vertical'; ratio: number; /** 钉在网格第 2 轨 —— 两侧 children 用了显式 slot,它不靠自动摆放。 */ style?: React.CSSProperties; /** 开合动画期间轨道收到 0px:没有可点面积,别留一个可 Tab 的隐形分隔条。 */ inert?: boolean }): ReactNode {
   const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const resize = useTabsStore((state) => state.resizeDock)
@@ -242,5 +351,7 @@ function DockSplitter({ workspaceId, splitId, direction, ratio }: { workspaceId:
     if (event.key === 'Home') { resize(workspaceId, splitId, 0.5); event.preventDefault(); return }
     if (delta !== 0) { resize(workspaceId, splitId, ratio + delta); event.preventDefault() }
   }
-  return <div ref={ref} role="separator" tabIndex={0} aria-orientation={direction === 'horizontal' ? 'vertical' : 'horizontal'} className={cn('relative z-10 shrink-0 bg-border/60', direction === 'horizontal' ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize', dragging && 'bg-accent')} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown} onDoubleClick={() => resize(workspaceId, splitId, 0.5)} />
+  // 宽高不写死 w-1/h-1:由网格拉伸填满 4px 的轨道。轨道在开合动画里要收到
+  // 0px,写死的话它会比轨道宽、在收尾帧溢到邻居格上。
+  return <div ref={ref} role="separator" tabIndex={inert ? -1 : 0} aria-orientation={direction === 'horizontal' ? 'vertical' : 'horizontal'} inert={inert} style={style} className={cn('relative z-10 shrink-0 bg-border/60', direction === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize', dragging && 'bg-accent')} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown} onDoubleClick={() => resize(workspaceId, splitId, 0.5)} />
 }

@@ -11,7 +11,7 @@ import type { ProviderStreamEvent } from './stream'
 import type { TokenUsage } from './stream'
 import type { ToolOutput } from './message'
 import type { ToolProgress } from './tool'
-import type { ContextCheckpoint, ContextSegment, ContextStatus } from './context-management'
+import type { ContextSegment, ContextStatus } from './context-management'
 
 export type RunStatus = 'running' | 'done' | 'error' | 'aborted'
 
@@ -29,7 +29,14 @@ export type RunNotice =
   | { kind: 'switch'; to: string; reason: string }
 
 export type AgentEvent =
-  | { type: 'stream'; delta: ProviderStreamEvent }
+  /**
+   * `at` 是主进程收到这条上游事件时的墙钟毫秒 —— 和 `tool_start.at` 同一个约定。
+   *
+   * 需求：思考卡片的实时计时要和提交后落盘的 `durationMs` 用**同一只表**。渲染层自己
+   * `Date.now()` 的话，重载后重放日志时所有增量都挤在同一毫秒里，计时从 0 重来，
+   * 而提交那一刻又跳回主进程算的真值。可选：fake-emitter 与旧日志没有它，reducer 退回本地时钟。
+   */
+  | { type: 'stream'; delta: ProviderStreamEvent; at?: number }
   /** ★ 落盘边界 —— db 只在这里写,绝不在 delta 上写(方案 §9) */
   | { type: 'message_commit'; message: AgentMessage }
   /**
@@ -113,10 +120,9 @@ export type AgentEvent =
        * 压力条要在这一轮真的挤爆之前就画出来。所以圆环显示真值、只有真值缺席时
        * 才退回这里的估算;而 `segments` 各档之和恒等于 `used`,两者同源。
        *
-       * ★ **`shouldCompact` 不是拿这个 `used` 判的**,它读的是校准后的数
-       * (上一轮真值 ÷ 上一轮估算,见 `context-assembler.ts` 的 `tokenCalibration`)。
-       * 别为了「让两个数看起来一致」把校准也乘到 `used` 上:那会让归因之和不再等于
-       * `used`,而圆环旁边那张卡本来就只显示百分比,同向缩放一遍什么也不会变。
+       * ★ **`shouldCompact` 不是拿这个 `used` 判的**,它读的是「上一次上游真值 +
+       * 其后新增消息的估算」(见 `AgentSession.contextTokens`,同 Claude Code 的
+       * `tokenCountWithEstimation`)。原先这里写的是「校准系数」—— 那套已随压缩重写删除。
        */
       used: number
       window: number
@@ -126,8 +132,11 @@ export type AgentEvent =
     }
   /** Localized run warning; not a provider error and never model context. */
   | { type: 'notification'; warning: AgentError }
+  /**
+   * 压缩进行中 / 完成 / 失败 / 熔断。压缩的产物本身(边界消息)走普通的 `message_commit`,
+   * 这里只报状态 —— 原先的 `context_checkpoint` 事件随检查点表一起删除。
+   */
   | { type: 'context_status'; status: ContextStatus }
-  | { type: 'context_checkpoint'; checkpoint: ContextCheckpoint }
   /** `at` is the wall-clock time at which the run reached its terminal state. */
   | { type: 'run_end'; status: RunStatus; error?: AgentError; at?: number }
 
@@ -158,6 +167,12 @@ export interface RunSnapshot {
   pendingInteractions: PendingInteraction[]
   /** 子 run 的 id,UI 上是可展开节点 */
   children: string[]
+  /**
+   * 主进程的事件日志**头部被截掉过**(超过条数/字节上限)。`events` 因此不是这个 run
+   * 从头到尾的完整回放 —— 已提交的消息要从库里读(`sessions:getPage`),不能只靠这份快照重建。
+   * 缺省 = 日志完整(除去那些被后来的提交/工具结束取代、重放不需要的增量)。
+   */
+  logTrimmed?: boolean
 }
 
 /**
@@ -172,6 +187,14 @@ export interface ActiveRunEntry {
   sessionId: string
   workspaceId: string
   status: RunStatus
+  /**
+   * 这个 run(含它派出的子代理)正等着用户处理的审批 / 提问数。
+   *
+   * ★ 走全局广播而不是正文事件:没有窗口在看这条会话时正文一条都不推,
+   * 而「有个审批在等你」恰恰是那时最该让用户知道的事 —— 应用内标一下,不强制切换。
+   * 缺席 = 0。
+   */
+  pendingInteractions?: number
 }
 
 /** run 结束后不再有事件,UI 可以据此收掉 loading 态。 */

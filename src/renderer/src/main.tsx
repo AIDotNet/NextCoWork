@@ -2,8 +2,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/theme.css'
+import './styles/arc-integration.css'
 import { I18nProvider } from './i18n'
 import { MigrationGateHost } from './views/MigrationGate'
+import { IS_MAC } from './lib/platform'
+
+// 苹果风格:macOS 窗口开了 vibrancy(见 main/index.ts),界面据此把窗口底和主面板改成半透明玻璃
+if (IS_MAC) document.documentElement.dataset.vibrancy = 'true'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root not found')

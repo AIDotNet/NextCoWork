@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import type { ThinkingLevel } from '../../agent/run-request'
 import type { ResolvedModelThinking } from '../model-runtime'
-import { applyThinkingAdapter, removeUnsupportedThinking, ThinkingAdapterError } from '../thinking-adapter'
+import { applyThinkingAdapter, enforceThinkingPreference, reasoningReplayFor, removeUnsupportedThinking, ThinkingAdapterError } from '../thinking-adapter'
 import { OLLAMA_STANDARD_THINKING } from '../model-catalog-inventory'
 import { modelBindingResolver } from '../model-binding'
 import { modelThinkingLevels, resolveModelThinking } from '../model-runtime'
-import { IMPORTED_ALIAS_DEFAULTS } from '../provider'
+import { IMPORTED_ALIAS_DEFAULTS, type ThinkingConfig } from '../provider'
 
 const effort: ResolvedModelThinking = {
   mode: 'effort',
@@ -14,6 +15,100 @@ const effort: ResolvedModelThinking = {
 }
 
 describe('applyThinkingAdapter', () => {
+  it('maps adaptive Anthropic thinking to type adaptive and output_config effort', () => {
+    const config = {
+      mode: 'effort' as const,
+      defaultEnabled: true,
+      defaultEffort: 'medium' as const,
+      parameterPath: 'output_config.effort',
+      anthropicAdaptive: true
+    }
+    expect(applyThinkingAdapter(
+      { thinking: { type: 'enabled', budget_tokens: 64_000 } },
+      {
+        protocol: 'anthropic',
+        upstreamModel: 'claude-opus-5-5',
+        maxOutputTokens: 64_000,
+        config,
+        reasoning: { mode: 'effort', enabled: true, explicit: true, effort: 'high' },
+        reasoningEfforts: ['none', 'low', 'medium', 'high', 'max']
+      }
+    )).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
+  })
+
+  it('uses protocol effort rather than a custom path on compatible non-Anthropic bindings', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'openai-chat', upstreamModel: 'claude-opus-5-5', maxOutputTokens: 8192,
+      config: { mode: 'effort', defaultEnabled: true, defaultEffort: 'medium',
+        parameterPath: 'output_config.effort', anthropicAdaptive: true },
+      reasoning: { mode: 'effort', enabled: true, explicit: true, effort: 'high' }
+    })).toEqual({ reasoning_effort: 'high' })
+  })
+
+  it.each(['openai-chat', 'openai-responses'] as const)('uses %s effort with custom patches on an adaptive binding', (protocol) => {
+    expect(applyThinkingAdapter({}, {
+      protocol, preset: 'custom', upstreamModel: 'claude-opus-5-5', maxOutputTokens: 8192,
+      config: { mode: 'effort', defaultEnabled: true, defaultEffort: 'medium',
+        parameterPath: 'output_config.effort', anthropicAdaptive: true },
+      reasoning: { mode: 'effort', enabled: true, explicit: false, effort: 'medium' }
+    })).toEqual(protocol === 'openai-chat'
+      ? { reasoning_effort: 'medium' } : { reasoning: { effort: 'medium' } })
+  })
+
+  it('supports custom patches on an Anthropic adaptive binding', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic', preset: 'custom', upstreamModel: 'claude-opus-5-5', maxOutputTokens: 8192,
+      config: { mode: 'effort', defaultEnabled: true, defaultEffort: 'medium',
+        parameterPath: 'output_config.effort', anthropicAdaptive: true },
+      reasoning: { mode: 'effort', enabled: true, explicit: false, effort: 'medium' }
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } })
+  })
+
+  it('sends disabled and clears stale adaptive effort for an explicit Off', () => {
+    const body = applyThinkingAdapter(
+      { thinking: { type: 'enabled', budget_tokens: 64_000 }, output_config: { effort: 'high', format: 'json' } },
+      {
+        protocol: 'anthropic',
+        upstreamModel: 'claude-opus-5',
+        maxOutputTokens: 64_000,
+        config: { mode: 'effort', defaultEnabled: true, defaultEffort: 'high', anthropicAdaptive: true },
+        reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+        reasoning: { mode: 'effort', enabled: false, explicit: true }
+      }
+    )
+    expect(body).toHaveProperty('thinking', { type: 'disabled' })
+    expect(body).toHaveProperty('output_config', { format: 'json' })
+  })
+  it.each(['off', 'auto'] as const)('accepts %s on a confirmed Off-only adaptive binding', (thinkingLevel) => {
+    const config: ThinkingConfig = {
+      mode: 'effort', defaultEnabled: true, defaultEffort: 'none', anthropicAdaptive: true
+    }
+    expect(applyThinkingAdapter({ output_config: { effort: 'max', format: 'json' } }, {
+      protocol: 'anthropic', upstreamModel: 'claude-opus-5', maxOutputTokens: 1024,
+      config, reasoningEfforts: ['none'], thinkingLevel,
+      reasoning: resolveModelThinking(thinkingLevel, config, 1024, ['none'])
+    })).toEqual({ thinking: { type: 'disabled' }, output_config: { format: 'json' } })
+  })
+
+  it('keeps disabled budget-only legacy callers usable with an Off-only accepted set', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic', upstreamModel: 'claude-opus-5', maxOutputTokens: 8192,
+      config: { mode: 'budget', defaultEnabled: false, parameterPath: 'thinking.budget_tokens' },
+      reasoningEfforts: ['none'], reasoning: { mode: 'budget', enabled: false, explicit: true }
+    })).toEqual({ thinking: { type: 'disabled' } })
+  })
+
+  it('honours a supported adaptive default Off on Auto', () => {
+    const config = { mode: 'effort' as const, defaultEnabled: false, defaultEffort: 'high' as const,
+      parameterPath: 'output_config.effort', anthropicAdaptive: true }
+    const reasoningEfforts = ['none', 'low', 'medium', 'high'] as const
+    expect(applyThinkingAdapter({ output_config: { effort: 'max' } }, {
+      protocol: 'anthropic', upstreamModel: 'claude-opus-5', maxOutputTokens: 8192,
+      config, reasoningEfforts,
+      reasoning: resolveModelThinking('auto', config, 8192, reasoningEfforts)
+    })).toEqual({ thinking: { type: 'disabled' } })
+  })
+
   it('maps an Anthropic budget and removes incompatible fields', () => {
     expect(
       applyThinkingAdapter(
@@ -732,6 +827,354 @@ describe('applyThinkingAdapter', () => {
   })
 })
 
+/**
+ * Legacy budget rows still reach the adapter. A 1024-token output disables
+ * every budget (ceiling is 0); 8192 clamps medium and above to 7168, which a
+ * token→effort map would collapse. thinkingLevel must win over that resolution.
+ * anthropicAdaptive omitted and true both convert this budget path.
+ */
+describe('adaptiveInput legacy Anthropic budgets', () => {
+  const levels = ['auto', 'low', 'medium', 'high', 'higher', 'max'] as const satisfies readonly ThinkingLevel[]
+
+  function budgetConfig(flag: 'omitted' | 'true', defaultEnabled = true): ThinkingConfig {
+    const config: ThinkingConfig = {
+      mode: 'budget',
+      defaultEnabled,
+      defaultBudgetTokens: 64_000,
+      parameterPath: 'thinking.budget_tokens'
+    }
+    if (flag === 'true') config.anthropicAdaptive = true
+    return config
+  }
+
+  function effortFor(model: string, level: ThinkingLevel): 'low' | 'medium' | 'high' | 'xhigh' | 'max' {
+    if (level === 'auto') return model === 'claude-opus-5' ? 'high' : 'medium'
+    if (level === 'minimal') return 'low'
+    if (level === 'higher') return 'xhigh'
+    if (level === 'low' || level === 'medium' || level === 'high' || level === 'max') return level
+    throw new Error(`unexpected level ${level}`)
+  }
+
+  const preserved = (['claude-opus-5', 'claude-opus-5-5'] as const).flatMap((model) =>
+    levels.flatMap((level) =>
+      ([1024, 8192] as const).flatMap((maxOutputTokens) =>
+        (['omitted', 'true'] as const).map((flag) => [model, level, maxOutputTokens, flag] as const)
+      )
+    )
+  )
+
+  it.each(preserved)('%s %s at maxOutputTokens %i (anthropicAdaptive %s) keeps the original effort', (model, level, maxOutputTokens, flag) => {
+    const config = budgetConfig(flag)
+    const reasoning = resolveModelThinking(level, config, maxOutputTokens)
+    if (maxOutputTokens === 1024) expect(reasoning).toMatchObject({ enabled: false })
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: model,
+      maxOutputTokens,
+      config,
+      reasoning,
+      thinkingLevel: level
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: effortFor(model, level) } })
+  })
+
+  it.each([
+    ['claude-opus-5', 1024],
+    ['claude-opus-5', 8192],
+    ['claude-opus-5-5', 1024],
+    ['claude-opus-5-5', 8192]
+  ] as const)('%s minimal budget maps to low at maxOutputTokens %i', (model, maxOutputTokens) => {
+    const config = budgetConfig('omitted')
+    const reasoning = resolveModelThinking('minimal', config, maxOutputTokens)
+    if (maxOutputTokens === 1024) expect(reasoning).toMatchObject({ enabled: false })
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: model,
+      maxOutputTokens,
+      config,
+      reasoning,
+      thinkingLevel: 'minimal'
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'low' } })
+  })
+
+  it.each([
+    ['claude-opus-5', 'omitted', 'high'],
+    ['claude-opus-5', 'true', 'high'],
+    ['claude-opus-5-5', 'omitted', 'medium'],
+    ['claude-opus-5-5', 'true', 'medium']
+  ] as const)('%s Auto without thinkingLevel (anthropicAdaptive %s) uses %s, not the 64000-budget max', (model, flag, effort) => {
+    const config = budgetConfig(flag)
+    const reasoning = resolveModelThinking('auto', config, 128_000)
+    expect(reasoning).toMatchObject({ explicit: false, enabled: true, budgetTokens: 64_000, mode: 'budget' })
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: model,
+      maxOutputTokens: 128_000,
+      config,
+      reasoning
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort } })
+  })
+
+  it.each(['omitted', 'true'] as const)('explicit Off on opus-5 disables thinking and keeps the output format (anthropicAdaptive %s)', (flag) => {
+    const config = budgetConfig(flag)
+    expect(applyThinkingAdapter(
+      { thinking: { type: 'enabled', budget_tokens: 64_000 }, output_config: { effort: 'high', format: 'json' } },
+      {
+        protocol: 'anthropic',
+        upstreamModel: 'claude-opus-5',
+        maxOutputTokens: 64_000,
+        config,
+        reasoning: resolveModelThinking('off', config, 64_000),
+        thinkingLevel: 'off'
+      }
+    )).toEqual({ thinking: { type: 'disabled' }, output_config: { format: 'json' } })
+  })
+
+  it.each(['omitted', 'true'] as const)('explicit Off on opus-5.5 is rejected (anthropicAdaptive %s)', (flag) => {
+    const config = budgetConfig(flag)
+    expect(() => applyThinkingAdapter(
+      { output_config: { effort: 'max', format: 'json' } },
+      {
+        protocol: 'anthropic',
+        upstreamModel: 'claude-opus-5-5',
+        maxOutputTokens: 64_000,
+        config,
+        reasoning: resolveModelThinking('off', config, 64_000),
+        thinkingLevel: 'off'
+      }
+    )).toThrow(/不支持关闭推理/u)
+  })
+
+  it('legacy defaultEnabled false budget on opus-5.5 Auto stays enabled at medium', () => {
+    const config = budgetConfig('omitted', false)
+    const reasoning = resolveModelThinking('auto', config, 8_192)
+    expect(reasoning).toMatchObject({ enabled: false, explicit: false })
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: 'claude-opus-5-5',
+      maxOutputTokens: 8_192,
+      config,
+      reasoning,
+      thinkingLevel: 'auto'
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } })
+  })
+
+  it('maps a budget-only explicit caller of 32000 tokens to xhigh', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: 'claude-opus-5',
+      maxOutputTokens: 128_000,
+      config: budgetConfig('omitted'),
+      reasoning: { mode: 'budget', enabled: true, explicit: true, budgetTokens: 32_000 }
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'xhigh' } })
+  })
+
+  it('maps an unknown modern claude-opus-6-1 budget of 64000 to conservative high', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: 'claude-opus-6-1',
+      maxOutputTokens: 128_000,
+      config: budgetConfig('omitted'),
+      reasoning: { mode: 'budget', enabled: true, explicit: true, budgetTokens: 64_000 }
+    })).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
+  })
+
+  it('throws for explicit higher when the effort list is only low, medium, and high', () => {
+    const config = budgetConfig('omitted')
+    const reasoningEfforts = ['low', 'medium', 'high'] as const
+    expect(() => applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: 'claude-opus-5',
+      maxOutputTokens: 8_192,
+      config,
+      reasoning: resolveModelThinking('higher', config, 8_192),
+      thinkingLevel: 'higher',
+      reasoningEfforts
+    })).toThrow(/不支持推理强度「xhigh」/u)
+  })
+
+  it('throws when the adaptive capability list is empty', () => {
+    expect(() => applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: 'claude-opus-5',
+      maxOutputTokens: 8_192,
+      config: budgetConfig('omitted'),
+      reasoning: { mode: 'budget', enabled: true, explicit: true, budgetTokens: 32_000 },
+      reasoningEfforts: []
+    })).toThrow(/缺少可用推理强度/u)
+  })
+
+  it.each(['claude-opus-4-5', 'claude-opus-4-6'] as const)('%s manual budget stays enabled and does not add effort', (model) => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      upstreamModel: model,
+      maxOutputTokens: 8_192,
+      config: budgetConfig('omitted'),
+      reasoning: { mode: 'budget', enabled: true, explicit: true, budgetTokens: 8_000 },
+      thinkingLevel: 'high'
+    })).toEqual({ thinking: { type: 'enabled', budget_tokens: 8_000 } })
+  })
+
+  it('standardWire and anthropicAdaptive false do not convert an opus-5 budget', () => {
+    const reasoning: ResolvedModelThinking = { mode: 'budget', enabled: true, explicit: true, budgetTokens: 8_000 }
+    for (const config of [
+      { ...budgetConfig('omitted'), standardWire: true },
+      { ...budgetConfig('omitted'), anthropicAdaptive: false }
+    ] as const) {
+      expect(applyThinkingAdapter({}, {
+        protocol: 'anthropic',
+        upstreamModel: 'claude-opus-5',
+        maxOutputTokens: 8_192,
+        config,
+        reasoning,
+        thinkingLevel: 'high'
+      })).toEqual({ thinking: { type: 'enabled', budget_tokens: 8_000 } })
+    }
+  })
+
+  it('a custom preset on thinking_budget stays on that custom path', () => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      preset: 'custom',
+      upstreamModel: 'claude-opus-5',
+      maxOutputTokens: 8_192,
+      config: {
+        mode: 'budget',
+        defaultEnabled: true,
+        defaultBudgetTokens: 64_000,
+        parameterPath: 'thinking_budget'
+      },
+      reasoning: { mode: 'budget', enabled: true, explicit: true, budgetTokens: 8_000 },
+      thinkingLevel: 'high'
+    })).toEqual({ thinking_budget: 8_000 })
+  })
+
+  it.each([
+    ['openai-chat', { reasoning_effort: 'high' }],
+    ['openai-responses', { reasoning: { effort: 'high' } }]
+  ] as const)('explicit %s preset stays in OpenAI format and does not adapt', (preset, expected) => {
+    expect(applyThinkingAdapter({}, {
+      protocol: 'anthropic',
+      preset,
+      upstreamModel: 'claude-opus-5-5',
+      maxOutputTokens: 8_192,
+      config: budgetConfig('true'),
+      reasoning: { mode: 'effort', enabled: true, explicit: true, effort: 'high' },
+      thinkingLevel: 'high'
+    })).toEqual(expected)
+  })
+
+  it.each(['claude-opus-5', 'claude-opus-5-5'] as const)('%s higher at 1024 output stays xhigh instead of being treated as Off', (model) => {
+    const config = budgetConfig('omitted')
+    const reasoning = resolveModelThinking('higher', config, 1024)
+    expect(reasoning).toMatchObject({ enabled: false, explicit: true })
+    const input = {
+      protocol: 'anthropic' as const,
+      upstreamModel: model,
+      maxOutputTokens: 1024,
+      config,
+      reasoning,
+      thinkingLevel: 'higher' as const
+    }
+    const expected = { thinking: { type: 'adaptive' }, output_config: { effort: 'xhigh', format: 'json' } }
+    const adapted = applyThinkingAdapter(
+      { thinking: { type: 'enabled', budget_tokens: 64_000 }, output_config: { format: 'json' } },
+      input
+    )
+    expect(adapted).toEqual(expected)
+    expect(enforceThinkingPreference(adapted, input)).toEqual(expected)
+  })
+})
+
+describe('resolved Anthropic adaptive bindings', () => {
+  const bound = (upstreamModel: string) => modelBindingResolver().resolve({
+    ...structuredClone(IMPORTED_ALIAS_DEFAULTS),
+    providerId: 'relay', alias: 'claude', upstreamModel
+  })
+
+  const wire = (upstreamModel: string, level: 'auto' | 'higher' | 'off', body: unknown = {}) => {
+    const alias = bound(upstreamModel)
+    const reasoning = resolveModelThinking(level, alias.thinkingConfig, alias.maxOutputTokens, alias.reasoningEfforts)
+    return applyThinkingAdapter(body, {
+      protocol: 'anthropic',
+      upstreamModel: alias.upstreamModel,
+      maxOutputTokens: alias.maxOutputTokens,
+      config: alias.thinkingConfig,
+      reasoning,
+      ...(alias.reasoningEfforts === undefined ? {} : { reasoningEfforts: alias.reasoningEfforts })
+    })
+  }
+
+  it.each([
+    ['claude-opus-4-6', 'high', null],
+    ['claude-sonnet-4-6', 'high', null],
+    ['claude-opus-4-7', 'high', 'xhigh'],
+    ['claude-opus-5', 'high', 'xhigh'],
+    ['claude-sonnet-5', 'high', 'xhigh'],
+    ['claude-opus-5-5', 'medium', 'xhigh'],
+    ['claude-haiku-5-5', 'medium', 'xhigh'],
+    ['claude-sonnet-5-5', 'high', 'xhigh'],
+    ['claude-fable-5', 'high', 'xhigh'],
+    ['claude-mythos-5', 'high', 'xhigh']
+  ] as const)('%s Auto is %s and higher is %s', (id, auto, higher) => {
+    expect(wire(id, 'auto')).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: auto } })
+    if (higher === null) {
+      expect(() => wire(id, 'higher')).toThrow(/不支持推理强度「xhigh」/u)
+    } else {
+      expect(wire(id, 'higher')).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: higher } })
+    }
+  })
+
+  it.each([
+    'claude-opus-5-5',
+    'claude-fable-5',
+    'claude-fable-5-1',
+    'claude-mythos-5',
+    'claude-mythos-5-1',
+    'claude-sonnet-5-5'
+  ])('%s rejects Off', (id) => {
+    expect(() => wire(id, 'off', {
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'max', format: 'json' }
+    })).toThrow(/不支持关闭推理/u)
+  })
+
+  it.each([
+    'claude-opus-5',
+    'claude-haiku-5-5',
+    'claude-sonnet-5',
+    'claude-opus-4-7'
+  ])('%s Off sends disabled, drops a stale max effort, and keeps the output format', (id) => {
+    expect(wire(id, 'off', {
+      thinking: { type: 'enabled', budget_tokens: 64_000 },
+      output_config: { effort: 'max', format: 'json' }
+    })).toEqual({
+      thinking: { type: 'disabled' },
+      output_config: { format: 'json' }
+    })
+  })
+
+  it.each([
+    ['claude-opus-5-5', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-fable-5', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-fable-5-1', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-mythos-5', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-mythos-5-1', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-sonnet-5-5', ['auto', 'low', 'medium', 'high', 'higher', 'max']],
+    ['claude-opus-4-6', ['auto', 'low', 'medium', 'high', 'max', 'off']],
+    ['claude-sonnet-4-6', ['auto', 'low', 'medium', 'high', 'max', 'off']],
+    ['claude-opus-4-7', ['auto', 'low', 'medium', 'high', 'higher', 'max', 'off']],
+    ['claude-opus-5', ['auto', 'low', 'medium', 'high', 'higher', 'max', 'off']],
+    ['claude-haiku-5-5', ['auto', 'low', 'medium', 'high', 'higher', 'max', 'off']],
+    ['claude-sonnet-5', ['auto', 'low', 'medium', 'high', 'higher', 'max', 'off']]
+  ] as const)('%s thinking levels follow the published efforts', (id, levels) => {
+    const shown = modelThinkingLevels(bound(id))
+    expect(shown).toEqual([...levels])
+    if (!shown.includes('off')) {
+      expect(shown).toContain('higher')
+    }
+  })
+})
+
 /* ================================================================
  * Ollama 语义(vendors/ollama.ts 的配置落到线上的形状)—— 2026-09-15
  * 逆向 ollama v0.34.0 定案:OpenAI 层吃 reasoning_effort('none'=关,
@@ -958,5 +1401,34 @@ describe('端到端 · ollama-cloud 上的 glm-5.3', () => {
       }
     ) as Record<string, unknown>
     expect(body['reasoning_effort']).toBe('high')
+  })
+})
+
+/* ================================================================
+ * 回传方言(Responses 协议的历史 reasoning item)—— 两家的输入侧约束互斥:
+ * 官方 OpenAI 给 `content` 的上限是 0,DeepSeek 反过来要求正文全文回传。
+ * 判错的症状是会话从某一轮起每轮 400,且本地零报错。
+ * ================================================================ */
+describe('reasoningReplayFor', () => {
+  const effortConfig = { mode: 'effort' as const, defaultEnabled: true, parameterPath: 'reasoning_effort' }
+
+  it('★★★ 默认走官方那条;deepseek 名字兜底走要求正文那条', () => {
+    expect(reasoningReplayFor(undefined, 'gpt-5')).toBe('opaque-only')
+    expect(reasoningReplayFor(effortConfig, 'gpt-5')).toBe('opaque-only')
+    expect(reasoningReplayFor(effortConfig, 'deepseek-v4-pro')).toBe('text-required')
+    expect(reasoningReplayFor(effortConfig, 'deepseek-v4-pro:0813')).toBe('text-required')
+  })
+
+  it('★★★ 显式声明压过名字启发式(声明了就不看模型名)', () => {
+    expect(reasoningReplayFor({ ...effortConfig, reasoningReplay: 'text-required' }, 'some-relay-model'))
+      .toBe('text-required')
+  })
+
+  it('★★★ standardWire(托管方的标准线形)压过名字:Ollama 上的 deepseek 不许被拉回官方方言', () => {
+    expect(reasoningReplayFor(OLLAMA_STANDARD_THINKING, 'deepseek-v4-pro:0813')).toBe('opaque-only')
+  })
+
+  it('★ 显式声明本身也压过 standardWire(逃生口,顺序与 kindFor 一致)', () => {
+    expect(reasoningReplayFor({ ...OLLAMA_STANDARD_THINKING, reasoningReplay: 'text-required' }, 'gpt-oss:120b')).toBe('text-required')
   })
 })

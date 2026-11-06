@@ -5,20 +5,14 @@
   font-size: 13.5px;
   line-height: 1.8;
   overflow-wrap: anywhere;
-  --md-keyword: #c7a7e8;
-  --md-string: #a3c99e;
-  --md-number: #e1bb89;
-  --md-type: #8fc7d0;
-  --md-comment: #89938e;
 }
 
-:root[data-theme='light'] .agent-markdown {
-  --md-keyword: #7953a1;
-  --md-string: #386a46;
-  --md-number: #985524;
-  --md-type: #2c687b;
-  --md-comment: #6a7770;
-}
+/*
+ * 代码围栏的卡壳、代码正文和整套 `.tok-*` 配色(连同 `--md-*` 变量)都搬去了
+ * `components/code/code.css`:工具卡和 diff 也要画代码,而它们并不在
+ * `.agent-markdown` 里面 —— 原先只能额外套一层 `agent-markdown`,连带继承这一整套
+ * 正文排版。那边把 `.agent-markdown` 一并当作高亮作用域,所以围栏这边不用改。
+ */
 
 .agent-markdown[data-variant='compact'] { color: var(--color-fg-muted); font-size: 12.5px; }
 .agent-markdown[data-variant='document'] { font-size: 14px; }
@@ -69,26 +63,7 @@
 .markdown-blocked-link { color: var(--color-fg-muted); text-decoration: underline dotted; text-underline-offset: 3px; }
 .markdown-link-error { margin-left: 0.5em; color: var(--color-danger); font-size: 12px; }
 
-/* Beautiful UI 的产物卡层级，但继续使用本项目的 token、高亮器和流式渲染。 */
-.markdown-code-block { min-width: 0; margin: 1em 0; border: 1px solid var(--color-stroke); border-radius: 10px; overflow: hidden; background: var(--color-canvas); }
-.markdown-code-toolbar { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px 6px 12px; background: color-mix(in srgb, var(--color-surface-raised) 82%, transparent); border-bottom: 1px solid var(--color-hairline); font: 11px/1.5 var(--font-sans); color: var(--color-fg-muted); user-select: none; }
-.markdown-code-language { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); color: var(--color-fg); }
-.markdown-code-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
-.markdown-code-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 25px; padding: 3px 7px; border-radius: 6px; cursor: pointer; transition: color 120ms ease, background-color 120ms ease; }
-.markdown-code-toolbar button:hover { background: var(--color-tint-hover); color: var(--color-fg); }
-.markdown-code-toolbar button:disabled { cursor: default; opacity: 0.5; }
-.markdown-code-toolbar button[aria-pressed='true'] { color: var(--color-fg); background: var(--color-tint); }
-.markdown-code-views { display: flex; gap: 2px; flex-shrink: 0; padding: 2px; border: 1px solid var(--color-hairline); border-radius: 7px; background: color-mix(in srgb, var(--color-surface-input) 55%, transparent); }
-.agent-markdown .markdown-code-source { margin: 0; padding: 13px 15px; overflow: auto; max-height: 480px; font: 12px/1.75 var(--font-mono); color: var(--color-fg); tab-size: 2; white-space: pre; overflow-wrap: normal; }
-.agent-markdown .markdown-code-source code { padding: 0; border: 0; background: none; font: inherit; color: inherit; }
-.agent-markdown .markdown-code-source[data-wrap] { white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-markdown .tok-keyword, .agent-markdown .tok-operator { color: var(--md-keyword); }
-.agent-markdown .tok-string, .agent-markdown .tok-string2 { color: var(--md-string); }
-.agent-markdown .tok-number, .agent-markdown .tok-bool, .agent-markdown .tok-literal { color: var(--md-number); }
-.agent-markdown .tok-typeName, .agent-markdown .tok-className, .agent-markdown .tok-function, .agent-markdown .tok-propertyName, .agent-markdown .tok-tagName { color: var(--md-type); }
-.agent-markdown .tok-comment, .agent-markdown .tok-meta { color: var(--md-comment); }
-.agent-markdown .tok-deleted { color: var(--color-danger); }
-.agent-markdown .tok-inserted { color: var(--color-accent); }
+/* 代码围栏的样式见 components/code/code.css(`.code-card` / `.code-source` / `.tok-*`)。 */
 .markdown-render-status { padding: 12px 16px; font: 12px/1.6 var(--font-sans); color: var(--color-fg-muted); }
 .markdown-diagram { padding: 20px 16px; overflow: auto; max-height: 600px; }
 .agent-markdown .markdown-diagram img { margin: 0 auto; max-height: none; }
@@ -112,7 +87,3 @@
 .agent-markdown .footnotes { margin-top: 1.8em; padding-top: 0.6em; border-top: 1px solid var(--color-border); color: var(--color-fg-muted); font-size: 0.9em; }
 .agent-markdown .footnotes h2 { font-size: 1em; }
 .agent-markdown .footnotes :target { scroll-margin-top: 24px; }
-@media (max-width: 600px) {
-  .markdown-code-toolbar { gap: 6px; padding-left: 10px; }
-  .agent-markdown .markdown-code-source { padding: 12px; }
-}

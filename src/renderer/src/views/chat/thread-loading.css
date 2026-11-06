@@ -1,0 +1,35 @@
+.thread-skeleton-bar {
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.thread-skeleton-bar::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-fg) 7%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: thread-skeleton-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes thread-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+:root[data-theme-motion='soft'] .thread-skeleton-bar::after {
+  animation-duration: 2.4s;
+}
+
+:root[data-theme-motion='reduced'] .thread-skeleton-bar::after,
+:root[data-theme-motion='off'] .thread-skeleton-bar::after {
+  animation: none;
+  content: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-skeleton-bar::after {
+    animation: none;
+    content: none;
+  }
+}

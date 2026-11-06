@@ -55,7 +55,66 @@ export interface OAuthCredential {
   refreshedAt?: number
 }
 
-export type ProviderCredential = ApiKeyCredential | OAuthCredential
+export type ProviderCredential = ApiKeyCredential | OAuthCredential | SignatureCredential
+
+/**
+ * 第三方云厂商的**签名**凭证 —— 腾讯云 TC3、AWS SigV4。
+ *
+ * ★★ **为什么不把 SecretKey 拼成 `  "secretKey: xxx"` 塞进 `apiKey`。**
+ * `apiKey` 那一支在五处被当成「一把可以直接拼进 `Authorization: Bearer …` 的
+ * 裸字符串」:`bearerOf`、`provider:revealCredential`、加密导出、配置同步、
+ * 以及老版本应用读同一行。往里塞两段内容的话,任一处拼出来的就是一个非法头值,
+ * 而**症状各不相同**:导出能成功但导入方调不通、老版本拿整串去撞 401、
+ * 界面显示的后四位是 SecretKey 的尾四位(等于把密钥的一部分印在屏幕上)。
+ *
+ * 所以它是**第三种 kind**:`parseCredential` 认得它,而所有"拼 Bearer"的路径
+ * 都会因为读不到 `apiKey` / `accessToken` 而**明确失败**,不会静默发出一个
+ * 长得像密钥的畸形头。
+ *
+ * ★ 缺失 `scheme` 或任一段必需的 secret 即判记录坏掉(答 `null`),
+ *   不退回当裸 API key —— 那会拿整段 JSON 去当 Bearer token,比"没配置"更难查。
+ */
+export type SignatureScheme = 'tencent-tc3' | 'aws-sigv4'
+
+export interface SignatureCredential {
+  kind: 'signature'
+  scheme: SignatureScheme
+  /** 腾讯 SecretId / AWS AccessKeyId */
+  accessKeyId: string
+  /** 腾讯 SecretKey / AWS SecretAccessKey。**只读不显示**,与 apiKey 同一档待遇 */
+  secretKey: string
+  /**
+   * 腾讯的签名地域(如 `ap-guangzhou`)/ AWS 的 region(`us-east-1`)。
+   * `null` = 未指定,由 provider 的 `videoGeneration.region` 兜。
+   */
+  region: string | null
+  /**
+   * AWS 的临时会话令牌(STS)。缺席 = 长期密钥。
+   * ★ 它**不是秘密里的秘密**,但仍与 SecretKey 同档保存 —— 两者一起才签得出请求。
+   */
+  sessionToken?: string
+}
+
+/**
+ * 一条凭证自报的身份指纹 —— **不含明文**,用于"换了 Key/账户之后不能拿新的
+ * 去查旧任务"这条判断(见 `VideoJob.credentialFingerprint`)。
+ *
+ * ★ 不能用 `accessKeyId` 本身:它会进日志、进 job 行。这里给的是它的短哈希,
+ *   同一个账户稳定、换账户必变,而**反推不出原值**。
+ */
+export function credentialFingerprint(cred: ProviderCredential): string {
+  const material = cred.kind === 'api-key'
+    ? cred.apiKey
+    : cred.kind === 'oauth'
+      ? `${cred.issuer}:${cred.accountId}`
+      : `${cred.scheme}:${cred.accessKeyId}:${cred.region ?? ''}`
+  // 一个便宜的 32 位滚动哈希就够 —— 用途只是"变了没有",不是密码学校验。
+  let hash = 0
+  for (let i = 0; i < material.length; i += 1) {
+    hash = (hash * 31 + material.charCodeAt(i)) | 0
+  }
+  return `${cred.kind}:${(hash >>> 0).toString(16)}`
+}
 
 /**
  * ★★ **照 `OAUTH_ISSUER_IDS` 判,不要写成 `value === 'chatgpt'` 这样的硬编码。**
@@ -104,7 +163,34 @@ export function parseCredential(raw: string | null | undefined): ProviderCredent
     const key = str(o['apiKey'])
     return key === undefined ? null : { kind: 'api-key', apiKey: key }
   }
-  if (o['kind'] !== 'oauth') return { kind: 'api-key', apiKey: raw }
+  if (o['kind'] !== 'oauth' && o['kind'] !== 'signature') return { kind: 'api-key', apiKey: raw }
+
+  if (o['kind'] === 'signature') {
+    /*
+      ★ 签名凭证**缺任何必需字段就判坏**(答 null),不走"退回当裸 API key"那条
+      宽容路径。理由与 OAuth 那条相同但更强:退回之后那把"key"是一整段 JSON,
+      而它会被拼进 `Authorization` —— 得到一个比"没配置"更难懂的 401。
+      `region` / `sessionToken` 是可选,只有 `null` 与省略两种合法值。
+    */
+    const scheme = o['scheme']
+    const accessKeyId = str(o['accessKeyId'])
+    const secretKey = str(o['secretKey'])
+    if ((scheme !== 'tencent-tc3' && scheme !== 'aws-sigv4') || accessKeyId === undefined || secretKey === undefined) {
+      return null
+    }
+    const rawRegion = o['region']
+    const region = rawRegion === null || rawRegion === undefined ? null : typeof rawRegion === 'string' ? rawRegion : undefined
+    if (region === undefined) return null
+    const sessionToken = str(o['sessionToken'])
+    return {
+      kind: 'signature',
+      scheme,
+      accessKeyId,
+      secretKey,
+      region,
+      ...(sessionToken === undefined ? {} : { sessionToken })
+    }
+  }
 
   // OAuth 记录缺了任何一个必需字段都发不出请求。退回当 API key 会拿整个 JSON
   // 去做 Bearer token —— 那个 401 比「没配置」更难看懂,所以这里判「没配置」
@@ -163,7 +249,18 @@ export function serializeCredential(cred: ProviderCredential): string {
   return cred.kind === 'api-key' ? cred.apiKey : JSON.stringify(cred)
 }
 
-/** 发请求时真正塞进鉴权头的那个串。两种凭证在这一点上是同构的 */
+/**
+ * 发请求时真正塞进鉴权头的那个串。
+ *
+ * ★★ **签名凭证在这条路上一律抛错,不返回任何东西。** 它的"发请求"是一整套
+ *   TC3/SigV4 重算(`upstream/video/sign.ts`),而所有调用 `bearerOf` 的地方
+ *   都设定了"拿一个串拼 `Authorization`"这个前提 —— 静默返回半段内容的话,
+ *   症状是发出去一个畸形头,报错在上游那一侧。抛错则当场指向"这条凭证走错了路径"。
+ */
 export function bearerOf(cred: ProviderCredential): string {
-  return cred.kind === 'api-key' ? cred.apiKey : cred.accessToken
+  if (cred.kind === 'api-key') return cred.apiKey
+  if (cred.kind === 'signature') {
+    throw new Error('This provider uses a signature credential (TC3 / SigV4); it cannot be sent as a Bearer token.')
+  }
+  return cred.accessToken
 }

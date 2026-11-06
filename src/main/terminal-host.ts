@@ -24,14 +24,51 @@ type Session = {
 type PendingIntent = { info: TerminalIntent; ownerId: number; lease: EnvironmentLease; grant?: string; timer: NodeJS.Timeout }
 type PendingCreation = { ownerId: number; workspaceId: string; cwd?: string; approval?: string; controller: AbortController; promise: Promise<TerminalInfo> }
 
+/**
+ * `tabs.openTerminal` 的**一次性启动 spec**(见 `ipc/plugins.ts` 的
+ * `launchTerminal`):主进程先铸 terminalId、备好 env 与 argv,渲染层随后
+ * 开 Tab 并带着同一个 id 来 `terminal:create`,在这里消费。
+ *
+ * ★ env 只活在这张表和 pty 子进程环境里 —— 不过渲染层、不进终端回滚缓冲、
+ * 不落盘。★ 一次性:spawn 成功写入启动行后立即删除;没被认领的 spec 由
+ * TTL 兜底清理(同 `intents` 的 60s 模式),否则一次点了菜单却没等到 Tab
+ * 的 spec 会永远挂在内存里。
+ */
+type LaunchSpec = { workspaceId: string; env: Record<string, string>; argv: string[]; expiresAt: number; timer: NodeJS.Timeout }
+
+/** spec 从备好到被认领的窗口。同 `intents` 的 60s:一次点击的合理等待。 */
+const LAUNCH_SPEC_TTL_MS = 60_000
+
 function safeSize(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? Math.max(2, Math.floor(value)) : fallback
+}
+
+/**
+ * 把 argv 拼成一行**写给既有交互 shell** 的启动行。
+ *
+ * 需求:CLI(claude / codex 这类全屏 TUI)必须跑在交互式终端里,而终端的
+ * pty 起的是用户的 shell,`openTerminal` 没有「spawn 后替换进程」的手段 ——
+ * 唯一稳妥的办法是把启动行写进去,让 shell 自己启动 CLI。这样 CLI 退出后
+ * 终端仍是一个活 shell,与用户手敲命令的体验一致。
+ *
+ * ★ 空格/引号安全靠单引号包裹;POSIX(`'\''`)与 PowerShell(`''`)的转义
+ * 不同,按目标平台选 —— 一期仅本地终端,本地 shell 就是宿主平台的 shell。
+ * 安全属性:argv 来自过了 `narrowCommand` 参数门的 spec,这里只负责「写进
+ * 去的东西就是 argv 本身」,不新增放行面。
+ */
+function launchLine(argv: readonly string[], windows: boolean): string {
+  const quote = (value: string): string => {
+    if (value !== '' && /^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value
+    return windows ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", `'\\''`)}'`
+  }
+  return argv.map(quote).join(' ')
 }
 
 /** Owns long-lived interactive shells. It intentionally lives in main, never in the renderer. */
 export class TerminalHost {
   private readonly sessions = new Map<string, Session>()
   private readonly intents = new Map<string, PendingIntent>()
+  private readonly launchSpecs = new Map<string, LaunchSpec>()
   private readonly creating = new Map<string, PendingCreation>()
   private readonly preparing = new Map<string, { ownerId: number; controller: AbortController }>()
   private readonly owners = new Set<number>()
@@ -146,7 +183,13 @@ export class TerminalHost {
     const cols = safeSize(req.cols, 100)
     const rows = safeSize(req.rows, 28)
     const shell = environment.terminalShell ?? environment.platform.shell
-    const child = await lease.environment.openTerminal({ cols, rows, cwd })
+    /*
+      spec 只在本地分支消费:远程路径上 env 根本注入不进 pty,消耗它只会造成
+      「spec 没了、启动也没发生」的双重丢失。一期插件终端仅本地,远程拒绝在
+      `ipc/plugins.ts` 的 launchTerminal,这里的 `environment.remote` 判空是兜底。
+    */
+    const spec = environment.remote ? undefined : this.launchSpecs.get(req.id)
+    const child = await lease.environment.openTerminal({ cols, rows, cwd, ...(spec === undefined ? {} : { env: spec.env }) })
     if (sender.isDestroyed() || signal.aborted) { child.kill(); throw new EnvironmentError('cancelled') }
     try { lease.environment.assertReady() } catch (error) { child.kill(); throw error }
     const info: TerminalInfo = {
@@ -176,6 +219,17 @@ export class TerminalHost {
     retained = true
     windows.subscribe(terminalTopic(id), sender)
 
+    if (spec !== undefined) {
+      /*
+        ★ 一次性,而且**必须在这里才消费**:spawn 中断/失败的路径(上面那道
+        isDestroyed/aborted 检查)不该弄丢 spec;反过来,写入启动行之后再留着,
+        复用同 id 的新 create 也不会到这里(活会话在上面 `existing.alive` 早返回),
+        但 TTL 之外留着它没有任何好处,还可能被一次 id 撞车重放。
+      */
+      this.dropLaunchSpec(id)
+      child.write(`${launchLine(spec.argv, process.platform === 'win32')}\n`)
+    }
+
     child.onData((data) => {
       if (this.sessions.get(id) !== session || !session.info.alive) return
       session.pending += data
@@ -195,6 +249,17 @@ export class TerminalHost {
     })
     return info
     } finally { if (!retained) lease.release() }
+  }
+
+  /**
+   * 备好一次性启动 spec(`tabs.openTerminal`,见类型注释)。仅本地工作区会走到这里。
+   * 主进程铸 id 的原因同 `intents`:渲染层随后带着这个 id 来 create,spec 才对得上。
+   */
+  setLaunchSpec(id: string, spec: { workspaceId: string; env: Record<string, string>; argv: string[] }): void {
+    this.dropLaunchSpec(id)
+    const timer = setTimeout(() => this.dropLaunchSpec(id), LAUNCH_SPEC_TTL_MS)
+    timer.unref()
+    this.launchSpecs.set(id, { ...spec, expiresAt: this.now() + LAUNCH_SPEC_TTL_MS, timer })
   }
 
   attach(id: string, sender: WebContents): TerminalBuffer {
@@ -248,10 +313,17 @@ export class TerminalHost {
     this.sessions.delete(id)
   }
 
+  /** 工作区被删除时,收掉它名下所有终端(含还在创建/等待审批的)。 */
+  killWorkspace(workspaceId: string): void {
+    for (const [id, pending] of this.creating) if (pending.workspaceId === workspaceId) this.kill(id)
+    for (const [id, session] of [...this.sessions]) if (session.info.workspaceId === workspaceId) this.kill(id)
+  }
+
   shutdown(): void {
     for (const pending of this.creating.values()) pending.controller.abort()
     for (const pending of this.preparing.values()) pending.controller.abort()
     for (const id of this.intents.keys()) this.dropIntent(id)
+    for (const id of [...this.launchSpecs.keys()]) this.dropLaunchSpec(id)
     for (const id of [...this.sessions.keys()]) this.kill(id)
   }
 
@@ -278,6 +350,13 @@ export class TerminalHost {
     this.intents.delete(id)
     clearTimeout(intent.timer)
     intent.lease.release()
+  }
+
+  private dropLaunchSpec(id: string): void {
+    const spec = this.launchSpecs.get(id)
+    if (spec === undefined) return
+    this.launchSpecs.delete(id)
+    clearTimeout(spec.timer)
   }
 
   private watchOwner(sender: WebContents): void {

@@ -91,6 +91,7 @@ import {
   readTextBounded,
   stagingDirFor
 } from './assets'
+import { managedInstructionsPath } from './managed-paths'
 import { parseTranscript, TRANSFORMER_VERSION, type ImportedMessage, type ParsedTranscript } from './transcript'
 import {
   detectCodexSource,
@@ -138,8 +139,15 @@ import { mapOpencoworkHook, type OpencoworkHookEntry } from './opencowork-hooks'
 
 const SOURCE_KIND = 'claude-code' as const
 
-/** 受管说明副本的落点。★ 不覆盖、不改写原生 `AGENTS.md`,见 `loadManagedInstructions`。 */
-export const MANAGED_INSTRUCTIONS_DIR = 'imports'
+/*
+  ★ `MANAGED_INSTRUCTIONS_DIR` / `managedInstructionsPath` 已经搬到
+  `./managed-paths.ts`(纯路径 helper),这里**原样再导出**,对外兼容。
+
+  搬走是为了断掉 `imports/service ⇄ runtime` 的值依赖环:runtime 只用它们拼一条
+  路径,却因为它们在 service 里而把整条导入流水线拉进了自己的依赖图。读写两半
+  共用同一个实现,分叉的表现是「导入成功了,但模型读不到」。
+*/
+export { MANAGED_INSTRUCTIONS_DIR, managedInstructionsPath } from './managed-paths'
 
 // ═══════════════════════════════════════════════════════════════
 // 模块状态
@@ -2250,7 +2258,7 @@ async function materializeMessages(
   sourceSessionId: string,
   targetSessionId: string
 ): Promise<AgentMessage[]> {
-  const { uploadAttachment } = await import('../ipc/attachment')
+  const { uploadAttachment } = await import('../services/attachments')
   const result: AgentMessage[] = []
 
   for (const message of source) {
@@ -2438,16 +2446,7 @@ async function applyInstructions(
   }
 }
 
-export function managedInstructionsPath(sourceId: string, workspaceId: string): string {
-  return join(
-    databaseDirectory(),
-    MANAGED_INSTRUCTIONS_DIR,
-    SOURCE_KIND,
-    sourceId,
-    'instructions',
-    workspaceId === '' ? 'global.md' : `${workspaceId}.md`
-  )
-}
+// `managedInstructionsPath` 由 `./managed-paths.ts` 提供,见该文件与上面那段再导出注释。
 
 // ─── MCP ───
 

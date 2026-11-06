@@ -13,13 +13,16 @@ import {
   FileCode2,
   FileImage,
   FileLock2,
+  FileSpreadsheet,
   FileText,
   FileType2,
   Folder,
   FolderOpen,
   Hash,
+  NotebookText,
   Package,
   PenTool,
+  Presentation,
   Settings2,
   type LucideIcon
 } from 'lucide-react'
@@ -47,6 +50,21 @@ const SPEC: Readonly<Record<FileCategory, IconSpec>> = {
   draw: { Icon: PenTool, className: 'text-accent' },
   archive: { Icon: Package, className: 'text-fg-muted' },
   code: { Icon: FileCode2, className: 'text-emerald-600' },
+  /*
+    办公文档四类。色相刻意照搬各自那套软件的招牌色(蓝 Word / 绿 Excel /
+    橙 PowerPoint / 红 PDF)—— 这条肌肉记忆比任何自创配色都强,
+    用户不需要学就认得。
+
+    ★ `doc` 用 `NotebookText`(装订本)而不是「文件+字母」那一族:后者的两个变体
+    (`FileType` / `FileType2`)已经被 `ts` 占了一个,两个并排出现时分不出来。
+    ★ `pdf` 复用了 `FileText` 的轮廓 —— 这里**颜色才是识别位**:
+    markdown 是蓝、未知文本是灰、pdf 是红,三者在余光里靠色相分得开,
+    而 PDF 的红是这棵树里最不需要解释的一个信号。
+  */
+  doc: { Icon: NotebookText, className: 'text-blue-600' },
+  sheet: { Icon: FileSpreadsheet, className: 'text-green-600' },
+  slides: { Icon: Presentation, className: 'text-orange-500' },
+  pdf: { Icon: FileText, className: 'text-red-500' },
   text: { Icon: FileText, className: 'text-fg-faint' }
 }
 

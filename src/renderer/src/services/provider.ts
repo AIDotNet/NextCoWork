@@ -19,6 +19,7 @@ import type {
   UpstreamProvider
 } from '../../../shared/domain/provider'
 import type { ImportSourceKind } from '../../../shared/domain/import'
+import type { ProviderAccount } from '../../../shared/domain/provider-account'
 import type { ImportableProviders } from '../../../shared/domain/provider-import'
 import { invoke } from './ipc'
 
@@ -116,6 +117,73 @@ export function submitOAuthCode(providerId: string, code: string): Promise<Crede
 
 export function signOut(providerId: string): Promise<CredentialInfo> {
   return invoke('provider:signOut', { providerId })
+}
+
+/* ── 供应商账号(OAuth 多账号) ──────────────────────────────────────────
+   ★ 这一组**每一条都回整份账号列表**,包括写操作:调用点直接 `setAccounts(次)`
+   就行,不用自己合并。主进程同时广播 `provider:accountsChanged`,
+   两条路给出的是同一份数据(见 contract 里那段注释)。 */
+
+export function listProviderAccounts(providerId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:listAccounts', { providerId })
+}
+
+/**
+ * 添加一个账号 = 走一遍完整登录。
+ * ★ 和 `startOAuth` 一样是**长 invoke**(用户要去浏览器里授权,可能好几分钟),
+ * 中间进度同样订阅 `provider:authProgress`。
+ */
+export function addProviderAccount(providerId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:addAccount', { providerId })
+}
+
+/** 这条登录失效了,重新登录它(沿用同一行,备注名和顺序都留着) */
+export function reauthProviderAccount(providerId: string, accountId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:reauthAccount', { providerId, accountId })
+}
+
+export function removeProviderAccount(providerId: string, accountId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:removeAccount', { providerId, accountId })
+}
+
+export function setProviderAccountEnabled(
+  providerId: string,
+  accountId: string,
+  enabled: boolean
+): Promise<ProviderAccount[]> {
+  return invoke('provider:setAccountEnabled', { providerId, accountId, enabled })
+}
+
+/** 空串 = 清掉备注名,显示回落到邮箱 / 上游 id */
+export function setProviderAccountLabel(
+  providerId: string,
+  accountId: string,
+  label: string
+): Promise<ProviderAccount[]> {
+  return invoke('provider:setAccountLabel', { providerId, accountId, label })
+}
+
+export function setCurrentProviderAccount(providerId: string, accountId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:setCurrentAccount', { providerId, accountId })
+}
+
+/** 拖拽排序:`accountIds` 的下标即新的轮换顺序 */
+export function reorderProviderAccounts(providerId: string, accountIds: string[]): Promise<ProviderAccount[]> {
+  return invoke('provider:reorderAccounts', { providerId, accountIds })
+}
+
+export function clearProviderAccountLimit(providerId: string, accountId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:clearAccountLimit', { providerId, accountId })
+}
+
+/**
+ * 主动拉一次该账号的**订阅额度**(GLM Coding Plan)。**真发一次网络请求**,
+ * 没有密钥 / 不是订阅制供应商 / 上游拒绝都会抛,调用点必须接住。
+ *
+ * ★ 和上面那组一样回整份账号列表 —— 快照在账号行的 `quota` 上,直接 `setAccounts(次)`。
+ */
+export function fetchProviderAccountQuota(providerId: string, accountId: string): Promise<ProviderAccount[]> {
+  return invoke('provider:fetchQuota', { providerId, accountId })
 }
 
 export function updateModel(model: ModelAlias): Promise<ModelAlias> {

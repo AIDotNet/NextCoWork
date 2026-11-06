@@ -27,6 +27,8 @@ export interface PluginTabPlacement {
     webAppId?: string
     path?: string
     viewType?: string
+    /** 插件终端:主进程已备好启动 spec 的会话 id,Tab 原样引用(见 `stores/tabs.ts` 的 `case 'terminal'`) */
+    terminalId?: string
   }
   /**
    * 这一次有没有被降级过 —— 调用方据此决定要不要提示。
@@ -44,12 +46,29 @@ export interface PluginTabPlacement {
  *
  * `title` 给的是**已经翻译好的**文案(调用方用 `t()` 渲染 `plugin.<id>.<key>`),
  * 因为 Tab 标题会跟着布局一起落盘,而落盘的必须是人能读的字。
+ * 插件终端的 title 可以是 `undefined`(清单没给就落「终端」默认文案)。
  */
 export function placePluginTab(
   target: PluginTabTarget,
   pluginId: string,
-  title: string
+  title: string | undefined
 ): PluginTabPlacement {
+  /*
+    ★ terminal 分支必须在 `openOf` 之前返回:terminal 目标没有 `open` 字段
+    (它恒为主区 Tab,不存在 feature/right 的语义),先算 pane 的话这里编译不过。
+  */
+  if (target.kind === 'terminal') {
+    /*
+      ★ terminalId 必须**原样**带给 Tab:主进程已经按它备好启动 spec(env + argv),
+      Tab 换一个新 id 的话 create 会起一个裸 shell,注入的配置静默丢失。
+      title 缺省时 Tab 落回「终端」的默认文案(makeTab 的 `?? translate('tab.terminal')`)。
+    */
+    return {
+      kind: 'terminal',
+      pane: 'main',
+      init: { terminalId: target.terminalId, ...(title === undefined ? {} : { title }) }
+    }
+  }
   const pane: TabPane = openOf(target) === 'right' ? 'right' : 'main'
   const degraded = openOf(target) === 'feature' ? ({ degradedFrom: 'feature' } as const) : {}
   if (target.kind === 'webapp') {
@@ -68,6 +87,7 @@ export function placePluginTab(
   return { kind: 'browser', pane, init: { title, url: target.url }, ...degraded }
 }
 
-function openOf(target: PluginTabTarget): 'tab' | 'feature' | 'right' {
+/** terminal 没有开在哪一说的语义(恒为主区),在更早的分支已经返回了。 */
+function openOf(target: Exclude<PluginTabTarget, { kind: 'terminal' }>): 'tab' | 'feature' | 'right' {
   return target.open
 }

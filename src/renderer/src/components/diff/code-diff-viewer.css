@@ -1,0 +1,188 @@
+/*
+ * 代码对比视图(CodeDiffViewer)的外观。
+ *
+ * ★ 为什么是一份 CSS 而不是 `EditorView.theme`:`@codemirror/merge` 的 baseTheme
+ *   用 `&light` / `&dark` 写增删配色,生成的选择器比普通 theme 多一个类,
+ *   `EditorView.theme` 写同一条规则会**输掉特异性**(表现为配色改了没反应)。
+ *   这里统一挂在 `.code-diff-viewer .cm-editor` 之下多压一层,和 baseTheme 撞到同一个
+ *   属性的地方再加 `!important`。
+ *
+ * 增删底色沿用 `DiffLines` 那一套(accent / danger 各 10%),工具卡里的 diff 和这里
+ * 必须是同一个颜色。
+ */
+
+.code-diff-viewer {
+  --diff-add-line: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --diff-del-line: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  --diff-add-text: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --diff-del-text: color-mix(in srgb, var(--color-danger) 20%, transparent);
+}
+
+/* CodeMirror 的 baseTheme 给 `.cm-editor` 写了 `position: relative !important`,这里多压一层类 */
+.code-diff-viewer .code-diff-viewer-host > .cm-editor,
+.code-diff-viewer .code-diff-viewer-host > .cm-mergeView {
+  position: absolute !important;
+  inset: 0;
+}
+
+/* ── 编辑器底座 ── */
+
+.code-diff-viewer .cm-editor {
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+.code-diff-viewer .cm-editor.cm-focused {
+  outline: none;
+}
+.code-diff-viewer .cm-editor .cm-scroller {
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  overflow: auto;
+}
+.code-diff-viewer .cm-editor .cm-content {
+  padding: 4px 0 24px;
+  caret-color: var(--color-fg);
+}
+.code-diff-viewer .cm-editor .cm-line {
+  padding: 0 16px 0 8px;
+}
+.code-diff-viewer .cm-editor .cm-cursor {
+  border-left-color: var(--color-fg);
+}
+.code-diff-viewer .cm-editor .cm-selectionLayer .cm-selectionBackground {
+  background: var(--color-tint-strong) !important;
+}
+.code-diff-viewer .cm-editor .cm-selectionMatch {
+  background-color: var(--color-tint);
+}
+
+/* ── 行号栏:sticky 是 CodeMirror 自带的,底色必须不透明,否则横滚时正文从下面透出来 ── */
+
+.code-diff-viewer .cm-editor .cm-gutters {
+  background-color: var(--color-canvas);
+  color: var(--color-fg-faint);
+  border-right: 1px solid var(--color-hairline);
+}
+.code-diff-viewer .cm-editor .cm-lineNumbers .cm-gutterElement,
+.code-diff-viewer .cm-editor .cm-originalLineNumbers .cm-gutterElement {
+  min-width: 28px;
+  padding: 0 6px 0 10px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* 原文行号和新行号之间只靠留白分开;太近会读成一个六位数 */
+.code-diff-viewer .cm-editor .cm-originalLineNumbers .cm-gutterElement {
+  padding-right: 2px;
+}
+
+/* 改动标记条:紧贴正文的那一道竖线 */
+.code-diff-viewer .cm-editor .cm-changeGutter {
+  width: 3px;
+  padding: 0;
+}
+.code-diff-viewer .cm-editor.cm-merge-b .cm-changedLineGutter {
+  background: var(--color-accent) !important;
+}
+.code-diff-viewer .cm-editor.cm-merge-a .cm-changedLineGutter,
+.code-diff-viewer .cm-editor .cm-deletedLineGutter {
+  background: var(--color-danger) !important;
+}
+
+/* ── 增删配色 ── */
+
+.code-diff-viewer .cm-editor.cm-merge-b .cm-changedLine,
+.code-diff-viewer .cm-editor .cm-inlineChangedLine {
+  background-color: var(--diff-add-line) !important;
+}
+.code-diff-viewer .cm-editor.cm-merge-a .cm-changedLine,
+.code-diff-viewer .cm-editor .cm-deletedChunk {
+  background-color: var(--diff-del-line) !important;
+}
+/* 词级:默认是一条下划线渐变,换成实底块 —— 和工具卡 diff 的词级高亮同一个读法 */
+.code-diff-viewer .cm-editor.cm-merge-b .cm-changedText {
+  background: var(--diff-add-text) !important;
+  border-radius: 2px;
+}
+.code-diff-viewer .cm-editor.cm-merge-a .cm-changedText,
+.code-diff-viewer .cm-editor .cm-deletedChunk .cm-deletedText {
+  background: var(--diff-del-text) !important;
+  border-radius: 2px;
+}
+/* 删除块里的行和正文行同一个左缩进,否则删前删后的同一行代码对不齐 */
+.code-diff-viewer .cm-editor .cm-deletedChunk {
+  padding-left: 8px !important;
+}
+
+/* ── 折叠的未改动区域 ── */
+
+.code-diff-viewer .cm-editor .cm-collapsedLines {
+  padding: 2px 12px;
+  border-block: 1px solid var(--color-hairline);
+  background: var(--color-tint) !important;
+  color: var(--color-fg-faint) !important;
+  font: 11px/1.8 var(--font-sans);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.code-diff-viewer .cm-editor .cm-collapsedLines:hover {
+  background: var(--color-tint-hover) !important;
+  color: var(--color-fg) !important;
+}
+
+/* ── 查找面板(⌘F),同 file-editor.css ── */
+
+.code-diff-viewer .cm-editor .cm-panels {
+  background-color: var(--color-surface-raised);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+}
+.code-diff-viewer .cm-editor .cm-search {
+  font-family: var(--font-sans);
+  padding: 8px 26px 8px 12px;
+}
+.code-diff-viewer .cm-editor .cm-textfield {
+  background: var(--color-surface-field);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.code-diff-viewer .cm-editor .cm-button {
+  background: var(--color-tint);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+/* ── 并排模式:每边自己滚动(原因见 CodeDiffViewer.tsx 文件头) ── */
+
+.code-diff-viewer .cm-mergeView {
+  overflow: hidden;
+}
+.code-diff-viewer .cm-mergeView .cm-mergeViewEditors {
+  height: 100%;
+}
+.code-diff-viewer .cm-mergeView .cm-mergeViewEditor {
+  min-width: 0;
+}
+.code-diff-viewer .cm-mergeView .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: 1px solid var(--color-hairline);
+}
+.code-diff-viewer .cm-mergeView .cm-mergeViewEditor > .cm-editor {
+  height: 100% !important;
+}
+.code-diff-viewer .cm-mergeView .cm-mergeViewEditor .cm-editor .cm-scroller {
+  height: 100% !important;
+  overflow: auto !important;
+}
+/*
+  左边的滚动条藏起来:两边滚动位置是同步的,左边那两条只是右边的复制品,
+  还会在两栏正中间多出一道竖杠。滚轮和触控板在左边照样能滚。
+*/
+.code-diff-viewer .cm-mergeView .cm-editor.cm-merge-a .cm-scroller {
+  scrollbar-width: none;
+}
+.code-diff-viewer .cm-mergeView .cm-editor.cm-merge-a .cm-scroller::-webkit-scrollbar {
+  display: none;
+}

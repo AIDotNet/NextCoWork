@@ -33,7 +33,7 @@
  * 东八区的天、后半段是西五区的天,而图上看不出任何异常。
  */
 import { stmt, tx } from './index'
-import { getKv, setKv } from './repo'
+import { getActiveSyncAccountId, getKv, setKv } from './repo'
 import type { UsageActivityStats, UsageDailyBucket, UsageWindow } from '../../shared/domain/usage'
 import type { Currency } from '../../shared/domain/pricing'
 import { computeStreaks, localDayOf } from '../../shared/domain/usage-activity'
@@ -166,7 +166,8 @@ export function refreshUsageRollup(now: number = Date.now()): { days: number; ro
   })
 }
 
-function bucketFromRow(row: Record<string, unknown>): UsageDailyBucket {
+/** 导出给 `usage-remote.ts`:远端表与本表同列名,读回同一种桶。 */
+export function bucketFromRow(row: Record<string, unknown>): UsageDailyBucket {
   const cost = row['cost_micros']
   return {
     day: String(row['day'] ?? ''),
@@ -192,7 +193,48 @@ function bucketFromRow(row: Record<string, unknown>): UsageDailyBucket {
 }
 
 /**
- * 时间窗内的所有日桶,按日期升序。
+ * 本机汇总 ∪ 当前同步账户下其它设备同步来的汇总(`usage_daily_remote`,见 `usage-remote.ts`)。
+ *
+ * 需求:使用统计概览合并多台设备的数据。唯一的参数是账户 id;未启用同步时传 null,
+ * `account_id = NULL` 一行也不匹配,于是退回纯本机 —— 不需要为「没同步」另写一套查询。
+ */
+const MERGED_DAILY = `
+  SELECT day, provider_id, provider_name, upstream_model, alias, currency,
+         request_count, success_count, input_tokens, output_tokens,
+         cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, thinking_tokens,
+         cost_micros, priced_count, latency_sum, ttft_sum, ttft_count
+    FROM usage_daily
+  UNION ALL
+  SELECT day, provider_id, provider_name, upstream_model, alias, currency,
+         request_count, success_count, input_tokens, output_tokens,
+         cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, thinking_tokens,
+         cost_micros, priced_count, latency_sum, ttft_sum, ttft_count
+    FROM usage_daily_remote
+   WHERE account_id = ?`
+
+/**
+ * 多台设备的同一「天 × 供应商 × 模型 × 币种」合成一桶,形状与 `usage_daily` 一行相同。
+ *
+ * ★ 必须在这里合,不能把多行同键的桶交给前端:前端按键建表,同键第二行会覆盖第一行,
+ *   表现为「另一台设备的用量时有时无」。
+ * ★ `SUM(cost_micros)` 跳过 NULL、全 NULL 时仍是 NULL —— 与汇总表「NULL = 算不出钱」同义,
+ *   千万别 COALESCE 成 0。
+ */
+const MERGED_SERIES = `
+  SELECT day, provider_id, MAX(provider_name) AS provider_name, upstream_model, MAX(alias) AS alias, currency,
+         SUM(request_count) AS request_count, SUM(success_count) AS success_count,
+         SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
+         SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens,
+         SUM(cache_write_1h_tokens) AS cache_write_1h_tokens, SUM(thinking_tokens) AS thinking_tokens,
+         SUM(cost_micros) AS cost_micros, SUM(priced_count) AS priced_count,
+         SUM(latency_sum) AS latency_sum, SUM(ttft_sum) AS ttft_sum, SUM(ttft_count) AS ttft_count
+    FROM (${MERGED_DAILY})
+   WHERE day >= ? AND day <= ?
+   GROUP BY day, provider_id, upstream_model, currency
+   ORDER BY day ASC`
+
+/**
+ * 时间窗内的所有日桶,按日期升序。含同一同步账户下其它设备的数据(见 `MERGED_SERIES`)。
  *
  * ★ 窗口是毫秒,而 `day` 是日期字符串 —— 用 `localDayOf` 把两端换算成日期边界比
  * 较,而不是把 day 转回毫秒:后者要对每一行做一次日期解析,并且在夏令时那天会
@@ -200,32 +242,36 @@ function bucketFromRow(row: Record<string, unknown>): UsageDailyBucket {
  */
 export function getUsageDailySeries(window: UsageWindow): UsageDailyBucket[] {
   const toDay = localDayOf(window.to - 1)
-  const rows =
-    window.from === undefined
-      ? stmt('SELECT * FROM usage_daily WHERE day <= ? ORDER BY day ASC').all(toDay)
-      : stmt('SELECT * FROM usage_daily WHERE day >= ? AND day <= ? ORDER BY day ASC').all(
-          localDayOf(window.from),
-          toDay
-        )
-  return rows.map(bucketFromRow)
+  // 无下界时用空串:任何 `YYYY-MM-DD` 都 >= ''
+  const fromDay = window.from === undefined ? '' : localDayOf(window.from)
+  return stmt(MERGED_SERIES).all(getActiveSyncAccountId(), fromDay, toDay).map(bucketFromRow)
 }
 
 /**
  * 全历史活跃度。**不带时间窗** —— 「最长连续天数」这种指标按定义就是问全部历史,
  * 跟着上面的范围切换走的话,选「近 24 小时」会得到一个恒等于 1 的数字。
+ * 与概览图同源,同样合并其它设备同步来的数据。
  */
 export function getUsageActivityStats(now: number = Date.now()): UsageActivityStats {
-  const dayRows = stmt('SELECT DISTINCT day FROM usage_daily ORDER BY day ASC').all()
+  const account = getActiveSyncAccountId()
+  const dayRows = stmt(`SELECT DISTINCT day FROM (${MERGED_DAILY}) ORDER BY day ASC`).all(account)
   const activeDays = dayRows.map((row) => String(row['day'] ?? '')).filter((day) => day !== '')
 
   const peak = stmt(
     `SELECT day,
             SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS total
-       FROM usage_daily
+       FROM (${MERGED_DAILY})
       GROUP BY day
       ORDER BY total DESC, day DESC
       LIMIT 1`
-  ).get()
+  ).get(account)
+
+  // 「最长一场聊天」依赖 messages,只有写入设备自己算得出;远端设备随快照带来各自的值,取最大
+  const remote = stmt(
+    `SELECT COUNT(*) AS devices, MAX(longest_chat_ms) AS longest
+       FROM usage_remote_origin
+      WHERE account_id = ?`
+  ).get(account)
 
   const { current, longest } = computeStreaks(activeDays, localDayOf(now))
 
@@ -235,7 +281,8 @@ export function getUsageActivityStats(now: number = Date.now()): UsageActivitySt
     longestStreak: longest,
     peakDayTokens: peak === undefined ? 0 : Number(peak['total'] ?? 0),
     peakDay: peak === undefined ? null : String(peak['day'] ?? '') || null,
-    longestChatMs: longestChatSpanMs()
+    longestChatMs: Math.max(longestChatSpanMs(), Number(remote?.['longest'] ?? 0)),
+    syncedDevices: Number(remote?.['devices'] ?? 0)
   }
 }
 
@@ -251,7 +298,7 @@ export function getUsageActivityStats(now: number = Date.now()): UsageActivitySt
  * 代价是 `messages` **会**被「按时间清理」和「清空对话历史」删掉,清理之后
  * 这个数字会变小 —— 三个源里这是失真最小的一个。
  */
-function longestChatSpanMs(): number {
+export function longestChatSpanMs(): number {
   const row = stmt(
     `WITH ordered AS (
        SELECT session_id,

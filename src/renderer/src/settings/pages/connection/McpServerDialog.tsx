@@ -21,9 +21,10 @@ import type {
   McpServerStatus,
   McpTransport,
 } from "../../../../../shared/domain/mcp";
-import { Button } from "../../../components/ui/Button";
+import { Button } from "../../../components/arc/button/button";
 import { Dialog } from "../../../components/ui/Dialog";
-import { Segmented } from "../../../components/ui/Segmented";
+import SegmentedControl from "../../../components/arc/segmented-control/segmented-control";
+import { Select } from "../../../components/ui/Select";
 import { TextInput } from "../../../components/ui/TextInput";
 import { useI18n } from "../../../i18n";
 import { cn } from "../../../lib/cn";
@@ -97,8 +98,9 @@ export function McpServerDialog({
       .then((info) => {
         if (alive)
           setStored({
-            names: info.storedNames,
-            encryptionAvailable: info.encryptionAvailable,
+            // 远端设备可能是别的版本,回程形状不能完全信 —— 这里渲染期会 `.length`
+            names: Array.isArray(info?.storedNames) ? info.storedNames : [],
+            encryptionAvailable: info?.encryptionAvailable !== false,
           });
       })
       .catch((e: unknown) => console.error("[mcp] 读取密钥状态失败", e));
@@ -132,7 +134,7 @@ export function McpServerDialog({
     setFailure(null);
     const config: McpServerConfig = toConfig(
       draft,
-      editing?.config.enabled ?? true,
+      editing?.config.enabled !== false,
     );
     config.workspaceId = workspaceId || undefined;
 
@@ -166,10 +168,10 @@ export function McpServerDialog({
       width={560}
       footer={
         <div className="flex items-center justify-end gap-2">
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" type="button" variant="secondary" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
           </Button>
-          <Button size="sm" variant="accent" onClick={save} disabled={busy}>
+          <Button size="sm" type="button" variant="primary" onClick={save} disabled={busy}>
             {busy ? (
               <Spinner size="sm" />
             ) : (
@@ -181,11 +183,18 @@ export function McpServerDialog({
     >
       <div className="flex flex-col gap-3.5">
         <Field label={t('ssh.mcp.target')}>
-          <select value={workspaceId} aria-label={t('ssh.mcp.target')} onChange={(event) => setWorkspaceId(event.target.value)} className="h-8 w-full min-w-0 rounded-[6px] border border-border bg-canvas px-2 text-[12px] text-fg">
-            <option value="">{t('ssh.mcp.local')}</option>
-            {workspaceId && !workspaces[workspaceId] && <option value={workspaceId}>{workspaceId}</option>}
-            {Object.values(workspaces).map((workspace) => <option key={workspace.id} value={workspace.id}>{t('ssh.mcp.scope', { name: workspace.name })}</option>)}
-          </select>
+          <Select
+            inModal
+            value={workspaceId}
+            ariaLabel={t('ssh.mcp.target')}
+            onValueChange={setWorkspaceId}
+            className="h-8 text-[13px]"
+            options={[
+              { value: '', label: t('ssh.mcp.local') },
+              ...(workspaceId && !workspaces[workspaceId] ? [{ value: workspaceId, label: workspaceId }] : []),
+              ...Object.values(workspaces).map((workspace) => ({ value: workspace.id, label: t('ssh.mcp.scope', { name: workspace.name }) }))
+            ]}
+          />
         </Field>
         <Field
           label={t("connection.mcp.dialog.transport")}
@@ -196,12 +205,11 @@ export function McpServerDialog({
           }
         >
           {/* ★ 用 Segmented 不用 Menu —— Menu 在滚动区里会被裁(ModelPage.tsx 记着这条) */}
-          <Segmented
+          <SegmentedControl
             label={t("connection.mcp.dialog.transport")}
-            size="sm"
             value={draft.transport}
-            options={transports}
-            onChange={(t) => set("transport", t)}
+            options={[...transports]}
+            onValueChange={(t) => set("transport", t as McpTransport)}
           />
         </Field>
 
@@ -331,9 +339,9 @@ export function McpServerDialog({
             }
             onChange={(e) => set("secretsText", e.target.value)}
             className={cn(
-              "app-no-drag selectable w-full resize-none rounded-[8px] border border-hairline",
+              "apple-field app-no-drag selectable w-full resize-none rounded-[8px] border border-hairline",
               "bg-surface-field px-2.5 py-2 font-mono text-[12px] leading-[1.7] text-fg outline-none",
-              "placeholder:text-fg-faint focus:border-accent",
+              "placeholder:text-fg-faint focus:border-fg-faint",
             )}
           />
           {stored.names.length > 0 && (

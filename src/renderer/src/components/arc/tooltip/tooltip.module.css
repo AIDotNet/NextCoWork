@@ -1,0 +1,18 @@
+.tooltip { --tooltip-y: 3px; z-index: 90; max-width: 15rem; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--material-menu); -webkit-backdrop-filter: var(--material-blur); backdrop-filter: var(--material-blur); color: var(--foreground); box-shadow: var(--shadow-raised); font-size: 12px; font-weight: 400; line-height: var(--leading-body); transform-origin: var(--radix-tooltip-content-transform-origin); transition: opacity var(--duration-fast) var(--ease-enter), transform var(--duration-fast) var(--ease-enter); }
+.tooltip[data-side="bottom"] { --tooltip-y: -3px; }
+/* The first tooltip waits, then rises a few pixels from its trigger. Within the skip window the next one only fades.
+   Transitions instead of keyframes, so returning to the trigger while it fades out reverses the fade instead of restarting it. */
+@starting-style {
+  .tooltip[data-state$="-open"] { opacity: 0; transform: translateY(var(--tooltip-y)) scale(.97); }
+  .tooltip[data-instant][data-state$="-open"] { transform: none; }
+}
+.tooltip[data-instant][data-state$="-open"] { transition: opacity var(--duration-instant) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); }
+/* Radix unmounts when the exit animation ends, so a no-op keyframe times the exit while the transition does the visual work. */
+.tooltip[data-state="closed"] { opacity: 0; transform: scale(.98); transition: opacity var(--duration-instant) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); animation: tooltip-exit var(--duration-instant) linear both; }
+.text { position: relative; display: block; overflow: clip; overflow-clip-margin: var(--space-2); }
+.measure { position: absolute; top: 0; left: 0; width: max-content; max-width: calc(15rem - 16px); visibility: hidden; pointer-events: none; }
+.line { display: block; width: max-content; max-width: calc(15rem - 16px); }
+@keyframes tooltip-exit { to { --tooltip-exit: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tooltip, .tooltip[data-state="closed"], .tooltip[data-instant][data-state$="-open"] { transform: none; transition: opacity var(--duration-instant) var(--ease-standard); }
+}

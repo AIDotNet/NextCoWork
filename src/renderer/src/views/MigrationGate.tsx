@@ -8,8 +8,8 @@
  * 「禁用了控件」,而是后端根本没起来。这就是「阻止用户使用」的全部实现,
  * 不需要在任何地方加一句 `disabled`。
  *
- * ★ 反过来说:**这一屏自己不能依赖任何需要数据库的东西**。它读的
- * `dataMigration:*` 是全应用唯一在闸门期间可用的频道(见 `services/data-migration.ts`)。
+ * ★ 反过来说:**这一屏自己不能依赖任何需要数据库的东西**。除无状态的窗口控制外，
+ * 它读的 `dataMigration:*` 是闸门期间唯一可用的业务频道(见 `services/data-migration.ts`)。
  * 谁哪天顺手在这里挂一个 store 的 load,那一屏就会永远停在加载中。
  *
  * ## 四个阶段各自的界面
@@ -21,7 +21,7 @@
  *   ★ 有出口这件事本身就是「减少错误」的一半:静默继续正是这次丢数据的成因,
  *   而把用户彻底挡在门外连备份都做不了,是另一个极端。
  * - `skipped` —— 一行说明 + 继续。告诉用户旧数据还在、下次还会再试。
- * - `idle`    —— 什么都不画。绝大多数启动落在这里。
+ * - `idle`    —— 等待完整 IPC 时画首屏骨架；超时或启动失败则切到诊断页。
  *
  * ## 什么时候放行
  *
@@ -32,10 +32,12 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { MigrationState, MigrationStepKind } from '../../../shared/domain/data-migration'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { ProgressBar } from '../components/ui/ProgressBar'
 import { Spinner } from '../components/ui/Spinner'
 import { useI18n } from '../i18n'
+import { AppSkeleton } from '../shell/AppSkeleton'
+import { WindowControls } from '../shell/WindowControls'
 import { decideMigrationGate } from './migration-release'
 import {
   getMigrationState,
@@ -52,6 +54,9 @@ const STEP_KEYS: Record<MigrationStepKind, string> = {
   'copy-attachment-files': 'migration.step.copy-attachment-files'
 }
 
+// 需求：主进程如果既不成功也不抛错，首屏不能无限伪装成正常加载。
+const STARTUP_TIMEOUT_MS = 15_000
+const STARTUP_TIMEOUT_DETAIL = `STARTUP_IPC_READY_TIMEOUT (${STARTUP_TIMEOUT_MS}ms)`
 export function MigrationGate({
   state,
   onResolved
@@ -187,17 +192,19 @@ function MigrationFailureView({ state }: { state: MigrationState }): React.React
         )}
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          <Button variant="ghost" onClick={() => { void retryMigration().catch(() => undefined) }}>
+          <Button type="button" variant="secondary" onClick={() => { void retryMigration().catch(() => undefined) }}>
             {t('migration.action.retry')}
           </Button>
           <Button
-            variant="ghost"
+            type="button"
+            variant="secondary"
             onClick={() => { void skipMigration().catch(() => undefined) }}
           >
             {t('migration.action.skip')}
           </Button>
           <Button
-            variant="ghost"
+            type="button"
+            variant="secondary"
             onClick={() => { void openMigrationDataDirectory().catch(() => undefined) }}
           >
             {t('migration.action.openDataDirectory')}
@@ -223,6 +230,7 @@ function UndoButton(): React.ReactNode {
   const [busy, setBusy] = useState(false)
   return (
     <Button
+      type="button"
       variant="danger"
       disabled={busy}
       onClick={() => {
@@ -254,8 +262,9 @@ function DiagnosticBlock({ detail }: { detail: string }): React.ReactNode {
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-fg-faint">{t('migration.error.detailLabel')}</span>
         <Button
+          type="button"
           size="sm"
-          variant="ghost"
+          variant="secondary"
           onClick={() => {
             void navigator.clipboard
               .writeText(detail)
@@ -291,7 +300,7 @@ function MigrationSkippedView({ onContinue }: { onContinue: () => void }): React
         <h1 className="text-[15px] font-medium text-fg">{t('migration.skipped.title')}</h1>
         <p className="mt-2 text-[13px] text-fg-muted">{t('migration.skipped.body')}</p>
         <div className="mt-6">
-          <Button variant="accent" onClick={onContinue}>
+          <Button type="button" variant="primary" onClick={onContinue}>
             {t('migration.skipped.continue')}
           </Button>
         </div>
@@ -300,6 +309,27 @@ function MigrationSkippedView({ onContinue }: { onContinue: () => void }): React
   )
 }
 
+/** 启动链失败时保住诊断和数据目录入口，不能再退化成无提示白屏。 */
+function StartupFailureView({ detail, timedOut }: { detail: string; timedOut: boolean }): React.ReactNode {
+  const { t } = useI18n()
+  const [openFailed, setOpenFailed] = useState(false)
+  return (
+    <div className="flex h-full flex-col items-center justify-center overflow-y-auto bg-app p-10">
+      <div className="w-full max-w-md">
+        <h1 className="text-[15px] font-medium text-danger">{t(timedOut ? 'migration.startup.delayedTitle' : 'migration.startup.failedTitle')}</h1>
+        <p className="mt-2 text-[13px] text-fg-muted">{t(timedOut ? 'migration.startup.delayedBody' : 'migration.startup.failedBody')}</p>
+        <Button type="button" className="mt-6" variant="secondary" onClick={() => {
+          setOpenFailed(false)
+          void openMigrationDataDirectory().catch(() => setOpenFailed(true))
+        }}>
+          {t('migration.action.openDataDirectory')}
+        </Button>
+        {openFailed && <p role="alert" className="mt-2 text-[12px] text-danger">{t('migration.actionFailed')}</p>}
+        <DiagnosticBlock detail={detail} />
+      </div>
+    </div>
+  )
+}
 /**
  * 闸门的宿主。
  *
@@ -314,37 +344,34 @@ function MigrationSkippedView({ onContinue }: { onContinue: () => void }): React
 export function MigrationGateHost({ children }: { children: React.ReactNode }): React.ReactNode {
   const [state, setState] = useState<MigrationState | null>(null)
   const [resolved, setResolved] = useState(false)
+  const [snapshotFailure, setSnapshotFailure] = useState<string | null>(null)
+  const [startupTimedOut, setStartupTimedOut] = useState(false)
+  const waitingForStartup = state === null || (state.ipcReady !== true && (state.phase === 'idle' || (state.phase === 'skipped' && resolved === true)))
 
   useEffect(() => {
     let active = true
+    const accept = (next: MigrationState): void => {
+      if (!active) return
+      setState(next)
+      setSnapshotFailure(null)
+      // 仍在 idle 等 IPC 的迟到快照不能清掉超时，否则计时器不会重新武装。
+      if (next.phase !== 'idle' || next.ipcReady === true) setStartupTimedOut(false)
+      // 合并完成或者用户选了继续,闸门就放行 —— 之后不再回到这一屏。
+      if (next.phase === 'idle') setResolved(true)
+    }
     /*
       ★ 先订阅再拉快照。反过来的话,「拉到 idle」和「订阅上」之间到达的那次
       progress 会丢 —— 而闸门从 running 走到 idle 正是发生在这个窗口里最坏的一帧。
     */
-    const off = onMigrationProgress((next) => {
-      if (!active) return
-      setState(next)
-      // 合并完成或者用户选了继续,闸门就放行 —— 之后不再回到这一屏。
-      if (next.phase === 'idle') setResolved(true)
-    })
+    const off = onMigrationProgress(accept)
     void getMigrationState()
-      .then((initial) => {
+      .then(accept)
+      .catch((error: unknown) => {
+        // 原先为 IPC 子集测试直接放行；生产里没有 `ipcReady` 仍挂不了 App，只会永久留白。
+        // 需求：首份快照失败时保留原始异常，让真实启动故障有可见诊断。
         if (!active) return
-        setState(initial)
-        if (initial.phase === 'idle') setResolved(true)
-      })
-      .catch(() => {
-        /*
-          ★ 拿不到闸门状态时**直接放行**,不显示错误。这一条 invoke 失败只可能
-          是「主进程的 handler 没装」(比如某个只跑 IPC 子集的测试),而那种情况下
-          「无需迁移」正是正确答案。在这里显示一屏错误反而会把一个正常的启动
-          变成用户眼里的故障。
-
-          ★ 这里置的只是 `resolved`;真正挂 App 还要 `ipcReady`(见
-          `migration-release.ts`)。所以主进程连闸门频道都没登记时这一步不会真的
-          放行 —— 那种情况下放行就是握手失败,而首屏多空一会儿不算故障。
-        */
-        if (active) setResolved(true)
+        const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+        setSnapshotFailure(detail === '' ? 'STARTUP_STATE_UNAVAILABLE' : detail)
       })
     return () => {
       active = false
@@ -352,19 +379,26 @@ export function MigrationGateHost({ children }: { children: React.ReactNode }): 
     }
   }, [])
 
-  /*
-    ★ **`state === null` 时不能挂 App。** 那一段时间是「已经订阅上、但第一份快照
-    还在路上」—— 而闸门恰恰是最可能在那一瞬间处于 `running` 的状态。这时候把 App
-    挂上去,它的握手 effect 会立刻去 invoke `app:getBootstrap`,而那一次调用会
-    失败(库还没打开),把首屏置成「握手失败」。等闸门放行,用户看到的就是那一屏错误。
+  useEffect(() => {
+    if (!waitingForStartup || snapshotFailure !== null) return
+    // 需求：主进程卡死也不能无限显示骨架；15 秒后显示诊断，但继续监听以便恢复。
+    const timer = setTimeout(() => setStartupTimedOut(true), STARTUP_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [snapshotFailure, waitingForStartup])
 
-    所以先什么都不画。空白只有一帧,而画错东西会让用户以为启动坏了。
-  */
-  if (state === null) return null
-
-  const decision = decideMigrationGate(state, resolved)
-  if (decision === 'blank') return null
+  const startupStalled = startupTimedOut === true || snapshotFailure !== null
+  const decision = decideMigrationGate(state, resolved, startupStalled)
   if (decision === 'app') return <>{children}</>
 
-  return <MigrationGate state={state} onResolved={() => setResolved(true)} />
+  let screen: React.ReactNode
+  if (decision === 'waiting') screen = <AppSkeleton />
+  else if (decision === 'startup-failed') {
+    const reportedFailure = state === null ? snapshotFailure : (state.startupFailure ?? snapshotFailure)
+    screen = <StartupFailureView detail={reportedFailure ?? STARTUP_TIMEOUT_DETAIL} timedOut={reportedFailure === null} />
+  } else {
+    // `gate` 必然来自一份真实快照；这个兜底只服务 TypeScript 的可空收窄。
+    screen = state === null ? <AppSkeleton /> : <MigrationGate state={state} onResolved={() => setResolved(true)} />
+  }
+  // 需求：Windows/Linux 没有原生标题栏，启动页也必须能拖动、最小化、最大化和关闭。
+  return <><div aria-hidden className="app-drag fixed inset-x-0 top-0 h-[34px]" /><WindowControls />{screen}</>
 }

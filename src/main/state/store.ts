@@ -14,10 +14,12 @@
  * 原样跑过。
  */
 import type { AgentMessage } from '../../shared/agent/message'
-import type { ContextCheckpoint, ContextSearchHit } from '../../shared/agent/context-management'
+import type { ContextSearchHit } from '../../shared/agent/context-management'
 import type { McpServerConfig } from '../../shared/domain/mcp'
 import type { ModelAlias, UpstreamProvider } from '../../shared/domain/provider'
+import type { ProviderAccountLimit, ProviderQuotaSnapshot } from '../../shared/domain/provider-account'
 import type { ModelCatalogDefinition } from '../../shared/domain/model-catalog'
+import type { ModelPricing } from '../../shared/domain/pricing'
 import type { SearchProviderConfig, SearchProviderId } from '../../shared/domain/search'
 import type { AppSettings, AppSettingsPatch } from '../../shared/domain/settings'
 import type { InnerTabState, WindowTabState } from '../../shared/domain/tab'
@@ -25,7 +27,7 @@ import type { Workspace } from '../../shared/domain/workspace'
 import type { ConnectionProfile } from '../../shared/domain/environment'
 import type { ScheduledRun, ScheduledTask, ScheduledTaskInput } from '../../shared/domain/scheduled'
 import { normalizeScheduledTaskInput, nextScheduledOccurrence } from '../../shared/domain/scheduled'
-import type { Session, SessionDetail, SessionListItem, SearchHit } from '../../shared/domain/session'
+import type { Session, SessionDetail, SessionListItem, SessionPage, SearchHit } from '../../shared/domain/session'
 import type { ChangeSetState, ReviewChangeSet, ReviewFileDiff } from '../../shared/domain/review'
 import type {
   UsageActivityStats,
@@ -39,6 +41,7 @@ import type {
 } from '../../shared/domain/usage'
 import type { SessionCreateInput } from '../db/repo'
 import * as repo from '../db/repo'
+import * as providerAccounts from '../db/provider-accounts'
 import * as usageRollup from '../db/usage-rollup'
 import { ulid } from '../../shared/util/id'
 
@@ -191,6 +194,10 @@ export const store = {
   listProviders(): UpstreamProvider[] {
     return repo.listProviders()
   },
+  /** 供应商是否由 `providers.json` 管理(见 `db/provider-file.ts`)。 */
+  usesProviderFile(): boolean {
+    return repo.providerFileStore() !== null
+  },
   putProvider(p: UpstreamProvider): UpstreamProvider {
     return repo.putProvider(p)
   },
@@ -200,9 +207,16 @@ export const store = {
    *
    * 级联现在由 `model_aliases` 上的外键做(`db/schema.ts`),不再是这里的一个循环:
    * 数据库保证的不变式不需要每个写入点都记得。
+   *
+   * ★ 账号行**没有**外键可用(`provider_accounts` 故意不建外键:它还要连带删
+   * `credentials` 里的密文,而那件事外键管不着)。所以这里显式收一次 ——
+   * 漏掉的表现是删掉供应商后库里留着一串再也读不到的 token。
    */
   removeProvider(id: string): void {
-    repo.removeProvider(id)
+    repo.tx(() => {
+      providerAccounts.removeProviderAccountsFor(id)
+      repo.removeProvider(id)
+    })
   },
   /**
    * ★ 别名的主键是 `(providerId, alias)`,不是 alias。
@@ -219,6 +233,56 @@ export const store = {
     repo.removeAlias(providerId, alias)
   },
 
+  // ── 供应商账号(OAuth 多账号,schema 第 24 条) ──
+  /**
+   * ★ 这一组是**纯转发**,和上面全部访问器同一个理由:全应用没有第二个地方摸持久化。
+   * 读写规则、连带删密文那条不变式都在 `db/provider-accounts.ts` 的文件头。
+   *
+   * ★ 这里出去的是**元数据**,不带登录态摘要(邮箱 / 是否过期)——
+   * 那要解密凭证才知道,由 `ipc/provider-accounts.ts` 在下发前合成。
+   */
+  listProviderAccounts(providerId?: string): providerAccounts.ProviderAccountRow[] {
+    return providerAccounts.listProviderAccounts(providerId)
+  },
+  getProviderAccount(id: string): providerAccounts.ProviderAccountRow | undefined {
+    return providerAccounts.getProviderAccount(id)
+  },
+  putProviderAccount(account: providerAccounts.ProviderAccountRow): providerAccounts.ProviderAccountRow {
+    return providerAccounts.putProviderAccount(account)
+  },
+  /** 连带删密文 —— 见 `db/provider-accounts.ts` 的不变式 */
+  removeProviderAccount(id: string): void {
+    providerAccounts.removeProviderAccount(id)
+  },
+  nextProviderAccountOrder(providerId: string): number {
+    return providerAccounts.nextProviderAccountOrder(providerId)
+  },
+  setProviderAccountOrder(providerId: string, accountIds: readonly string[]): void {
+    providerAccounts.setProviderAccountOrder(providerId, accountIds)
+  },
+  setProviderAccountEnabled(id: string, enabled: boolean): void {
+    providerAccounts.setProviderAccountEnabled(id, enabled)
+  },
+  /** 见 `db/provider-accounts.ts`:凭证变化时同步那个反范式的位,写入点只有 announce */
+  setProviderAccountNeedsReauth(id: string, needsReauth: boolean): void {
+    providerAccounts.setProviderAccountNeedsReauth(id, needsReauth)
+  },
+  setProviderAccountLabel(id: string, label: string): void {
+    providerAccounts.setProviderAccountLabel(id, label)
+  },
+  setProviderAccountLimit(id: string, limit: ProviderAccountLimit | null): void {
+    providerAccounts.setProviderAccountLimit(id, limit)
+  },
+  setProviderAccountQuota(id: string, quota: ProviderQuotaSnapshot): void {
+    providerAccounts.setProviderAccountQuota(id, quota)
+  },
+  setCurrentProviderAccount(providerId: string, accountId: string): void {
+    providerAccounts.setCurrentProviderAccount(providerId, accountId)
+  },
+  currentProviderAccount(providerId: string): providerAccounts.ProviderAccountRow | undefined {
+    return providerAccounts.currentProviderAccount(providerId)
+  },
+
   // ── usage ledger ──
   recordUsageAttempt(record: UsageAttemptRecord): void {
     repo.recordUsageAttempt(record)
@@ -231,6 +295,9 @@ export const store = {
   },
   getUsageRequestLogs(query: UsageRequestLogsQuery): UsageRequestLogsPage {
     return repo.getUsageRequestLogs(query)
+  },
+  getSessionUsageAttempts(sessionId: string): UsageAttemptRecord[] {
+    return repo.getSessionUsageAttempts(sessionId)
   },
   getUsageProviderStats(window: UsageWindow): UsageDimensionStat[] {
     return repo.getUsageProviderStats(window)
@@ -262,6 +329,17 @@ export const store = {
   },
   removeUserModelCatalog(id: string): void {
     repo.removeUserModelCatalog(id)
+  },
+
+  // ── synced pricing (models.dev) ──
+  listSyncedPricing(): ModelPricing[] {
+    return repo.listSyncedPricing()
+  },
+  replaceSyncedPricing(rows: readonly ModelPricing[]): void {
+    repo.replaceSyncedPricing(rows)
+  },
+  clearSyncedPricing(): void {
+    repo.clearSyncedPricing()
   },
 
   // ── MCP 服务器(设置 › 连接 › MCP) ──
@@ -369,6 +447,28 @@ export const store = {
   getHistory(sessionId: string): readonly AgentMessage[] {
     return repo.getHistory(sessionId)
   },
+  /** 只取最后一条助手消息 —— 子代理交差正文,不必解析整段子转录 */
+  lastAssistantMessage(sessionId: string): AgentMessage | undefined {
+    return repo.lastAssistantMessage(sessionId)
+  },
+  /** 输入框补全:用户亲手发的最近几条 / 最后一条给人看的回复 / 本工作区的历史指令 */
+  recentSessionPrompts(sessionId: string, limit: number): AgentMessage[] {
+    return repo.recentSessionPrompts(sessionId, limit)
+  },
+  lastVisibleAssistantMessage(sessionId: string): AgentMessage | undefined {
+    return repo.lastVisibleAssistantMessage(sessionId)
+  },
+  recentWorkspacePrompts(workspaceId: string): string[] {
+    return repo.recentWorkspacePrompts(workspaceId)
+  },
+  /** 最后一条带目标标记的助手消息 —— 目标重载恢复只看它,不解析整段转录 */
+  lastGoalStatusMessage(sessionId: string): AgentMessage | undefined {
+    return repo.lastGoalStatusMessage(sessionId)
+  },
+  /** 一条消息仍是读出来时那一份时才换 parts(见 `repo.replaceMessagePartsIfUnchanged`) */
+  replaceMessagePartsIfUnchanged(sessionId: string, messageId: string, expectedParts: string, parts: AgentMessage['parts']): boolean {
+    return repo.replaceMessagePartsIfUnchanged(sessionId, messageId, expectedParts, parts)
+  },
   setHistory(sessionId: string, messages: readonly AgentMessage[]): void {
     const existing = repo.getSession(sessionId)
     if (existing === undefined) {
@@ -403,6 +503,26 @@ export const store = {
   getSessionDetail(sessionId: string): SessionDetail | undefined {
     return repo.getSessionDetail(sessionId)
   },
+  /** 会话元数据 + 消息条数,不读任何消息正文 */
+  getSessionSummary(sessionId: string): { session: Session; messageCount: number } | undefined {
+    const session = repo.getSession(sessionId)
+    return session === undefined ? undefined : { session, messageCount: repo.countMessages(sessionId) }
+  },
+  /** 转录的一页(见 `SessionPage`)。`messageRuns` 只覆盖本页的消息 */
+  getSessionPage(sessionId: string, limit: number, beforeMessageId?: string): SessionPage | undefined {
+    const session = repo.getSession(sessionId)
+    if (session === undefined) return undefined
+    const { messages, hasMore } = repo.getHistoryPage(sessionId, limit, beforeMessageId)
+    const messageRuns = repo.messageRunsOf(sessionId, messages.map((message) => message.id))
+    return {
+      session,
+      messages,
+      hasMore,
+      messageRuns,
+      runUsage: repo.runUsageOf(sessionId),
+      runModel: repo.runModelOf(sessionId)
+    }
+  },
   getSessionRunUsage(sessionId: string): ReturnType<typeof repo.runUsageOf> {
     return repo.runUsageOf(sessionId)
   },
@@ -427,6 +547,9 @@ export const store = {
   setSessionFavorited(sessionId: string, favorited: boolean): void {
     repo.setSessionFavorited(sessionId, favorited)
   },
+  sessionSubtreeIds(sessionId: string): string[] {
+    return repo.sessionSubtreeIds(sessionId)
+  },
   deleteSession(sessionId: string): string[] {
     // 未发出的输入、以及派生出来的子代理转录,都由 `repo.deleteSession` 一起收 ——
     // 它是整棵子树遍历的那一层,级联必须和遍历在同一处(见那边的注释)。
@@ -435,23 +558,23 @@ export const store = {
   searchSessions(q: string, workspaceId?: string, limit = 50): SearchHit[] {
     return repo.searchAll(q, workspaceId, limit)
   },
-  listContextCheckpoints(sessionId: string): ContextCheckpoint[] {
-    return repo.listContextCheckpoints(sessionId)
-  },
-  getContextCheckpoint(id: string): ContextCheckpoint | undefined {
-    return repo.getContextCheckpoint(id)
-  },
-  upsertContextCheckpoint(checkpoint: ContextCheckpoint): ContextCheckpoint {
-    return repo.upsertContextCheckpoint(checkpoint)
-  },
-  updateContextCheckpoint(id: string, note: string, revision: number, now: number): ContextCheckpoint {
-    return repo.updateContextCheckpoint(id, note, revision, now)
-  },
   searchSessionHistory(sessionId: string, q: string, limit = 5): ContextSearchHit[] {
     return repo.searchSessionHistory(sessionId, q, limit)
   },
   commitMessage(sessionId: string, message: AgentMessage, runId?: string): void {
     repo.commitMessage(sessionId, message, runId)
+  },
+  /**
+   * 给定的 messageId 里哪些**已经提交过**(消费回执,schema 第 34 条)。
+   *
+   * ★ 纯转发 —— SQL 仍然只在 `db/repo.ts`(见本文件头:全应用没有第二个地方
+   *   摸持久化)。回执的写入是同层 `commitMessage` 顺手做掉的,不需要单独入口。
+   *
+   * ★ 这**不是**网络授权 API:调用者仍须自己验证会话归属(谁的 run 在服务哪条
+   *   会话),这一层只回答「库里记没记过」。
+   */
+  committedInputIds(sessionId: string, ids: readonly string[]): string[] {
+    return repo.committedInputIds(sessionId, ids)
   },
   setRunRecord(id: string, sessionId: string, status: string, startedAt: number, endedAt?: number): void {
     repo.setRunRecord(id, sessionId, status, startedAt, endedAt)

@@ -21,18 +21,39 @@ import { AppShell } from './shell/AppShell'
 import { AppSkeleton } from './shell/AppSkeleton'
 import { WindowControls } from './shell/WindowControls'
 import { startAgentEventPump, adoptActiveRuns, adoptActiveSubagents, refreshHydratedSessions, useRunIndex } from './stores/session'
+import { setSoundPreferences, startNotificationSounds } from './stores/notification-sounds'
+import { setComposerPrefs } from './stores/composer-prefs'
 import { useImageThemes } from './stores/imageTheme'
 import { usePluginsStore } from './stores/plugins'
 import { useWindowStore, startActiveWorkspaceReporting } from './stores/window'
 import { useTabsStore } from './stores/tabs'
 import { applyTheme } from './theme/apply'
-import { useI18n } from './i18n'
+import { translate, useI18n } from './i18n'
 import type { ClientAuthState } from '../../shared/domain/client-auth'
 import { getClientAuthState, getClientUser } from './services/client-auth'
 import { WelcomeView } from './views/WelcomeView'
 import { ClientTeamSelectionView } from './views/ClientTeamSelectionView'
 import { ToastViewport } from './components/ui/ToastViewport'
+import { toast, useToastStore } from './stores/toast'
 import { useThemeProfiles } from './stores/themeProfiles'
+
+/**
+ * 「这份输入 / 布局还没保住」那条 toast 的固定 key。
+ *
+ * ★ 必须固定:`push` 对同 key 是**就地替换 + 计数**,而主进程每次刷盘失败都会
+ * 推一条 `session:inputPersistence` —— 用随机 key 的话,磁盘满的时候屏幕上
+ * 会堆满互相覆盖的同一条提示(上限 3 条也拦不住它反复顶掉别的通知)。
+ */
+const PERSISTENCE_TOAST_KEY = 'session-input-persistence'
+
+function sessionRouteFromLocation(): { workspaceId: string; sessionId: string | null } | null {
+  const raw = window.location.hash.match(/^#\/([^/]+)(?:\/([^/]+))?$/)
+  if (raw === null) return null
+  return {
+    workspaceId: decodeURIComponent(raw[1]!),
+    sessionId: raw[2] === undefined ? null : decodeURIComponent(raw[2])
+  }
+}
 
 export default function App(): React.JSX.Element {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
@@ -41,6 +62,8 @@ export default function App(): React.JSX.Element {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [fatal, setFatal] = useState<string | null>(null)
   const [auth, setAuth] = useState<ClientAuthState | null>(null)
+  const quickWindow = useMemo(() => new URLSearchParams(window.location.search).get('window') === 'quick', [])
+  const initialSessionRoute = useMemo(sessionRouteFromLocation, [])
   const hydrate = useWindowStore((s) => s.hydrate)
   const openWorkspace = useWindowStore((s) => s.openWorkspace)
   const openSession = useTabsStore((s) => s.openSession)
@@ -56,6 +79,16 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => startAgentEventPump(), [])
 
+  // 需求:设置 › 通用 › 提示音。和事件泵同理只起一次,否则一个 run 跑完响 N 声(见该文件头)
+  useEffect(() => startNotificationSounds(), [])
+  useEffect(() => {
+    if (settings !== null) setSoundPreferences(settings.notifications)
+  }, [settings])
+  // 输入框补全的开关镜像(理由见 stores/composer-prefs.ts 文件头)
+  useEffect(() => {
+    if (settings !== null) setComposerPrefs(settings)
+  }, [settings])
+
   /*
     ★ 上报当前工作区。**放在事件泵旁边而不是握手那个 effect 里**:它不依赖
     bootstrap 到没到 —— 订阅先挂上,`hydrate()` 之后那次赋值自然会被捎出去。
@@ -63,6 +96,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => startActiveWorkspaceReporting(), [])
 
   useEffect(() => {
+    // 先写窗口身份，再开始握手，避免 quick 窗口的早到事件按 main 布局落盘。
+    useWindowStore.setState({ windowKind: quickWindow ? 'quick' : 'main' })
     const offSettings = on('settings:changed', setSettings)
     const offTheme = on('theme:changed', ({ resolved }) => setAppearance(resolved))
     const offLibrary = on('theme:libraryChanged', ({ profiles, images }) => {
@@ -81,8 +116,12 @@ export default function App(): React.JSX.Element {
     })
     const offBrowser = onBrowserChanged((change) => {
       // Headless pages intentionally have no workspace tab; their lifecycle is Agent-only.
+      const before = useTabsStore.getState().stateOf(change.workspaceId).tabs
       syncBrowserTabs(change.workspaceId, change.tabs.filter((tab) => tab.backend === 'iab'))
-      if (change.rightPanelOpen === true) setRightPanelForWorkspace(change.workspaceId, true)
+      const addedBrowser = quickWindow && useTabsStore.getState().stateOf(change.workspaceId).tabs.some(
+        (tab) => tab.kind === 'browser' && !before.some((previous) => previous.id === tab.id)
+      )
+      if (change.rightPanelOpen === true && (!quickWindow || addedBrowser)) setRightPanelForWorkspace(change.workspaceId, true)
     })
     /*
       ★ **必须排在 announceReady() 之前。** 主进程在 `window:ready` 的 handler 里
@@ -104,13 +143,25 @@ export default function App(): React.JSX.Element {
     */
     const offPlugins = on('plugins:changed', () => { void usePluginsStore.getState().load() })
 
-    announceReady('main')
+    announceReady(quickWindow ? 'quick' : 'main')
     void getBootstrap()
       .then((b) => {
         setBoot(b)
         setSettings(b.settings)
         setWorkspaces(b.workspaces)
         setAppearance(b.resolvedTheme)
+        /*
+          ★ **首屏刷盘失败要说话。** 主进程为了让这次重载拿到完整的 Tab 布局 /
+          草稿,会先把防抖里那些键冲一遍;冲不下去时它照旧把首屏给我们,只在
+          `persistenceWarning` 上留一个标记 —— 不报的话,用户看到的是一切正常,
+          而他刚拖出来的 Tab 顺序已经没了。
+
+          走 `translate` 而不是上面的 `t`:这里是握手回调,`t` 进了这个 effect 的
+          依赖数组就意味着一句文案改动会重跑整段握手。key 固定,重复触发只替换。
+        */
+        if (b.persistenceWarning === true) {
+          toast.error(translate('app.persistenceWarning'), PERSISTENCE_TOAST_KEY)
+        }
         /*
           ★ **首屏不等网络。** `getClientAuthState()` 只读主进程里那行 SQLite 快照
           (实测 1ms),拿到就渲染;`getClientUser()` 是一次真实 HTTP 往返
@@ -134,6 +185,10 @@ export default function App(): React.JSX.Element {
           })
           .catch((error: unknown) => setFatal(error instanceof Error ? error.message : String(error)))
         hydrate(b)
+        // 在工作区激活与首屏挂载之前建立目标会话，避免空布局先改写 hash。
+        if (b.windowKind === 'quick' && initialSessionRoute?.sessionId != null) {
+          useTabsStore.getState().openFocusedSession(initialSessionRoute.workspaceId, initialSessionRoute.sessionId)
+        }
         // ⌘R 重载后主进程里还活着的 run —— 角标要立刻正确,不能等下一个事件
         adoptActiveRuns(b.activeRuns)
         // A background child may outlive its parent run and still needs a
@@ -147,11 +202,11 @@ export default function App(): React.JSX.Element {
           用完即弃),现在是常驻状态 —— 激活哪个 Tab 它就写成什么,见 AppShell
           里那个同步 effect。清掉的话下一帧就被同步回来,中间白闪一次。
         */
-        const raw = window.location.hash.match(/^#\/([^/]+)(?:\/([^/]+))?$/)
-        if (raw !== null) {
-          const workspaceId = decodeURIComponent(raw[1]!)
-          const sessionId = raw[2] === undefined ? null : decodeURIComponent(raw[2])
-          void openWorkspace(workspaceId).then((opened) => { if (opened && sessionId !== null) openSession(workspaceId, sessionId) })
+        if (initialSessionRoute !== null) {
+          const { workspaceId, sessionId } = initialSessionRoute
+          void openWorkspace(workspaceId).then((opened) => {
+            if (opened && sessionId !== null && !quickWindow) openSession(workspaceId, sessionId)
+          })
         }
       })
       .catch((e: unknown) => setFatal(e instanceof Error ? e.message : String(e)))
@@ -168,7 +223,36 @@ export default function App(): React.JSX.Element {
       offClientAuth()
       offPlugins()
     }
-  }, [hydrate, openSession, openWorkspace, setMaximized, setRightPanelForWorkspace, syncBrowserTabs, syncSessionTitle])
+  }, [hydrate, initialSessionRoute, openSession, openWorkspace, quickWindow, setMaximized, setRightPanelForWorkspace, syncBrowserTabs, syncSessionTitle])
+
+  /**
+   * 会话输入(草稿 + 队列)这一次落盘成没成。
+   *
+   * ★ **单独一个 effect,不并进上面那个握手块。** 那一块的依赖数组里是
+   * `hydrate` / `openSession` 这些 store 动作和 `t` —— 把这条订阅挂进去,
+   * 以后任何一次文案或 store 标识变化都会退订重订整段握手,而这个频道只在
+   * 主进程刷盘真的失败时才有事件,重订等于漏掉它。
+   *
+   * ★ 文案在事件里现取(用 `translate`),不进依赖数组:切语言时 toast 里
+   * 已经发出去的那句会留在原语言,但下一次事件会带新语言 —— 而这个订阅
+   * 全程不退订,正是它该有的样子。
+   *
+   * ★ `saved` **只**关掉这条提示,不 `clear()`:用户手上别的 toast(比如
+   * 「更新已就绪」)不该被一条保存成功顺带抹掉。
+   */
+  useEffect(() => on('session:inputPersistence', ({ state }) => {
+    if (state === 'saved') {
+      const { toasts, dismiss } = useToastStore.getState()
+      for (const item of toasts) {
+        if (item.key === PERSISTENCE_TOAST_KEY) dismiss(item.id)
+      }
+      return
+    }
+    toast.error(
+      translate(state === 'retrying' ? 'session.inputPersistence.retrying' : 'session.inputPersistence.blocked'),
+      PERSISTENCE_TOAST_KEY
+    )
+  }), [])
 
   /**
    * ★ **深浅和颜色是两路来的,必须汇到一处再落地。**
@@ -239,13 +323,13 @@ export default function App(): React.JSX.Element {
     return (
       <>
         <WindowControls />
-        <AppSkeleton />
+        <AppSkeleton focusMode={quickWindow} />
       </>
     )
   }
 
   if (auth === null) {
-    return <><WindowControls /><AppSkeleton /></>
+    return <><WindowControls /><AppSkeleton focusMode={quickWindow} /></>
   }
   if (auth.mode === 'undecided') {
     return <><WindowControls /><WelcomeView onComplete={() => { void getClientAuthState().then(setAuth) }} /></>
@@ -260,6 +344,7 @@ export default function App(): React.JSX.Element {
       <AppShell
         settings={settings}
         versions={boot.versions}
+        windowKind={boot.windowKind}
         workspaces={workspaces}
         runningSessionIds={runningSessionIds}
         runningWorkspaceIds={runningWorkspaceIds}

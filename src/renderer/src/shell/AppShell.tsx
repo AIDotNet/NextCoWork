@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Bootstrap } from "../../../shared/domain/bootstrap";
 import type { AppSettings } from "../../../shared/domain/settings";
 import type { Workspace } from "../../../shared/domain/workspace";
+import type { WindowKind } from "../../../shared/domain/tab";
 import type { SessionListItem } from "../../../shared/domain/session";
 import type { ClientAuthState } from "../../../shared/domain/client-auth";
 import { IconButton } from "../components/ui/IconButton";
@@ -33,6 +34,7 @@ import { IS_MAC } from "../lib/platform";
 import { useI18n } from "../i18n";
 import { usePresence } from "../lib/usePresence";
 import { closeWorkspace, pickWorkspace } from "../services/app";
+import { killTerminal, listTerminals } from "../services/terminal";
 import { deleteSession, listSessions } from "../services/sessions";
 import { on } from "../services/ipc";
 import { onScheduledChanged } from "../services/scheduled";
@@ -42,6 +44,7 @@ import { useTabsStore } from "../stores/tabs";
 import { useWindowStore } from "../stores/window";
 import { FeatureView } from "../views/registry";
 import { BrowserFeature } from "../views/browser/BrowserFeature";
+import { RewardsOverlay } from "../views/rewards/RewardsOverlay";
 import { OuterTabBar } from "./OuterTabBar";
 import { UpdateIndicator } from "./UpdateIndicator";
 import { Sidebar } from "./Sidebar";
@@ -63,9 +66,11 @@ import { CreateSshWorkspaceDialog } from './CreateSshWorkspaceDialog';
 import { EditWorkspaceDialog } from './EditWorkspaceDialog';
 
 /**
- * 三格面板开合的时长。**三处必须同一个数** —— 侧边栏收起的同时,主面板的左边界
- * 在往左长、Tab 条的左内边距在往右推、那颗展开按钮在等着淡入,四条曲线只要有一条
- * 不同步,看着就是「分好几批到位」。改这里,别在某个组件里单独写一个 duration。
+ * 面板开合的时长。**侧边栏与右/底部两条 dock 边必须同一个数** ——
+ * 侧边栏收起的同时,主面板的左边界在往左长、Tab 条的左内边距在往右推、
+ * 那颗展开按钮在等着淡入,dock 边的轨道也在同时收/放,几条曲线只要有一条
+ * 不同步,看着就是「分好几批到位」。改这里,别在某个组件里单独写一个 duration
+ * (右/底部那两条的 transition 写在 Dock.tsx,改这个数记得同步 duration-280)。
  *
  * 280 而不是 200:侧边栏是 297px 宽的一大块,200ms 下人眼几乎只看到首尾两帧,
  * 「快」和「闪」是一回事。位移越大需要的时间越长(同样一条曲线,一个图标转 90°
@@ -77,6 +82,7 @@ const PANEL_MS = 280;
 export function AppShell({
   settings,
   versions,
+  windowKind,
   workspaces,
   runningSessionIds,
   runningWorkspaceIds,
@@ -85,6 +91,7 @@ export function AppShell({
   settings: AppSettings;
   /** 「关于」页那四个版本号。来自 bootstrap,不是 preload 的 `versions()` */
   versions: Bootstrap["versions"];
+  windowKind: WindowKind;
   workspaces: readonly Workspace[];
   /** 来自 RunRegistry 的聚合,不是任何 UI 状态(方案 §8) */
   runningSessionIds: ReadonlySet<string>;
@@ -102,8 +109,10 @@ export function AppShell({
     bottomPanelOpen,
     settingsPage,
     scheduledUnread,
+    rewardsOpen,
   } = useWindowStore();
   const win = useWindowStore();
+  const quickWindow = windowKind === 'quick';
   useEffect(() => onScheduledChanged((event) => {
     if (event.kind === 'run' && (event.status === 'success' || event.status === 'error' || event.status === 'skipped') && useWindowStore.getState().activeStandaloneFeature !== 'scheduled') useWindowStore.setState({ scheduledUnread: true })
   }), []);
@@ -142,16 +151,25 @@ export function AppShell({
     当前工作区、翻译标题、开 Tab。安全判断主进程已经做完了。
   */
   useEffect(() => on('plugins:openTab', ({ pluginId, target }) => {
-    const workspaceId = useWindowStore.getState().activeWorkspaceId;
+    /*
+      ★ 插件终端开在**目标工作区**(菜单在哪个工作区点的,target.workspaceId
+      就是哪个),不是「当前活动」的那个 —— 后者只做其余目标的兜底。
+    */
+    const workspaceId = target.kind === 'terminal' ? target.workspaceId : useWindowStore.getState().activeWorkspaceId;
     if (workspaceId === null) return;
     /*
       标题:webapp 的 title 是 `%key%`,注册进 i18n 的是 `plugin.<id>.<key>`。
       ★ 这里就 `t()` 掉,因为 Tab 标题会**跟着布局落盘** —— 落一个 key 进去的话,
       重启之后 Tab 条上写的就是 `plugin.ncw.bilibili.app.home`。
+      插件终端同理;title 缺省时交给 makeTab 落「终端」默认文案。
     */
-    const title = target.kind === 'webapp'
-      ? t(`plugin.${pluginId}.${target.title.replace(/^%|%$/g, '')}` as Parameters<typeof t>[0])
-      : new URL(target.url).host;
+    const title = target.kind === 'terminal'
+      ? (target.title !== undefined
+          ? t(`plugin.${pluginId}.${target.title.replace(/^%|%$/g, '')}` as Parameters<typeof t>[0])
+          : undefined)
+      : target.kind === 'webapp'
+        ? t(`plugin.${pluginId}.${target.title.replace(/^%|%$/g, '')}` as Parameters<typeof t>[0])
+        : new URL(target.url).host;
     const placement = placePluginTab(target, pluginId, title);
     useTabsStore.getState().open(workspaceId, placement.kind, placement.pane, placement.init);
     /*
@@ -186,12 +204,21 @@ export function AppShell({
   }, []);
 
   /**
-   * 三格面板都是条件挂载的,直接 `{open && <Panel/>}` 收起时节点当场消失,
+   * 面板的开关都是条件性的,直接 `{open && <Panel/>}` 收起时节点当场消失,
    * 没有东西可以播退场 —— 所以统一过一遍 usePresence(它的文件头写了为什么)。
    * `shown` 驱动尺寸,`mounted` 决定还渲不渲染,`animating` 只在开合那一下为真,
    * 拖分隔条时是假的(否则每拖一帧都排一次插值,手感像拉皮筋)。
+   *
+   * ★ 右/底部两条 dock 边也各过一遍,三个信号交给 Dock 的 DockSplitView 映射:
+   * `mounted` → 开合期间保留 ghost 结构(不摊平、两侧子树不重挂载),
+   * `shown` → 轨道几何的起点/终点(开的第一帧仍是关的几何,双帧起跳,
+   * 和侧边栏同理),`animating` → 只在这 280ms 里给 grid 挂 transition。
+   * 手动点、切工作区、Agent 打开文件掀开右栏 —— 这些都只改 `rightPanelOpen`
+   * 一个事实,所以都走同一条动画,不需要各接一条。
    */
   const sidebar = usePresence(!sidebarCollapsed, PANEL_MS);
+  const rightEdge = usePresence(rightPanelOpen, PANEL_MS);
+  const bottomEdge = usePresence(bottomPanelOpen, PANEL_MS);
 
   const activeOuter = outer.find((t) => t.id === activeOuterId);
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -245,7 +272,7 @@ export function AppShell({
   }, [activeWorkspaceId]);
 
   // 工作区一露面就保证它至少有一个对话 Tab —— 空的内层 Tab 条没有任何可做的事。
-  // 依赖取的是 action 而不是整个 `tabs`:后者每次写入都换新引用,而 ensure 本身会写。
+  // 专注窗口已由 App 建立目标会话；缺少会话路由时 ensure 只补临时草稿。
   useEffect(() => {
     if (activeWorkspaceId !== null) ensureTabs(activeWorkspaceId);
   }, [activeWorkspaceId, ensureTabs]);
@@ -271,28 +298,25 @@ export function AppShell({
     于是插件既顶不掉一条同名命令,也抢不走一个已经被内置占着的组合键。
   */
   const pluginCommands = usePluginCommands();
-  const commands = useMemo<Command[]>(
-    () =>
-      mergeCommands(
-        [
-          {
-            id: "builtin.openSettings",
-            titleKey: "feature.settings",
-            icon: "settings",
-            accelerator: openSettingsShortcut,
-            run: openSettings
-          },
-          {
-            id: "builtin.search",
-            titleKey: "nav.search",
-            icon: "search",
-            run: () => setSearchOpen(true)
-          }
-        ],
-        pluginCommands
-      ),
-    [openSettings, openSettingsShortcut, pluginCommands]
-  );
+  const commands = useMemo<Command[]>(() => {
+    const builtin: Command[] = [];
+    if (!quickWindow) {
+      builtin.push({
+        id: "builtin.openSettings",
+        titleKey: "feature.settings",
+        icon: "settings",
+        accelerator: openSettingsShortcut,
+        run: openSettings
+      });
+    }
+    builtin.push({
+      id: "builtin.search",
+      titleKey: "nav.search",
+      icon: "search",
+      run: () => setSearchOpen(true)
+    });
+    return mergeCommands(builtin, quickWindow ? [] : pluginCommands);
+  }, [openSettings, openSettingsShortcut, pluginCommands, quickWindow]);
   useCommandShortcuts(commands);
 
   const inner =
@@ -360,7 +384,8 @@ export function AppShell({
     if (t !== undefined) currentTabs.activate(target, t.id);
     else {
       const item = sessionItems.find((x) => x.id === sessionId);
-      currentTabs.openSession(target, sessionId, item?.title);
+      if (quickWindow && currentTabs.stateOf(target).tabs.length === 0) currentTabs.openFocusedSession(target, sessionId, item?.title);
+      else currentTabs.openSession(target, sessionId, item?.title);
     }
   };
 
@@ -387,7 +412,13 @@ export function AppShell({
       if (!(await confirmDocumentChanges(target.ref.workspaceId))) return;
     }
     await win.close(id);
-    if (target?.kind === 'workspace' && !useWindowStore.getState().outer.some((tab) => tab.id === id)) useDocumentsStore.getState().release(target.ref.workspaceId);
+    if (target?.kind === 'workspace' && !useWindowStore.getState().outer.some((tab) => tab.id === id)) {
+      useDocumentsStore.getState().release(target.ref.workspaceId);
+      // 关掉工作区 Tab 后终端不会再有界面可看,留着只会变成后台孤儿进程。
+      void listTerminals(target.ref.workspaceId)
+        .then((terminals) => Promise.all(terminals.map((terminal) => killTerminal(terminal.id))))
+        .catch(() => undefined);
+    }
   };
 
   /**
@@ -435,11 +466,12 @@ export function AppShell({
           className={cn(
             "flex shrink-0 overflow-hidden rounded-panel",
             "transition-[width,margin-right] duration-280 ease-panel",
-            sidebar.shown ? "mr-2 w-[297px]" : "mr-0 w-0",
+            sidebar.shown ? (quickWindow ? "mr-2 w-[240px]" : "mr-2 w-[297px]") : "mr-0 w-0",
           )}
         >
           <Sidebar
             auth={auth}
+            focusMode={quickWindow}
             workspace={workspace ?? null}
             chatTabs={inner?.tabs.filter((t) => t.kind === "chat") ?? []}
             sessions={sessionItems}
@@ -462,7 +494,7 @@ export function AppShell({
               setSearchOpen(true);
             }}
             onOpenFeature={win.openFeature}
-            // 直接透传:`openSettings(page?)` 的页码被账户菜单的「积分余额」用着,
+            // 直接透传:`openSettings(page?)` 的页码被账户菜单的「余额」用着,
             // 包一层 `() => …` 会把那个参数丢掉(齿轮那条路径不需要页码)。
             onOpenSettings={win.openSettings}
             onSelectSession={selectSession}
@@ -548,6 +580,8 @@ export function AppShell({
               <OuterTabBar
                 tabs={outer}
                 activeId={activeOuterId}
+                activeWorkspaceId={activeWorkspaceId}
+                compact={quickWindow}
                 workspaces={workspaces}
                 runningWorkspaceIds={runningWorkspaceIds}
                 onActivate={win.activate}
@@ -564,7 +598,7 @@ export function AppShell({
                 bottomPanelOpen={bottomPanelOpen}
                 onToggleRightPanel={() => toggleDockEdge('right')}
                 onToggleBottomPanel={() => toggleDockEdge('bottom')}
-                updateIndicator={<UpdateIndicator />}
+                updateIndicator={quickWindow ? undefined : <UpdateIndicator />}
               />
             </div>
 
@@ -580,7 +614,7 @@ export function AppShell({
                   {t("app.openWorkspace")}
                 </div>
               ) : (
-                <DockRoot workspace={workspace} fallbackModel={{ model: settings.defaultModel, modelProviderId: settings.defaultModelProviderId }} maxOutputTokens={settings.maxOutputTokens} runningSessionIds={runningSessionIds} rightVisible={rightPanelOpen} bottomVisible={bottomPanelOpen} />
+                <DockRoot workspace={workspace} fallbackModel={{ model: settings.defaultModel, modelProviderId: settings.defaultModelProviderId }} maxOutputTokens={settings.maxOutputTokens} runningSessionIds={runningSessionIds} right={rightEdge} bottom={bottomEdge} />
               )}
             </div>
           </>
@@ -593,7 +627,7 @@ export function AppShell({
         (那几页换掉的是 34px 的 Tab 条,不是窗口底边)。
         一格都没有时它自己不渲染,见 `shell/StatusBar.tsx`。
       */}
-      <StatusBar />
+      {!quickWindow && <StatusBar />}
       {createSshOpen && <CreateSshWorkspaceDialog hidden={settingsPage !== null} onClose={() => setCreateSshOpen(false)} onCreated={async (created) => {
         const state = useWindowStore.getState();
         state.updateWorkspaces([...Object.values(state.workspaceTargets).filter((item) => item.id !== created.id), created]);
@@ -631,9 +665,16 @@ export function AppShell({
         page={settingsPage ?? DEFAULT_SETTINGS_PAGE}
         settings={settings}
         versions={versions}
+        auth={auth}
         onNavigate={win.openSettings}
         onClose={win.closeSettings}
       />
+
+      {/*
+        奖励中心（账户菜单 →「邀请好友」）。和设置浮层同处一层、同样不 portal ——
+        理由见 `RewardsOverlay.tsx` 文件头：它同样盖住那条 `app-drag` 的标题栏。
+      */}
+      <RewardsOverlay open={rewardsOpen} onClose={win.closeRewards} />
     </div>
   );
 }

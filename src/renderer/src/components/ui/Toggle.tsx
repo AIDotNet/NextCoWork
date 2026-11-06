@@ -1,6 +1,13 @@
-import { cn } from '../../lib/cn'
+import { Switch } from '../arc/switch/switch'
 
-/** 设置页每一行右侧那个开关。开 = 橙,关 = 暖灰槽。 */
+/**
+ * ★ **宿主代码不要用这个文件** —— 直接用 `components/arc/switch/switch` 的 `Switch`
+ * (`checked` / `onCheckedChange` / `aria-label`)。
+ *
+ * 它只为插件 API(`nextcowork/ui` 的 `Toggle`)保留旧签名,实现是 Arc 的 Switch。
+ * ★ `label` 走 `aria-label`,不走 Arc 的 `label` —— 后者会在开关旁画一行可见文字,
+ *   而这个参数一直只是读屏文案。
+ */
 export function Toggle({
   checked,
   onChange,
@@ -12,26 +19,5 @@ export function Toggle({
   label: string
   disabled?: boolean
 }): React.ReactNode {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'app-no-drag relative h-[22px] w-[38px] shrink-0 rounded-pill transition-colors',
-        'disabled:opacity-40',
-        checked ? 'bg-accent' : 'bg-tint'
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-[3px] h-4 w-4 rounded-pill bg-white transition-[left] duration-150',
-          checked ? 'left-[19px]' : 'left-[3px]'
-        )}
-      />
-    </button>
-  )
+  return <Switch checked={checked} onCheckedChange={onChange} aria-label={label} disabled={disabled} />
 }

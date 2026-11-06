@@ -6,6 +6,7 @@
  */
 import type { AgentError } from './error'
 import type { FileReferenceSource } from '../domain/attachment'
+import type { ThinkingLevel } from './run-request'
 import type { ToolCard } from './tool-card'
 
 export interface AgentMessage {
@@ -33,7 +34,27 @@ export interface SubagentResult {
 
 export type ContentPart =
   | { type: 'text'; text: string }
-  | { type: 'thinking'; text: string; opaque?: unknown }
+  | {
+    type: 'thinking'
+    text: string
+    opaque?: unknown
+    /**
+     * 需求：思考卡片显示「思考了多久」。由 `BlockAccumulator` 按主进程时钟算出，
+     * 口径见那边 `ThinkingBlock` 上的注释（含首个增量之前那段隐藏推理的等待）。
+     *
+     * ★ **只走 UI 轨**：编码器都是按字段挑着读 `text` / `opaque` 的，这两个字段不会上行。
+     * 缺席 = 旧转录或导入的会话 —— 界面上就不画时长（没有事实就不画字段），不拿 0 兜底。
+     */
+    durationMs?: number
+    /**
+     * 上游**明确报出**的这一块思考的 token 数（`usage.reasoningTokens`，且这次回复里
+     * 只有这一块思考、归属无歧义时才写）。
+     *
+     * ★ 只存真值，不存估算：估算由渲染层按 `text` 现算，这样旧转录也能显示一个约数，
+     * 而「真值 / 约数」的区别一直由这个字段在不在来表达 —— 存了估算就分不开了。
+     */
+    tokens?: number
+  }
   | { type: 'tool_call'; callId: string; name: string; input: unknown }
   | { type: 'tool_result'; callId: string; output: ToolOutput; isError: boolean; subagent?: SubagentResult }
   | { type: 'subagent'; callId: string; childRunId: string; summary?: string }
@@ -81,6 +102,54 @@ export type ContentPart =
     /** 这一条是「目标已被清除」那种标记。 */
     cleared?: boolean
   }
+  /**
+   * 压缩边界:它所在的那条消息**之前**的历史不再发给模型。
+   *
+   * 需求:上下文压缩按 Claude Code 的模型重写 —— 边界是转录里的一条消息,
+   * 不是旁边一张检查点表。原先的表要靠 `coveredThroughMessageId` 锚回转录,
+   * 删轮、编辑重跑、digest 预算漏读都会让锚点和事实错位(真实症状:压完仍 309K,
+   * 随后一路涨到 624K 没再压过)。放进转录后,「哪些历史生效」只剩一个判据:
+   * 最后一个边界之后的消息(`shared/agent/compaction.ts` 的 `messagesForModel`)。
+   *
+   * ★★ **只存在于 UI 那一轨**,同 `goal_status`:编码器 `return null`,估算算 0。
+   *   模型看到的是同一条消息里紧跟着的那段 text(续接语 + 摘要 + 重附的文件)。
+   *
+   * ★ 它所在的消息是 `internal: true` 的 user 消息:聊天界面只画一条分隔线,
+   *   不把摘要当成用户说的话。
+   */
+  | {
+    type: 'compact_boundary'
+    /** 自动(阈值 / 上游报超长)还是用户 /compact。 */
+    trigger: 'auto' | 'manual'
+    /** 压缩前的上下文占用(上游真值优先,见 `AgentSession.contextTokens`)。 */
+    preTokens: number
+    /** 压缩后这条消息自身的估算占用。 */
+    postTokens: number
+    /** 模型写的摘要(已去掉 `<analysis>`)。UI 展开看的就是它。领域值,不翻译。 */
+    summary: string
+    /** /compact 后面跟的那段用户补充指令。 */
+    instructions?: string
+    /** 压缩后重附进上下文的文件路径,按重附顺序。 */
+    restoredFiles?: string[]
+    /**
+     * 写这份摘要的是谁。领域值,**不翻译**(§6.5)。
+     *
+     * 需求:压缩模型可以单独配置之后,「这份摘要是谁写的」不再等于「会话模型是谁」。
+     * 摘要一旦写坏(漏了用户原话、把已做完的事又列成待办),用户唯一能行动的信息
+     * 就是这一组 —— 没有它,他只能得出「压缩没用」这个结论。
+     *
+     * 缺席 = 这条边界是这个字段出现之前压缩出来的,界面上那两处一律不画
+     * (不做防御式 UI:没有事实就不画字段)。
+     */
+    summaryModel?: {
+      model: string
+      modelProviderId?: string
+      /** 实际下发的档位 —— 已按压缩模型归一化过,不是用户配的那个原值。 */
+      thinking: ThinkingLevel
+      /** true = 配置的压缩模型当时解析不到,回落成了会话模型。 */
+      fellBack?: boolean
+    }
+  }
 
 /** Preserve out-of-band goal markers when an older stream commit arrives later. */
 export function mergeGoalStatusMessage(message: AgentMessage, latest?: AgentMessage): AgentMessage {
@@ -115,14 +184,45 @@ export function fileRefMarkdown(p: { name: string; path: string }): string {
  */
 export interface ToolOutputImage {
   mime: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
-  /** Tool screenshots are already resolved data URLs, not attachment protocol references. */
+  /**
+   * Either an inline data URL or this session's `ncw://` attachment. `generate_image` and
+   * `browser_screenshot` store their results as session attachments (falling back to inline when
+   * saving fails), and legacy inline images are converted when their page is read
+   * (`main/inline-images.ts`). `prepareRequestImages` resolves `ncw://` to data URLs in the
+   * outgoing copy only, so encoders still never see `ncw://`.
+   */
   dataRef: string
+}
+
+/**
+ * 一个视频产物。★ 与图片分开而不是复用 `ToolOutputImage`:
+ * 视频**从不内联** —— 它只以 `ncw://` 会话附件地址存在(见
+ * `main/video-generation/download.ts`)。一个"可能内联也可能不内联"的类型会让
+ * 每个消费方都要判断一次,而其中一处判错就是把几百兆塞进 IPC。
+ */
+export interface ToolOutputVideo {
+  /**
+   * 永远是 `ncw://attachments/sessions/<会话>/<ULID>.<ext>`,**不可能是 data: 前缀**
+   * —— 视频没有"退回内联"那条路(那正是图片那侧能退回的原因,而这里不行)。
+   */
+  url: string
+  mime: string
+  size: number
+  /** 封面/缩略图地址(上游给的话),同样是 `ncw://` */
+  posterUrl?: string
+  /** 产出它的后台任务 id —— 卡片据此在工具调用结束后继续跟进状态 */
+  jobId?: string
 }
 
 export interface ToolOutput {
   content: string
   /** Visual evidence returned by tools such as browser_screenshot. */
   images?: ToolOutputImage[]
+  /**
+   * 视频产物(目前只有 `generate_video` 会填)。**走 UI 轨,编码器不下发** ——
+   * 文本对话的模型看不到视频内容,它只从 `content` 里读那几句说明与地址。
+   */
+  videos?: ToolOutputVideo[]
   /** 被截断时为 true,UI 据此显示「输出已截断」 */
   truncated?: boolean
   /** 截断前的原始字节数,给 UI 显示「共 N MB」 */
@@ -132,6 +232,11 @@ export interface ToolOutput {
    * `output.content` 与显式的 `output.images`。跟着 `output` 一起落盘/恢复。
    */
   card?: ToolCard
+  /**
+   * `Workflow` 工具的最终节点状态 —— 同 `card`,**只走 UI 轨,编码器不下发**,
+   * 跟着 `output` 落盘,画布据此重画。见 `shared/agent/workflow.ts`。
+   */
+  workflow?: import('./workflow').WorkflowState
 }
 
 /**

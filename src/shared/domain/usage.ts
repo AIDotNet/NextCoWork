@@ -172,6 +172,14 @@ export interface UsageActivityStats {
    * ★ 这个指标依赖 `messages`,而它**会**被清理删除 —— 清过历史之后这个数字
    * 会变小。没有更好的源:`runs` 只有单次 run 的时长(不是一场对话),
    * `sessions.updated_at` 会被重命名/归档推进而虚高。
+   *
+   * 开了使用统计同步时取各设备各自算出的值的最大者(远端设备的 messages 本机看不到)。
    */
   longestChatMs: number
+  /**
+   * 概览里合并了几台**其它**设备同步来的数据;0 = 纯本机。
+   * 需求:概览含其它设备、请求日志只含本机,界面必须把这个口径差说出来,
+   * 否则两处数字对不上时用户只会以为统计出错了。
+   */
+  syncedDevices: number
 }

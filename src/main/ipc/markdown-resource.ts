@@ -13,6 +13,7 @@ import { promises as nodeFs } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_NAME_RE } from '../../shared/domain/agent-def'
 import { COMMAND_NAME_RE } from '../../shared/domain/command'
+import { LOCAL_SETTINGS_DIRNAME } from '../../shared/domain/local-settings'
 import { isBuiltinModeId, MODE_ID_RE } from '../../shared/domain/mode'
 import { EnvironmentError } from '../environment/errors'
 import { EnvironmentFiles } from '../environment/files'
@@ -48,26 +49,18 @@ export function broadcastResourceChanged(kind: MarkdownResourceKind): void {
 }
 
 /**
- * 算出资源目录的根。
- *
- * ★ 项目级走 `environment.path.resolveWithin`,不是 `node:path.join` ——
- *   远程工作区的路径在远端主机上,拼本地路径拿到的是一个不存在的位置。
- */
-async function resourceRoot(
-  kind: MarkdownResourceKind,
-  scope: MarkdownResourceScope,
-  workspaceId?: string
-): Promise<string> {
-  if (scope === 'project') {
-    if (!workspaceId) throw new EnvironmentError('unbound')
-    const environment = getWorkspaceEnvironment(workspaceId)
-    return environment.path.resolveWithin(environment.rootPath, `.next-cowork/${SPEC[kind].dir}`)
-  }
-  return join(getHost().paths.userData(), SPEC[kind].dir)
-}
-
-/**
  * 名字 → 绝对路径。
+ *
+ * ★ 项目级**相对工作区根一次算出来**,不要先算 `<工作区>/.next-cowork/<dir>` 再往里拼:
+ *   `resolveWithin` 会对传进去的那个根做 realpath,而它在用户第一次保存之前并不存在
+ *   —— 那样会当场抛 ENOENT,症状是「工作区作用域怎么都存不进去,全局却可以」
+ *   (全局那条走 `join`,不 realpath;而且 `writeResourceFile` 本来就 mkdirp,
+ *   两边自相矛盾)。相对工作区根算则两头都对:工作区根一定存在,还不存在的那几层
+ *   由 canonical 的「退到最近的存在祖先」补齐,软链逃逸(`<工作区>/.next-cowork`
+ *   或 `<dir>` 指向工作区外)照样会被判掉。
+ *
+ * ★ 项目级走 `environment.path`,不是 `node:path.join` ——
+ *   远程工作区的路径在远端主机上(还可能是 win32 形态),拼本地路径拿到的是一个不存在的位置。
  *
  * ★ `name` 来自渲染层,是**不可信输入**。两道闸都必须在:
  *   1. 正则:挡掉 `../`、绝对路径、空串、超长
@@ -81,11 +74,17 @@ async function resourcePath(
   workspaceId?: string
 ): Promise<{ file: string; root: string }> {
   if (!SPEC[kind].nameRe.test(name)) throw new Error('名字不合法')
-  const root = await resourceRoot(kind, scope, workspaceId)
-  if (scope === 'project' && workspaceId) {
+  if (scope === 'project') {
+    if (!workspaceId) throw new EnvironmentError('unbound')
     const environment = getWorkspaceEnvironment(workspaceId)
-    return { file: await environment.path.resolveWithin(root, `${name}.md`), root }
+    const relative = `${LOCAL_SETTINGS_DIRNAME}/${SPEC[kind].dir}`
+    return {
+      file: await environment.path.resolveWithin(environment.rootPath, `${relative}/${name}.md`),
+      /* 只用于删除前的落点复核,不保证存在 —— 第一次保存之前它确实还没有。 */
+      root: environment.path.join(environment.rootPath, relative)
+    }
   }
+  const root = join(getHost().paths.userData(), SPEC[kind].dir)
   // 全局层没有 WorkspacePaths，自己拼 + 落盘前再用 realpath 复核（见 assertInside）。
   return { file: join(root, `${name}.md`), root }
 }

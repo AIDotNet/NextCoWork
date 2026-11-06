@@ -22,17 +22,18 @@ import {
 import { registerPluginMessages, translate, unregisterPluginMessages, type TranslationKey } from '../i18n'
 import { registerPluginPresenters, type ToolPresenter } from '../../../shared/domain/tool-presenter'
 import { invoke, on } from '../services/ipc'
+import type { InstallProgress } from '../lib/install-progress'
 import { pluginErrorKey, pluginMessageKey } from '../views/extensions/plugins/plugin-error'
 import { toast } from './toast'
 
-/** 一次安装正在进行到哪一步。装完 / 失败之后这条就从表里消失 */
-export interface PluginInstallProgress {
-  phase: 'preparing' | 'downloading' | 'installing'
-  received?: number
-  total?: number
-  /** 兜底清理用 —— 主进程崩了的话,终态那一帧永远不会来 */
-  startedAt: number
-}
+/**
+ * 一次安装正在进行到哪一步。装完 / 失败之后这条就从表里消失。
+ *
+ * ★ 类型本体搬去了 `lib/install-progress.ts` —— Skill 那边的安装推的是**同一个
+ * 形状**,两处各写一份的话,主进程某天加个字段只会在其中一处露出来。这里留一个
+ * 别名是为了不动插件那一侧十几处 `PluginInstallProgress` 的引用。
+ */
+export type PluginInstallProgress = InstallProgress
 
 interface PluginsState {
   catalog: PluginCatalog
@@ -42,6 +43,8 @@ interface PluginsState {
   market: PluginMarketItem[]
   marketLoading: boolean
   marketError: string | null
+  marketPage: number
+  marketHasNext: boolean
   /**
    * 正在装的那些,按 `market:<slug>` / `local:<路径>` 索引。
    *
@@ -62,8 +65,8 @@ interface PluginsState {
   grant: (pluginId: string, permissions: PluginPermission[]) => Promise<void>
   revoke: (pluginId: string, permissions: PluginPermission[]) => Promise<void>
   loadActivity: (pluginId?: string) => Promise<void>
-  runCommand: (pluginId: string, commandId: string) => Promise<void>
-  loadMarket: (query?: { q?: string; category?: string }) => Promise<void>
+  runCommand: (pluginId: string, commandId: string, args?: { workspaceId: string }) => Promise<void>
+  loadMarket: (query?: { q?: string; category?: string; page?: number }) => Promise<void>
   installFromMarket: (slug: string, version?: string) => Promise<void>
   checkUpdates: (force?: boolean) => Promise<void>
   updateAll: () => Promise<void>
@@ -164,6 +167,8 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   market: [],
   marketLoading: false,
   marketError: null,
+  marketPage: 1,
+  marketHasNext: false,
   installProgress: {},
   installError: {},
   updates: [],
@@ -252,7 +257,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
     set({ activity })
   },
 
-  async runCommand(pluginId, commandId) {
+  async runCommand(pluginId: string, commandId: string, args?: { workspaceId: string }): Promise<void> {
     /*
       ★ **失败必须说出来。**
 
@@ -265,14 +270,22 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
       收口在这一层而不是每个调用点:漏一个调用点就漏一种静默失败。
     */
     try {
-      await invoke('plugins:runCommand', { pluginId, commandId })
+      await invoke('plugins:runCommand', { pluginId, commandId, ...(args === undefined ? {} : { args }) })
     } catch (error) {
       /*
         面向用户的是一句人话;原始错误进 console 供排查 —— 主进程那边抛出来的
         是英文诊断句(比如 `plugin acme.excalidraw could not be activated`),
         它不该出现在界面上,但排查时又不能没有。`[plugins]` 前缀同 App.tsx。
+
+        ★ `remote-unsupported` 是宿主与自家 CLI 插件(claude-code / codex)的
+        约定标记:插件在 `tabs.openTerminal` 拿到 `reason: 'remote'` 后抛这个
+        词。对它给一句**说得到点上**的话,其余失败维持通用文案。
       */
       console.error(`[plugins] ${pluginId} 的命令 ${commandId} 执行失败`, error)
+      if (error instanceof Error && error.message.includes('remote-unsupported')) {
+        toast.error(translate('plugins.terminalRemote'), `plugin-command-${commandId}`)
+        return
+      }
       toast.error(translate('plugins.commandFailed', { plugin: pluginId }), `plugin-command-${commandId}`)
     }
   },
@@ -280,7 +293,8 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   async loadMarket(query = {}) {
     set({ marketLoading: true, marketError: null })
     try {
-      set({ market: await invoke('plugins:marketList', query), marketLoading: false })
+      const result = await invoke('plugins:marketList', query)
+      set({ market: result.items, marketPage: result.page, marketHasNext: result.hasNext, marketLoading: false })
     } catch (error) {
       /*
         ★ 市场拉不动**不是空列表**。给空列表的话,界面上写着「还没有插件」,
@@ -373,6 +387,10 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
           // 清单里写的是 `%cmd.new%`,注册进 i18n 的是 `plugin.<id>.cmd.new`。
           titleKey: `plugin.${plugin.id}.${command.title.slice(1, -1)}`,
           icon: normalizeMenuIcon(command.icon),
+          // 品牌图标(iconFile)主进程已转成 data URL 随 catalog 下来;没有就走名字闭集。
+          ...(plugin.commandIcons?.[contribution.command] !== undefined
+            ? { iconUrl: plugin.commandIcons[contribution.command] }
+            : {}),
           group,
           order,
           pluginId: plugin.id,
@@ -469,7 +487,7 @@ function pluginTranslationKey(pluginId: string, ref: string): TranslationKey {
  * 把 catalog 里每个插件工具的 shape / card 模板构建成 `ToolPresenter`,注入 `tool-presenter`。
  *
  * ★ 在渲染层构建(而非 shared 模块内)的原因:presenter 依赖 i18n 的 `translate` 与当前
- * locale,而 `tool-presenter` 是纯 shared 模块不碰 store。title 闭包在**渲染时**才
+ * locale,而 `tool-presenter` 是纯 shared 模块不碰 store。`line` 闭包在**渲染时**才
  * `translate`,所以 locale 切换自动生效,不必因换语言重建。
  *
  * ★ 半截 JSON 容错(硬约束):流式态 `input` 只有当前已经解析出的参数;字段尚未到达时
@@ -494,11 +512,17 @@ function buildPluginPresenters(catalog: PluginCatalog): Array<[string, ToolPrese
         externalName,
         {
           shape: tool.shape ?? 'external',
-          title: (input) => {
-            if (cardTitleKey === undefined) return staticTitle()
+          /*
+            插件只声明**一个**标题模板,所以它整条落在行的 `label` 那一格。
+            内置工具那种「标签 / 目标 / 目录」三段拆分要求编译期知道字段名
+            (`file_path`、`command`),而插件工具的入参形状不可知 ——
+            硬拆会在某个插件上把参数放错格子,而那不会报错,只会看起来很怪。
+          */
+          line: (input) => {
+            if (cardTitleKey === undefined) return { label: staticTitle() }
             const rendered = translate(cardTitleKey, asTemplateParams(input))
-            if (rendered === '' || UNFILLED_PARAM_RE.test(rendered)) return staticTitle()
-            return rendered
+            if (rendered === '' || UNFILLED_PARAM_RE.test(rendered)) return { label: staticTitle() }
+            return { label: rendered }
           },
           ...(cardSummaryKey === undefined
             ? {}

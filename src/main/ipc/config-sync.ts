@@ -13,6 +13,9 @@
  * ★ NextCoWork 平台登录 token 不在快照里。复制它等于复制登录身份,不是同步配置。
  * ★ 同步顺序是 push → pull。反过来会让未上传的本地改动被远端快照覆盖;
  *   先 push 可让服务端用 baseRevision 生成一个显式冲突,用户再决定保留哪边。
+ *
+ * 另接了 `usage` category(使用统计多设备合并)。它的节奏、顺序和冲突规则都和 providers
+ * 不同,整段放在 `config-sync-usage.ts`,这里只在每个 tick 末尾调用一次、并提供开关入口。
  */
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
@@ -63,10 +66,17 @@ import {
   stageSyncEvent,
   syncStateWithVault
 } from '../db/config-sync-state'
+import { listResolvedModels } from '../state/model-bindings'
 import * as repo from '../db/repo'
 import { getHost } from '../runtime'
 import { windows } from '../window/registry'
 import { announceCredentialRef } from './provider-auth'
+import {
+  resetUsageSyncSchedule,
+  runUsageSync,
+  setUsageSyncEnabled,
+  type UsageSyncContext
+} from './config-sync-usage'
 
 const PROVIDERS: SyncCategory = 'providers'
 const okSchema = z.object({ ok: z.literal(true) }).strict()
@@ -344,6 +354,8 @@ function stopInternal(emit: boolean): void {
   active = null
   inFlight = null
   running = false
+  // 新会话(换账户 / 重新解锁)第一次 tick 就同步一轮使用统计,不等上一个会话留下的节流窗口
+  resetUsageSyncSchedule()
   if (emit) announce()
 }
 
@@ -491,7 +503,9 @@ async function setupConfigSyncInternal(req: SyncSetupRequest): Promise<SyncStatu
         state.vault.keyVersion === vault.keyVersion
       const wasConfirmed = state.confirmed
       syncStateWithVault(state, vault)
-      state.selection = { ...DEFAULT_SYNC_SELECTION, providers: true }
+      // 使用统计默认一并同步;同一个已确认的 vault 重新解锁时保留用户在数据页做过的选择
+      const usage = wasSameVault && wasConfirmed ? state.selection.usage : true
+      state.selection = { ...DEFAULT_SYNC_SELECTION, providers: true, usage }
       state.confirmed = created ? true : wasSameVault && wasConfirmed
       state.remembered = req.remember
       state.legacyExists = remote.legacyExists
@@ -739,7 +753,7 @@ async function applyRemoteEvent(
   finishSyncEvent(session.accountId, PROVIDERS, event.mutationId, fingerprint)
   windows.emitToAll('provider:changed', {
     providers: repo.listProviders(),
-    models: repo.listAliases()
+    models: listResolvedModels()
   })
   for (const provider of repo.listProviders()) announceCredentialRef(provider.credentialRef)
 }
@@ -796,6 +810,8 @@ async function runTick(session: ActiveSync): Promise<void> {
   await prepareOutgoing(session)
   await pushOutgoing(session)
   await pullRemote(session)
+  // 放在 providers 之后:usage 自己吞掉非会话级错误,但哪怕它抛了,供应商这一轮也已经做完
+  await runUsageSync(usageContext(session))
   mutateSyncState(session.accountId, (state) => {
     state.lastSuccessAt = Date.now()
     state.errorCode = null
@@ -803,6 +819,41 @@ async function runTick(session: ActiveSync): Promise<void> {
   if (!repo.getConfigCategoryDirty(PROVIDERS, session.accountId)) {
     repo.setConfigDirty(session.accountId, false)
   }
+}
+
+/** 把当前会话的网络 / 密钥能力交给 usage 引擎;那边不直接碰 `ActiveSync`。 */
+function usageContext(session: ActiveSync): UsageSyncContext {
+  const { vault, key } = unlocked(session)
+  key.fill(0)
+  return {
+    accountId: session.accountId,
+    originId: repo.ensureSyncDeviceId(),
+    vault,
+    key: () => unlocked(session).key,
+    request: <T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> =>
+      syncRequest(context(session), path, schema, body),
+    assertCurrent: () => assertCurrent(session)
+  }
+}
+
+/**
+ * 数据页「同步使用统计」开关。只开放 usage:其它 category 目前没有关闭路径,
+ * 没有后端能力的开关就不该有入口。
+ */
+async function setConfigSyncUsageInternal(enabled: boolean): Promise<SyncStatus> {
+  const session = requireSession()
+  // ★ 等进行中的一轮跑完再改:那一轮可能正推着 usage 快照,中途清空进度会让它的确认对不上
+  //   (acknowledge 找不到 outgoing → invalidData),表现为关掉开关的同时冒一条同步失败日志。
+  if (inFlight !== null) await inFlight
+  assertCurrent(session)
+  setUsageSyncEnabled(session.accountId, enabled)
+  if (enabled) void tick()
+  announce()
+  return status()
+}
+
+export function setConfigSyncUsage(enabled: boolean): Promise<SyncStatus> {
+  return trackOperation(() => setConfigSyncUsageInternal(enabled))
 }
 
 async function tick(): Promise<void> {
@@ -878,7 +929,7 @@ async function resolveConfigSyncConflictInternal(id: string, useRemote: boolean)
       target.pendingApply = null
     })
     repo.setConfigCategoryDirty(PROVIDERS, session.accountId, false)
-    windows.emitToAll('provider:changed', { providers: repo.listProviders(), models: repo.listAliases() })
+    windows.emitToAll('provider:changed', { providers: repo.listProviders(), models: listResolvedModels() })
   } finally {
     key.fill(0)
   }

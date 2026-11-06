@@ -8,15 +8,17 @@
  *
  * ## 两件「这里做不到」的事，别照直觉补
  *
- * ★ **邀请链接拼不出来，所以这一项是「去浏览器里拿」，不是「在菜单里显示」。**
- * 邀请链接的后端形态是 `<origin>/login?ref=<12 位小写 hex>`（CoWork
- * `PortalEndpoints.cs`：`$"/login?ref={code}"`，码由 `app_user.referral_code`
+ * ★ **邀请这一项现在打开应用内的「奖励中心」浮层，不再跳浏览器 ——
+ * 但原因那条约束仍然成立，别在这个文件里编码或金额。**
+ * 原先这里写的是：邀请链接的后端形态是 `<origin>/login?ref=<12 位小写 hex>`
+ * （CoWork `PortalEndpoints.cs`：`$"/login?ref={code}"`，码由 `app_user.referral_code`
  * 生成），而码只从 `GET /api/portal/referral` 返回 —— 那条路由要**网页会话
- * cookie**。桌面端令牌带着 `client_id`，会被 CoWork `AuthenticationRegistration.cs`
- * 里那张路径白名单直接判失败（白名单只有 account / context / usage /
- * config-sync / skills / plugins / v1）。也就是说：要么平台新增一条客户端可读的
- * 邀请接口，要么这一项只能打开浏览器 —— 现在走的是后者（`INVITE_URL`）。
- * **不要**在这里编一个码、或者把带码的链接写死。
+ * cookie**，桌面端令牌带着 `client_id`，会被 CoWork `AuthenticationRegistration.cs`
+ * 里那张路径白名单直接判失败；于是只能 `openExternal` 跳浏览器。
+ * 那段话里说的另一条出路（「要么平台新增一条客户端可读的邀请接口」）现在实现了：
+ * `GET /api/client/referral`（同一张白名单里复用 `profile:read`），码、链接、金额
+ * 和记录都由它返回，界面走 `views/rewards/RewardsOverlay.tsx`。
+ * **仍然不要**在这里拼链接、写死码或金额 —— 它们只有服务端知道。
  *
  * ★ **余额不在这里请求，读 `auth.user.wallet`。** 主进程 `getClientUser()` 写回
  * KV 之后会广播 `clientAuth:changed`（`App.tsx:93` 订阅它），这条 props 链就是
@@ -36,15 +38,7 @@ import type { SettingsPageId } from '../settings/nav'
 import { openExternal, updateCheck } from '../services/app'
 import { getClientUser, signOutClient } from '../services/client-auth'
 import { toast } from '../stores/toast'
-
-/**
- * 邀请面板的真实位置：钱包页的「赠送额度」专区 —— 邀请链接、邀请码和**当前**
- * 奖励金额都在那一块（CoWork `web/src/components/gift-section.tsx`）。
- *
- * ★ 金额为什么不能写进这个文件：它来自服务端的单行配置表 `referral_config`，
- * 源码里的默认值是 0，没有任何非零种子 —— 桌面端连「邀请得 $5」这句话都编不出来。
- */
-const INVITE_URL = 'https://nextco.work/dashboard/wallet'
+import { useWindowStore } from '../stores/window'
 
 /**
  * 帮助与反馈的落点：官网文档站。
@@ -60,11 +54,16 @@ export function AccountMenu({
   onOpenSettings
 }: {
   auth: ClientAuthState
-  /** 带页码：菜单里「积分余额」那一行要直接落到设置的钱包页，而不是上一次停的那页 */
+  /** 带页码：菜单里「余额」那一行要直接落到设置的钱包页，而不是上一次停的那页 */
   onOpenSettings: (page?: SettingsPageId) => void
 }): ReactNode {
   const { t, locale } = useI18n()
   const [refreshing, setRefreshing] = useState(false)
+  /*
+    奖励中心的开关住在 window store（和设置浮层同一处），这里只取那个 action ——
+    取整个 store 会让账户菜单跟着任何一次 Tab 变化重渲。
+  */
+  const openRewards = useWindowStore((s) => s.openRewards)
 
   const user = auth.mode === 'authenticated' ? auth.user : null
   /*
@@ -154,7 +153,7 @@ export function AccountMenu({
       {(close) => (
         <>
           {/* 面板头部：同一份身份信息的展开态，比触发按钮多一行邮箱 */}
-          <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2">
+          <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-3">
             <Avatar url={avatarUrl} size={36} />
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate text-[13px] text-fg">{name}</span>
@@ -182,8 +181,14 @@ export function AccountMenu({
               icon={<Gift size={14} />}
               description={t('accountMenu.inviteHint')}
               onSelect={() => {
-                openLink(INVITE_URL)
+                /*
+                  ★ 先关菜单再开浮层。反过来的话，浮层的 focus trap 会在菜单
+                  卸载的同一帧抢焦点，菜单的「关掉自己时把焦点还给触发按钮」
+                  紧接着又抢回去 —— 表现是浮层开着但键盘焦点留在侧边栏，
+                  Esc 关掉的是菜单而不是浮层。
+                */
                 close()
+                openRewards()
               }}
             >
               {t('accountMenu.invite')}
@@ -257,12 +262,12 @@ function BalanceRow({
 }): ReactNode {
   const { t } = useI18n()
   return (
-    <div className="flex items-center gap-1 rounded-[7px] transition-colors hover:bg-tint-strong motion-reduce:transition-none">
+    <div className="flex items-center gap-1 rounded-[8px] transition-colors hover:bg-tint-strong motion-reduce:transition-none">
       <button
         type="button"
         role="menuitem"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-left text-[13px] text-fg"
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[8px] px-2.5 py-[7px] text-left text-[13px] text-fg"
       >
         <span className="shrink-0 text-accent-soft">
           <Gem size={14} />

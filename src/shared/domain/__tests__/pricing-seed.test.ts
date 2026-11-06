@@ -53,9 +53,9 @@ describe('种子表 · 基本形状', () => {
     for (const p of rows) expect(p.modality, p.modelId).toBe('text')
   })
 
-  it('fetchedAt 全表一致,且是合法的 YYYY-MM-DD', () => {
+  it('fetchedAt 记录逐行采集日期,历史快照不随新模型刷新', () => {
     for (const p of rows) {
-      expect(p.fetchedAt, p.modelId).toBe('2026-09-05')
+      expect(p.fetchedAt, p.modelId).toBe(p.modelId === 'deepseek-v4.1-flash-1017' ? '2026-10-19' : '2026-09-05')
       expect(Number.isNaN(Date.parse(p.fetchedAt)), p.modelId).toBe(false)
     }
   })
@@ -237,8 +237,8 @@ describe('种子表 × presets', () => {
       'doubao-seed-2.0-lite',
       'doubao-seed-2.0-mini',
       'doubao-seed-2.0-pro',
+      'doubao-seed-2.1-lite',
       'doubao-seed-2.1-pro',
-      'doubao-seed-2.1-turbo',
       'doubao-seed-character',
       'doubao-seed-code',
       'doubao-seed-evolving',
@@ -287,40 +287,77 @@ describe('种子表 × presets', () => {
 describe('抄写校验 · Anthropic', () => {
   const anth = rows.filter((p) => p.modelId.startsWith('claude-'))
 
-  it('13 个 SKU,全部单档(官方费率卡已无 >200K 档)', () => {
-    expect(anth.length).toBe(13)
-    for (const p of anth) expect(p.tiers.length, p.modelId).toBe(1)
+  /** 两档行(目前只有 Haiku 5.5)每一档都要过下面的倍率校验,不能只看 tiers[0] */
+  const anthRates = (p: ModelPricing): TokenRates[] => p.tiers.map((t) => t.rate as TokenRates)
+
+  it('16 个 SKU,除 Haiku 5.5 外全部单档(官方费率卡已无 >200K 档)', () => {
+    expect(anth.length).toBe(16)
+    for (const p of anth) expect(p.tiers.length, p.modelId).toBe(p.modelId === 'claude-haiku-5-5' ? 2 : 1)
   })
 
   it('缓存写 = 1.25× 输入,1h 写 = 2× 输入', () => {
     for (const p of anth) {
-      const r = p.tiers[0]?.rate as TokenRates
-      expect(r.cacheWrite, p.modelId).toBeCloseTo(r.input * 1.25, 6)
-      expect(r.cacheWrite1h, p.modelId).toBeCloseTo(r.input * 2, 6)
+      for (const r of anthRates(p)) {
+        expect(r.cacheWrite, p.modelId).toBeCloseTo(r.input * 1.25, 6)
+        expect(r.cacheWrite1h, p.modelId).toBeCloseTo(r.input * 2, 6)
+      }
     }
   })
 
   /**
-   * ★ 「缓存读 = 0.1× 输入」有**两个真实例外** —— 正是方案 §4.2 引为
+   * ★ 「缓存读 = 0.1× 输入」有**三个真实例外** —— 前两个正是方案 §4.2 引为
    * 「不能用公式生成种子表」证据的那两行。把它们钉死在这里,
-   * 是为了让「顺手把这两个数改成 1.0 好让规律统一」这件事必须先删掉一条测试。
+   * 是为了让「顺手把这几个数改成 0.1× 好让规律统一」这件事必须先删掉一条测试。
+   *
+   * ★ 第三条例外 `claude-opus-5-5` = **0.05×** 比 0.1× 还低一半(输入 $4、命中 $0.2,
+   * 2026-09-23 用户口径,见 pricing-seed 的 Anthropic 段)。「统一成 0.1×」
+   * 会把这行的缓存读改成 0.4 —— 凭空多收 2 倍,而且没有任何报错指向这里。
    */
-  it('缓存读 = 0.1× 输入,除 Mythos/Fable 5.1 是 0.025×', () => {
-    const exceptions = new Set(['claude-mythos-5-1', 'claude-fable-5-1'])
+  it('缓存读 = 0.1× 输入,除 Mythos/Fable 5.1 是 0.025×、Opus 5.5 是 0.05×', () => {
+    const exceptionFactor = new Map<string, number>([
+      ['claude-mythos-5-1', 0.025],
+      ['claude-fable-5-1', 0.025],
+      ['claude-opus-5-5', 0.05],
+    ])
     for (const p of anth) {
-      const r = p.tiers[0]?.rate as TokenRates
-      const factor = exceptions.has(p.modelId) ? 0.025 : 0.1
-      expect(r.cacheRead, p.modelId).toBeCloseTo(r.input * factor, 6)
+      const factor = exceptionFactor.get(p.modelId) ?? 0.1
+      for (const r of anthRates(p)) expect(r.cacheRead, p.modelId).toBeCloseTo(r.input * factor, 6)
     }
     // 上一代同价位机型确实是 0.1x($1.00)—— 证明这个例外是**代际**差异,不是笔误
     expect(byId('claude-fable-5').tiers[0]?.rate.cacheRead).toBe(1.0)
     expect(byId('claude-fable-5-1').tiers[0]?.rate.cacheRead).toBe(0.25)
   })
 
-  it('输出 = 5× 输入(全 13 条都成立)', () => {
+  /**
+   * 需求:Opus 5.5 的五个数是用户口径给的,不是从同族推的 —— 按 Opus 5 的族内
+   * 规律反推会得出 5/25/6.25/10/0.5 那一套,与真实费率全错。
+   * 所以这里钉**绝对数**而不是任何倍率关系:日后有人「照族对齐」这行必须先删本条。
+   */
+  it('Opus 5.5:用户口径的五个数原样钉死(输入4/输出20/读0.2/写5/1h写8)', () => {
+    expect(byId('claude-opus-5-5').tiers[0]?.rate).toMatchObject({
+      input: 4,
+      output: 20,
+      cacheRead: 0.2,
+      cacheWrite: 5,
+      cacheWrite1h: 8,
+    })
+  })
+
+  /**
+   * 需求:2026-10-08 收录 Haiku 5.5,官方定价页按 prompt 长度分两档。
+   * 钉**阈值与绝对数**:阈值是 100K(写成别家的 200K / 272K 会让 100K–200K 的请求
+   * 少收 5 倍),高档是低档 ×5(不是 OpenAI 那种输入 ×2 / 输出 ×1.5 的不对称)。
+   */
+  it('Haiku 5.5:阈值 100K,两档数值钉死,高档五项一律 ×5', () => {
+    expect(byId('claude-haiku-5-5').tiers).toEqual([
+      { upToInputTokens: 100_000, rate: { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheWrite1h: 0.2, cacheRead: 0.01 } },
+      { upToInputTokens: null, rate: { input: 0.5, output: 2.5, cacheWrite: 0.625, cacheWrite1h: 1, cacheRead: 0.05 } },
+    ])
+  })
+
+  it('输出 = 5× 输入(全 16 条、每一档都成立)', () => {
     for (const p of anth) {
-      const r = p.tiers[0]?.rate as TokenRates
-      expect(r.output, p.modelId).toBeCloseTo(r.input * 5, 6)
+      for (const r of anthRates(p)) expect(r.output, p.modelId).toBeCloseTo(r.input * 5, 6)
     }
   })
 })
@@ -340,7 +377,7 @@ describe('抄写校验 · 长上下文档', () => {
 
   it('OpenAI:阈值 272K,输入/缓存 ×2、输出 ×1.5', () => {
     const tiered = rows.filter((p) => p.modelId.startsWith('gpt-') && p.tiers.length > 1)
-    expect(tiered.map((p) => p.modelId).sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra'])
+    expect(tiered.map((p) => p.modelId).sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol'])
     for (const p of tiered) asymmetric(p, 272_000)
   })
 
@@ -370,7 +407,7 @@ describe('抄写校验 · 长上下文档', () => {
   /** xAI 是唯一一家各计费项倍率统一的 —— 所以它**不**走上面那个不对称断言 */
   it('xAI:阈值 200K,所有计费项一律 ×2', () => {
     const grok = rows.filter((p) => p.modelId.startsWith('grok-'))
-    expect(grok.map((p) => p.modelId).sort()).toEqual(['grok-4.3', 'grok-4.5', 'grok-4.6'])
+    expect(grok.map((p) => p.modelId).sort()).toEqual(['grok-4.3', 'grok-4.5', 'grok-4.6', 'grok-4.7'])
     for (const p of grok) {
       expect(p.tiers[0]?.upToInputTokens, p.modelId).toBe(200_000)
       const lo = p.tiers[0]?.rate as TokenRates
@@ -389,6 +426,7 @@ describe('抄写校验 · 长上下文档', () => {
     const tiered = rows.filter((p) => p.tiers.length > 1).map((p) => p.modelId)
     expect(tiered.sort()).toEqual([
       'MiniMax-M3',
+      'claude-haiku-5-5',
       'doubao-seed-1.6-flash',
       'doubao-seed-1.6-vision',
       'doubao-seed-2.0-code',
@@ -405,9 +443,13 @@ describe('抄写校验 · 长上下文档', () => {
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-6-astra',
+      'gpt-6-luna',
+      'gpt-6-sol',
+      'gpt-6.1-sol',
       'grok-4.3',
       'grok-4.5',
       'grok-4.6',
+      'grok-4.7',
       'mai-code-1.1-flash',
       'qwen3-coder-30b-a3b-instruct',
       'qwen3-coder-flash',
@@ -553,9 +595,9 @@ describe('GLM-5.3-Flash · 促销到期自动切换', () => {
     }
   })
 
-  it('与 Gemini 3.8/3.7/3.6 Flash 一起构成全表四组带日期区间的行', () => {
+  it('与 Gemini 4 Argon、3.8/3.7/3.6 Flash 一起构成全表五组带日期区间的行', () => {
     const dated = rows.filter((p) => p.effectiveFrom !== undefined || p.effectiveUntil !== undefined)
-    expect(dated.map((p) => p.modelId)).toEqual(['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.6-flash', 'glm-5.3-flash', 'glm-5.3-flash'])
+    expect(dated.map((p) => p.modelId)).toEqual(['gemini-4-argon', 'gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.6-flash', 'glm-5.3-flash', 'glm-5.3-flash'])
   })
 })
 
@@ -764,8 +806,11 @@ describe('国内厂商 · 通用官方价与区域覆盖价', () => {
   })
 
   it('豆包常规在线推理价按官方 K=1000 阶梯整单命中', () => {
-    expect(byId('doubao-seed-2.1-pro').tiers).toEqual([{ upToInputTokens: null, rate: { input: 6, output: 30, cacheRead: 1.2 } }])
-    expect(byId('doubao-seed-2.1-turbo').tiers).toEqual([{ upToInputTokens: null, rate: { input: 3, output: 15, cacheRead: 0.6 } }])
+    expect(byId('doubao-seed-2.1-pro').tiers).toEqual([{ upToInputTokens: null, rate: { input: 3, output: 15, cacheRead: 1.2 } }])
+    expect(byId('doubao-seed-2.1-lite').tiers).toEqual([{ upToInputTokens: null, rate: { input: 0.8, output: 2.7, cacheRead: 0.16 } }])
+    // ★ 2.1 Turbo 整档已从官方价格表消失,目录行也同时退役 —— 价目行一起删。
+    // 留一行查不到现价的旧价,用户拿到的是一个看着挺像样的错数字。
+    expect(rows.some((row) => row.modelId === 'doubao-seed-2.1-turbo')).toBe(false)
 
     const pro = byId('doubao-seed-2.0-pro')
     expect(pro.providerId).toBeNull()
@@ -987,8 +1032,15 @@ describe('NOT_SEEDED · 排除项是决定,不是遗漏', () => {
   it('豆包与百度只保留现有计费结构无法无损表达的精确缺口', () => {
     const doubao = NOT_SEEDED.find((row) => row.what.startsWith('豆包'))
     expect(doubao?.why).toContain('已收录')
-    expect(doubao?.why).toContain('200 Token')
+    /*
+     * ★ 原先这里钉的是「Seed 1.8 / Seed 1.6 Lite 的首档还依赖输出是否超过 200 Token」——
+     * 那句描述的是当时收录的型号,而目录里那几行早已退役,理由正文里的型号名会随目录
+     * 一起过期。改成钉**计费维度本身**(音频输入 / Token×小时 / 按张按秒),
+     * 那是这一条排除项真正不变的部分。
+     */
+    expect(doubao?.why).toContain('音频输入')
     expect(doubao?.why).toContain('Token×小时')
+    expect(doubao?.why).toContain('按张或秒计费')
 
     const baidu = NOT_SEEDED.find((row) => row.what.startsWith('百度'))
     expect(baidu?.why).toContain('已收录')

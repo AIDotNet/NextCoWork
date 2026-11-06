@@ -54,4 +54,22 @@ describe('account-scoped encrypted synchronization state', () => {
     expect(rotated.confirmed).toBe(false)
     expect(() => syncStateWithVault(readSyncState('b'), vault)).toThrow('configSync.accountChanged')
   })
+  it('reads a state written before the usage category existed and opts provider-syncing accounts in', async () => {
+    const vault = await wrapSyncKey('a', 'secure password test', randomBytes(32))
+    const state = syncStateWithVault(readSyncState('a'), vault)
+    state.confirmed = true
+    state.selection.providers = true
+    state.categories.providers.revision = 4
+    // 模拟旧版本落盘的形状:selection / categories 里都没有 usage 键
+    const { usage: _selection, ...legacySelection } = state.selection
+    const { usage: _category, ...legacyCategories } = state.categories
+    db().prepare('INSERT OR REPLACE INTO kv (key, json) VALUES (?, ?)').run(
+      `config-sync.v2.account.${Buffer.from('a').toString('base64url')}`,
+      JSON.stringify({ ...state, selection: legacySelection, categories: legacyCategories })
+    )
+    const read = readSyncState('a')
+    expect(read.selection.usage).toBe(true)
+    expect(read.categories.usage.revision).toBe(0)
+    expect(read.categories.providers.revision).toBe(4)
+  })
 })

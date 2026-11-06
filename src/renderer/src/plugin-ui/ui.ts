@@ -60,7 +60,10 @@ export { CheckboxCards, RadioCards, type ChoiceOption } from '../components/ui/C
 
 // ── 容器与反馈 ──
 export { Dialog } from '../components/ui/Dialog'
-export { Surface, SurfaceRow, SurfaceReveal, type SurfaceTone, type SurfaceRail } from '../components/ui/Surface'
+// `Surface` 这次改成了无边框的文本风格块,`SurfaceTone` / `SurfaceRail` 两个类型
+// 随之删除(理由见 `components/ui/Surface.tsx` 文件头)——插件若还在传 tone/rail,
+// 重新编译时会报类型错误,这是有意的:留着两个不生效的参数更难排查。
+export { Surface, SurfaceRow, SurfaceReveal, SURFACE_INDENT } from '../components/ui/Surface'
 export { EmptyState } from '../components/ui/EmptyState'
 export { ProgressBar } from '../components/ui/ProgressBar'
 export { Spinner } from '../components/ui/Spinner'

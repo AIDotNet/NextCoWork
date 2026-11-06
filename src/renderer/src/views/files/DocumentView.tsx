@@ -1,13 +1,17 @@
 import { File, FolderOpen, RefreshCw, Save } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { Button } from '../../components/ui/Button'
-import { EmptyState } from '../../components/ui/EmptyState'
+import { isLocalEnvironment } from '../../../../shared/domain/environment'
+import { OpenWithChevron, OpenWithMenu } from '../../components/OpenWithMenu'
+import { Button } from '../../components/arc/button/button'
+import { EmptyState } from '../../components/arc/empty-state/empty-state'
 import { IconButton } from '../../components/ui/IconButton'
 import { cn } from '../../lib/cn'
 import { useI18n } from '../../i18n'
-import { revealWorkspaceFile, workspaceFileErrorKey } from '../../services/workspace-files'
+import { workspaceFileErrorKey } from '../../services/workspace-files'
+import { revealWorkspaceFile } from '../../actions/workspace-files'
 import { confirmDocumentChanges, documentKey, isDocumentDirty, previewFormat, useDocumentsStore } from '../../stores/documents'
 import { useTabsStore } from '../../stores/tabs'
+import { useWindowStore } from '../../stores/window'
 import { CodeEditor } from './CodeEditor'
 import { HtmlPreview } from './HtmlPreview'
 import { MarkdownPreview } from './MarkdownPreview'
@@ -19,6 +23,14 @@ export function DocumentView({ workspaceId, path }: { workspaceId: string; path:
   const [imageFailed, setImageFailed] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const format = previewFormat(path)
+  /*
+    远端工作区的文件不在本机磁盘上:本机的 VS Code / 访达打开它只会打开一个
+    不存在的路径,所以那半颗按钮不画(与文件树、浏览器那几处同一条判据)。
+  */
+  const local = useWindowStore((state) => {
+    const workspace = state.workspaceTargets[workspaceId]
+    return workspace !== undefined && isLocalEnvironment(workspace.environment)
+  })
 
   useEffect(() => {
     if (path) void load(workspaceId, path)
@@ -26,7 +38,7 @@ export function DocumentView({ workspaceId, path }: { workspaceId: string; path:
     setActionError(null)
   }, [load, workspaceId, path])
 
-  if (!path) return <EmptyState icon={<File size={26} />} title={t('document.empty')} hint={t('document.emptyHint')} />
+  if (!path) return <EmptyState icon={<File size={26} />} title={t('document.empty')} description={t('document.emptyHint')} />
   const dirty = entry !== undefined && isDocumentDirty(entry)
   const file = entry?.file
   const saving = entry?.saving ?? false
@@ -62,10 +74,22 @@ export function DocumentView({ workspaceId, path }: { workspaceId: string; path:
         )}
         <IconButton label={t('document.reload')} size={26} onClick={() => { if (!saving) void reload() }}><RefreshCw size={14} className={entry?.loading ? 'animate-spin' : undefined} /></IconButton>
         <IconButton label={t('document.reveal')} size={26} onClick={reveal}><FolderOpen size={14} /></IconButton>
-        {file?.kind === 'text' && <Button size="sm" variant="accent" disabled={!dirty || saving} onClick={() => { void save(workspaceId, path) }} icon={<Save size={12} />}>{t(saving ? 'document.saving' : 'document.save')}</Button>}
+        {/*
+          「打开方式」下拉:同样是「用别的程序打开这个文件」,只是这里多了一条
+          「用编辑器打开」。★ 远端工作区不画 —— 见 `services/open-with.ts` 头上那条。
+        */}
+        {local && (
+          <OpenWithMenu
+            workspaceId={workspaceId}
+            path={path}
+            trigger={<OpenWithChevron size={13} />}
+            triggerClassName="flex size-[26px] items-center justify-center rounded-[8px] text-icon transition-colors hover:bg-tint-hover hover:text-fg"
+          />
+        )}
+        {file?.kind === 'text' && <Button type="button" variant="primary" size="sm" disabled={!dirty || saving} onClick={() => { void save(workspaceId, path) }}><Save size={12} />{t(saving ? 'document.saving' : 'document.save')}</Button>}
       </div>
 
-      {(entry?.error || actionError) && <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/20 bg-danger/5 px-4 py-2 text-[12px] text-danger"><span className="flex-1">{t(entry?.error ?? actionError!)}</span><Button size="sm" onClick={() => { void reload() }}>{t('document.reload')}</Button></div>}
+      {(entry?.error || actionError) && <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/20 bg-danger/5 px-4 py-2 text-[12px] text-danger"><span className="flex-1">{t(entry?.error ?? actionError!)}</span><Button type="button" variant="secondary" size="sm" onClick={() => { void reload() }}>{t('document.reload')}</Button></div>}
       {!entry || entry.loading ? <div role="status" className="p-6 text-[13px] text-fg-muted">{t('common.loading')}</div> : file?.kind === 'text' ? (
         format && entry.mode === 'preview'
           ? format === 'html'
@@ -74,10 +98,10 @@ export function DocumentView({ workspaceId, path }: { workspaceId: string; path:
           : <CodeEditor path={path} value={entry.draft} onChange={(value) => edit(workspaceId, path, value)} onSave={() => { void save(workspaceId, path) }} />
       ) : file?.kind === 'image' ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
-          {imageFailed ? <EmptyState title={t('document.imageFailed')} /> : <img src={file.dataUrl} alt={path} onError={() => setImageFailed(true)} className="max-h-full max-w-full object-contain" />}
+          {imageFailed ? <EmptyState title={t('document.imageFailed')} description="" /> : <img src={file.dataUrl} alt={path} onError={() => setImageFailed(true)} className="max-h-full max-w-full object-contain" />}
         </div>
       ) : file?.kind === 'binary' ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6"><EmptyState icon={<File size={28} />} title={path.split('/').pop() ?? path} hint={t(`document.binary.${file.reason}`)} /><Button onClick={reveal}>{t('document.reveal')}</Button></div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6"><EmptyState icon={<File size={28} />} title={path.split('/').pop() ?? path} description={t(`document.binary.${file.reason}`)} /><Button type="button" variant="secondary" onClick={reveal}>{t('document.reveal')}</Button></div>
       ) : null}
 
       {file && <div className="flex shrink-0 items-center gap-3 border-t border-hairline px-4 py-1.5 text-[11px] text-fg-faint">

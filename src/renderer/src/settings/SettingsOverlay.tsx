@@ -22,10 +22,11 @@
 import { Search, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Bootstrap } from '../../../shared/domain/bootstrap'
+import type { ClientAuthState } from '../../../shared/domain/client-auth'
 import type { AppSettings, AppSettingsPatch } from '../../../shared/domain/settings'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { IconButton } from '../components/ui/IconButton'
-import { Segmented } from '../components/ui/Segmented'
+import SegmentedControl from '../components/arc/segmented-control/segmented-control'
 import { TextInput } from '../components/ui/TextInput'
 import { useFocusTrap } from '../components/ui/useFocusTrap'
 import { prettyAccelerator } from '../lib/accelerator'
@@ -36,13 +37,17 @@ import { SETTINGS_ICON } from './icons'
 import {
   matchPages,
   matchRows,
+  resolveSettingsPage,
   SETTINGS_PAGES,
+  visibleSettingsPages,
   type SettingsPageId,
   type SettingsRow
 } from './nav'
 import { AboutPage } from './pages/AboutPage'
 import { ConnectionPage } from './pages/ConnectionPage'
 import { DataPage } from './pages/DataPage'
+import { ExperimentalPage } from './pages/ExperimentalPage'
+import { DevicesPage } from './pages/DevicesPage'
 import { ImportPage } from './pages/import/ImportPage'
 import { GeneralPage } from './pages/GeneralPage'
 import { ModelPage } from './pages/model/ModelPage'
@@ -51,7 +56,9 @@ import { UsagePage } from './pages/usage/UsagePage'
 import { StubPage } from './pages/StubPage'
 import { useI18n, type Translate } from '../i18n'
 import { AccountPage } from './pages/AccountPage'
+import { WalletPage } from './pages/wallet/WalletPage'
 import { Dialog } from '../components/ui/Dialog'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { themeDraftDirty, useThemeProfiles } from '../stores/themeProfiles'
 
 
@@ -60,6 +67,7 @@ export function SettingsOverlay({
   page,
   settings,
   versions,
+  auth,
   onNavigate,
   onClose
 }: {
@@ -67,18 +75,22 @@ export function SettingsOverlay({
   page: SettingsPageId
   settings: AppSettings
   versions: Bootstrap['versions']
+  /** App 级登录态：决定钱包页是否出现（`requiresSignIn`），也是钱包页余额的唯一真源 */
+  auth: ClientAuthState
   onNavigate: (p: SettingsPageId) => void
   onClose: () => void
 }): ReactNode {
   const presence = usePresence(open, 280)
   const panelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const signedIn = auth.mode === 'authenticated'
   const lastOpenPage = useRef<SettingsPageId>(page)
   if (open) lastOpenPage.current = page
   // AppShell keeps this component mounted so the close transition can finish.
   // Keep the last real page visible while the parent store is switching back to
   // its default value after close, avoiding a one-frame flash of General.
-  const visiblePage = open ? page : lastOpenPage.current
+  // 需求：未登录时请求到的钱包页改落账户页（见 nav.ts 的 `resolveSettingsPage`）。
+  const visiblePage = resolveSettingsPage(open ? page : lastOpenPage.current, signedIn)
   const [query, setQuery] = useState('')
   const [sub, setSub] = useState<string>('')
   const [seenPage, setSeenPage] = useState(page)
@@ -126,7 +138,7 @@ export function SettingsOverlay({
   }
 
   const rows = matchRows(query)
-  const pages = matchPages(query)
+  const pages = matchPages(query, signedIn)
   const searching = query.trim() !== ''
 
   const goto = (target: SettingsPageId, targetSub?: string): void => {
@@ -150,15 +162,15 @@ export function SettingsOverlay({
       aria-modal="true"
       aria-label={t('common.settings')}
     >
-      {/* 纯黑 35% —— 这个数是从参考图反解出来的,见 theme.css 的 --color-scrim */}
-      <div className="absolute inset-0 bg-scrim/35 backdrop-blur-[2px]" onClick={requestClose} />
+      {/* 苹果风格:轻遮罩、不模糊 —— 面板自己是毛玻璃,背景糊掉反而看不出玻璃感 */}
+      <div className="absolute inset-0 bg-scrim/20" onClick={requestClose} />
 
       <div
         ref={panelRef}
         tabIndex={-1}
         className={cn(
           'relative flex h-[720px] max-h-full w-full max-w-[1058px] overflow-hidden',
-          'rounded-panel shadow-2xl shadow-black/40 outline-none',
+          'apple-sheet outline-none',
           // Menu uses viewport coordinates while remaining inside this panel;
           // keep the ancestor transform-free so its fixed positioning stays exact.
           'transition-opacity duration-280 ease-panel motion-reduce:transition-none',
@@ -187,7 +199,7 @@ export function SettingsOverlay({
           </div>
 
           <ul className="scroll-thin flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-2">
-            {SETTINGS_PAGES.map((p) => {
+            {visibleSettingsPages(signedIn).map((p) => {
               const Icon = SETTINGS_ICON[p.id]
               const on = p.id === visiblePage && !searching
               return (
@@ -199,11 +211,11 @@ export function SettingsOverlay({
                     className={cn(
                       'flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5',
                       'text-left text-[13px] transition-colors',
-                      // 选中 = 往暗里挖,悬停 = 往暖里偏。两个维度,不互相盖
-                      on ? 'bg-surface-sunken text-fg' : 'text-fg hover:bg-tint-hover'
+                      // 苹果风格:选中 = 强调色实底白字(系统设置的侧栏),悬停只淡淡一层
+                      on ? 'bg-accent text-accent-fg' : 'text-fg hover:bg-fg/6'
                     )}
                   >
-                    <span className="shrink-0 text-icon">
+                    <span className={cn('shrink-0', on ? 'text-accent-fg' : 'text-icon')}>
                       <Icon size={15} />
                     </span>
                     <span className="min-w-0 flex-1 truncate">{pageLabel(t, p.id)}</span>
@@ -224,12 +236,11 @@ export function SettingsOverlay({
           <header className="flex shrink-0 items-center gap-4 px-6 pt-5 pb-3">
             <h2 className="text-[15px] text-fg">{searching ? t('settings.searchResults') : pageLabel(t, visiblePage)}</h2>
             {!searching && availableSubs !== undefined && (
-              <Segmented
-                size="sm"
+              <SegmentedControl
                 label={`${pageLabel(t, visiblePage)}${t('settings.categorySuffix')}`}
                 value={activeSub}
                 options={(availableSubs ?? []).map((s) => ({ value: s.id, label: s.label }))}
-                onChange={setSub}
+                onValueChange={setSub}
               />
             )}
             <span className="flex-1" />
@@ -242,24 +253,28 @@ export function SettingsOverlay({
             {searching ? (
               <SearchResults rows={rows} pages={pages.map((p) => p.id)} onPick={goto} />
             ) : (
-              <PageBody
-                page={visiblePage}
-                sub={activeSub}
-                settings={settings}
-                versions={versions}
-                patch={patch}
-              />
+              /* ★ 某一页渲染期抛错只坏这一页,不能让整个窗口白屏;切页即复位 */
+              <ErrorBoundary label={`settings:${visiblePage}`} resetKey={`${visiblePage}/${activeSub}`}>
+                <PageBody
+                  page={visiblePage}
+                  sub={activeSub}
+                  settings={settings}
+                  versions={versions}
+                  auth={auth}
+                  patch={patch}
+                />
+              </ErrorBoundary>
             )}
           </div>
 
           <footer className="flex h-[82px] shrink-0 items-center justify-end px-6">
-            <Button variant="accent" onClick={requestClose}>
+            <Button type="button" variant="primary" onClick={requestClose}>
               {t('common.done')}
             </Button>
           </footer>
         </div>
       </div>
-      <Dialog open={confirmClose} title={t('themeStudio.unsaved')} onClose={() => setConfirmClose(false)} footer={<><Button variant="ghost" onClick={() => setConfirmClose(false)}>{t('common.cancel')}</Button><Button onClick={() => { discardThemeDraft(); setConfirmClose(false); onClose() }}>{t('themeStudio.discard')}</Button></>}>
+      <Dialog open={confirmClose} title={t('themeStudio.unsaved')} onClose={() => setConfirmClose(false)} footer={<><Button type="button" variant="secondary" onClick={() => setConfirmClose(false)}>{t('common.cancel')}</Button><Button type="button" variant="secondary" onClick={() => { discardThemeDraft(); setConfirmClose(false); onClose() }}>{t('themeStudio.discard')}</Button></>}>
         <p>{t('themeStudio.discardHint')}</p>
       </Dialog>
     </div>
@@ -271,12 +286,14 @@ function PageBody({
   sub,
   settings,
   versions,
+  auth,
   patch
 }: {
   page: SettingsPageId
   sub: string
   settings: AppSettings
   versions: Bootstrap['versions']
+  auth: ClientAuthState
   patch: (p: AppSettingsPatch) => void
 }): ReactNode {
   const props = { settings, sub, patch }
@@ -306,11 +323,20 @@ function PageBody({
       return <ConnectionPage {...props} />
     case 'data':
       return <DataPage {...props} />
+    /* ★ 不吃 `SettingsPageProps`:设备清单是这台电脑本地的,不属于会同步到账户的设置。 */
+    case 'devices':
+      return <DevicesPage />
+    case 'experimental':
+      return <ExperimentalPage {...props} />
     case 'about':
       return <AboutPage versions={versions} />
     default:
-      if (page === 'account') return <AccountPage settings={settings} sub={sub} patch={patch} walletOnly={false} />
-      if (page === 'wallet') return <AccountPage settings={settings} sub={sub} patch={patch} walletOnly />
+      if (page === 'account') return <AccountPage settings={settings} sub={sub} patch={patch} />
+      /*
+        ★ 不吃 `SettingsPageProps` —— 钱包一个 `AppSettings` 字段都不读，它读的是登录态。
+        以前这里是 `AccountPage` 的 `walletOnly` 分支；钱包重写成独立页之后那个分支已删除。
+      */
+      if (page === 'wallet') return <WalletPage auth={auth} />
       return <StubPage page={page} />
   }
 }

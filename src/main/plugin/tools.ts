@@ -71,7 +71,9 @@ export function toolRegistrationFor(
     callId: string,
     signal: AbortSignal,
     /** 运行中推进度/实时卡片的回调 —— 转发到内核 `ctx.emit`,见 manager 的 liveToolEmits */
-    emit: (progress: { callId: string; message: string; fraction?: number }) => void
+    emit: (progress: { callId: string; message: string; fraction?: number }) => void,
+    /** 文档 RPC 的作用域来源；不可由插件输入伪造。 */
+    workspaceId?: string
   ) => Promise<unknown>,
   /** 该插件 `contributes.cardViews` 声明的 viewType —— frame 卡片只能指向其中之一。 */
   cardViewTypes: ReadonlySet<string> = new Set()
@@ -86,7 +88,7 @@ export function toolRegistrationFor(
     source: { kind: 'plugin', pluginId },
     async execute(input, ctx) {
       try {
-        const result = await invoke(declaration.name, input, ctx.callId, ctx.signal, ctx.emit)
+        const result = await invoke(declaration.name, input, ctx.callId, ctx.signal, ctx.emit, ctx.workspaceId)
         return normalizeToolResult(result, cardViewTypes)
       } catch (error) {
         /*

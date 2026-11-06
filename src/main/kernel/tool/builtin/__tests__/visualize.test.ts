@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { nodeHost } from '../../../host'
 import type { ToolContext } from '../../registry'
-import { visualizeReadMeTool, visualizeShowWidgetTool } from '../visualize'
+import { visualizeEditWidgetTool, visualizeReadMeTool, visualizeShowWidgetTool, visualizeUpdateWidgetTool } from '../visualize'
 
 function ctx(): ToolContext {
   return {
@@ -37,7 +37,7 @@ describe('visualize_show_widget', () => {
   it('产出一张 widget 卡片,代码只走卡片', async () => {
     const result = await showWidget({})
     expect(result.isError).toBe(false)
-    expect(result.output.card).toEqual({ kind: 'widget', title: 'compound_interest', code: CODE })
+    expect(result.output.card).toEqual({ kind: 'widget', title: 'compound_interest', code: CODE, format: 'svg' })
     expect(result.output.content).not.toContain('<svg')
     expect(result.output.content).not.toContain('circle')
   })
@@ -106,5 +106,176 @@ describe('visualize_read_me', () => {
 
   it('不联网 —— 规范是本地的那七万字', () => {
     expect(visualizeReadMeTool.needsNetwork).toBe(false)
+  })
+})
+
+const TSX = `import { useState } from 'react'
+import { Stack, Text } from 'nextcowork/widget'
+type Props = { n?: number }
+export default function Widget({ n = 1 }: Props) {
+  const [count] = useState<number>(n)
+  return <Stack gap={2}><Text>{count}</Text></Stack>
+}`
+
+describe('visualize_show_widget · tsx', () => {
+  it('在主进程编译:卡片同时带源码与 CJS 产物', async () => {
+    const result = await showWidget({ format: 'tsx', widget_code: TSX })
+    expect(result.isError).toBe(false)
+    const card = result.output.card
+    expect(card?.kind).toBe('widget')
+    if (card?.kind !== 'widget') return
+    expect(card.format).toBe('tsx')
+    expect(card.code).toBe(TSX)
+    expect(card.compiled).toContain('require(\'nextcowork/widget\')')
+    expect(card.compiled).toContain('react/jsx-runtime')
+    expect(card.compiled).not.toContain('Props')
+  })
+
+  it('不给 format 时按 import 认出 tsx', async () => {
+    const result = await showWidget({ widget_code: TSX })
+    expect(result.output.card).toMatchObject({ format: 'tsx' })
+  })
+
+  /** ★ 编译错误要在同一轮回到模型手上,带位置和那一行 */
+  it('语法错误给出位置与出错的那一行', async () => {
+    const result = await showWidget({ format: 'tsx', widget_code: 'export default function W() {\n  return <div>\n}' })
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toMatch(/TSX syntax error/)
+    expect(result.output.content).toMatch(/\(\d+:\d+\)/)
+  })
+
+  it('白名单之外的 import 被拒,并列出能用的模块', async () => {
+    const result = await showWidget({ format: 'tsx', widget_code: "import _ from 'lodash'\nexport default function W() { return null }" })
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toContain('"lodash"')
+    expect(result.output.content).toContain('nextcowork/widget')
+  })
+
+  it('没有默认导出被拒', async () => {
+    const result = await showWidget({ format: 'tsx', widget_code: "import { Stack } from 'nextcowork/widget'\nexport function W() { return null }" })
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toContain('default export')
+  })
+})
+
+describe('visualize_show_widget · actions', () => {
+  const run = { id: 'run_tests', label: 'Run tests', tool: 'Bash', input: { command: 'npm test -- {{suite}}' }, params: { suite: { type: 'enum', values: ['a', 'b'] } } }
+
+  it('合法声明随卡片走', async () => {
+    const result = await showWidget({ actions: [run] })
+    expect(result.isError).toBe(false)
+    expect(result.output.card).toMatchObject({ actions: [run] })
+  })
+
+  it('占位符与参数必须一一对应', async () => {
+    const missing = await showWidget({ actions: [{ ...run, params: {} }] })
+    expect(missing.isError).toBe(true)
+    expect(missing.output.content).toContain('{{suite}}')
+    const unused = await showWidget({ actions: [{ ...run, input: { command: 'npm test' } }] })
+    expect(unused.isError).toBe(true)
+  })
+
+  it('会挂起或派 agent 的工具不能做动作', async () => {
+    const result = await showWidget({ actions: [{ id: 'ask', label: 'Ask', tool: 'AskUserQuestion', input: {} }] })
+    expect(result.isError).toBe(true)
+  })
+
+  it('id 不能重复', async () => {
+    const result = await showWidget({ actions: [run, run] })
+    expect(result.isError).toBe(true)
+  })
+})
+
+describe('visualize_show_widget · interactive', () => {
+  it('先推实时卡片,再挂起等提交;提交值作为结果回给模型', async () => {
+    const emitted: unknown[] = []
+    const result = await visualizeShowWidgetTool.execute(
+      { title: 'pick_db', widget_code: CODE, loading_messages: ['x'], interactive: true },
+      {
+        ...ctx(),
+        emit: (progress) => emitted.push(progress),
+        interact: async (draft) => {
+          expect(draft).toMatchObject({ kind: 'widget_submit', callId: 'call_1', title: 'pick_db' })
+          return { id: 'i1', kind: 'widget_submit', value: '{"db":"postgres"}' }
+        }
+      }
+    )
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]).toMatchObject({ card: { kind: 'widget', interactive: true } })
+    expect(result.isError).toBe(false)
+    expect(result.output.content).toContain('{"db":"postgres"}')
+    expect(result.output.card).toMatchObject({ interactive: true, submitted: '{"db":"postgres"}' })
+  })
+
+  it('用户关掉不交 → 明确失败,不让模型自己猜', async () => {
+    const result = await visualizeShowWidgetTool.execute(
+      { title: 'pick_db', widget_code: CODE, loading_messages: ['x'], interactive: true },
+      { ...ctx(), interact: async () => ({ id: 'i1', kind: 'widget_submit', value: null }) }
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toMatch(/without submitting/)
+  })
+
+  /** 子代理没有人能回答它的挂起 —— 见 `registry.ts` 的 noInteraction */
+  it('子代理里不可用', async () => {
+    const result = await visualizeShowWidgetTool.execute(
+      { title: 'pick_db', widget_code: CODE, loading_messages: ['x'], interactive: true },
+      { ...ctx(), depth: 1, interact: async () => ({ id: 'i1', kind: 'widget_submit', value: '1' }) }
+    )
+    expect(result.isError).toBe(true)
+  })
+})
+
+function historyWith(card: Record<string, unknown>): ToolContext['messages'] {
+  return [
+    {
+      id: 'm1',
+      role: 'tool',
+      parts: [{ type: 'tool_result', callId: 'c0', isError: false, output: { content: 'ok', card } }],
+      createdAt: 0,
+      schemaVersion: 1
+    }
+  ] as unknown as ToolContext['messages']
+}
+
+describe('visualize_edit_widget', () => {
+  const base = { kind: 'widget', title: 'chart', code: '<div class="a">Q1</div><div class="a">Q2</div>', format: 'html' }
+
+  it('按标题找到上一版,精确替换后产出新卡', async () => {
+    const result = await visualizeEditWidgetTool.execute(
+      { title: 'chart', edits: [{ old_string: 'Q1', new_string: 'Jan' }] },
+      { ...ctx(), messages: historyWith(base) }
+    )
+    expect(result.isError).toBe(false)
+    expect(result.output.card).toMatchObject({ kind: 'widget', title: 'chart', code: '<div class="a">Jan</div><div class="a">Q2</div>' })
+  })
+
+  it('旧串出现多次且没给 replace_all → 失败而不是猜', async () => {
+    const result = await visualizeEditWidgetTool.execute(
+      { title: 'chart', edits: [{ old_string: 'class="a"', new_string: 'class="b"' }] },
+      { ...ctx(), messages: historyWith(base) }
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output.content).toContain('2 places')
+  })
+
+  it('找不到这张图', async () => {
+    const result = await visualizeEditWidgetTool.execute(
+      { title: 'nope', edits: [{ old_string: 'a', new_string: 'b' }] },
+      { ...ctx(), messages: historyWith(base) }
+    )
+    expect(result.isError).toBe(true)
+  })
+})
+
+describe('visualize_update_widget', () => {
+  it('数据只走卡片', async () => {
+    const result = await visualizeUpdateWidgetTool.execute(
+      { title: 'chart', data: { progress: 0.5 } },
+      { ...ctx(), messages: historyWith({ kind: 'widget', title: 'chart', code: '<div/>' }) }
+    )
+    expect(result.isError).toBe(false)
+    expect(result.output.card).toEqual({ kind: 'widget_data', title: 'chart', data: { progress: 0.5 } })
+    expect(result.output.content).not.toContain('0.5')
   })
 })

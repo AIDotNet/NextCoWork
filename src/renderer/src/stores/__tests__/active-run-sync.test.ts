@@ -19,14 +19,23 @@ vi.mock('../../services/agent', () => ({
   onActiveRuns: vi.fn(() => () => {})
 }))
 vi.mock('../../services/app', () => ({
-  getSessionInput: vi.fn(async () => null), persistSessionInput: vi.fn()
+  getSessionInput: vi.fn(async () => null), persistSessionDraft: vi.fn()
 }))
-vi.mock('../../services/sessions', () => ({
-  getSession: vi.fn(), replaceHistory: vi.fn(async () => {})
-}))
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn()
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...(detail as object), hasMore: false }
+    }),
+    replaceHistory: vi.fn(async () => {})
+  }
+})
 vi.mock('../../services/goal', () => ({ getGoal: vi.fn(async () => undefined), onGoalChanged: vi.fn(() => () => {}) }))
 
-import { attachRun } from '../../services/agent'
+import { abortRun, attachRun } from '../../services/agent'
 import { getSession } from '../../services/sessions'
 import { adoptActiveRuns, releaseSession, sessionStore, syncActiveRuns, useRunIndex } from '../session'
 
@@ -87,6 +96,45 @@ describe('active run index convergence', () => {
 
     await vi.waitFor(() => expect(store.getState().activeRunId).toBeNull())
     expect(useRunIndex.getState()).toEqual([])
+  })
+
+  it('★ a run reaped before its attach lands settles from the database instead of spinning forever', async () => {
+    // 主进程按 TTL/预算回收了已结束的 run:attach 只能拿到「run 不存在」
+    vi.mocked(attachRun).mockRejectedValue(new Error('run 不存在: ghost-run'))
+    adoptActiveRuns([entry])
+    const store = sessionStore(entry.sessionId)
+
+    await vi.waitFor(() => expect(store.getState().activeRunId).toBeNull())
+    await vi.waitFor(() => expect(store.getState().transcript.messages.map((m) => m.id)).toEqual(['answer']))
+    expect(store.getState().transcript.status).toBe('done')
+    expect(useRunIndex.getState()).toEqual([])
+  })
+
+  it('★ stop settles the conversation when the run_end never reaches this window (#187)', async () => {
+    const running: RunSnapshot = { ...endedSnapshot, status: 'running', seq: 0, events: [] }
+    vi.mocked(attachRun).mockResolvedValue(running)
+    adoptActiveRuns([entry])
+    const store = sessionStore(entry.sessionId)
+    await vi.waitFor(() => expect(attachRun).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(store.getState().activeRunId).toBe(entry.runId)
+
+    // 主进程那边其实早就收尾了,只是这个窗口漏了 run_end —— abort 是空操作
+    vi.mocked(attachRun).mockResolvedValue(endedSnapshot)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      await store.getState().stop()
+      expect(abortRun).toHaveBeenCalledWith(entry.runId, true)
+      expect(store.getState().activeRunId).toBe(entry.runId)
+      // 宽限期之内不动:正常情况下真正的 run_end 会先到
+      await vi.advanceTimersByTimeAsync(6_000)
+      expect(store.getState().activeRunId).toBe(entry.runId)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(store.getState().activeRunId).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(store.getState().transcript.status).toBe('done')
   })
 
   it('adopts a run started in another window without dropping the ones already known', () => {

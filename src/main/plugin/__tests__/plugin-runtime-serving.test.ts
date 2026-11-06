@@ -154,7 +154,8 @@ describe.skipIf(!built)('已构建的运行时产物', () => {
   it('★ react 的实现只有一份 —— 两份的症状是 Invalid hook call', async () => {
     // 门面文件只能转发,不许自己带 React 实现
     const facade = await fs.readFile(join(RUNTIME_BUILD, 'react.js'), 'utf8')
-    expect(facade).toContain("from './react-core.js'")
+    // ★ 带 `__` 前缀:门面文件在 `/__react.js` 下发,相对引用必须落到协议层认得的 `/__react-core.js`
+    expect(facade).toContain("from './__react-core.js'")
     expect(facade.length).toBeLessThan(4000)
     // 核里不能残留运行期 require:浏览器 ESM 里没有 require,一 import 就炸
     const core = await fs.readFile(join(RUNTIME_BUILD, 'react-core.js'), 'utf8')

@@ -15,6 +15,7 @@
  * 显示名字和描述,而 `shared → main` 这个方向是禁止的。
  */
 import type { PermissionMode } from '../agent/permission'
+import type { ThinkingLevel } from '../agent/run-request'
 
 /** 定义从哪儿来的。`builtin` 那一支写死在代码里,不落盘 —— 理由见 `agent/builtin.ts`。 */
 export type AgentSourceKind = 'builtin' | 'global' | 'project'
@@ -51,6 +52,13 @@ export interface AgentDefinition {
    * 但它是**可选**的:从 CC 粘过来的文件没有它,那条路径一个字不能变。
    */
   modelProviderId?: string
+  /**
+   * 思考档位。省略 = 跟随「子代理思考深度」那一栏,再退回父 run 这一轮的档位。
+   *
+   * ★ 和 `model` **不是**同一个决定:换一个便宜模型跑量的子代理,照样可能
+   *   需要在难题上想深一点。三档来源与归一化的理由都在 `shared/domain/subagent-thinking.ts`。
+   */
+  thinking?: ThinkingLevel
   /**
    * 子代理自己的权限档位。★ 最终档位是 `min(父档位, 这个)` ——
    * 它只能**收窄**,永远不能放宽(见 `minPermission` 的注释)。

@@ -3,8 +3,10 @@
  */
 import type { PermissionMode } from '../agent/permission'
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '../agent/run-request'
+import { isOpenTargetPreference } from './open-target'
 import type { ProxySettings } from './proxy'
 import { DEFAULT_PROXY, migrateLegacyProxy } from './proxy'
+import { INHERIT_THINKING, isSubagentThinking, type SubagentThinking } from './subagent-thinking'
 import {
   DEFAULT_COLOR_THEME_ID,
   DEFAULT_CUSTOM_SEED,
@@ -65,15 +67,39 @@ export interface DataSettings {
 }
 
 /**
- * Agent 上下文整理偏好。实验模式包含笔记、当前会话历史检索和窗口切换。
+ * Agent 上下文整理偏好。
  *
- * ★ 两个开关不是并列的:`autoCompact` 是总闸,关掉它 `experimentalMode` 也不会
- * 触发(见 `agent-session.ts` 到达阈值那一段)。默认给的是「只开总闸」——
- * 到阈值走机械压缩,实验模式留给用户自己开。
+ * ★ 原先这里还有一个 `experimentalMode`:它区分的是「机械折叠」和「模型摘要」
+ * 两条压缩路径。按 Claude Code 重写之后只剩模型摘要一条路(机械折叠会把工具输出
+ * 清空成骨架,省不下多少又让模型看不见自己刚做过什么),这个开关没有剩下的语义,
+ * 所以删掉 —— 留一个不改变任何行为的开关,比没有开关更让人困惑。
+ *
+ * ★ `autoCompact` 保留,它现在是**唯一**的总闸:关掉之后到阈值也不压缩,
+ * 上下文一路涨到上游报超长为止(被动压缩同样受它管)。
  */
 export interface ContextManagementSettings {
-  experimentalMode: boolean
   autoCompact: boolean
+}
+
+/**
+ * 设置 › 实验:尚未定型的功能。每一项都**出厂关闭** —— 打开它是用户在说
+ * 「我愿意用一个还会变的东西」,这句话不能替他说。
+ *
+ * ★ 一项转正后就从这里搬走、换成它自己的设置(或干脆不要开关),
+ *   而不是在这里永久留一个永远是 true 的开关。
+ */
+export interface ExperimentalSettings {
+  /**
+   * `Workflow` 工具:模型把任务编排成一张依赖图,按依赖并行派子代理执行,
+   * 对话里画成画布。关掉 = 工具不下发(`kernel/tool/builtin/workflow.ts` 的 `isEnabled`)。
+   */
+  workflow: boolean
+  /**
+   * 工作流派出任何节点之前先给用户看一眼图,点「运行」才开跑。
+   * ★ 出厂**开**,和别的实验项相反:一张图一次就是十几个子代理的 token,
+   *   模型画错图(汇总节点没接上游之类)时,开跑之前是唯一不花钱的拦截点。
+   */
+  workflowConfirm: boolean
 }
 
 /**
@@ -302,8 +328,55 @@ export interface AppSettings {
   goalEvaluatorModel: string
   /** 与 `goalEvaluatorModel` 成对,见 `defaultModelProviderId` */
   goalEvaluatorModelProviderId?: string
+  /**
+   * 上下文压缩用哪个模型；空字符串 = 跟随会话模型（出厂默认）。
+   *
+   * 需求：压缩是一次长输入、短输出的机械活，用户有理由把它交给另一个更便宜的模型；
+   * 而它读的是同一段对话，所以**默认必须仍然跟随会话模型**（换一家既换口径也换账单）。
+   * 三档来源（工作区 > 这一栏 > 会话模型）在 `domain/compaction-model.ts`。
+   */
+  compactModel: string
+  /** 与 `compactModel` 成对,见 `defaultModelProviderId` */
+  compactModelProviderId?: string
+  /**
+   * 压缩请求的思考强度。`'inherit'` = 跟随会话本轮档位（出厂默认）。
+   *
+   * ★ 这一栏不只是省钱开关，它是**正确性开关**：原先压缩硬发 `'off'`，而 effort 模型
+   *   （`gpt-6-*`）的 `reasoningEfforts` 不含 `'none'`，于是每次压缩都被 `thinking-adapter`
+   *   拒掉、三次后熔断，上下文再也压不下去。实际下发前还会按压缩模型归一化一次
+   *   （`auxiliaryThinkingLevel`），所以这里选什么都不会让请求失败。
+   */
+  compactThinking: SubagentThinking
   /** 模型自提目标：默认放开，按用户原话直接设立。 */
   modelProposedGoals: ModelProposedGoals
+  /**
+   * 输入框「回合结束后建议下一步」(灰字,Tab 填入)。设计见 `docs/composer-autocomplete.md`。
+   *
+   * ★ 出厂**开启**:每轮最多一次请求、只发裁剪过的上下文(最近几条用户消息 + 回复末尾),
+   *   而它是输入框「提醒」里最有用的那一层。不想要的用户在设置里一键关掉。
+   */
+  promptSuggestions: boolean
+  /**
+   * 建议下一步用哪个模型;空字符串 = 跟随输入框此刻的模型(出厂默认)。
+   * ★ 跟随时不换家:同 `session-title.ts`「标题请求必须跟着正文走同一家」那条理由。
+   */
+  completionModel: string
+  /** 与 `completionModel` 成对,见 `defaultModelProviderId` */
+  completionModelProviderId?: string
+  /** 本地补全:历史指令前缀 + 改动过的文件名。零请求、零成本,出厂开启。 */
+  localCompletion: boolean
+  /**
+   * 打字中由模型续写。★ 出厂**关闭**:每次停顿都会把草稿发给所选模型 ——
+   * 这是隐私和钱包两方面的决定,只能由用户自己打开。
+   */
+  inlineCompletion: boolean
+  /**
+   * 打字续写用的模型。★ **没有「跟随会话」这一档**:会话模型多半是大模型,
+   * 首 token 一两秒,灰字到的时候用户早打过去了。空字符串 = 未选择,续写不生效。
+   */
+  inlineCompletionModel: string
+  /** 与 `inlineCompletionModel` 成对,见 `defaultModelProviderId` */
+  inlineCompletionModelProviderId?: string
   defaultModel: string
   /**
    * 与 `defaultModel` 成对:同一个别名可以挂在多家上,光凭别名定不下发给谁。
@@ -314,8 +387,74 @@ export interface AppSettings {
    */
   defaultModelProviderId?: string
 
+  /**
+   * 「对话生图使用的模型」(设置 › 模型 › 图片生成)。**必选、不设自动档**:
+   * 生成和改图共用这一个选择,只用点名的那个绑定,失败即失败(不按 priority
+   * 跨家兜底 —— 跨家兜底的症状是「我明明点名了 A,画出来的却是 B 家的」)。
+   *
+   * ★ 空字符串 = **没选过**,`generate_image` 工具整体不下发(`image-gen.ts` 的
+   * `available()`):不画一个注定失败的承诺。升级上来的库里这项就是空,
+   * 用户要自己去图片页点一次 —— 这是「必选」决定的直接后果,不是遗漏。
+   *
+   * 与 `defaultModel` 成对,见那边 `defaultModelProviderId` 的说明:
+   * 改 `imageModel` 的 patch 必须同时给 `imageModelProviderId`。
+   */
+  imageModel: string
+  /** 与 `imageModel` 成对,见 `defaultModelProviderId` */
+  imageModelProviderId?: string
+  /**
+   * 「对话生图」开关(设置 › 模型 › 图片生成)。关掉 = `generate_image` 不下发、调用被拒。
+   *
+   * 需求:生图有**自己的**开关,不再挂在输入框「联网搜索」那颗药丸上 —— 那颗现在
+   * 只管网页搜索与抓取(`permission-gate.ts` 的 `NETWORK_SWITCH_TOOLS`)。原先生图跟着
+   * 它一起消失,症状是「选好了生图模型,对话里却找不到工具」,且无从查起。
+   *
+   * ★ 出厂**开启**:选了生图模型本身就是「我要在对话里生图」的意思;默认关的话,
+   *   用户还得去找第二个开关,正是这次要消灭的那种「配好了却不生效」。
+   * ★ 与 `imageModel` 分开是因为两者回答不同问题:模型是「用谁画」,开关是「要不要画」——
+   *   临时关掉生图不该让用户丢掉自己挑好的模型。
+   */
+  imageGenerationEnabled: boolean
+
+  /**
+   * 「对话视频生成使用的模型」(设置 › 模型 › 视频生成)。
+   *
+   * ★ 与 `imageModel` **同构、同一条规矩**:必选、不设自动档,只用点名的那个绑定,
+   *   失败就是失败(不跨家兜底)。理由是同一句话,只是代价更大 —— 视频按秒/分辨率
+   *   计费,「我点名了 A、出片的却是 B」既更贵,又更难发现(要等好几分钟)。
+   *
+   * ★ 空字符串 = **没选过**,`generate_video` 的**新建**动作整体不下发
+   *   (`kernel/video-gen.ts`)。已提交任务的查询/取消**不看它** ——
+   *   那是另一条路径,见下面 `videoGenerationEnabled` 那段。
+   *
+   * 与 `defaultModel` 成对,见那边 `defaultModelProviderId` 的说明:
+   * 改 `videoModel` 的 patch 必须同时给 `videoModelProviderId`。
+   */
+  videoModel: string
+  /** 与 `videoModel` 成对,见 `defaultModelProviderId` */
+  videoModelProviderId?: string
+  /**
+   * 「对话视频生成」开关(设置 › 模型 › 视频生成)。关掉 = **不新建**任务。
+   *
+   * ★★ **这一项和 `imageGenerationEnabled` 有一处关键不同,写在字段上免得被后人
+   *    "顺手统一":** 关掉生图 = `generate_image` 整体不下发、调用被拒,因为生图是
+   *    同步的,不存在"已经提交出去了"这回事。关掉视频生成**只禁止新建** ——
+   *    已经提交到云端的任务照常查询、照常收取成品。
+   *
+   *    理由:一个视频任务在云端可能已经跑了五分钟、**已经计过费**;关掉本地开关
+   *    不会让它停下来,也不会退款。这时把它从界面上藏起来,只会让用户永远不知道
+   *    结果。要停某一个任务,用那张结果卡上**独立**的取消按钮。
+   *
+   * ★ 出厂开启:与生图同一条理由 —— 选好模型本身就是"我要生成视频"的意思。
+   * ★ 与 `videoModel` 分开,理由同为"模型答'用谁生成'、开关答'要不要新建'"。
+   */
+  videoGenerationEnabled: boolean
+
   /** 上下文管理：默认只开自动压缩，智能窗口模式要用户自己打开。 */
   contextManagement: ContextManagementSettings
+
+  /** 设置 › 实验。见 `ExperimentalSettings` */
+  experimental: ExperimentalSettings
 
   /**
    * 执行本地命令 / 命令钩子 / 新建终端用哪个 shell。
@@ -326,12 +465,29 @@ export interface AppSettings {
    */
   shell: ShellPreference
 
+  /**
+   * 设置 › 通用:文件树右键菜单第一行「在 X 中打开」用哪个程序。值是
+   * `workspace:listOpenTargets` 给出的 id;空串 = 自动(见 `pickPrimaryTarget` 的落点顺序)。
+   *
+   * ★ 和 `shell` 同类,是**机器本地**的选择 —— 它描述的是这台机器上装了什么,
+   *   换配置档不该把它换掉(见 `config-profile.ts` 的 `machineLevelPatch`)。
+   */
+  defaultOpenTarget: string
+
   /** 子代理(方案 §4.9 / 界面「Agent 资源调度」) */
   subagent: {
     /** 界面:「默认子代理模型」 */
     model: string
     /** 与 `model` 成对,见 `defaultModelProviderId` */
     modelProviderId?: string
+    /**
+     * 界面:「子代理思考深度」。`'inherit'` = 跟随本轮对话(父 run 这一轮的档位)。
+     *
+     * ★ 和 `model` 是**两个独立的选择**:换一个便宜模型跑量的子代理,照样可能
+     *   需要在难题上想深一点。三档来源(子代理文件 > 这一栏 > 父 run)连同
+     *   「为什么还要按子代理自己的模型归一化一次」都在 `subagent-thinking.ts`。
+     */
+    thinking: SubagentThinking
     /** 界面:「单对话子代理上限(推荐 4)」 */
     perSessionLimit: number
     /** 全局子代理池,对应界面「并发上限 0–10」 */
@@ -347,6 +503,21 @@ export interface AppSettings {
     preferredPort: number
     failover: boolean
   }
+
+  /**
+   * 设置 › 模型:同一家供应商的**多个登录账号**之间自动轮换(schema 第 24 条)。
+   *
+   * ★★ **和 `gateway.failover` 是两件事,所以是两个开关。**
+   * 那一个管的是「这家挂了换**另一家**供应商」,出厂关闭,且用户在模型药丸里
+   * 钉死某家时会被刻意绕过(`router.ts` 的 `candidates`)。这一个管的是
+   * 「Codex 的 A 号被限流了换 Codex 的 B 号」—— 钉死 Codex 的用户**正需要**
+   * 后者继续工作。共用一个开关的表现是:用户钉死了 Codex,于是他的第二个
+   * Codex 账号永远不会被用到,而界面上那两个账号都显示"可用"。
+   *
+   * ★ 出厂**开启**:配了第二个账号这件事本身就是"限流了请用它"的意思。
+   *   关掉之后只用当前账号,失败也不切(见 `selectAccount`)。
+   */
+  providerAccountRotation: boolean
 
   notifications: {
     /** 三类音效,对应 InteractionKind(方案 §4.6) */
@@ -423,13 +594,38 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionReviewerModel: '',
   goalEvaluatorModel: '',
   modelProposedGoals: 'auto',
+  // 压缩出厂「跟随会话模型 + 跟随会话档位」—— 除了档位不再硬编码 off,
+  // 这就是引入这两栏之前的行为,老用户升级后压缩发给谁一个字都不变。
+  compactModel: '',
+  compactThinking: INHERIT_THINKING,
+  // 输入框补全:建议下一步与本地补全出厂开,打字续写出厂关(理由见 AppSettings 上的字段说明)
+  promptSuggestions: true,
+  completionModel: '',
+  localCompletion: true,
+  inlineCompletion: false,
+  inlineCompletionModel: '',
   defaultModel: '',
-  contextManagement: { experimentalMode: false, autoCompact: true },
+  // 空 = 没选过生图模型,`generate_image` 不下发(见 AppSettings.imageModel 的说明)
+  imageModel: '',
+  // 生图开关出厂开启 —— 理由见 AppSettings.imageGenerationEnabled
+  imageGenerationEnabled: true,
+  // 空 = 没选过视频模型,`generate_video` 的**新建**动作不下发(见 AppSettings.videoModel)
+  videoModel: '',
+  // 视频生成开关出厂开启 —— ★ 它只管"要不要新建",已提交任务照常收取,
+  // 理由写在 AppSettings.videoGenerationEnabled 那段。
+  videoGenerationEnabled: true,
+  contextManagement: { autoCompact: true },
+  // 实验功能一律出厂关闭 —— 理由见 ExperimentalSettings
+  experimental: { workflow: false, workflowConfirm: true },
   upstreamIdleTimeoutSeconds: DEFAULT_UPSTREAM_IDLE_TIMEOUT_SECONDS,
   maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
   shell: 'system',
-  subagent: { model: '', perSessionLimit: 4, globalLimit: 4 },
+  defaultOpenTarget: '',
+  // 思考档位出厂「跟随本轮对话」—— 这正是引入这一栏之前的行为,老用户升级后
+  // 子代理的档位一个字都不变(见 `subagent-thinking.ts`)。
+  subagent: { model: '', thinking: INHERIT_THINKING, perSessionLimit: 4, globalLimit: 4 },
   gateway: { enabled: false, preferredPort: 19836, failover: false },
+  providerAccountRotation: true,
   notifications: { taskComplete: true, permissionApproval: true, planApproval: true },
   proxy: structuredClone(DEFAULT_PROXY),
   builtinSearch: { searxngUrl: '' },
@@ -475,12 +671,12 @@ export function mergeSettings(current: AppSettings, patch: AppSettingsPatch): Ap
   if (patch.defaultPermissionMode !== undefined) {
     next.defaultPermissionMode = patch.defaultPermissionMode
   }
-  // ★★ 四个「模型别名 + 供应商」配对一律**成对写**:只要 patch 给了别名,
+  // ★★ 八个「模型别名 + 供应商」配对一律**成对写**:只要 patch 给了别名,
   //    供应商就跟着 patch 走,哪怕 patch 里它是 `undefined`(那是「取消锁定」,
   //    供应商被删时的降级路径就靠这个)。
   //    只写别名、让旧 providerId 留下来的话,就会得到「新别名 + 旧供应商」——
   //    正是 `model-selection.ts` 那一整个模块要消灭的那个 bug,在它自己的
-  //    合并函数里复活一次。这四处一个都不能漏。
+  //    合并函数里复活一次。这八处一个都不能漏。
   if (patch.permissionReviewerModel !== undefined) {
     next.permissionReviewerModel = patch.permissionReviewerModel
     next.permissionReviewerModelProviderId = patch.permissionReviewerModelProviderId
@@ -489,17 +685,66 @@ export function mergeSettings(current: AppSettings, patch: AppSettingsPatch): Ap
     next.goalEvaluatorModel = patch.goalEvaluatorModel
     next.goalEvaluatorModelProviderId = patch.goalEvaluatorModelProviderId
   }
+  if (patch.compactModel !== undefined) {
+    next.compactModel = patch.compactModel
+    next.compactModelProviderId = patch.compactModelProviderId
+  }
+  /*
+    ★ 坏值退回**当前值**,同 `subagent.thinking`(那一段写了完整理由):
+    认不出的档位会一路流到 `THINKING_BUDGET[档位]` 变成 NaN 写进请求体,
+    而界面上那一栏看起来完全正常;静默改成 `'inherit'` 则会让用户以为
+    自己选的档位在生效。
+  */
+  if (patch.compactThinking !== undefined && isSubagentThinking(patch.compactThinking)) {
+    next.compactThinking = patch.compactThinking
+  }
   // ★ 三档白名单:坏值退回**当前值**(不是硬退回 `'auto'`)—— 这一项管的是
   //   「要不要弹审批」,静默放宽成 `'auto'` 是这一整类改动里最不该出现的失败形态。
   if (isModelProposedGoals(patch.modelProposedGoals)) {
     next.modelProposedGoals = patch.modelProposedGoals
   }
+  // 输入框补全:三个开关只认布尔(同 imageGenerationEnabled),两个模型成对写
+  if (typeof patch.promptSuggestions === 'boolean') next.promptSuggestions = patch.promptSuggestions
+  if (patch.completionModel !== undefined) {
+    next.completionModel = patch.completionModel
+    next.completionModelProviderId = patch.completionModelProviderId
+  }
+  if (typeof patch.localCompletion === 'boolean') next.localCompletion = patch.localCompletion
+  if (typeof patch.inlineCompletion === 'boolean') next.inlineCompletion = patch.inlineCompletion
+  if (patch.inlineCompletionModel !== undefined) {
+    next.inlineCompletionModel = patch.inlineCompletionModel
+    next.inlineCompletionModelProviderId = patch.inlineCompletionModelProviderId
+  }
   if (patch.defaultModel !== undefined) {
     next.defaultModel = patch.defaultModel
     next.defaultModelProviderId = patch.defaultModelProviderId
   }
+  if (patch.imageModel !== undefined) {
+    next.imageModel = patch.imageModel
+    next.imageModelProviderId = patch.imageModelProviderId
+  }
+  // 只认布尔,坏值退回当前值:这一项会从磁盘/云同步读回,一个非布尔值落库后
+  // 桥那边的 `=== true` 会把它静默读成「关」,症状又是「工具不见了」
+  if (typeof patch.imageGenerationEnabled === 'boolean') {
+    next.imageGenerationEnabled = patch.imageGenerationEnabled
+  }
+  // 视频:成对写 + 布尔白名单,与生图那两处逐字同构(理由见上面那两段)。
+  if (patch.videoModel !== undefined) {
+    next.videoModel = patch.videoModel
+    next.videoModelProviderId = patch.videoModelProviderId
+  }
+  if (typeof patch.videoGenerationEnabled === 'boolean') {
+    next.videoGenerationEnabled = patch.videoGenerationEnabled
+  }
   if (patch.contextManagement !== undefined) {
     next.contextManagement = { ...next.contextManagement, ...patch.contextManagement }
+  }
+  // 只认布尔(同 imageGenerationEnabled):非布尔落库后 `=== true` 会把它静默读成「关」
+  if (typeof patch.experimental?.workflow === 'boolean') {
+    next.experimental = { ...next.experimental, workflow: patch.experimental.workflow }
+  }
+  if (typeof patch.experimental?.workflowConfirm === 'boolean') {
+    next.experimental = { ...next.experimental, workflowConfirm: patch.experimental.workflowConfirm }
   }
   // ★ 范围外的坏值退回当前值而不是默认值 —— 这一项改小了会把慢模型全数
   //   秒杀,静默放宽/收紧都不是可接受的失败形态(shell 那条同理)。
@@ -514,6 +759,8 @@ export function mergeSettings(current: AppSettings, patch: AppSettingsPatch): Ap
   // ★ 只认枚举:盘上/导入进来的坏值一个都不许落库,也不许被当成 `'system'`
   //   悄悄生效(`next` 是 current 的克隆,拒绝就是保留用户当前那一个)。
   if (isShellPreference(patch.shell)) next.shell = patch.shell
+  // 同理只认形状合法的 id;「这个 id 本机有没有」不在这里判,见 `isOpenTargetPreference`
+  if (isOpenTargetPreference(patch.defaultOpenTarget)) next.defaultOpenTarget = patch.defaultOpenTarget
 
   // 六个嵌套块:深一层。再深就没有了 —— AppSettings 只有两层,
   // 通用深合并在这里是纯粹的负担(它还得决定数组怎么办)。
@@ -534,8 +781,22 @@ export function mergeSettings(current: AppSettings, patch: AppSettingsPatch): Ap
     // ★ 这一行是那条「成对写」规则在**浅合并**下的补丁:上面的 spread 只覆盖
     //   patch 里出现过的键,于是只给 `model` 时旧的 `modelProviderId` 会原样留下。
     if (patch.subagent.model !== undefined) next.subagent.modelProviderId = patch.subagent.modelProviderId
+    /*
+      ★ 思考档位只认枚举,坏值退回**当前值**(不是 `'inherit'`)—— 上面那个 spread
+      已经把它写进去了,所以这里判的是合并之后的结果。
+
+      不拦会怎样:一个认不出的档位会原样进 `RunRequest.thinking`,而它取
+      `THINKING_BUDGET[档位]` 得到 undefined,再经 `clampBudget` 变成 **NaN**
+      写进请求体的思考预算 —— 上游收到的是个 NaN,而界面上那一栏看起来完全正常。
+      退回当前值而不是缺省值,是因为静默改成「跟随对话」会让用户以为自己选的档位
+      在生效,而那正是这一栏唯一要说清的事。
+    */
+    if (!isSubagentThinking(next.subagent.thinking)) next.subagent.thinking = current.subagent.thinking
   }
   if (patch.gateway !== undefined) next.gateway = { ...next.gateway, ...patch.gateway }
+  if (patch.providerAccountRotation !== undefined) {
+    next.providerAccountRotation = patch.providerAccountRotation
+  }
   if (patch.notifications !== undefined) {
     next.notifications = { ...next.notifications, ...patch.notifications }
   }
@@ -587,14 +848,33 @@ const PATCHABLE_KEYS: Record<keyof AppSettings, true> = {
   goalEvaluatorModel: true,
   goalEvaluatorModelProviderId: true,
   modelProposedGoals: true,
+  compactModel: true,
+  compactModelProviderId: true,
+  compactThinking: true,
+  promptSuggestions: true,
+  completionModel: true,
+  completionModelProviderId: true,
+  localCompletion: true,
+  inlineCompletion: true,
+  inlineCompletionModel: true,
+  inlineCompletionModelProviderId: true,
   defaultModel: true,
   defaultModelProviderId: true,
+  imageModel: true,
+  imageModelProviderId: true,
+  imageGenerationEnabled: true,
+  videoModel: true,
+  videoModelProviderId: true,
+  videoGenerationEnabled: true,
   contextManagement: true,
+  experimental: true,
   upstreamIdleTimeoutSeconds: true,
   maxOutputTokens: true,
   shell: true,
+  defaultOpenTarget: true,
   subagent: true,
   gateway: true,
+  providerAccountRotation: true,
   notifications: true,
   proxy: true,
   builtinSearch: true,

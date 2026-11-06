@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { findPricing, priceOf } from '../../shared/domain/pricing'
 import { PRICING_SEED } from '../../shared/domain/pricing-seed'
+import { CLIENT_PROVIDER_ID } from '../../shared/domain/presets'
 import { priceUsageAttempt, resolveUsagePricing, resolveUsagePricingModelId } from '../runtime'
 
 describe('resolveUsagePricingModelId', () => {
+  it.each(['deepseek-v4.1-flash-1017', 'deepseek/deepseek-v4.1-flash-1017', 'DeepSeek-V4.1-Flash-1017', 'deepseek-flash'])(
+    'resolves %s to the 1017 price without reusing the legacy Flash price', (upstreamModel) => {
+      expect(resolveUsagePricingModelId(upstreamModel)).toBe('deepseek-v4.1-flash-1017')
+    }
+  )
+
   it('resolves an aggregator-prefixed Kimi alias to its official pricing model id', () => {
     const modelId = resolveUsagePricingModelId('moonshot/kimi-k3')
 
@@ -23,7 +30,7 @@ describe('resolveUsagePricingModelId', () => {
   })
 
   it('resolves Doubao endpoint versions to the official pricing product id', () => {
-    const modelId = resolveUsagePricingModelId('doubao-seed-2-1-pro-260628')
+    const modelId = resolveUsagePricingModelId('doubao-seed-2-1-pro-260915')
 
     expect(modelId).toBe('doubao-seed-2.1-pro')
     expect(findPricing(PRICING_SEED, 'volcengine', modelId, Date.parse('2026-09-05T00:00:00Z'))).toMatchObject({
@@ -122,6 +129,23 @@ describe('resolveUsagePricing', () => {
 */
 describe('priceUsageAttempt', () => {
   const usage = { inputTokens: 1_000_000, outputTokens: 0 }
+
+  it.each([
+    ['2026-10-17T02:00:00Z', 753_000], // 周末空闲价
+    ['2026-10-19T00:00:00Z', 753_000],
+    ['2026-10-19T01:00:00Z', 1_506_000], // 第一段高峰起点
+    ['2026-10-19T04:00:00Z', 753_000],
+    ['2026-10-19T06:00:00Z', 1_506_000], // 第二段高峰起点
+    ['2026-10-19T10:00:00Z', 753_000],
+  ])('1017 在 %s 的 NextCoWork 渠道和官方渠道都采用基础分时价', (iso, expectedMicros) => {
+    const at = Date.parse(iso)
+    const tokens = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadInputTokens: 1_000_000 }
+    const nextcowork = priceUsageAttempt(CLIENT_PROVIDER_ID, 'deepseek-v4.1-flash-1017', tokens, at)
+    const official = priceUsageAttempt('deepseek', 'deepseek-flash', tokens, at)
+
+    expect(nextcowork).toMatchObject({ micros: expectedMicros, currency: 'USD' })
+    expect(official).toMatchObject({ micros: expectedMicros, currency: 'USD' })
+  })
 
   it('走的是和落盘同一条别名归一化 → 查表 → 计价链', () => {
     const at = Date.parse('2026-09-05T00:00:00Z')

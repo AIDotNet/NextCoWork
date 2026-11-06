@@ -27,7 +27,7 @@ import type { Workspace } from '../../../shared/domain/workspace'
 import type { SshConnectionProfile } from '../../../shared/domain/environment'
 import { DEFAULT_WORKSPACE_SETTINGS } from '../../../shared/domain/workspace'
 import { store } from '../../state/store'
-import { DATABASE_DIRNAME, DATA_SUBDIRNAME, DB_FILENAME, closeDatabase, db, defaultDatabaseDirectory, openDatabase, stmt } from '../index'
+import { DATABASE_DIRNAME, DATA_SUBDIRNAME, DB_FILENAME, DatabaseBusyError, DatabaseTransactionClosedError, closeDatabase, db, defaultDatabaseDirectory, openDatabase, stmt, tx, txAsync } from '../index'
 import * as repo from '../repo'
 import {
   claimMigratedLocalWorkspaces,
@@ -426,7 +426,7 @@ describe('★ 关库重开之后,配置一样都不少', () => {
 
   it('updates every search title only when the normalized session title changes', () => {
     const session = repo.ensureSession({ id: 'title-cost', workspaceId: 'workspace', title: 'OriginalTitle' })
-    const updates = vi.spyOn(stmt('UPDATE messages_fts SET title = ? WHERE session_id = ?'), 'run')
+    const updates = vi.spyOn(stmt('UPDATE messages_fts SET title = ? WHERE rowid IN (SELECT fts_rowid FROM messages_fts_rowid WHERE session_id = ?)'), 'run')
     const messages: AgentMessage[] = Array.from({ length: 20 }, (_, index) => ({
       id: `title-cost-${index}`, role: 'assistant', parts: [{ type: 'text', text: 'searchable content' }], createdAt: index + 1, schemaVersion: 1
     }))
@@ -441,6 +441,57 @@ describe('★ 关库重开之后,配置一样都不少', () => {
     updates.mockRestore()
     restart()
     expect(repo.searchAll('RenamedTitle')).toHaveLength(20)
+  })
+
+  it('keeps one FTS row per message, addressed by rowid, through rewrites and deletes', () => {
+    const session = repo.ensureSession({ id: 'fts-rowid', workspaceId: 'workspace', title: 'RowidTitle' })
+    const message = (id: string, text: string, createdAt: number): AgentMessage => ({
+      id, role: 'assistant', parts: [{ type: 'text', text }], createdAt, schemaVersion: 1
+    })
+    const ftsRows = (): number => Number(stmt('SELECT COUNT(*) AS n FROM messages_fts').get()?.['n'])
+    const mapRows = (): number => Number(stmt('SELECT COUNT(*) AS n FROM messages_fts_rowid').get()?.['n'])
+    const before = ftsRows()
+    repo.commitMessage(session.id, message('fts-a', 'alphaword', 1))
+    repo.commitMessage(session.id, message('fts-b', 'betaword', 2))
+    repo.replaceHistory(session.id, [message('fts-a', 'gammaword', 1), message('fts-b', 'betaword', 2)])
+    expect(ftsRows() - before).toBe(2)
+    expect(mapRows()).toBe(ftsRows())
+    expect(repo.searchAll('alphaword')).toEqual([])
+    expect(repo.searchAll('gammaword')).toHaveLength(1)
+    repo.replaceHistory(session.id, [message('fts-a', 'gammaword', 1)])
+    expect(repo.searchAll('betaword')).toEqual([])
+    expect(mapRows()).toBe(ftsRows())
+    repo.deleteSession(session.id)
+    expect(ftsRows()).toBe(before)
+    expect(mapRows()).toBe(before)
+  })
+
+  it('★ V37 之前的版本开过同一个库后,新消息照样写得进去、旧版写的也搜得到', () => {
+    const session = repo.ensureSession({ id: 'fts-legacy', workspaceId: 'workspace', title: 'LegacyTitle' })
+    const message = (id: string, text: string, createdAt: number): AgentMessage => ({
+      id, role: 'assistant', parts: [{ type: 'text', text }], createdAt, schemaVersion: 1
+    })
+    repo.commitMessage(session.id, message('legacy-a', 'firstword', 1))
+    // 旧版写法:按 message_id 删、不带 rowid 插,不碰映射表
+    const legacyWrite = (id: string, text: string): void => {
+      stmt('DELETE FROM messages_fts WHERE message_id = ?').run(id)
+      stmt('INSERT INTO messages_fts (message_id, session_id, title, content) VALUES (?, ?, ?, ?)').run(id, session.id, 'LegacyTitle', text)
+    }
+    const insertMessage = stmt(`INSERT INTO messages (id, session_id, ordinal, role, parts, created_at, schema_version)
+      VALUES (?, ?, ?, 'assistant', '[]', ?, 1)`)
+    insertMessage.run('legacy-b', session.id, 100, 2)
+    insertMessage.run('legacy-c', session.id, 101, 3)
+    legacyWrite('legacy-a', 'rewrittenword')
+    legacyWrite('legacy-b', 'legacyword')
+    legacyWrite('legacy-c', 'thirdword')
+    restart()
+    expect(() => repo.commitMessage(session.id, message('legacy-d', 'newword', 4))).not.toThrow()
+    expect(repo.searchAll('rewrittenword')).toHaveLength(1)
+    expect(repo.searchAll('legacyword')).toHaveLength(1)
+    expect(repo.searchAll('thirdword')).toHaveLength(1)
+    expect(repo.searchAll('newword')).toHaveLength(1)
+    const unmapped = stmt('SELECT COUNT(*) AS n FROM messages_fts WHERE rowid NOT IN (SELECT fts_rowid FROM messages_fts_rowid)').get()
+    expect(Number(unmapped?.['n'])).toBe(0)
   })
 
   it('供应商 / 别名 / 工作区 / 设置 / kv 全部读得回来', () => {
@@ -590,6 +641,121 @@ describe('★ 关库重开之后,配置一样都不少', () => {
   })
 })
 
+describe('异步事务的所有者与排队', () => {
+  function gate(): { promise: Promise<void>; release(): void } {
+    let release: () => void = () => {}
+    const promise = new Promise<void>((resolve) => { release = resolve })
+    return { promise, release }
+  }
+
+  it('await 期间拒绝无关读写，同一调用链仍可嵌套同步和异步事务', async () => {
+    const started = gate()
+    const paused = gate()
+    const work = txAsync(async () => {
+      repo.setKv('owned-first', 1)
+      started.release()
+      await paused.promise
+      tx(() => repo.setKv('owned-nested', 2))
+      await txAsync(async () => { await Promise.resolve(); repo.setKv('owned-async', 3) })
+    })
+    await started.promise
+    try {
+      expect(() => repo.getKv('owned-first', null)).toThrow(DatabaseBusyError)
+      expect(() => repo.setKv('unrelated', 4)).toThrow(DatabaseBusyError)
+      expect(() => tx(() => repo.setKv('unrelated-tx', 5))).toThrow(DatabaseBusyError)
+      expect(() => closeDatabase()).toThrow(DatabaseBusyError)
+    } finally { paused.release(); await work }
+    expect(repo.getKv('owned-first', null)).toBe(1)
+    expect(repo.getKv('owned-nested', null)).toBe(2)
+    expect(repo.getKv('owned-async', null)).toBe(3)
+    expect(repo.getKv('unrelated', null)).toBeNull()
+  })
+
+  it('失败只回滚自己，排队的另一个异步事务随后独立提交', async () => {
+    const started = gate()
+    const paused = gate()
+    const first = txAsync(async () => {
+      repo.setKv('rollback-owned', 1)
+      started.release()
+      await paused.promise
+      throw new Error('rollback-original')
+    })
+    const failed = first.catch((error: unknown) => error)
+    await started.promise
+    let secondStarted = false
+    const second = txAsync(() => { secondStarted = true; repo.setKv('second-owner', 2) })
+    await Promise.resolve()
+    expect(secondStarted).toBe(false)
+    paused.release()
+    expect(await failed).toMatchObject({ message: 'rollback-original' })
+    await second
+    expect(repo.getKv('rollback-owned', null)).toBeNull()
+    expect(repo.getKv('second-owner', null)).toBe(2)
+  })
+
+  it('多个顶层异步事务按请求顺序执行，而不是借用别人的事务', async () => {
+    const paused = gate()
+    const order: number[] = []
+    const first = txAsync(async () => { order.push(1); await paused.promise; repo.setKv('order', 1) })
+    const second = txAsync(() => { order.push(2); expect(repo.getKv('order', null)).toBe(1); repo.setKv('order', 2) })
+    const third = txAsync(() => { order.push(3); expect(repo.getKv('order', null)).toBe(2) })
+    await Promise.resolve()
+    expect(order).toEqual([1])
+    paused.release()
+    await Promise.all([first, second, third])
+    expect(order).toEqual([1, 2, 3])
+  })
+
+  it('预先缓存的 statement 与迭代器也不能穿过所有者边界', async () => {
+    repo.setKv('iterator-existing', 1)
+    const write = stmt('INSERT INTO kv (key, json) VALUES (?, ?)')
+    const iterator = stmt('SELECT key FROM kv ORDER BY key').iterate()
+    const started = gate()
+    const paused = gate()
+    const work = txAsync(async () => { started.release(); await paused.promise })
+    await started.promise
+    try {
+      expect(() => write.run('cached-unrelated', '1')).toThrow(DatabaseBusyError)
+      expect(() => iterator[Symbol.iterator]().next()).toThrow(DatabaseBusyError)
+    } finally { paused.release(); await work; iterator.return?.() }
+    expect(repo.getKv('cached-unrelated', null)).toBeNull()
+  })
+
+  it('提交之后才醒来的异步续体不能悄悄在事务之外继续写', async () => {
+    const paused = gate()
+    let late: Promise<void> = Promise.resolve()
+    await txAsync(() => {
+      late = paused.promise.then(() => repo.setKv('late-owner-write', 1))
+      void late.catch(() => undefined)
+    })
+    paused.release()
+    await expect(late).rejects.toThrow(DatabaseTransactionClosedError)
+    expect(repo.getKv('late-owner-write', null)).toBeNull()
+  })
+
+  it('同步事务拒绝 Promise 回调且回滚，迟到的续体也被拒绝', async () => {
+    const paused = gate()
+    let late: Promise<void> = Promise.resolve()
+    expect(() => tx(() => {
+      repo.setKv('sync-before-await', 1)
+      late = paused.promise.then(() => repo.setKv('sync-after-await', 2))
+      return late
+    })).toThrow(/使用 txAsync/)
+    paused.release()
+    await expect(late).rejects.toThrow(DatabaseTransactionClosedError)
+    expect(repo.getKv('sync-before-await', null)).toBeNull()
+    expect(repo.getKv('sync-after-await', null)).toBeNull()
+  })
+
+  it('排队请求遇到换库时失败，不能把旧请求写进新连接', async () => {
+    const queued = txAsync(() => repo.setKv('queued-old-connection', 1))
+    closeDatabase()
+    openDatabase(dir)
+    await expect(queued).rejects.toThrow(/数据库/)
+    expect(repo.getKv('queued-old-connection', null)).toBeNull()
+  })
+})
+
 describe('基础配置同步边界', () => {
   /*
     ★ v2 之后,「配置写入 → 明文 outbox」这条路没有了。一次配置写入现在产出的是
@@ -623,6 +789,24 @@ describe('基础配置同步边界', () => {
     repo.setConfigCategoryDirty('providers', 'account-a', false)
     repo.removeCredential('provider:cloud-provider')
     expect(repo.getConfigCategoryDirty('providers', 'account-a')).toBe(true)
+  })
+
+  it('异步同步应用的标记只属于自己的调用链，不遮住无关本地修改', async () => {
+    repo.configureSyncAccount('account-a', true)
+    let release: () => void = () => {}
+    const paused = new Promise<void>((resolve) => { release = resolve })
+    const applying = repo.withSyncApplyAsync(async () => {
+      await paused
+      repo.putProvider(provider('remote-owned', 1))
+    })
+    repo.putProvider(provider('local-unrelated', 0))
+    expect(repo.getConfigDirty('account-a')).toBe(true)
+    repo.setConfigDirty('account-a', false)
+    repo.setConfigCategoryDirty('providers', 'account-a', false)
+    release()
+    await applying
+    expect(repo.getConfigDirty('account-a')).toBe(false)
+    expect(repo.listProviders().map((item) => item.id)).toEqual(['local-unrelated', 'remote-owned'])
   })
 
   it('远端应用不会再次写入 outbox，会话数据也不进入同步表', () => {
@@ -704,6 +888,28 @@ describe('会话、完整内容块与全文索引', () => {
     repo.deleteSession('session-search')
     expect(repo.searchAll('persistneedle')).toEqual([])
     expect(repo.searchAll('RenamedOrbit')).toEqual([])
+  })
+
+  it('升级时重建漏掉的全文索引，容忍坏正文并清除幽灵结果', () => {
+    repo.ensureSession({ id: 'rebuild-search', workspaceId: 'workspace-1', title: 'RebuildTitle' })
+    for (const message of transcript()) repo.commitMessage('rebuild-search', message)
+    stmt('UPDATE messages SET parts = ? WHERE id = ?').run('{broken', 'm-tool-result')
+    db().exec('DELETE FROM messages_fts')
+    stmt('INSERT INTO messages_fts (message_id, session_id, title, content) VALUES (?, ?, ?, ?)')
+      .run('ghost-message', 'ghost-session', 'GhostTitle', 'ghostneedle')
+    // 模拟修复迁移尚未执行的旧库，不修改已发布迁移。
+    stmt('DELETE FROM migrations WHERE version = ?').run(29)
+    restart()
+
+    expect(repo.searchAll('persistneedle').map((hit) => hit.messageId)).toEqual(['m-assistant'])
+    expect(stmt('SELECT content FROM messages_fts WHERE message_id = ?').get('m-assistant')?.['content'])
+      .toBe(repo.searchableMessageText(transcript()[0]!.parts))
+    expect(stmt('SELECT content FROM messages_fts WHERE message_id = ?').get('m-tool-result')?.['content']).toBe('')
+    expect(stmt('SELECT message_id FROM messages_fts WHERE message_id = ?').get('ghost-message')).toBeUndefined()
+    const indexed = stmt('SELECT message_id, content FROM messages_fts ORDER BY message_id').all()
+    restart()
+    expect(stmt('SELECT message_id, content FROM messages_fts ORDER BY message_id').all()).toEqual(indexed)
+    expect(stmt('SELECT version FROM migrations WHERE version = ?').all(29)).toHaveLength(1)
   })
 
   it('归档、收藏与清空历史都持久化，且不删除配置', () => {
@@ -1192,5 +1398,24 @@ describe('定价与用量的表结构', () => {
       ])
     )
     d.close()
+  })
+})
+
+describe('lastGoalStatusMessage · 目标恢复只读最后一条标记', () => {
+  const assistant = (id: string, parts: AgentMessage['parts']): AgentMessage =>
+    ({ id, role: 'assistant', parts, createdAt: 1, schemaVersion: 1 })
+
+  it('取最后一条真带 goal_status 的助手消息;正文里恰好出现那串字符的不算', () => {
+    const goal = (condition: string) => ({ type: 'goal_status' as const, met: false, condition })
+    store.setHistory('goal-session', [
+      assistant('a1', [{ type: 'text', text: '好' }, goal('旧目标')]),
+      assistant('a2', [{ type: 'text', text: '好' }, goal('新目标')]),
+      // 转义后的引号让它不会命中;下划线是 LIKE 通配,换成别的字符的那一条会命中候选但要被解析排除
+      assistant('a3', [{ type: 'text', text: '"type":"goal_status"' }]),
+      assistant('a4', [{ type: 'text', text: '好' }, { type: 'goal-status' } as never]),
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: '继续' }], createdAt: 2, schemaVersion: 1 }
+    ])
+    expect(store.lastGoalStatusMessage('goal-session')?.id).toBe('a2')
+    expect(store.lastGoalStatusMessage('no-such-session')).toBeUndefined()
   })
 })

@@ -15,6 +15,13 @@
 type Params = Record<string, string | number>
 
 export const migrationZh = {
+  'migration.startup.failedTitle': 'NextCoWork 启动失败',
+  'migration.startup.failedBody':
+    '本地服务未能完成初始化。数据没有被删除，请打开数据目录备份，并复制下方诊断信息。',
+  'migration.startup.delayedTitle': '启动时间比预期长',
+  'migration.startup.delayedBody':
+    '仍在等待本地服务，应用会继续尝试。如果长时间没有恢复，请打开数据目录并复制诊断信息。',
+
   'migration.title': '正在整理本地数据',
   'migration.subtitle': '首次升级到新的数据目录，完成后会自动进入应用。',
   'migration.keepOpen': '请不要关闭窗口。',
@@ -66,6 +73,13 @@ export const migrationZh = {
 }
 
 export const migrationEn = {
+  'migration.startup.failedTitle': 'NextCoWork could not start',
+  'migration.startup.failedBody':
+    'The local service could not finish initializing. Your data was not deleted. Open the data directory to back it up, then copy the diagnostics below.',
+  'migration.startup.delayedTitle': 'Startup is taking longer than expected',
+  'migration.startup.delayedBody':
+    'The app is still waiting for the local service and will keep trying. If it does not recover, open the data directory and copy the diagnostics below.',
+
   'migration.title': 'Organizing local data',
   'migration.subtitle': 'Upgrading to the new data directory. The app opens by itself when this finishes.',
   'migration.keepOpen': 'Please keep this window open.',

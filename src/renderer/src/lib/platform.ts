@@ -15,5 +15,14 @@
  *   `env(titlebar-area-*)` 问 overlay 自己要。overlay 已经被自绘取代(为什么,见
  *   `main/window/title-bar.ts` 的文件头),那个 CSS 变量也随之删了 —— 按钮既然是
  *   我们自己画的,宽度就是我们自己定的常数,没有什么可量的。
+ *
+ * ★ `typeof window` 那道判断是给 **vitest 的 node 环境**留的,不是防御式编程:
+ *   手搓 JSDOM 的那些用例里,`vi.stubGlobal` 要等 `beforeEach` 才跑,而模块是在
+ *   import 那一刻求值的 —— 少了它,任何一条会渲染到灯箱(它在这里读平台)的用例
+ *   都会在 import 阶段抛 `window is not defined`。真实渲染进程里走不到那个分支
+ *   (preload 没挂上时 `services/ipc.ts` 会先大声挂掉),那时结果也确实是「非 mac」
+ *   这一档 —— 让错了边远好过整个文件加载不了。取值仍是 module-level:平台在一个
+ *   进程的生命周期里不会变,见 `lib/accelerator.ts` 那条同源说明。
  */
-export const IS_MAC = window.nextcowork.platform === 'darwin'
+export const IS_MAC =
+  typeof window !== 'undefined' && window.nextcowork?.platform === 'darwin'

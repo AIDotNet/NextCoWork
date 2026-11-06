@@ -27,7 +27,10 @@ export const MENU_ICON_NAMES = [
   'message-square', 'globe', 'git-branch', 'clock', 'settings',
   'play', 'square', 'plus', 'download', 'upload',
   'package', 'puzzle', 'sparkles', 'wrench', 'bug',
-  'chart', 'table', 'link', 'bookmark', 'shield'
+  'chart', 'table', 'link', 'bookmark', 'shield',
+  // 网页应用(`contributes.webApps`)那一类常用的媒体/娱乐图标:
+  // 少了它们,一个视频站插件在侧边栏上只能挂拼图块。
+  'tv', 'film', 'music', 'gamepad'
 ] as const
 
 export type MenuIconName = (typeof MENU_ICON_NAMES)[number]
@@ -78,6 +81,13 @@ export interface TabMenuItem {
   pluginId?: string
   /** 这一项当 `when` 求值为假时不出现 */
   when?: string
+  /**
+   * 命令声明的品牌图标(`iconFile` 经主进程读出的 data URL)。
+   *
+   * ★ `undefined` = 走 `icon` 名字查 `MENU_ICON`。名字闭集的防钓鱼理由见
+   * `renderer/shell/icons.tsx`;`iconFile` 这条并行通道的放宽边界也记在那里。
+   */
+  iconUrl?: string
   action:
     | { kind: 'openTab'; tabKind: string }
     | { kind: 'command'; commandId: string }

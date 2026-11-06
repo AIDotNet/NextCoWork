@@ -1,4 +1,5 @@
 import { cn } from '../../lib/cn'
+import { Progress } from '../arc/progress/progress'
 
 /**
  * 一条进度。**两种形态,一个组件。**
@@ -33,27 +34,27 @@ export function ProgressBar({
   label: string
   className?: string
 }): React.ReactNode {
-  // ★ clamp 是必需的:`total` 来自 content-length,而服务端哪天上了 gzip,
-  //   它报的就是压缩后的大小 —— 百分比会冲破 100,条子溢出圆角。
-  const percent = value === null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100)
+  /*
+    有百分比的那一档是 Arc 的 `Progress`。
+    ★ clamp 仍然在这里做:`total` 来自 content-length,服务端哪天上了 gzip,
+      报的就是压缩后的大小,比例会冲破 1。
+    ★ 不把 `label` 传给它:Arc 会把 label 画成进度条上方的一行可见文字,而这里的
+      label 一直只是读屏文案 —— 调用点旁边已经各自显示了状态。
+
+    不确定的那一档 Arc 没有(它的 Progress 必有 value),仍是原来的滚动斜纹。
+  */
+  if (value !== null) {
+    return <Progress value={Math.min(1, Math.max(0, value)) * 100} className={className} />
+  }
   return (
     <div
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
-      {...(percent === null ? {} : { 'aria-valuenow': percent })}
       aria-valuetext={label}
       className={cn('h-1.5 overflow-hidden rounded-pill bg-tint', className)}
     >
-      {percent === null ? (
-        <span aria-hidden className="progress-stripes block h-full w-full rounded-pill bg-accent/20" />
-      ) : (
-        <span
-          aria-hidden
-          className="block h-full rounded-pill bg-accent transition-[width] duration-200"
-          style={{ width: `${String(percent)}%` }}
-        />
-      )}
+      <span aria-hidden className="progress-stripes block h-full w-full rounded-pill bg-accent/20" />
     </div>
   )
 }

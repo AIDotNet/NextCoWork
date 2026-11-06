@@ -1,6 +1,6 @@
 import type { AgentMessage, ContentPart } from '../shared/agent/message'
 import { userMessage, visibleText } from '../shared/agent/message'
-import { modelThinkingLevels, resolveModelThinking } from '../shared/domain/model-runtime'
+import { auxiliaryThinkingLevel, resolveModelThinking } from '../shared/domain/model-runtime'
 import { isDefaultSessionTitle, type Session } from '../shared/domain/session'
 import { ulid } from '../shared/util/id'
 import type { SessionUpstream } from './kernel/agent-session'
@@ -93,10 +93,11 @@ export class SessionTitleGenerator {
   private async generate(session: Session, message: AgentMessage, parts: ContentPart[], model: string, modelProviderId: string | undefined, job: TitleJob): Promise<void> {
     const alias = this.deps.upstream.resolveModel(model, modelProviderId)
     if (alias === undefined) return
-    const levels = modelThinkingLevels(alias)
     // Auxiliary requests follow the same accepted strengths. Prefer Off, then
     // the lowest available strength for models that cannot disable reasoning.
-    const thinkingLevel = levels.includes('off') ? 'off' : levels.find((level) => level !== 'auto') ?? 'auto'
+    // ★ 这三行原本长在这里,现在是 `auxiliaryThinkingLevel` —— 压缩、目标判定、
+    //   权限审核踩了同一个坑(effort 模型不接受 'none' 时上游直接拒),四处共用一份。
+    const thinkingLevel = auxiliaryThinkingLevel('off', alias)
     const maxOutputTokens = Math.min(alias.maxOutputTokens,
       thinkingLevel === 'off' || alias.thinkingConfig?.mode === 'unsupported' ? 256 : 2_048)
     const reasoning = resolveModelThinking(thinkingLevel, alias.thinkingConfig, maxOutputTokens, alias.reasoningEfforts)

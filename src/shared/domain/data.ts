@@ -6,7 +6,6 @@
  * JSON 的类型里没有明文凭证字段。
  */
 import type { AgentMessage } from '../agent/message'
-import type { ContextCheckpoint } from '../agent/context-management'
 import type { ModelAlias, UpstreamProvider } from './provider'
 import { isModelCatalogOverride } from './provider'
 import { isMaxOutputTokens, isShellPreference, isUpstreamIdleTimeoutSeconds, MODEL_PROPOSED_GOALS, type AppSettings } from './settings'
@@ -18,6 +17,8 @@ import { PERMISSION_MODES } from '../agent/permission'
 import { THINKING_LEVELS } from '../agent/run-request'
 import { MODE_ID_RE } from './mode'
 import { PROXY_SCHEMES } from './proxy'
+import { isOpenTargetPreference } from './open-target'
+import { isSubagentThinking } from './subagent-thinking'
 
 export const DATA_EXPORT_TYPE = 'nextcowork-data-export' as const
 export const DATA_EXPORT_VERSION = 1
@@ -26,8 +27,11 @@ export const BACKUP_FORMAT_VERSION = 2
 export interface ExportSession {
   session: Session
   messages: AgentMessage[]
-  /** Optional for exports produced before context management was added. */
-  contextCheckpoints?: ContextCheckpoint[]
+  /**
+   * 旧版导出里的上下文检查点。★ 只为能导入老备份而保留在类型上,导入时忽略:
+   * 压缩现在是转录里的一条边界消息(`compact_boundary`),随 `messages` 一起走。
+   */
+  contextCheckpoints?: unknown[]
 }
 
 export interface DataExport {
@@ -42,6 +46,22 @@ export interface DataExport {
   sessions: ExportSession[]
   providers: UpstreamProvider[]
   aliases: ModelAlias[]
+  /**
+   * OAuth 供应商的账号**元数据**(schema 第 24 条)。
+   *
+   * ★★ **这里没有任何密文** —— token 和其它凭证一样住 `encryptedCredentials`,
+   * 键是 `provider:<id>#<accountId>`。这一段只是「有哪几个账号、排第几、
+   * 停用没、备注名叫什么」。
+   *
+   * ★ **可选**:缺席 = 这份导出早于多账号(或者导出时一个 OAuth 账号都没有)。
+   *   判成非法的表现是**整份旧备份导不进来**,而错误信息只会说「文件格式不对」。
+   *
+   * ★ 限流闸门与额度快照**不导出**(见 `ProviderAccountExport` 的字段列表):
+   *   它们是「此时此地这台机器观察到的上游状态」,几小时后就不成立了。
+   *   带过去的表现是:刚导入的另一台机器上,一个好端端的账号显示「限流中」,
+   *   而用户完全无从知道那是一份从别处搬来的旧判断。
+   */
+  providerAccounts?: ProviderAccountExport[]
   mcpServers: McpServerConfig[]
   searchProviders: SearchProviderConfig[]
   /** IDs of globally disabled skills; skill files themselves are never exported. */
@@ -50,6 +70,18 @@ export interface DataExport {
   encryptedCredentials?: EncryptedCredentials | boolean
   /** Legacy user supplied model catalogue, ignored by current import code. */
   userModelCatalog?: unknown
+}
+
+/** 见 `DataExport.providerAccounts`:元数据,无密文、无限流、无额度 */
+export interface ProviderAccountExport {
+  id: string
+  providerId: string
+  issuer: string
+  label?: string
+  order: number
+  enabled: boolean
+  current: boolean
+  updatedAt: number
 }
 
 export interface EncryptedCredentials {
@@ -163,11 +195,18 @@ export interface CleanupResult extends CleanupPreview {
   deleted: number
 }
 
-export type CleanupAge = 3 | 6 | 12
+/** `'7d'` / `'15d'` 表示天数；数字表示日历月数。 */
+export type CleanupAge = '7d' | '15d' | 1 | 3 | 6 | 12
 
-/** 截止时间：当前时刻往前 N 个月，按日历月而不是固定 90 天。 */
-export function cutoffForAge(now: number, months: CleanupAge): number {
+/** 截止时间：当前时刻往前 N 天，或往前 N 个月（按日历月而不是固定 90 天）。 */
+export function cutoffForAge(now: number, age: CleanupAge): number {
   const date = new Date(now)
+  if (typeof age === 'string') {
+    // 按日历日回退，跨夏令时也保留同一时分秒。
+    date.setDate(date.getDate() - (age === '7d' ? 7 : 15))
+    return date.getTime()
+  }
+  const months = age
   const day = date.getDate()
   // Move through day 1 first. Native Date#setMonth overflows at month ends
   // (May 31 - 3 months becomes March 3), which would delete several extra
@@ -224,7 +263,33 @@ export function isDataExport(value: unknown): value is DataExport {
   if (!aliases.every(isModelAlias) || !uniqueBy(aliases, (x) => `${(x as ModelAlias).providerId}\u0000${(x as ModelAlias).alias}`)) return false
   if (!mcpServers.every(isMcpServer) || !uniqueBy(mcpServers, (x) => (x as McpServerConfig).id)) return false
   if (!searchProviders.every(isSearchProvider) || !uniqueBy(searchProviders, (x) => (x as SearchProviderConfig).id)) return false
+  /*
+    ★ 账号是**后加的可选段**:缺席 = 旧备份,照常放行(见 `DataExport.providerAccounts`)。
+    在场就必须逐条合法且 id 不重复 —— 重复 id 会让合并变成顺序相关的,
+    而那种错只在「同一个 id 的两条记录内容不同」时才显形。
+  */
+  if (has(v, 'providerAccounts')) {
+    if (!Array.isArray(v.providerAccounts)) return false
+    const accounts = v.providerAccounts as unknown[]
+    if (!accounts.every(isProviderAccountExport)) return false
+    if (!uniqueBy(accounts, (x) => (x as ProviderAccountExport).id)) return false
+  }
   return true
+}
+
+/** 见 `DataExport.providerAccounts`。★ 宽容未知字段(将来加列不该让旧客户端拒收整份文件) */
+function isProviderAccountExport(value: unknown): value is ProviderAccountExport {
+  if (!isRecord(value)) return false
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.providerId) &&
+    isNonEmptyString(value.issuer) &&
+    optionalString(value, 'label') &&
+    isFiniteNumber(value.order) &&
+    isBoolean(value.enabled) &&
+    isBoolean(value.current) &&
+    isFiniteNumber(value.updatedAt)
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -298,9 +363,30 @@ function isAppSettings(value: unknown): boolean {
     (has(v, 'goalEvaluatorModel') && typeof v.goalEvaluatorModel !== 'string') ||
     !optionalString(v, 'goalEvaluatorModelProviderId') ||
     (has(v, 'modelProposedGoals') && !enumValue(v.modelProposedGoals, MODEL_PROPOSED_GOALS)) ||
+    // ★ 压缩模型那一对和档位同理:缺席 = 这份导出早于这两栏,必须放行并与默认值合并
+    //   (默认就是「跟随会话模型 / 跟随会话档位」,也就是这两栏出现之前的行为)。
+    (has(v, 'compactModel') && typeof v.compactModel !== 'string') ||
+    !optionalString(v, 'compactModelProviderId') ||
+    (has(v, 'compactThinking') && !isSubagentThinking(v.compactThinking)) ||
+    // ★ 输入框补全那五项同理:缺席 = 旧导出,放行并与默认值合并;在场就必须类型正确
+    (has(v, 'promptSuggestions') && typeof v.promptSuggestions !== 'boolean') ||
+    (has(v, 'completionModel') && typeof v.completionModel !== 'string') ||
+    !optionalString(v, 'completionModelProviderId') ||
+    (has(v, 'localCompletion') && typeof v.localCompletion !== 'boolean') ||
+    (has(v, 'inlineCompletion') && typeof v.inlineCompletion !== 'boolean') ||
+    (has(v, 'inlineCompletionModel') && typeof v.inlineCompletionModel !== 'string') ||
+    !optionalString(v, 'inlineCompletionModelProviderId') ||
     typeof v.defaultModel !== 'string' ||
     !optionalString(v, 'defaultModelProviderId') ||
+    // ★ 生图模型那一对同理:缺席 = 旧导出,放行并与默认值合并(默认是「没选过」,
+    //   `generate_image` 不下发,正是这一栏出现之前的行为)。
+    (has(v, 'imageModel') && typeof v.imageModel !== 'string') ||
+    !optionalString(v, 'imageModelProviderId') ||
+    // 生图开关同理:缺席 = 旧导出,放行(默认开启);在场就必须是布尔
+    (has(v, 'imageGenerationEnabled') && typeof v.imageGenerationEnabled !== 'boolean') ||
     (has(v, 'contextManagement') && !isContextManagementSettings(v.contextManagement)) ||
+    // 实验块是后加的:缺席 = 旧导出,放行(默认全关);在场就必须形状正确
+    (has(v, 'experimental') && !isExperimentalSettings(v.experimental)) ||
     !isSubagentSettings(v.subagent) ||
     !isGatewaySettings(v.gateway) ||
     !isNotificationSettings(v.notifications) ||
@@ -312,11 +398,15 @@ function isAppSettings(value: unknown): boolean {
   // When it is present it has to be a known shell: an unknown one would only
   // be discarded by the merger, so silently accepting it hides a bad export.
   if (has(v, 'shell') && !isShellPreference(v.shell)) return false
+  // 默认打开方式同理:缺席 = 旧存档放行,在场就必须是合法形状。
+  if (has(v, 'defaultOpenTarget') && !isOpenTargetPreference(v.defaultOpenTarget)) return false
   // 后加的字段:缺席 = 旧存档,放行(和 default defaults 合并);在场就必须在范围内,
   // 否则会被 merger 丢弃 —— 静默接受一个坏值会掩盖一份损坏的导出。
   if (has(v, 'upstreamIdleTimeoutSeconds') &&
       !isUpstreamIdleTimeoutSeconds(v.upstreamIdleTimeoutSeconds)) return false
   if (has(v, 'maxOutputTokens') && !isMaxOutputTokens(v.maxOutputTokens)) return false
+  // 账号轮换开关同理:缺席 = 这份导出早于多账号,放行并回落到默认(开启)。
+  if (has(v, 'providerAccountRotation') && typeof v.providerAccountRotation !== 'boolean') return false
   if (has(v, 'themeStudio') && !isThemeStudioSettings(v.themeStudio)) return false
   if (has(v, 'activeThemeProfileId') && v.activeThemeProfileId !== null &&
       (typeof v.activeThemeProfileId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(v.activeThemeProfileId))) return false
@@ -348,9 +438,19 @@ function isThemeStudioSettings(value: unknown): boolean {
   )
 }
 
+function isExperimentalSettings(value: unknown): boolean {
+  return isRecord(value) && optionalBoolean(value, 'workflow') && optionalBoolean(value, 'workflowConfirm')
+}
+
 function isContextManagementSettings(value: unknown): boolean {
   if (!isRecord(value)) return false
-  return isBoolean(value.experimentalMode) && isBoolean(value.autoCompact)
+  /*
+    ★ 只校验 `autoCompact`。`experimentalMode` 已随压缩重写删除,而**老备份里它还在** ——
+    继续要求它存在的话,一份 v25 之前导出的备份会整份过不了校验,导入端拒绝的是
+    整个文件而不是这一个字段(症状见 schema.ts 里 V11 那段注释)。多出来的键
+    由 `mergeSettings` 按未知字段丢掉。
+  */
+  return isBoolean(value.autoCompact)
 }
 
 function isColorThemeChoice(value: unknown): boolean {
@@ -367,6 +467,9 @@ function isSubagentSettings(value: unknown): boolean {
   if (!isRecord(value)) return false
   return (
     typeof value.model === 'string' &&
+    // ★ 思考档位是后加的:缺席 = 这份导出早于这一栏,放行并回落到默认('inherit');
+    //   在场就必须是已知档位 —— 坏值会被 merger 丢掉,静默接受一份坏导出只会掩盖它坏了。
+    (value.thinking === undefined || isSubagentThinking(value.thinking)) &&
     optionalString(value, 'modelProviderId') &&
     isIntegerAtLeast(value.perSessionLimit, 1) &&
     isIntegerAtLeast(value.globalLimit, 0)
@@ -433,6 +536,12 @@ function isWorkspaceSettings(value: unknown): boolean {
     // ★ 必须是 optionalBoolean:改动之前导出的备份里没有这一项,用 isBoolean
     //   会让整份 DataExport 在导入时被拒(isWorkspaceSettings → isWorkspace → 全份失败)。
     optionalBoolean(value, 'maxContext') &&
+    // 压缩覆盖那三项同理:缺席 = 旧备份,放行。★ `compactModel` 允许 `null` ——
+    // 那是「显式跟随会话模型」,和「没配」是两个答案(见 workspace.ts 的三态)。
+    (value.compactModel === undefined || value.compactModel === null || typeof value.compactModel === 'string') &&
+    optionalString(value, 'compactModelProviderId') &&
+    // `compactThinking` 的 `null` 是「改回跟随全局设置」写进来的值(浅合并清不掉键)。
+    (value.compactThinking === undefined || value.compactThinking === null || isSubagentThinking(value.compactThinking)) &&
     stringArray(value.activeSkillIds) &&
     (value.skillSelectionMode === undefined || enumValue(value.skillSelectionMode, ['all', 'explicit'] as const))
   )
@@ -462,20 +571,7 @@ function isExportSession(value: unknown): value is ExportSession {
   if (!isRecord(value) || !isSession(value.session) || !Array.isArray(value.messages)) return false
   const messages = value.messages as unknown[]
   if (!messages.every(isAgentMessage) || !uniqueBy(messages, (message) => (message as AgentMessage).id)) return false
-  if (value.contextCheckpoints === undefined) return true
-  return Array.isArray(value.contextCheckpoints) && value.contextCheckpoints.every(isContextCheckpoint)
-}
-
-function isContextCheckpoint(value: unknown): value is ContextCheckpoint {
-  if (!isRecord(value)) return false
-  return isNonEmptyString(value.id) && isNonEmptyString(value.sessionId) &&
-    isIntegerAtLeast(value.windowIndex, 0) && typeof value.note === 'string' &&
-    enumValue(value.source, ['model', 'mechanical', 'manual', 'auto']) &&
-    optionalString(value, 'coveredFromMessageId') && optionalString(value, 'coveredThroughMessageId') &&
-    optionalIntegerAtLeast(value, 'inputTokensBefore', 0) && optionalIntegerAtLeast(value, 'inputTokensAfter', 0) &&
-    (value.searchHits === undefined || Array.isArray(value.searchHits)) &&
-    isIntegerAtLeast(value.createdAt, 0) && isIntegerAtLeast(value.updatedAt, 0) &&
-    isIntegerAtLeast(value.revision, 1)
+  return value.contextCheckpoints === undefined || Array.isArray(value.contextCheckpoints)
 }
 
 function isAgentMessage(value: unknown): value is AgentMessage {
@@ -520,9 +616,31 @@ function isContentPart(value: unknown): boolean {
         && (!has(value, 'iterations') || isIntegerAtLeast(value.iterations, 0))
         && (!has(value, 'durationMs') || isIntegerAtLeast(value.durationMs, 0))
         && (!has(value, 'tokens') || isIntegerAtLeast(value.tokens, 0))
+    case 'compact_boundary':
+      // ★ `summary` 必填:边界之前的历史从此不再发给模型,摘要丢了就是整段失忆。
+      return enumValue(value.trigger, ['auto', 'manual'])
+        && isIntegerAtLeast(value.preTokens, 0) && isIntegerAtLeast(value.postTokens, 0)
+        && typeof value.summary === 'string' && optionalString(value, 'instructions')
+        && (!has(value, 'restoredFiles') || (Array.isArray(value.restoredFiles) && value.restoredFiles.every((f) => typeof f === 'string')))
+        // 写摘要的那个模型:后加的字段,缺席 = 这条边界压缩于它出现之前,放行。
+        && (!has(value, 'summaryModel') || isCompactSummaryModel(value.summaryModel))
     default:
       return false
   }
+}
+
+/**
+ * 压缩边界上「写这份摘要的是谁」。
+ *
+ * ★ `thinking` 只校验成字符串枚举中的一个 —— 它是**当时实际下发的档位**,是一条历史事实,
+ *   不是待执行的配置;拿今天的模型声明去判它合不合法会把一份老存档整份拒掉。
+ */
+function isCompactSummaryModel(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return isNonEmptyString(value.model)
+    && optionalString(value, 'modelProviderId')
+    && enumValue(value.thinking, THINKING_LEVELS)
+    && optionalBoolean(value, 'fellBack')
 }
 
 function isSubagentResult(value: unknown): boolean {
@@ -628,6 +746,7 @@ function isCapabilities(value: unknown): boolean {
 function isThinkingConfig(value: unknown): boolean {
   if (!isRecord(value)) return false
   if (!enumValue(value.mode, ['unsupported', 'always', 'toggle', 'effort', 'budget']) || !isBoolean(value.defaultEnabled) || (has(value, 'defaultEffort') && !enumValue(value.defaultEffort, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])) || (has(value, 'defaultBudgetTokens') && !isIntegerAtLeast(value.defaultBudgetTokens, 0)) || !optionalString(value, 'parameterPath')) return false
+  if (has(value, 'anthropicAdaptive') && (!isBoolean(value.anthropicAdaptive) || (value.anthropicAdaptive && value.mode !== 'effort'))) return false
   if ((has(value, 'enabledValue') && !isJsonValue(value.enabledValue)) || (has(value, 'disabledValue') && !isJsonValue(value.disabledValue))) return false
   const parameterPath = typeof value.parameterPath === 'string' ? value.parameterPath.trim() : ''
   const leaf = parameterPath.split('.').at(-1)

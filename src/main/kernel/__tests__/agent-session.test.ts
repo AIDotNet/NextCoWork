@@ -13,7 +13,6 @@ import { DEFAULT_MAX_OUTPUT_TOKENS, MAX_TURNS } from '../../../shared/agent/run-
 import type { ProviderStreamEvent } from '../../../shared/agent/stream'
 import type { ToolResult, ToolSource } from '../../../shared/agent/tool'
 import { toolOk } from '../../../shared/agent/tool'
-import type { ContextCheckpoint } from '../../../shared/agent/context-management'
 import type { ModelAlias } from '../../../shared/domain/provider'
 import {
   AgentSession,
@@ -22,7 +21,8 @@ import {
   type SessionUpstream
 } from '../agent-session'
 import { nodeHost } from '../host'
-import { COMPACTION_SYSTEM } from '../context-assembler'
+import { COMPACT_SYSTEM, MAX_CONSECUTIVE_COMPACT_FAILURES } from '../compaction/compact'
+import { INHERIT_THINKING } from '../../../shared/domain/subagent-thinking'
 import { localEnvironment } from '../../environment/local'
 import { collect, RunHandle } from '../run-registry'
 import { ToolRegistry, type ToolContext } from '../tool/registry'
@@ -1461,12 +1461,14 @@ describe('模型声明运行时约束', () => {
   /*
     ★ 一条用例同时钉住两件事:有效窗口真的在管压缩(shouldCompact 起来了),
     协议窗口真的没被开关污染(请求照常发出,没有 context_length)。
-    历史约 220K token —— 越过 272K×0.8,但离 1.05M 还远得很。
+    历史约 250K token —— 越过阈值(272K − 20K 摘要输出预留 − 13K 缓冲 = 239K),
+    但离 1.05M 还远得很。(阈值公式换成 CC 那套之后这个数跟着上调,理由同一条:
+    要的是「刚好越过阈值」,而不是某个写死的字面量。)
   */
   it('历史越过 272K 的压缩阈值时要压,但不报 context_length', async () => {
     const model: ModelAlias = { ...ALIAS, contextWindow: 1_050_000 }
     const upstream = fakeUpstream([says('好')], { models: [model] })
-    const big = 'x'.repeat(900_000)
+    const big = 'x'.repeat(1_000_000)
     const { events } = await runSession({
       upstream,
       request: req({ maxContext: false }),
@@ -1825,39 +1827,31 @@ describe('file_ref 路径归一化', () => {
 })
 
 /**
- * 恢复检查点时按 `source` 分流。
+ * 重开一段压缩过的会话:上下文从**转录里最后一条边界**切起。
  *
- * ★ 机械压缩也落检查点之后,构造函数那句「取 windowIndex 最大的」会捞到它,
- * 于是一句「折叠了 N 条消息」被 `withSummary` 当成**对话摘要**送给模型 ——
- * 模型看到的不再是这段对话讲了什么,而是一句关于压缩本身的统计。
- * 全程没有任何报错,是这套改动唯一的硬风险,所以单独钉一条。
+ * ★ 原先这里钉的是「恢复检查点时按 source 分流」—— 机械压缩也落检查点,构造函数
+ * 那句「取 windowIndex 最大的」会捞到它,于是一句「折叠了 N 条消息」被当成对话摘要
+ * 送给模型。检查点表已随重写删除,那条风险**在结构上消失了**:边界消息自带摘要正文,
+ * 没有第二种东西可捞。
+ *
+ * 现在要守的是另一条,而且同样零报错:边界之前的历史绝不能再进请求。
+ * 漏了的话界面画着分隔线、请求里却还是全量 —— 也就是这次重写要修的那个病。
  */
-describe('恢复上下文检查点', () => {
-  function checkpoint(over: Partial<ContextCheckpoint> = {}): ContextCheckpoint {
-    return {
-      id: 'sess-1:context:1',
-      sessionId: 'sess-1',
-      windowIndex: 1,
-      note: '摘要正文',
-      source: 'model',
-      createdAt: 0,
-      updatedAt: 0,
-      revision: 1,
-      ...over
-    }
+describe('压缩过的会话从边界切起', () => {
+  function boundaryMessage(id: string, summary: string): AgentMessage {
+    const parts: ContentPart[] = [
+      { type: 'compact_boundary', trigger: 'auto', preTokens: 190_000, postTokens: 9_000, summary },
+      { type: 'text', text: `之前对话的摘要:${summary}` }
+    ]
+    return { ...userMessage(id, parts, 0), internal: true, parts }
   }
 
-  const HISTORY: readonly AgentMessage[] = [
-    userMessage('h1', [{ type: 'text', text: '开始' }], 0),
-    assistantMessage('h2', [{ type: 'text', text: '好的' }], 0)
-  ]
-
-  async function assembled(contextCheckpoints: readonly ContextCheckpoint[]): Promise<string> {
+  async function assembled(history: readonly AgentMessage[]): Promise<string> {
     const request = req()
     const handle = new RunHandle(request)
     const upstream = fakeUpstream([says('ok')])
     const session = new AgentSession(
-      { host: quietHost(), upstream, tools: registry(), workspaceRoot: '/ws', history: HISTORY, contextCheckpoints },
+      { host: quietHost(), upstream, tools: registry(), workspaceRoot: '/ws', history },
       handle,
       request
     )
@@ -1865,37 +1859,37 @@ describe('恢复上下文检查点', () => {
     return JSON.stringify(upstream.requests[0]?.messages ?? [])
   }
 
-  it('模型摘要会作为摘要进入请求', async () => {
-    expect(await assembled([checkpoint({ note: '用户在重构登录模块' })])).toContain('用户在重构登录模块')
+  const EARLY: readonly AgentMessage[] = [
+    userMessage('h1', [{ type: 'text', text: '第一阶段:重构登录模块' }], 0),
+    assistantMessage('h2', [{ type: 'text', text: '好的' }], 0)
+  ]
+
+  it('摘要正文进请求', async () => {
+    expect(await assembled([...EARLY, boundaryMessage('c1', '用户在重构登录模块')]))
+      .toContain('用户在重构登录模块')
   })
 
-  it('★ 机械压缩那条的 note 绝不进请求', async () => {
-    const sent = await assembled([
-      checkpoint({ id: 'sess-1:context:2', windowIndex: 2, source: 'mechanical', note: '折叠了 14 条消息' })
-    ])
-    expect(sent).not.toContain('折叠了 14 条消息')
-    expect(sent).not.toContain('Summary of the conversation so far')
+  it('★ 边界之前的历史一条都不进请求', async () => {
+    const sent = await assembled([...EARLY, boundaryMessage('c1', '用户在重构登录模块')])
+    expect(sent).not.toContain('第一阶段:重构登录模块')
   })
 
-  /** `'auto'` 是机械压缩的旧写法,同样不是摘要 */
-  it("★ 旧写法 'auto' 同样被挡住", async () => {
+  /** 压过两次时以**最后**一条为准 —— 第一段摘要已经被第二次压缩读进去了。 */
+  it('★ 压过两次时只从最后一条边界切起', async () => {
     const sent = await assembled([
-      checkpoint({ id: 'sess-1:context:2', windowIndex: 2, source: 'auto', note: '自动折叠统计' })
+      ...EARLY,
+      boundaryMessage('c1', '第一次压缩的摘要'),
+      userMessage('h3', [{ type: 'text', text: '第二阶段' }], 0),
+      boundaryMessage('c2', '第二次压缩的摘要')
     ])
-    expect(sent).not.toContain('自动折叠统计')
+    expect(sent).toContain('第二次压缩的摘要')
+    expect(sent).not.toContain('第一次压缩的摘要')
+    expect(sent).not.toContain('第二阶段')
   })
 
-  /**
-   * 混着来:机械那条窗口号更大(它是后发生的),但摘要那条才是能当摘要用的。
-   * 若按窗口号一把抓,送上去的就是统计而不是摘要。
-   */
-  it('★ 机械检查点更新时,仍取更早的那条模型摘要', async () => {
-    const sent = await assembled([
-      checkpoint({ windowIndex: 1, source: 'model', note: '用户在重构登录模块' }),
-      checkpoint({ id: 'sess-1:context:2', windowIndex: 2, source: 'mechanical', note: '折叠了 14 条消息' })
-    ])
-    expect(sent).toContain('用户在重构登录模块')
-    expect(sent).not.toContain('折叠了 14 条消息')
+  /** 没压过的会话必须逐字退回旧行为:整段历史照发。 */
+  it('没有边界时整段历史照发', async () => {
+    expect(await assembled(EARLY)).toContain('第一阶段:重构登录模块')
   })
 })
 
@@ -2021,21 +2015,44 @@ describe('断流自动续跑', () => {
 })
 
 /**
- * 自动压缩的判据用什么数(`tokenCalibration` / `MIN_EFFECTIVE_COMPACTION`)。
+ * 自动压缩(Claude Code 式)。
  *
- * 背景是一个线上故障:圆环上写着「211K / 200K,已超出」,自动压缩却一次都没触发。
- * 两个数不同源 —— 圆环读上游在 `message_end` 里报回的真值,判据读发出去之前的
- * chars/4 本地估算。代码 / JSON / 工具输出的真实分词接近 3 chars/token,于是同一份
- * 请求在判据里只有 ~152K,恰好压在 200K×0.8 之下,而 `validateModelRuntime` 的
- * context_length 硬校验读的也是这个偏低的数,所以连报错都不会有。
+ * 背景是一个线上故障:圆环上写着「211K / 200K,已超出」,自动压缩却一次都没触发,
+ * 一路涨到 624K。两个数不同源 —— 圆环读上游在 `message_end` 里报回的真值,判据读
+ * 发出去之前的 chars/4 本地估算。代码 / JSON / 工具输出的真实分词接近 3 chars/token,
+ * 于是同一份请求在判据里只有 ~152K,恰好压在旧阈值之下,而 `validateModelRuntime`
+ * 的 context_length 硬校验读的也是这个偏低的数,所以连报错都不会有。
  *
- * 这里钉两件事:真值**回流**并纠正了判据,以及纠正之后压缩**能收敛**。
+ * 现在判据读 `knownInputTokens` = **上一次上游真值 + 其后新增消息的估算**
+ * (`AgentSession.contextTokens`,同 CC 的 `tokenCountWithEstimation`),真值取的是
+ * `promptTokensOf`(含 cache_read / cache_creation —— Anthropic 的 `input_tokens`
+ * 不含它们,只看它的话一段被缓存住的长对话会显示成「几乎没占上下文」)。
+ *
+ * 这一组钉四件事:真值**回流**并纠正了判据、压缩**真的**把历史切掉了、
+ * 摘要请求**和正文同模型**、以及失败时**能熔断**。
  */
-describe('压缩判据按上游真值校准', () => {
-  const AUTO_COMPACT = { experimentalMode: false, autoCompact: true }
-  /** 估算约 100K,是 200K×0.8 − 8192 预留(≈151.8K)的三分之二 —— 不校准就不会压。 */
+describe('自动压缩', () => {
+  const AUTO_COMPACT = { autoCompact: true }
+  /** 估算约 100K —— 阈值(200K − 8192 − 13K ≈ 178.8K)的一半多点,不靠真值就不会压。 */
   const BIG = 'x'.repeat(400_000)
-  const COMPACTED = '[compacted: tool output from this turn was dropped]'
+  const NOTE = '## 意图\n用户在重构登录模块'
+  /** 「换个便宜模型压缩」的那一条绑定。 */
+  const CHEAP: ModelAlias = {
+    alias: 'cheap-model', providerId: 'p2', upstreamModel: 'cheap-model',
+    capabilities: { tools: true, vision: false, thinking: false, caching: false },
+    contextWindow: 200_000, maxOutputTokens: 8192
+  }
+  /**
+   * `gpt-6-*` 那一族:effort 模型,`reasoningEfforts` 里**没有 `none`** ——
+   * 也就是「关不掉推理」的那一类,本次修的 bug 就发生在它身上。
+   */
+  const GPT6: ModelAlias = {
+    alias: 'gpt-6-astra', providerId: 'p3', upstreamModel: 'gpt-6-astra',
+    capabilities: { tools: true, vision: true, thinking: true, caching: true },
+    contextWindow: 200_000, maxOutputTokens: 8192,
+    thinkingConfig: { mode: 'effort', defaultEnabled: true },
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max']
+  }
 
   const ends = (inputTokens: number, stopReason: 'end_turn' | 'tool_use'): ProviderStreamEvent => ({
     type: 'message_end',
@@ -2053,12 +2070,39 @@ describe('压缩判据按上游真值校准', () => {
   ]
 
   /**
-   * 大头是一条**落在折叠区**的工具输出 —— 机械压缩对它有效。
-   * 前后垫够消息,保证 `compactMessages` 的 cutoff(倒数第 6 条)把它切进去。
+   * 摘要请求单独应答的假上游 —— 和正文请求的区别只在 `system`。
+   * `fail` 让摘要请求返回一个错误,用来逼出熔断那一条。
    */
-  function historyWithFoldableBlob(): AgentMessage[] {
+  function withSummaryUpstream(
+    turns: ProviderStreamEvent[][],
+    opts: { note?: string; fail?: boolean; model?: ModelAlias } = {}
+  ): FakeUpstream & { summaries: CanonicalRequest[] } {
+    // 配了压缩模型的用例要让路由器**查得到**那条绑定,否则会走回落那一支。
+    const base = fakeUpstream(turns, opts.model === undefined ? {} : { models: [ALIAS, opts.model] })
+    const summaries: CanonicalRequest[] = []
+    return {
+      ...base,
+      summaries,
+      async *stream(r, signal, context): AsyncIterable<ProviderStreamEvent> {
+        if (r.system === COMPACT_SYSTEM) {
+          summaries.push(r)
+          yield { type: 'message_start', model: 'claude-sonnet-4' }
+          if (opts.fail === true) {
+            yield { type: 'error', error: agentError('provider', 'summary failed', { retryable: true }) }
+            return
+          }
+          yield { type: 'text_delta', index: 0, text: opts.note ?? NOTE }
+          yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } }
+          return
+        }
+        yield* base.stream(r, signal, context)
+      }
+    }
+  }
+
+  function historyWithBlob(): AgentMessage[] {
     return [
-      userMessage('h0', [{ type: 'text', text: '任务' }], 0),
+      userMessage('h0', [{ type: 'text', text: '最初的任务' }], 0),
       assistantMessage('h1', [{ type: 'tool_call', callId: 'c0', name: 'echo', input: {} }], 0),
       userMessage('h2', [{ type: 'tool_result', callId: 'c0', output: { content: BIG }, isError: false }], 0),
       ...Array.from({ length: 6 }, (_, i) =>
@@ -2072,9 +2116,9 @@ describe('压缩判据按上游真值校准', () => {
   async function run(o: {
     upstream: FakeUpstream
     history: readonly AgentMessage[]
-    saveContextCheckpoint?: SessionDeps['saveContextCheckpoint']
-    contextCheckpoints?: readonly ContextCheckpoint[]
     contextManagement?: SessionDeps['contextManagement']
+    compaction?: SessionDeps['compaction']
+    workspaceCompaction?: SessionDeps['workspaceCompaction']
   }): Promise<Ran> {
     const request = req()
     const handle = new RunHandle(request)
@@ -2086,17 +2130,15 @@ describe('压缩判据按上游真值校准', () => {
         workspaceRoot: '/ws',
         history: o.history,
         /*
-          本组用例的数值夹具(「估算约 175K > 151.8K」这一类)是按 **8192 的输出预留**
-          标定的,所以这里把设置项钉在模型原来的协议上限上。不钉的话默认 32K 预留会让
+          本组的数值夹具(「估算约 100K,阈值 ≈178.8K」)按 **8192 的输出预留**标定,
+          所以这里把设置项钉在模型原来的协议上限上。不钉的话默认 32K 预留会让
           几条大历史的用例在 `validateModelRuntime` 那道硬校验上先行退出 ——
-          一个请求都发不出去,而本组要测的是压缩收敛,不是那道校验。
+          一个请求都发不出去,而本组要测的是压缩,不是那道校验。
         */
         maxOutputTokens: 8192,
         contextManagement: o.contextManagement ?? AUTO_COMPACT,
-        ...(o.saveContextCheckpoint !== undefined
-          ? { saveContextCheckpoint: o.saveContextCheckpoint }
-          : {}),
-        ...(o.contextCheckpoints !== undefined ? { contextCheckpoints: o.contextCheckpoints } : {}),
+        ...(o.compaction === undefined ? {} : { compaction: o.compaction }),
+        ...(o.workspaceCompaction === undefined ? {} : { workspaceCompaction: o.workspaceCompaction }),
         resumeDelaysMs: []
       },
       handle,
@@ -2116,270 +2158,211 @@ describe('压缩判据按上游真值校准', () => {
    * ★★ 本组的主用例 —— 就是那个截图里的场景。
    *
    * 第一轮:本地估 ~100K,判据说还宽裕,请求照发;上游回报这一份其实是 200K。
-   * 第二轮:同样估 ~100K,但校准系数已经是 ~2,判据这才看见真实的 200K 并触发压缩。
+   * 第二轮:同样估 ~100K,但判据这时读的是真值 200K,超过阈值 178.8K,压缩触发。
    */
   it('★ 上游报回的真值远高于估算时,下一轮必须触发自动压缩', async () => {
-    const upstream = fakeUpstream([turnReporting(200_000, 'c1'), says('好')])
-    const { events } = await run({ upstream, history: historyWithFoldableBlob() })
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    const { events } = await run({ upstream, history: historyWithBlob() })
 
-    // 第一轮没压:大块原样发出去了(这也是「不校准就不压」的反面证据)
+    // 第一轮没压:大块原样发出去了(这也是「不读真值就不压」的反面证据)
     expect(sent(upstream, 0)).toContain(BIG)
-    // 第二轮压了:大块被折叠成占位符
-    expect(sent(upstream, 1)).not.toContain(BIG)
-    expect(sent(upstream, 1)).toContain(COMPACTED)
-    expect(statuses(events)).toContain('fallback')
+    expect(upstream.summaries.length).toBe(1)
+    expect(statuses(events)).toEqual(['compacting', 'compacted'])
   })
 
   /**
-   * ★ 反面:上游报回来的数**小于**估算时,系数夹在 1,判据逐字退回纯估算。
+   * ★ 压缩**真的**把历史切掉了 —— 这是整次重写的目的:边界之后的请求里只剩摘要。
+   * 原先机械压缩只把工具输出换成占位符,骨架和所有消息头都还在,省不下几个 token。
+   */
+  it('★ 压完之后早期历史不再进请求,只剩摘要', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    await run({ upstream, history: historyWithBlob() })
+
+    const after = sent(upstream, upstream.requests.length - 1)
+    expect(after).toContain('用户在重构登录模块')
+    expect(after).not.toContain(BIG)
+    expect(after).not.toContain('最初的任务')
+    // 切掉整轮之后不能留下孤儿 tool_use —— 那是下一轮 400 的唯一来源
+    expect(orphanedToolCalls((upstream.requests.at(-1)?.messages ?? []) as AgentMessage[])).toEqual([])
+  })
+
+  /** ★ 边界消息进转录并落盘,否则重开会话就回到压缩前,而界面上什么都看不到。 */
+  it('★ 压缩产出一条带 compact_boundary 的消息,留在转录里', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    const { history } = await run({ upstream, history: historyWithBlob() })
+
+    const boundary = history.flatMap((m) => m.parts).find((p) => p.type === 'compact_boundary')
+    expect(boundary).toMatchObject({ trigger: 'auto', summary: NOTE })
+    // 完整转录仍在 —— 压缩改变的是「发给模型的范围」,不是聊天记录
+    expect(history.some((m) => m.parts.some((p) => p.type === 'tool_result'))).toBe(true)
+  })
+
+  /**
+   * ★ 摘要**默认**和正文走同一家、同一个模型:它读的是同一段对话,
+   * 漂到另一家既换了口径也换了账单。只有用户显式配了压缩模型才会换(见下面两条)。
+   */
+  it('★ 摘要请求与正文同模型,且不带工具', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    await run({ upstream, history: historyWithBlob() })
+
+    expect(upstream.summaries[0]?.model).toBe('claude-sonnet-4')
+    expect(upstream.summaries[0]?.tools).toEqual([])
+  })
+
+  /**
+   * ★★ 本次改动的核心回归:配置了压缩模型时,**只有摘要**漂过去,正文仍发会话模型。
+   * 两者搞混的表现是「我只是想让压缩便宜点,结果整条对话都换模型了」。
+   */
+  it('★★ 配置了压缩模型时,摘要发给它、正文仍发会话模型', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')], { model: CHEAP })
+    await run({
+      upstream,
+      history: historyWithBlob(),
+      compaction: { model: 'cheap-model', modelProviderId: 'p2', thinking: INHERIT_THINKING }
+    })
+
+    expect(upstream.summaries[0]?.model).toBe('cheap-model')
+    expect(upstream.summaries[0]?.modelProviderId).toBe('p2')
+    expect(upstream.requests.every((r) => r.model === 'claude-sonnet-4')).toBe(true)
+  })
+
+  /**
+   * ★★ 这条盯的就是用户报的那个 bug。
+   *
+   * 压缩模型是 `gpt-6-*` 那一族(effort 模型,`reasoningEfforts` 里没有 `none`)时,
+   * 过去这里硬发 `thinkingLevel: 'off'` —— `thinking-adapter` 对这种组合直接抛
+   * 「该模型不支持关闭推理」,router 包成不可重试的错,压缩每次必败、三次后熔断,
+   * 上下文再也压不下去(全程零报错)。现在档位按压缩模型归一化到最低可用档。
+   */
+  it('★★ 压缩模型关不掉推理时,下发的是它认的最低档而不是 off', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')], { model: GPT6 })
+    const { events } = await run({
+      upstream,
+      history: historyWithBlob(),
+      compaction: { model: 'gpt-6-astra', modelProviderId: 'p3', thinking: 'off' }
+    })
+
+    expect(upstream.summaries[0]?.thinkingLevel).toBe('low')
+    expect(statuses(events)).toEqual(['compacting', 'compacted'])
+  })
+
+  /**
+   * ★ 过期配置(供应商被删 / 别名改名)**不能把压缩打死** —— 那正是
+   * 「上下文一路涨到上游报超长」的老症状。静默回落会话模型,并在边界上留个记号。
+   */
+  it('★ 配置的压缩模型解析不到时回落会话模型,压缩照常成功', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    const { events, history } = await run({
+      upstream,
+      history: historyWithBlob(),
+      compaction: { model: 'deleted-alias', modelProviderId: 'gone', thinking: INHERIT_THINKING }
+    })
+
+    expect(upstream.summaries[0]?.model).toBe('claude-sonnet-4')
+    expect(statuses(events)).toEqual(['compacting', 'compacted'])
+    const boundary = history.flatMap((m) => m.parts).find((p) => p.type === 'compact_boundary')
+    expect(boundary).toMatchObject({ summaryModel: { model: 'claude-sonnet-4', fellBack: true } })
+  })
+
+  /** 工作区那一档压过全局 —— 圆环菜单里那两栏存在的全部理由。 */
+  it('工作区的覆盖压过全局设置', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')], { model: CHEAP })
+    await run({
+      upstream,
+      history: historyWithBlob(),
+      compaction: { model: 'cheap-model', modelProviderId: 'p2', thinking: INHERIT_THINKING },
+      // null = 这个工作区显式退回会话模型
+      workspaceCompaction: { compactModel: null }
+    })
+
+    expect(upstream.summaries[0]?.model).toBe('claude-sonnet-4')
+  })
+
+  /**
+   * ★ 反面:上游报回来的数**小于**估算时,判据取较大的那个,逐字退回纯估算。
    *
    * 不少中转按「未命中缓存的那部分」报 `input_tokens` 且不给 `cache_read`。
-   * 让系数跟着掉到 0.0x 的话,自动压缩会被这种上游整个关掉 ——
-   * 正是我们在修的那个故障,从另一头再进来一次。
+   * 照单全收的话,自动压缩会被这种上游整个关掉 —— 正是我们在修的那个故障,
+   * 从另一头再进来一次。
    */
-  it('★ 上游报回的真值偏小时不放松判据(系数夹在 1)', async () => {
-    const upstream = fakeUpstream([turnReporting(10, 'c1'), says('好')])
-    const { events } = await run({ upstream, history: historyWithFoldableBlob() })
+  it('★ 上游报回的真值偏小时不放松判据', async () => {
+    const upstream = withSummaryUpstream([turnReporting(10, 'c1'), says('好')])
+    const { events } = await run({ upstream, history: historyWithBlob() })
 
-    expect(sent(upstream, 1)).toContain(BIG)
+    expect(upstream.summaries.length).toBe(0)
     expect(statuses(events)).toEqual([])
   })
 
-  /** 一次请求都还没完成时没有真值可用 —— 第一轮的判据必须就是旧行为。 */
+  /** 一次请求都还没完成时没有真值可用 —— 第一轮的判据必须就是纯估算。 */
   it('第一轮没有真值可用,判据即纯估算', async () => {
-    const upstream = fakeUpstream([says('好')])
-    const { events } = await run({ upstream, history: historyWithFoldableBlob() })
+    const upstream = withSummaryUpstream([says('好')])
+    const { events } = await run({ upstream, history: historyWithBlob() })
 
     expect(events.find((e) => e.type === 'context_usage')).toMatchObject({ shouldCompact: false })
     expect(sent(upstream, 0)).toContain(BIG)
   })
 
-  /**
-   * ★★ 收敛:压了没用就**停手并说出来**。
-   *
-   * 大头在第 0 条(`compactMessages` 永远保留原文,那是任务的原始表述),
-   * 机械压缩一个 token 都削不掉。以前这会每轮重来一次:重建投影、重写检查点、
-   * 重发一条「已折叠较早的历史」,而占用一动不动 —— 用户看着一句正常播报,
-   * 上下文一路涨过窗口。
-   */
-  it('★ 机械压缩削不动时只报一次 exhausted,之后不再重试', async () => {
-    // 估算约 175K > 151.8K:第一轮不用校准就该压
-    const huge = userMessage('h0', [{ type: 'text', text: 'x'.repeat(700_000) }], 0)
-    const save = vi.fn()
-    const upstream = fakeUpstream([
-      turnReporting(10, 'c1'),
-      turnReporting(10, 'c2'),
-      says('好')
-    ])
-    const { events } = await run({ upstream, history: [huge], saveContextCheckpoint: save })
-
-    expect(upstream.requests.length).toBeGreaterThanOrEqual(3)
-    expect(statuses(events)).toEqual(['exhausted'])
-    // 每轮重写一次检查点也一并停掉
-    expect(save.mock.calls.length).toBeLessThanOrEqual(1)
-  })
-
-  /** `exhausted` 之后判据本身不变 —— 压力条照常报「该压了」,只是我们不再空转。 */
-  it('exhausted 之后 context_usage 仍然如实报 shouldCompact', async () => {
-    const huge = userMessage('h0', [{ type: 'text', text: 'x'.repeat(700_000) }], 0)
-    const upstream = fakeUpstream([turnReporting(10, 'c1'), says('好')])
-    const { events } = await run({ upstream, history: [huge] })
-
-    const usage = events.filter((e) => e.type === 'context_usage')
-    expect(usage.length).toBeGreaterThanOrEqual(2)
-    expect(usage.at(-1)).toMatchObject({ shouldCompact: true })
-  })
-
-  /**
-   * ★★ 机械压缩**不能把已恢复的模型摘要弄丢**。
-   *
-   * 构造函数在恢复检查点时把历史投影成 `withSummary(compactMessages(...))`,而到阈值走
-   * 机械压缩那一支时,投影曾经被一句 `compactMessages(this.messages)` 整个换掉 ——
-   * `this.messages` 是**转录原文**,里面没有摘要那条消息,于是它当场消失。
-   * 症状是「压缩之后模型突然忘了前半段对话」,而检查点、分隔线、笔记全都好端端地
-   * 在界面上,一处报错都没有。修法是两条分支共用 `projectContext()`。
-   *
-   * (同一行还漏掉了 `isolateHistoryPaths`:从转录直接重建等于把另一台服务器的
-   * 文件引用重新放回上下文。那条路径要一个远端工作区才跑得起来,这里不覆盖。)
-   */
-  it('★ 机械压缩之后,已恢复的模型摘要仍在请求里', async () => {
-    const NOTE = '用户在重构登录模块'
-    /*
-      大块放在**尾部保留区之内**:构造时的 compactMessages 折不到它(6 条正好等于
-      keepRecent),等本轮追加了用户消息与一轮工具往返之后它才落进折叠区 ——
-      于是第二轮的机械压缩是一次**真的有效**的压缩,而不是空转。
-    */
-    const history: AgentMessage[] = [
-      userMessage('h0', [{ type: 'text', text: '任务' }], 0),
-      assistantMessage('h1', [{ type: 'tool_call', callId: 'c0', name: 'echo', input: {} }], 0),
-      userMessage('h2', [{ type: 'tool_result', callId: 'c0', output: { content: BIG }, isError: false }], 0),
-      assistantMessage('h3', [{ type: 'text', text: '回应' }], 0),
-      userMessage('h4', [{ type: 'text', text: '追问' }], 0),
-      assistantMessage('h5', [{ type: 'text', text: '再回应' }], 0)
-    ]
-    const upstream = fakeUpstream([turnReporting(200_000, 'c1'), says('好')])
+  /** 总闸关掉就一次都不压 —— 哪怕判据为真。 */
+  it('autoCompact 关掉时不压缩', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
     const { events } = await run({
-      upstream,
-      history,
-      contextCheckpoints: [{
-        id: 'sess-1:context:1',
-        sessionId: 'sess-1',
-        windowIndex: 1,
-        note: NOTE,
-        source: 'model',
-        createdAt: 0,
-        updatedAt: 0,
-        revision: 1
-      }]
+      upstream, history: historyWithBlob(), contextManagement: { autoCompact: false }
     })
 
-    // 压缩确实发生了(大块被折叠),而摘要一起活了下来
-    expect(statuses(events)).toContain('fallback')
-    expect(sent(upstream, 1)).not.toContain(BIG)
-    expect(sent(upstream, 1)).toContain(COMPACTED)
-    expect(sent(upstream, 1)).toContain(NOTE)
+    expect(upstream.summaries.length).toBe(0)
+    expect(statuses(events)).toEqual([])
   })
 
   /**
-   * ★★ 相位要**活过转录 reducer**。
+   * ★★ 收敛:摘要请求确定性失败时必须**熔断**。
    *
-   * session 这边发了 `exhausted`,可紧跟着的 `context_checkpoint` 在
-   * `shared/agent/transcript.ts` 里会把相位推成 `ready`(检查点到达 = 压缩完成,
-   * 那是它该做的)。两条事件的顺序一倒,用户就永远看不到那句唯一可行动的提示:
-   * 占用一路涨过窗口,状态行上只闪过一下「上下文已压缩」。
-   *
-   * ★ 所以这一条**不看 session 发了什么**,只看把事件流放完之后界面拿到的是什么 ——
-   * 只断言前者的话,把顺序改回去它照样绿。
+   * 不封顶的话(模型没权限、摘要恒为空、上游长期 5xx),判据每一轮都为真,
+   * 于是每一轮白发一次摘要请求 —— 界面上全程正常,只有账单在涨。
+   * 这里让摘要请求一直失败,断言它最多试到上限,之后相位变 `disabled`。
    */
-  it('★★ exhausted 穿过转录 reducer 之后仍然是 exhausted', async () => {
+  it('★★ 摘要连续失败到上限后熔断,不再重试', async () => {
     /*
-      大头钉死在第 0 条(`compactMessages` 永远保留原文),后面垫足够多的短消息:
-      折叠区间存在(于是检查点真的会落、`context_checkpoint` 真的会发),
-      但折叠它们一个 token 都省不下 —— 正是 `exhausted` 要描述的那一种局面。
+      ★ 这里的真值取 185K 而不是 200K:压缩失败之后这一轮**照发**,而 200K + 8192 的
+      输出预留会越过 200K 的协议窗口,被 `validateModelRuntime` 当场判 `context_length`,
+      run 死在第二轮 —— 那样熔断计数永远数不到 3,这条用例测的就不是它要测的东西了。
+      185K 在阈值(≈178.8K)之上、硬校验(≈191.8K)之下,正好是「该压、压不动、但还发得出去」。
     */
-    const stubborn: AgentMessage[] = [
-      userMessage('h0', [{ type: 'text', text: 'x'.repeat(700_000) }], 0),
-      ...Array.from({ length: 8 }, (_, i) =>
-        i % 2 === 0
-          ? assistantMessage(`h${i + 1}`, [{ type: 'text', text: `回应 ${i}` }], 0)
-          : userMessage(`h${i + 1}`, [{ type: 'text', text: `追问 ${i}` }], 0)
-      )
-    ]
-    const save = vi.fn()
-    const upstream = fakeUpstream([turnReporting(10, 'c1'), says('好')])
-    const { events } = await run({ upstream, history: stubborn, saveContextCheckpoint: save })
-
-    // 前提:检查点真的发出去了 —— 没有它,这条用例什么都没盯住
-    expect(events.some((e) => e.type === 'context_checkpoint')).toBe(true)
-    expect(applyEvents(emptyTranscript(), events).contextStatus?.phase).toBe('exhausted')
-  })
-})
-
-/**
- * 摘要压缩(实验模式)—— 它是唯一一条**会自己发模型请求**的压缩路径,
- * 所以「不收敛」在这里的代价不是空转,而是每一轮多烧半个窗口的输入。
- */
-describe('摘要压缩的收敛', () => {
-  const SUMMARY_ON = { experimentalMode: true, autoCompact: true }
-
-  /** 摘要请求单独应答的假上游 —— 和正文请求的区别只在 `system`。 */
-  function withSummaryUpstream(
-    turns: ProviderStreamEvent[][],
-    note = '## Task and intent\n重构登录模块'
-  ): FakeUpstream & { summaries: CanonicalRequest[] } {
-    const base = fakeUpstream(turns)
-    const summaries: CanonicalRequest[] = []
-    return {
-      ...base,
-      summaries,
-      async *stream(r, signal, context): AsyncIterable<ProviderStreamEvent> {
-        if (r.system === COMPACTION_SYSTEM) {
-          summaries.push(r)
-          yield { type: 'message_start', model: 'claude-sonnet-4' }
-          yield { type: 'text_delta', index: 0, text: note }
-          yield { type: 'message_end', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } }
-          return
-        }
-        yield* base.stream(r, signal, context)
-      }
-    }
-  }
-
-  const toolTurn = (callId: string): ProviderStreamEvent[] => [
-    { type: 'message_start', model: 'claude-sonnet-4' },
-    { type: 'tool_call_start', index: 0, callId, name: 'echo' },
-    { type: 'tool_call_delta', index: 0, callId, argsDelta: '{}' },
-    { type: 'tool_call_end', index: 0, callId },
-    { type: 'message_end', stopReason: 'tool_use', usage: { inputTokens: 10, outputTokens: 5 } }
-  ]
-
-  async function run(o: {
-    upstream: FakeUpstream
-    history: readonly AgentMessage[]
-  }): Promise<{ events: AgentEvent[] }> {
-    const request = req()
-    const handle = new RunHandle(request)
-    const session = new AgentSession(
-      {
-        host: quietHost(),
-        upstream: o.upstream,
-        tools: registry({ internalId: 'echo' }),
-        workspaceRoot: '/ws',
-        history: o.history,
-        // 同上一组:700K 的夹具按 8192 的输出预留标定,默认 32K 预留会让它
-        // 在硬校验处先行退出,一条摘要请求都发不出去。
-        maxOutputTokens: 8192,
-        contextManagement: SUMMARY_ON,
-        saveContextCheckpoint: vi.fn(),
-        resumeDelaysMs: []
-      },
-      handle,
-      request
+    const upstream = withSummaryUpstream(
+      [turnReporting(185_000, 'c1'), turnReporting(185_000, 'c2'), turnReporting(185_000, 'c3'),
+       turnReporting(185_000, 'c4'), says('好')],
+      { fail: true }
     )
-    const events = collect(handle)
-    await session.run()
-    return { events: await events }
-  }
+    const { events } = await run({ upstream, history: historyWithBlob() })
 
-  /**
-   * ★★ 本组的主用例。摘要压缩原本是**附加**在全量历史后面的 —— 压完占用不降反升,
-   * 判据下一轮照样为真,于是**每一轮**再摘要一次:一次额外的模型请求、一条新检查点、
-   * 一条新分隔线,永远收敛不了。界面上全程正常,只有账单在涨。
-   *
-   * 这里用一条**裁不动**的历史(全部体积都在第 0 条,整段只有一轮)把那个循环
-   * 逼出来:压不动就该停手,而不是接着发第三次请求。
-   */
-  it('★★ 摘要压了也没降下来时,一个 run 里最多再试到上限就停手', async () => {
-    const huge = userMessage('h0', [{ type: 'text', text: 'x'.repeat(700_000) }], 0)
-    const upstream = withSummaryUpstream([
-      toolTurn('c1'), toolTurn('c2'), toolTurn('c3'), toolTurn('c4'), says('好')
-    ])
-    await run({ upstream, history: [huge] })
+    expect(upstream.summaries.length).toBe(MAX_CONSECUTIVE_COMPACT_FAILURES)
+    expect(statuses(events).at(-1)).toBe('disabled')
+  })
 
-    expect(upstream.requests.length).toBeGreaterThanOrEqual(5)
-    expect(upstream.summaries.length).toBe(2)
+  /** 熔断之后判据本身不变 —— 压力条照常报「该压了」,只是我们不再空转。 */
+  it('熔断之后 context_usage 仍然如实报 shouldCompact', async () => {
+    const upstream = withSummaryUpstream(
+      [turnReporting(185_000, 'c1'), turnReporting(185_000, 'c2'), turnReporting(185_000, 'c3'), says('好')],
+      { fail: true }
+    )
+    const { events } = await run({ upstream, history: historyWithBlob() })
+
+    expect(events.filter((e) => e.type === 'context_usage').at(-1)).toMatchObject({ shouldCompact: true })
   })
 
   /**
-   * ★ 摘要真的把历史裁掉了 —— 这是 `COMPACTION_SYSTEM` 里那句
-   * 「the transcript itself is gone」第一次成立。
+   * ★★ 相位要**活过转录 reducer**:界面上看到的是 reducer 的产物,不是 session 发了什么。
+   * 只断言 session 发出去的那一条的话,reducer 里哪天多一句覆盖它照样绿。
    */
-  it('★ 压完之后早期历史不再出现在请求里,只剩摘要', async () => {
-    const history: AgentMessage[] = [
-      userMessage('h0', [{ type: 'text', text: '最初的任务' }], 0),
-      ...Array.from({ length: 4 }, (_, i) => [
-        assistantMessage(`a${i}`, [{ type: 'tool_call', callId: `t${i}`, name: 'echo', input: {} }], 0),
-        userMessage(`r${i}`, [{ type: 'tool_result', callId: `t${i}`, output: { content: 'x'.repeat(200_000) }, isError: false }], 0),
-        userMessage(`q${i}`, [{ type: 'text', text: `追问 ${i}` }], 0)
-      ]).flat()
-    ]
-    const upstream = withSummaryUpstream([toolTurn('c1'), says('好')])
-    await run({ upstream, history })
+  it('★★ compacted 穿过转录 reducer 之后清掉压缩前的读数', async () => {
+    const upstream = withSummaryUpstream([turnReporting(200_000, 'c1'), says('好')])
+    const { events } = await run({ upstream, history: historyWithBlob() })
 
-    const after = JSON.stringify(upstream.requests[1]?.messages ?? [])
-    expect(after).toContain('重构登录模块')
-    expect(after).not.toContain('最初的任务')
-    // 裁掉整轮之后不能留下孤儿 tool_use —— 那是下一轮 400 的唯一来源
-    expect(orphanedToolCalls((upstream.requests[1]?.messages ?? []) as AgentMessage[])).toEqual([])
+    const projected = applyEvents(emptyTranscript(), events)
+    expect(projected.contextStatus?.phase).toBe('compacted')
+    /*
+      ★ 压缩前那次请求报回来的 200K 必须**不在**了,否则圆环会一直写着「已超出」。
+      这里读到的 10 是压缩**之后**那一轮上游报回来的真值 —— 正是我们想让用户看到的数。
+    */
+    expect(projected.lastInputTokens).toBe(10)
   })
 })

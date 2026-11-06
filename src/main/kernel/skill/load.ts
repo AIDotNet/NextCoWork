@@ -27,6 +27,7 @@ import type { KernelFs, WorkspacePaths } from "../host";
 import { EnvironmentError } from "../../../shared/domain/environment";
 import { PathEscapeError, resolveInWorkspace } from "../tool/path-guard";
 import { clampWithEllipsis, stripControlChars } from "../text";
+import { BUNDLED_MARKER } from "./bundled";
 
 /**
  * 描述的字符上限。★ 和 CC 对齐,也和「目录里每条只占一行」这个设计一致 ——
@@ -36,6 +37,12 @@ export const SKILL_DESCRIPTION_MAX = 1024;
 
 /** SKILL.md 读进内存的字节上限。正文本身还会再被 `SKILL_BODY_MAX` 截一次。 */
 const SKILL_FILE_MAX_BYTES = 256 * 1024;
+
+/**
+ * 远端资产判定里**不算资产**的文件:正文本身,加上安装器自己写进包目录的元数据
+ * (包清单、内置哨兵)。目录里只有这些的 Skill 是纯文本,SSH 会话里照样能用。
+ */
+const NON_ASSET_FILES: ReadonlySet<string> = new Set(["SKILL.md", ".nextcowork-package.json", BUNDLED_MARKER]);
 
 /** 一次扫描最多认多少条。防一个被塞了几千个目录的 skills/ 把启动拖住。 */
 const MAX_SKILLS = 200;
@@ -185,7 +192,8 @@ export async function scanSkills(
     if (skill.scope === "project") continue;
     try {
       const contents = await input.fs.readDir(dirname(skill.source.path));
-      if (contents.some((entry) => entry.name !== "SKILL.md" && entry.name !== ".nextcowork-package.json")) skill.unavailableReason = "client-assets";
+      // ★ 内置哨兵(`BUNDLED_MARKER`)和包清单一样是安装器自己写的元数据,不是正文会引用的资产
+      if (contents.some((entry) => !NON_ASSET_FILES.has(entry.name))) skill.unavailableReason = "client-assets";
     } catch { skill.unavailableReason = "client-assets"; }
   }
   return { skills: [...byName.values()], diagnostics };

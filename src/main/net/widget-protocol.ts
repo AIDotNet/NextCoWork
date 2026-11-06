@@ -38,7 +38,7 @@ import { protocol } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { WIDGET_SCHEME, WIDGET_SHELL_PATH } from '../../shared/domain/widget'
-import { mainWindowOrigin } from '../plugin/protocol'
+import { mainWindowOrigin, pluginRuntimeDirectory } from '../plugin/protocol'
 import { WIDGET_BASE_STYLES } from './widget-shell/base-styles'
 
 /**
@@ -72,7 +72,9 @@ const CDN_SOURCES = [
  *   的问题;收紧到白名单反而会让模型贴一张外链图时**静默空白**,而它看不出来。
  * - `connect-src <CDN>` —— 程序化出网收在白名单内。这里比 img 严:它是
  *   "模型写的代码主动发起请求"的通道,而 `visualize_show_widget` 申报了
- *   `needsNetwork: true` 正是为了这件事不是隐形的。
+ *   `needsNetwork: true` 正是为了这件事不是隐形的。(那个字段现在只作事实描述:
+ *   「联网搜索」开关已收窄为只管网页搜索与抓取,不再拦这张卡片 —— 所以这条
+ *   白名单是它出网的**唯一**收口,别放宽。)
  * - `frame-ancestors` —— 只允许主窗口嵌它,防止这段 HTML 被别处套用。
  */
 function csp(nonce: string): string {
@@ -80,7 +82,8 @@ function csp(nonce: string): string {
   return [
     "default-src 'none'",
     `script-src 'self' 'nonce-${nonce}' ${cdn}`,
-    `style-src 'unsafe-inline' ${cdn}`,
+    // `'self'`:TSX 模式由运行时动态挂上 `/__ui.css`(见 `RUNTIME_FILES`)
+    `style-src 'self' 'unsafe-inline' ${cdn}`,
     `img-src 'self' data: blob: https: ${cdn}`,
     `font-src 'self' data: ${cdn}`,
     'media-src blob: data:',
@@ -92,6 +95,58 @@ function csp(nonce: string): string {
     "form-action 'none'",
     `frame-ancestors ${mainWindowOrigin()}`
   ].join('; ')
+}
+
+/**
+ * TSX 模式的运行时:**URL 路径 → `resources/plugin-runtime/` 里的产物**。
+ *
+ * ★ 路径与插件协议的 `RUNTIME_FILES` 同名(`__` 前缀)不是巧合:React 的几个门面文件
+ * 里写死了 `import … from './__react-core.js'`,换个名字就解析不到同一个核。
+ * ★ 白名单写死,没有"路径 → 文件"的映射 —— 这个协议至今没有路径穿越面,别给它开一个。
+ */
+const RUNTIME_FILES: Readonly<Record<string, string>> = {
+  '/__react-core.js': 'react-core.js',
+  '/__react.js': 'react.js',
+  '/__react-dom.js': 'react-dom.js',
+  '/__react-dom-client.js': 'react-dom-client.js',
+  '/__jsx-runtime.js': 'jsx-runtime.js',
+  '/__ui.js': 'ui.js',
+  '/__ui.css': 'ui.css',
+  '/__widget.js': 'widget.js',
+  '/__charts.js': 'charts.js',
+  '/__lucide.js': 'lucide.js'
+}
+
+/**
+ * 外壳页面里的 import map。键是 TSX 能写的模块名(`shared/domain/widget.ts` 的
+ * `WIDGET_MODULES`),外加它们内部互相引用的几个。
+ */
+const RUNTIME_IMPORTS: Readonly<Record<string, string>> = {
+  react: '/__react.js',
+  'react-dom': '/__react-dom.js',
+  'react-dom/client': '/__react-dom-client.js',
+  'react/jsx-runtime': '/__jsx-runtime.js',
+  'nextcowork/ui': '/__ui.js',
+  'nextcowork/widget': '/__widget.js',
+  'nextcowork/charts': '/__charts.js',
+  'lucide-react': '/__lucide.js'
+}
+
+/** 运行时产物在一次进程生命周期里不变,读一次留着。lucide 那份有几百 KB,每张卡读一遍不值。 */
+const runtimeCache = new Map<string, string>()
+async function readRuntimeFile(file: string): Promise<string | null> {
+  const cached = runtimeCache.get(file)
+  if (cached !== undefined) return cached
+  const dir = pluginRuntimeDirectory()
+  if (dir === '') return null
+  try {
+    const text = await readFile(join(dir, file), 'utf8')
+    runtimeCache.set(file, text)
+    return text
+  } catch {
+    console.error(`[widget] 读不到运行时产物 ${file} —— 检查 scripts/build-plugin-runtime.mjs 是否产出了它。`)
+    return null
+  }
 }
 
 /**
@@ -113,6 +168,7 @@ function shellHtml(nonce: string): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="ncw-widget-nonce" content="${nonce}">
+<script nonce="${nonce}" type="importmap">${JSON.stringify({ imports: RUNTIME_IMPORTS })}</script>
 <style>
 ${WIDGET_BASE_STYLES}
 </style>
@@ -133,6 +189,12 @@ ${WIDGET_BASE_STYLES}
   @keyframes ncw-widget-enter { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .ncw-widget-enter { animation: none; } }
   #ncw-loading { color: var(--color-text-secondary, #999); font-size: 13px; padding: 2px 0; }
+  /* TSX 模式会挂上 ui.css(Tailwind 预检 + theme.css),它把 html/body 设成满高、canvas 底色 ——
+     这里压回透明与自然高度:满高会让高度上报量回宿主刚设的值,canvas 底色会给 widget 画一块底板。 */
+  html[data-widget-format="tsx"], html[data-widget-format="tsx"] body { height: auto; background: transparent; }
+  /* 焦点环在 iframe 边缘会被切掉一半。留 2px,宿主侧用 -2px 外边距抵回去(WidgetFrame)。 */
+  #ncw-root { padding: 2px; }
+  .ncw-widget-error { font-size: 12px; color: var(--color-text-danger, #e5484d); white-space: pre-wrap; font-family: var(--font-mono, ui-monospace, monospace); }
 </style>
 </head><body>
 <div id="ncw-loading"></div>
@@ -198,6 +260,12 @@ export async function handleWidgetRequest(request: Request): Promise<Response> {
 
   if (url.pathname === WIDGET_SHELL_PATH || url.pathname === '/') {
     return respond(shellHtml(nonce), 'text/html; charset=utf-8', nonce)
+  }
+  const runtimeFile = RUNTIME_FILES[url.pathname]
+  if (runtimeFile !== undefined) {
+    const text = await readRuntimeFile(runtimeFile)
+    if (text === null) return respond('not found', 'text/plain; charset=utf-8', nonce, 404)
+    return respond(text, runtimeFile.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', nonce)
   }
   if (url.pathname === '/runtime.js') {
     const source = await readRuntime()

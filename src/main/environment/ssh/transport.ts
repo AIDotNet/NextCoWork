@@ -9,6 +9,7 @@ import type { EnvironmentProcess } from '../contract'
 import { EnvironmentError } from '../errors'
 import { proxyTunnelArgs, sshTargetArgs } from './command'
 import type { SshProxyTunnel } from './proxy'
+import { MUX_MISSING, remoteMuxCommand, SessionMux, type MuxByteStream } from './session-mux'
 
 export interface OpenSshOptions {
   env?: NodeJS.ProcessEnv
@@ -69,8 +70,19 @@ const INHERITED_NAMES = [
 /** 按前缀放行:LC_ 有 14 个,CLOUDSDK_ / TELEPORT_ 数量不定,逐个列会漏。 */
 const INHERITED_PREFIXES = ['lc_', 'cloudsdk_', 'teleport_', 'tsh_']
 
-/** 永不透传,即使调用方在 overrides 里塞进来:它们会改变子进程里 Node/Electron 的行为。 */
+/** 永不从继承来的环境里透传,即使调用方在 overrides 里塞进来:它们会改变子进程里 Node/Electron 的行为。 */
 const DENIED_NAMES = ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']
+
+/**
+ * overrides 这一路的 deny —— 比上面少一个 `ELECTRON_RUN_AS_NODE`。
+ *
+ * 原先它对 overrides 也封死,理由是「别让它顺着 ssh 扩散到 ProxyCommand 那层」;
+ * 那条理由仍然成立,所以**只**对这一个名字放开,而且只能由我们自己的代码显式传进来:
+ * Windows 的 askpass helper 靠它让同一个 exe 以 node 形态启动(Windows 上 SSH_ASKPASS
+ * 只能是 exe,没有 `sh` 可以包一层,见 `ssh/askpass.ts`)。缺了它,那边的密码认证在
+ * 打包版上必然失败。`NODE_OPTIONS` 依旧全封:那是真正的注入面。
+ */
+const DENIED_OVERRIDE_NAMES = ['NODE_OPTIONS']
 
 export function sshProcessEnvironment(overrides: NodeJS.ProcessEnv = {}, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   /**
@@ -80,6 +92,7 @@ export function sshProcessEnvironment(overrides: NodeJS.ProcessEnv = {}, inherit
    */
   const allowed = new Set(INHERITED_NAMES.map((name) => name.toLowerCase()))
   const denied = new Set(DENIED_NAMES.map((name) => name.toLowerCase()))
+  const deniedOverrides = new Set(DENIED_OVERRIDE_NAMES.map((name) => name.toLowerCase()))
   const env: NodeJS.ProcessEnv = {}
   for (const [name, value] of Object.entries(inherited)) {
     if (value === undefined) continue
@@ -88,7 +101,7 @@ export function sshProcessEnvironment(overrides: NodeJS.ProcessEnv = {}, inherit
     if (allowed.has(lower) || INHERITED_PREFIXES.some((prefix) => lower.startsWith(prefix))) env[name] = value
   }
   for (const [name, value] of Object.entries(overrides)) {
-    if (value === undefined || denied.has(name.toLowerCase())) continue
+    if (value === undefined || deniedOverrides.has(name.toLowerCase())) continue
     env[name] = value
   }
   return env
@@ -111,13 +124,43 @@ function isConfigured(value: string | undefined): boolean {
   return value !== undefined && value !== '' && value !== 'none'
 }
 
+/**
+ * 这台机器上能用的 ssh,按优先级排。
+ *
+ * 需求:Windows 上一次连接只认证一次,靠的是 ControlMaster,而**不是**每个 ssh 都支持。
+ * 系统自带的 `OpenSSH_for_Windows` 没有 Unix socket,`ControlMaster` 一开就是
+ * `getsockname failed: Not a socket`。Git for Windows 自带的是 MSYS 构建,支持,
+ * 所以它排在系统自带之前。一个都没有时才退到系统自带 —— 那时连得上,但每条命令都要重新认证,
+ * 由 `connect()` 里的远端多路复用兜底。
+ *
+ * 返回数组而不是一个路径:调用方要先试支持复用的,试不通再退。只返回第一个存在的,
+ * 会把「装了 Git 但那份 ssh 恰好起不来」变成「整条连接退回逐条认证」。
+ */
+export function sshExecutableCandidates(): string[] {
+  if (process.platform !== 'win32') {
+    const unix = ['/usr/bin/ssh', '/bin/ssh', '/usr/local/bin/ssh'].filter(existsSync)
+    if (unix.length === 0) throw new EnvironmentError('ssh-unavailable')
+    return unix
+  }
+  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
+  const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+  const localAppData = process.env.LOCALAPPDATA ?? ''
+  const multiplexing = [
+    join(programFiles, 'Git', 'usr', 'bin', 'ssh.exe'),
+    join(programFilesX86, 'Git', 'usr', 'bin', 'ssh.exe'),
+    ...(localAppData === '' ? [] : [join(localAppData, 'Programs', 'Git', 'usr', 'bin', 'ssh.exe')])
+  ]
+  const builtin = [
+    join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'OpenSSH', 'ssh.exe'),
+    join(programFiles, 'OpenSSH', 'ssh.exe')
+  ]
+  const found = [...multiplexing, ...builtin].filter(existsSync)
+  if (found.length === 0) throw new EnvironmentError('ssh-unavailable')
+  return found
+}
+
 export function sshExecutable(): string {
-  const candidates = process.platform === 'win32'
-    ? [join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'OpenSSH', 'ssh.exe'), join(process.env.ProgramFiles ?? 'C:\\Program Files', 'OpenSSH', 'ssh.exe')]
-    : ['/usr/bin/ssh', '/bin/ssh', '/usr/local/bin/ssh']
-  const executable = candidates.find(existsSync)
-  if (!executable) throw new EnvironmentError('ssh-unavailable')
-  return executable
+  return sshExecutableCandidates()[0] ?? (() => { throw new EnvironmentError('ssh-unavailable') })()
 }
 
 export class OpenSshTransport {
@@ -129,6 +172,16 @@ export class OpenSshTransport {
   /** 代理隧道的改道参数,没走代理时是空数组。见 `proxyTunnelArgs` 对顺序的要求。 */
   private tunnelArgs: string[] = []
   private readonly children = new Set<ChildProcessWithoutNullStreams>()
+  /**
+   * 这次连接实际用的 ssh。`connect()` 里定下来,后面的命令、SFTP、终端都用同一个,
+   * 否则主连接走 Git 的 ssh、后续命令走系统自带的,ControlPath 对不上,等于没复用。
+   */
+  private executable = ''
+  /**
+   * 只有「这台机器上的 ssh 都不支持 ControlMaster」时才有值,见 `startWindowsMux`。
+   * 远端没有 Python 时保持空,后面的命令退回「每条一次 ssh」。
+   */
+  private mux?: SessionMux
 
   constructor(readonly profile: SshConnectionProfile, private readonly options: OpenSshOptions = {}) {}
 
@@ -140,7 +193,7 @@ export class OpenSshTransport {
   private launch(args: string[], closing = false): ChildProcessWithoutNullStreams {
     if (this.closed && !closing) throw new EnvironmentError('disconnected')
     const env = sshProcessEnvironment(this.options.env)
-    const child = spawn(this.options.executable ?? sshExecutable(), args, { shell: false, windowsHide: true, env, stdio: 'pipe' })
+    const child = spawn(this.options.executable ?? (this.executable || sshExecutable()), args, { shell: false, windowsHide: true, env, stdio: 'pipe' })
     this.children.add(child)
     child.once('close', () => this.children.delete(child))
     child.on('error', () => {})
@@ -163,13 +216,79 @@ export class OpenSshTransport {
       this.directory = await mkdtemp(join(tmpdir(), 'ncw-ssh-'))
       await chmod(this.directory, 0o700)
       this.control = join(this.directory, 'control')
+      const result = await this.capture(['-T', '-M', '-o', 'ControlPersist=60', ...this.baseArgs(), 'echo NextCoWork-SSH-Ready'], signal, 5 * 60_000)
+      if (result.code !== 0 || !result.stdout.includes('NextCoWork-SSH-Ready')) {
+        await this.close()
+        throw new EnvironmentError(classifyConnectFailure(result.stderr), result.stderr.slice(-2000))
+      }
+      return
     }
-    const result = await this.capture(['-T', ...(this.control ? ['-M', '-o', 'ControlPersist=60'] : []),
-      ...this.baseArgs(), 'echo NextCoWork-SSH-Ready'], signal, 5 * 60_000)
-    if (result.code !== 0 || !result.stdout.includes('NextCoWork-SSH-Ready')) {
+    /**
+     * 需求:Windows 上一次连接只认证一次,而且不要求远端装任何东西。
+     *
+     * 先试支持 ControlMaster 的 ssh(Git for Windows 那份)。它和 macOS / Linux 走的是
+     * 同一条路:主连接认证一次,后面的命令用 `-S` 接上去。系统自带的 OpenSSH 不支持,
+     * 报 `getsockname failed: Not a socket` —— 那不是网络故障,换下一份 ssh 再试。
+     * 每一份都这样,才退到 `startWindowsMux`:在这一次 ssh 上跑远端多路复用,那条路要求远端有 Python。
+     */
+    const candidates = this.options.executable ? [this.options.executable] : sshExecutableCandidates()
+    let muxFallback: { stderr: string } | undefined
+    for (const candidate of candidates) {
+      this.executable = candidate
+      this.directory = await mkdtemp(join(tmpdir(), 'ncw-ssh-'))
+      this.control = join(this.directory, 'control')
+      const result = await this.capture(['-T', '-M', '-o', 'ControlPersist=60', ...this.baseArgs(), 'echo NextCoWork-SSH-Ready'], signal, 5 * 60_000)
+      if (result.code === 0 && result.stdout.includes('NextCoWork-SSH-Ready')) return
+      const unsupported = /not a socket|getsockname failed|unix domain sockets are not supported/i.test(result.stderr)
+      await this.discardControlAttempt()
+      if (!unsupported) {
+        await this.close()
+        throw new EnvironmentError(classifyConnectFailure(result.stderr), result.stderr.slice(-2000))
+      }
+      muxFallback = { stderr: result.stderr }
+    }
+    if (muxFallback === undefined) throw new EnvironmentError('ssh-unavailable')
+    await this.startWindowsMux(signal)
+  }
+
+  /** 一次没建成的 ControlMaster 尝试留下的临时目录。下一次尝试要一个新的,不能复用这个路径。 */
+  private async discardControlAttempt(): Promise<void> {
+    this.control = ''
+    if (this.directory === '') return
+    const directory = this.directory
+    this.directory = ''
+    await rm(directory, { recursive: true, force: true }).catch(() => {})
+  }
+
+  /**
+   * 这台机器上没有任何一份 ssh 支持 ControlMaster 时的退路。
+   *
+   * 在**这一次**已认证的 ssh 上跑远端多路复用(见 `session-mux.ts`)。远端没有 Python 时
+   * stderr 里会有 `NCW-MUX-MISSING`:那条 ssh 已经认证过了,关掉它,后面退回每条命令一次 ssh。
+   * 密码还会被问,但至少连得上。
+   */
+  private async startWindowsMux(signal: AbortSignal): Promise<void> {
+    const child = this.launch(['-T', ...this.baseArgs(), remoteMuxCommand()])
+    const mux = new SessionMux(child.stdin, child.stdout, () => { if (!this.closed) this.options.onDisconnect?.() })
+    const stderr: Buffer[] = []
+    child.stderr.on('data', (bytes: Buffer) => stderr.push(bytes))
+    const outcome = await Promise.race([
+      mux.ready.then(() => 'ready' as const),
+      new Promise<{ code: number; stderr: string }>((resolve) => {
+        const settle = (code: number): void => resolve({ code, stderr: Buffer.concat(stderr).toString('utf8') })
+        child.once('close', (code) => settle(code ?? 255))
+        child.once('error', () => settle(255))
+      })
+    ])
+    signal.throwIfAborted()
+    if (outcome !== 'ready') {
+      child.kill()
       await this.close()
-      throw new EnvironmentError(classifyConnectFailure(result.stderr), result.stderr.slice(-2000))
+      if (outcome.stderr.includes(MUX_MISSING)) return
+      throw new EnvironmentError(classifyConnectFailure(outcome.stderr), outcome.stderr.slice(-2000))
     }
+    this.mux = mux
+    child.once('close', () => { if (!this.closed) this.options.onDisconnect?.() })
   }
 
   /**
@@ -225,6 +344,12 @@ export class OpenSshTransport {
 
   async exec(command: string, signal: AbortSignal, timeoutMs = 120_000): Promise<{ code: number; stdout: string; stderr: string }> {
     signal.throwIfAborted()
+    if (this.mux) {
+      try { return await this.mux.exec(command, signal, timeoutMs) } catch (error) {
+        if (error instanceof EnvironmentError && (error.code === 'cancelled' || error.code === 'timeout')) throw new EnvironmentError('result-unknown')
+        throw error
+      }
+    }
     let result: Awaited<ReturnType<OpenSshTransport['capture']>>
     try { result = await this.capture(['-T', ...this.baseArgs(), command], signal, timeoutMs) } catch (error) {
       if (error instanceof EnvironmentError && (error.code === 'cancelled' || error.code === 'timeout')) throw new EnvironmentError('result-unknown')
@@ -235,6 +360,7 @@ export class OpenSshTransport {
   }
 
   process(command: string, input?: string): EnvironmentProcess {
+    if (this.mux) return this.mux.openProcess(command, input)
     const child = this.launch(['-T', ...this.baseArgs(), command])
     if (input !== undefined) child.stdin.write(input)
     const exited = new Promise<{ code: number | null; signal?: string | null }>((resolve) => {
@@ -244,7 +370,8 @@ export class OpenSshTransport {
     return { stdin: child.stdin, stdout: child.stdout, stderr: child.stderr, exited, kill: () => { child.kill() } }
   }
 
-  subsystem(): ChildProcessWithoutNullStreams {
+  subsystem(): ChildProcessWithoutNullStreams | MuxByteStream {
+    if (this.mux) return this.mux.openSubsystem()
     const child = this.launch(['-T', '-s', ...this.baseArgs(), 'sftp'])
     child.once('close', () => { if (!this.closed) this.options.onDisconnect?.() })
     return child
@@ -252,6 +379,7 @@ export class OpenSshTransport {
 
   async openTcp(hostname: string, port: number): Promise<Socket> {
     if (!/^[a-zA-Z0-9_.:%-]+$/.test(hostname) || !Number.isInteger(port) || port < 1 || port > 65535) throw new EnvironmentError('invalid-profile')
+    if (this.mux) return this.mux.openTcp(hostname, port)
     const target = `${hostname.includes(':') ? `[${hostname}]` : hostname}:${String(port)}`
     const server = createServer()
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
@@ -283,12 +411,13 @@ export class OpenSshTransport {
 
   terminalArgs(command: string): { executable: string; args: string[]; env: NodeJS.ProcessEnv } {
     if (this.closed) throw new EnvironmentError('disconnected')
-    return { executable: this.options.executable ?? sshExecutable(), args: ['-tt', ...this.baseArgs(), command], env: sshProcessEnvironment(this.options.env) }
+    return { executable: this.options.executable ?? (this.executable || sshExecutable()), args: ['-tt', ...this.baseArgs(), command], env: sshProcessEnvironment(this.options.env) }
   }
 
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.closed = true
+    this.mux?.close()
     for (const child of this.children) child.kill()
     this.closing = (async () => {
       if (this.control) await this.capture(['-O', 'exit', ...this.baseArgs()], AbortSignal.timeout(2000), 2000, true).catch(() => {})

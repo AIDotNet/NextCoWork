@@ -1,50 +1,50 @@
 /**
- * 附件上传 —— 落盘、去重、登记。
+ * 附件 IPC —— 选文件,以及「上传到工作区」的授权流程。
  *
- * ## 落盘顺序不是随意的
+ * ## 落盘/去重/登记不在这里
  *
- * `.tmp` 写完再 `rename` 是**原子替换**:写到一半崩掉留下的是一个 `.tmp`
- * 残片,而不是一个「大小对不上但看起来正常」的目标文件。后者的危害在于
- * 它的 checksum 已经进了表,下一次去重会**命中这个坏文件**,于是一个
- * 中断的上传会污染之后所有相同内容的上传。
+ * `uploadAttachment` / `removeAttachment` / `listSessionAttachments` 连同它们的
+ * 两个辅助(`sha256` / `toAttachment`)搬到了 `services/attachments.ts`:那边只依赖
+ * 纯 Node 的 `services/attachment-paths`、`db/repo` 与纯 `ipc/errors`,于是
+ * 会话图片仓、生成视频落盘、导入器都不再需要一份 Electron 模块图。这里
+ * **原样重新导出**这三个函数,`ipc/index.ts` / `ipc/sessions.ts` 的调用点一行都不用改。
  *
- * ## 为什么去重限定在同 scope + 同 owner
+ * ## 本文件剩下的是两件必须跟着窗口走的事
  *
- * 跨会话共用一个物理文件之后,删掉其中一个会话就会波及另一个仍在引用它的会话。
- * 要正确处理得上引用计数 —— 而省下的那点磁盘不值得引入一套引用计数的
- * 正确性负担(理由同 `repo.findAttachmentByChecksum`)。
+ * 1. `pickAttachments` —— 走主进程 `dialog` 选文件;
+ * 2. `prepareWorkspaceUpload` / `completeWorkspaceUpload` / `cancelWorkspaceUpload`
+ *    —— 上传 grant 绑定 `WindowContext`(所有权、60s 计时、导航即作废),而
+ *    `completeWorkspaceUpload` 自己仍要用 `sha256` 复核读回来的字节。
+ *
+ * 落盘顺序(临时文件 + rename)与去重范围的取舍写在 `services/attachments.ts`
+ * 的文件头 —— 那是它们现在所在的地方。
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, promises as fs } from 'node:fs'
-import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
+import { basename, isAbsolute, join, relative } from 'node:path'
 import { dialog } from 'electron'
 import type {
-  Attachment,
   AttachmentScope,
-  AttachmentUploadRequest,
   PickedAttachment,
   WorkspaceAttachmentIntent,
   WorkspaceAttachmentReference
 } from '../../shared/domain/attachment'
-import {
-  MAX_ATTACHMENT_BYTES,
-  attachmentRelPath,
-  buildNcwUrl,
-  extOfMime,
-  isImageMime,
-  mimeOfExt,
-  imageMimeOfBytes,
-  normalizeImageMime
-} from '../../shared/domain/attachment'
-import { ulid } from '../../shared/util/id'
+import { MAX_ATTACHMENT_BYTES, isImageMime, mimeOfExt } from '../../shared/domain/attachment'
 import * as repo from '../db/repo'
-import { attachmentRoot } from '../net/attachment-protocol'
+import { attachmentRoot } from '../services/attachment-paths'
 import { IpcError, toAgentError } from './errors'
 import { EnvironmentError, normalizeEnvironmentRef } from '../../shared/domain/environment'
 import type { EnvironmentLease } from '../environment/contract'
 import { uploadWorkspaceAttachment } from '../environment/artifacts'
 import type { WindowContext } from '../window/registry'
+import { uploadAttachment } from '../services/attachments'
+
+/*
+  ★ 从纯服务原样重新导出:这两个 + `uploadAttachment` 曾经就在本文件里,调用点
+  (`ipc/index.ts`、`ipc/sessions.ts`)继续按现在的路径 import。
+*/
+export { listSessionAttachments, removeAttachment, uploadAttachment } from '../services/attachments'
 
 type UploadGrant = {
   owner: number
@@ -145,122 +145,6 @@ function sha256(bytes: Uint8Array): string {
 }
 
 /**
- * 行 → 对外类型。★ `url` 由 locator 反推,**绝对路径不出主进程**。
- *
- * `displayName` 优先取列里存的原始名;迁移 6 之前的行没有它,退回 ULID 文件名 ——
- * 那正是加这一列之前的表现,旧数据不会更糟。
- */
-function toAttachment(row: repo.AttachmentRow): Attachment {
-  const scope = row.scope as AttachmentScope
-  const url = buildNcwUrl({
-    scope,
-    ownerId: row.ownerId ?? undefined,
-    fileName: basename(row.path)
-  })
-  if (url === null) {
-    // 表里存着一条拼不出 URL 的记录 —— 只可能是数据被外部改过
-    throw new IpcError('unknown', 'Invalid attachment record', undefined, { messageKey: 'attachment.error.invalidLocation' })
-  }
-  return {
-    id: row.id,
-    scope,
-    ownerId: row.ownerId ?? undefined,
-    displayName: row.displayName ?? basename(row.path),
-    mime: mimeOfExt(row.path),
-    size: row.size,
-    checksum: row.checksum,
-    createdAt: row.createdAt,
-    url
-  }
-}
-
-export function uploadAttachment(req: AttachmentUploadRequest): Attachment {
-  if (req.bytes.byteLength === 0) throw new IpcError('unknown', 'Empty attachment', undefined, {
-    messageKey: 'attachment.error.empty', messageParams: { name: req.displayName }
-  })
-  if (req.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
-    throw new IpcError('unknown', 'Attachment exceeds the upload limit', undefined, {
-      messageKey: 'attachment.error.tooLarge', messageParams: { name: req.displayName, limit: MAX_ATTACHMENT_BYTES / 1024 / 1024 }
-    })
-  }
-
-  let mime = req.mime
-  const inferredMime = mimeOfExt(req.displayName)
-  if (req.scope === 'session' && (isImageMime(mime) || isImageMime(inferredMime))) {
-    // 浏览器/扩展名可能把 JPEG 写成 image/jpg,也可能把 PNG 标成 JPEG。
-    // 能识别文件头时以字节为准,否则只接受发送端同一份 MIME 白名单。
-    const declaredMime = mime.trim() === '' || mime === 'application/octet-stream' ? inferredMime : mime
-    const imageMime = imageMimeOfBytes(req.bytes) ?? normalizeImageMime(declaredMime)
-    if (imageMime === null) throw new IpcError('unknown', `Unsupported image media type: ${declaredMime}`, undefined, {
-      messageKey: 'attachment.error.unsupportedImage', messageParams: { mime: declaredMime }
-    })
-    mime = imageMime
-  }
-  const checksum = sha256(req.bytes)
-
-  // ★ 去重的是字节,但旧记录的类型、落点与大小也必须仍然可用。
-  const hit = repo.findAttachmentByChecksum(checksum, req.scope, req.ownerId)
-  if (hit !== undefined && (!isImageMime(mime) || mimeOfExt(hit.path) === mime)) {
-    const hitRel = attachmentRelPath({ scope: req.scope, ownerId: req.ownerId, fileName: basename(hit.path) })
-    if (hitRel !== null && resolve(hit.path) === resolve(attachmentRoot(), hitRel)) {
-      try {
-        const stat = lstatSync(hit.path)
-        if (stat.isFile() && stat.size === req.bytes.byteLength) return { ...toAttachment(hit), displayName: req.displayName }
-      } catch { /* 文件已丢失或不可读时,用本次上传的字节重新落盘。 */ }
-    }
-  }
-
-  const id = ulid()
-  const fileName = `${id}${extOfMime(mime)}`
-  const rel = attachmentRelPath({ scope: req.scope, ownerId: req.ownerId, fileName })
-  if (rel === null) throw new IpcError('unknown', 'Invalid attachment location', undefined, { messageKey: 'attachment.error.invalidLocation' })
-
-  const target = join(attachmentRoot(), rel)
-
-  // ★ 临时文件名以 `.` 开头:清理时按前缀就能认出残片,
-  //   而它又不会被 `ncw://` 寻址到(fileName 段校验不过)。
-  const tmp = join(dirname(target), `.${fileName}.tmp`)
-  try {
-    mkdirSync(dirname(target), { recursive: true })
-    writeFileSync(tmp, req.bytes)
-    renameSync(tmp, target)
-  } catch (err) {
-    try { rmSync(tmp, { force: true }) } catch { /* 保留原始写入错误。 */ }
-    throw new IpcError('unknown', `Unable to save attachment: ${String(err)}`, undefined, {
-      messageKey: 'attachment.error.writeFailed',
-      messageParams: { name: req.displayName, code: (err as NodeJS.ErrnoException)?.code ?? 'UNKNOWN' }
-    })
-  }
-
-  const createdAt = Date.now()
-  repo.putDraftAttachment({
-    id,
-    scope: req.scope,
-    ownerId: req.ownerId,
-    path: target,
-    size: req.bytes.byteLength,
-    checksum,
-    displayName: req.displayName,
-    createdAt
-  })
-
-  const url = buildNcwUrl({ scope: req.scope, ownerId: req.ownerId, fileName })
-  if (url === null) throw new IpcError('unknown', 'Invalid attachment location', undefined, { messageKey: 'attachment.error.invalidLocation' })
-
-  return {
-    id,
-    scope: req.scope,
-    ownerId: req.ownerId,
-    displayName: req.displayName,
-    mime,
-    size: req.bytes.byteLength,
-    checksum,
-    createdAt,
-    url
-  }
-}
-
-/**
  * 走主进程 dialog 选文件。
  *
  * ★ **渲染层永不指定任意路径**(方案 §9)—— 与 `workspace:pick` / `theme:importImage`
@@ -326,50 +210,4 @@ export async function pickAttachments(req: {
     }
   }
   return out
-}
-
-export function removeAttachment(req: { id: string }): void {
-  const row = repo.getAttachmentRow(req.id)
-  if (row === undefined) return
-
-  // This endpoint is for removing an attachment chip before send. A
-  // committed row belongs to a message and must not be detached through a
-  // renderer-controlled id; doing so would leave the transcript referring to
-  // a missing file.
-  if (row.status === 'committed' || row.messageId !== null || row.sessionId !== null) {
-    throw new IpcError('unknown', '已提交的附件不能从消息中移除')
-  }
-
-  // Only files under the application-managed session tree may be unlinked.
-  // Agent-generated images can be absolute paths and are deliberately kept as
-  // references only; an attachment id must never become an arbitrary delete
-  // primitive for the renderer.
-  const managedRoot = join(attachmentRoot(), 'sessions')
-  const path = resolve(row.path)
-  const rel = relative(resolve(managedRoot), path)
-  const managed = rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
-  if (managed && repo.attachmentReferenceCount(row.path, row.id) === 0) {
-    try {
-      // lstat/unlink removes a symlink itself and never follows it to an
-      // external target. Directories are not valid uploaded attachments.
-      const st = lstatSync(row.path)
-      if (st.isDirectory()) throw new Error('附件路径是目录')
-      unlinkSync(row.path)
-    } catch (err) {
-      // A missing file is already equivalent to removal. Permission and type
-      // errors are surfaced while the database row is retained for retry.
-      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        throw new IpcError('unknown', `删除附件文件失败: ${String(err)}`)
-      }
-    }
-  }
-
-  // Remove the row after the physical operation. For external paths this only
-  // removes our bookkeeping row; the user's file is never touched.
-  repo.removeAttachmentRow(req.id)
-}
-
-/** 重启后恢复草稿附件区。★ 显示名从 `display_name` 列读回,不再退化成 ULID */
-export function listSessionAttachments(req: { sessionId: string }): Attachment[] {
-  return repo.listDraftAttachments(req.sessionId).map(toAttachment)
 }

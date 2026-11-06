@@ -4,9 +4,9 @@ import type { ActiveGoal } from '../../../../shared/domain/goal'
 import { GOAL_CONDITION_MAX, normalizeGoalCondition } from '../../../../shared/domain/goal'
 import { formatDuration } from '../../../../shared/agent/duration'
 import { formatTokenCount } from '../../../../shared/agent/tokens'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
-import { Tooltip } from '../../components/ui/Tooltip'
+import { Tooltip } from '../../components/arc/tooltip/tooltip'
 import { copyText } from '../../services/app'
 import { useI18n } from '../../i18n'
 
@@ -82,11 +82,11 @@ export function GoalPanel({ open, goal, tokens, onClose, onSet, onClear }: {
 
   return <Dialog open={open} title={t('goal.panel.title')} onClose={() => { if (!busy) onClose() }}
     footer={<>
-      {goal !== undefined && <Button variant="danger" size="sm" disabled={busy} onClick={() => void submit(true)}>
+      {goal !== undefined && <Button type="button" variant="danger" size="sm" disabled={busy} onClick={() => void submit(true)}>
         {t('goal.panel.stopEarly')}
       </Button>}
-      <Button size="sm" disabled={busy} onClick={onClose}>{t('common.cancel')}</Button>
-      <Button size="sm" variant="accent" disabled={busy} onClick={() => void submit(false)}>
+      <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={onClose}>{t('common.cancel')}</Button>
+      <Button type="button" variant="primary" size="sm" disabled={busy} onClick={() => void submit(false)}>
         {t(goal === undefined ? 'goal.panel.set' : 'goal.panel.replace')}
       </Button>
     </>}>
@@ -96,13 +96,13 @@ export function GoalPanel({ open, goal, tokens, onClose, onSet, onClear }: {
         {t('goal.panel.condition')}
         <textarea value={condition} onChange={(event) => setCondition(event.target.value)} rows={4} disabled={busy}
           aria-label={t('goal.panel.condition')} placeholder={t('goal.panel.placeholder')}
-          className="w-full resize-y rounded-lg border border-border bg-surface-input p-2 text-fg outline-none focus:border-accent" />
+          className="apple-field w-full resize-y rounded-lg border border-border bg-surface-input p-2 text-fg outline-none focus:border-fg-faint" />
       </label>
       <p className="text-[11px] text-fg-faint">{t('composer.goal.hint')}</p>
       {goal !== undefined && <>
-        <Button size="sm" icon={<Copy size={12} />} onClick={() => {
+        <Button type="button" variant="secondary" size="sm" onClick={() => {
           void copyText(goal.condition).catch(() => setError(t('goal.error.copyFailed')))
-        }}>{t('goal.panel.copy')}</Button>
+        }}><Copy size={12} />{t('goal.panel.copy')}</Button>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
           <dt className="text-fg-faint">{t('goal.panel.iterations')}</dt>
           <dd>{goal.iterations === 0 ? t('goal.panel.noCheckYet') : goal.iterations}</dd>

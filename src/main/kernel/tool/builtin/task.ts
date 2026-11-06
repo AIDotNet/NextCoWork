@@ -182,11 +182,15 @@ export function taskTool(agents: readonly AgentDefinition[] = BUILTIN_AGENTS): T
         */
         return {
           ...toolOk(
-            (outcome.queued === true
-              ? `The subagent is queued behind the running ones (run ${outcome.childRunId}); ` +
-                'it starts automatically as soon as a concurrency slot frees up. '
-              : `The subagent started in the background (run ${outcome.childRunId}). `) +
-            'Continue with the parent task; its progress and final report remain available in the task panel.'
+            outcome.detached === true
+              ? `The user moved this subagent to the background while it was still running (run ${outcome.childRunId}). ` +
+                'It keeps working on its own and its final report will be delivered to you when it finishes — ' +
+                'do NOT launch it again. Continue with the parent task.'
+              : (outcome.queued === true
+                ? `The subagent is queued behind the running ones (run ${outcome.childRunId}); ` +
+                  'it starts automatically as soon as a concurrency slot frees up. '
+                : `The subagent started in the background (run ${outcome.childRunId}). `) +
+                'Continue with the parent task; its progress and final report remain available in the task panel.'
           ),
           subagent: {
             childRunId: outcome.childRunId,

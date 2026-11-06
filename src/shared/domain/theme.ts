@@ -232,71 +232,79 @@ export interface Palette {
 }
 
 /**
- * ★ **这两张表是采样数据,不是调出来的**(来源见 `theme.css` 文件头)。
- * 两套都量自 docs/image-latest —— 那一版参考实现关掉了 macOS vibrancy,
- * 面板底色全部量到 100% 单色,深色第一次可以直接采信(v1.1.15 那批量到的是
- * 「面板色 × 壁纸」,已作废)。浅色复量下来和 docs/image-new 逐一对上,没动。
+ * ★ **苹果风格基准色板**(feat/apple-style-ui)。取自 macOS 的系统语义色 ——
+ * 浅色是 `#f5f5f7` / `#1d1d1f` 那一族(apple.com 与系统设置同源),深色是
+ * `systemGray6 #1c1c1e` → `systemGray5 #2c2c2e` → `systemGray4 #3a3a3c` 的阶梯。
+ * 结构灰都带一点冷蓝(H≈240),和 macOS 的窗口底一致;换色器按增量平移色相,
+ * 所以其他颜色主题仍然能把底色拧到自己的色系。
  *
- * ★ **深色这一版从橙换成了绿。** 于是「深色参考实现 = 暖橙」这个前提没了:
- *   `identityOf('dark')` 现在是「墨绿」的深色,不再是「Claude」的 —— 见 `COLOR_THEMES`。
- * 改这里等于改参考实现,别顺手动。
+ * 四层的明暗关系沿用原来的约束(见 `theme.css` §1):canvas 是极值,chrome 站在最远端。
+ *
+ * ★ **强调色两个外观都是 `#0071e3`,不是系统蓝 `#007aff` / `#0a84ff`。**
+ *   白字压在 `#007aff` 上只有 4.0:1、`#0a84ff` 上只有 3.65:1,而可读性护栏
+ *   (`theme-profile.ts` 的 `resolveProfile`)要求 `accent-fg` 对 `accent` ≥ 4.5:1 ——
+ *   不达标的话护栏会把白字压成近黑,蓝底黑字一眼就不是苹果了。`#0071e3` 是
+ *   apple.com 按钮用的那个蓝:白字 4.70:1,压在深色画布上 3.6:1,两头都过线。
+ *
+ * ★ `fg-muted` 比系统的 secondaryLabel 深/亮一档(浅 `#5f5f64`、深 `#aeaeb2`):
+ *   护栏要它对**每一种**底色(含 tint-strong / surface-sunken)都 ≥ 4.5:1。
  */
 export const BASE: Record<Appearance, Palette> = {
   dark: {
     tokens: {
-      app: '#2a2d2b',
-      canvas: '#1e2020',
-      surface: '#232726',
-      chrome: '#343a37',
-      'surface-raised': '#2a2d2b',
-      'surface-input': '#2a2d2b',
-      'surface-field': '#343a37',
-      'surface-sunken': '#252b28',
-      tint: '#2b2e2d',
-      'tint-hover': '#363b38',
-      'tint-strong': '#3c423e',
-      border: '#2b2e2d',
-      stroke: '#2b2e2d',
-      hairline: '#252727',
-      fg: '#ececec',
-      'fg-muted': '#959897',
-      'fg-faint': '#7b7d7c',
-      icon: '#cfcfcf',
-      accent: '#36d285',
-      'accent-fg': '#0a2615',
-      'accent-soft': '#5a8a72',
-      danger: '#d9614e',
+      app: '#252527',
+      canvas: '#1c1c1e',
+      surface: '#202022',
+      chrome: '#2c2c2e',
+      'surface-raised': '#2c2c2e',
+      'surface-input': '#2c2c2e',
+      'surface-field': '#3a3a3c',
+      'surface-sunken': '#232325',
+      tint: '#2c2c2e',
+      'tint-hover': '#323234',
+      'tint-strong': '#3a3a3c',
+      border: '#48484a',
+      stroke: '#2e2e30',
+      hairline: '#28282a',
+      fg: '#f5f5f7',
+      'fg-muted': '#aeaeb2',
+      'fg-faint': '#8e8e93',
+      icon: '#c7c7cc',
+      accent: '#0071e3',
+      'accent-fg': '#ffffff',
+      'accent-soft': '#4a6c99',
+      danger: '#ff453a',
       scrim: '#000000'
     },
-    hue: { neutral: 153, tint: 150 }
+    hue: { neutral: 240, tint: 240 }
   },
   light: {
     tokens: {
-      app: '#f2eee6',
-      canvas: '#faf9f5',
-      surface: '#f6f4ef',
-      chrome: '#e8e4dd',
-      'surface-raised': '#f2eee6',
+      app: '#ececf0',
+      canvas: '#ffffff',
+      surface: '#f5f5f7',
+      chrome: '#e3e3e8',
+      'surface-raised': '#f2f2f7',
       'surface-input': '#ffffff',
       'surface-field': '#ffffff',
-      'surface-sunken': '#dbd8d1',
-      tint: '#efefec',
-      'tint-hover': '#edeae6',
-      'tint-strong': '#e2ded7',
-      border: '#e6e6e2',
-      stroke: '#e6e6e2',
-      hairline: '#efefec',
-      fg: '#181c19',
-      'fg-muted': '#72736f',
-      'fg-faint': '#96958f',
-      icon: '#7e7f7e',
-      accent: '#2d4739',
+      'surface-sunken': '#dcdce1',
+      tint: '#ededf2',
+      'tint-hover': '#e8e8ed',
+      'tint-strong': '#dedee3',
+      border: '#c7c7cc',
+      stroke: '#e5e5ea',
+      hairline: '#ececf0',
+      fg: '#1d1d1f',
+      'fg-muted': '#5f5f64',
+      'fg-faint': '#8e8e93',
+      icon: '#6e6e73',
+      accent: '#0071e3',
       'accent-fg': '#ffffff',
-      'accent-soft': '#8e8f8d',
-      danger: '#c4412c',
-      scrim: '#2b2a27'
+      'accent-soft': '#86a8d6',
+      danger: '#e0352b',
+      scrim: '#000000'
     },
-    hue: { neutral: 42.2, tint: 54.7 }
+    hue: { neutral: 240, tint: 240 }
   }
 }
 
@@ -552,7 +560,7 @@ function identityOf(appearance: Appearance): ThemeSpec {
   }
 }
 
-export const DEFAULT_COLOR_THEME_ID = 'ink-green'
+export const DEFAULT_COLOR_THEME_ID = 'apple'
 export const RANDOM_COLOR_THEME_ID = 'random'
 export const CUSTOM_COLOR_THEME_ID = 'custom'
 
@@ -561,7 +569,7 @@ export const CUSTOM_COLOR_THEME_ID = 'custom'
  * 于是从默认的「墨绿」切过去,界面**一帧都不跳**,用户先看到的是
  * 「和刚才一样,但现在这颗色点是我的了」,而不是一次莫名其妙的换色。
  */
-export const DEFAULT_CUSTOM_SEED = '#36d285'
+export const DEFAULT_CUSTOM_SEED = '#0071e3'
 
 /**
  * 设置里「颜色主题」那一栏存的三个字段。**类型归 theme.ts 所有** ——
@@ -608,15 +616,39 @@ export const COLOR_THEMES: readonly ColorTheme[] = [
     name: '随机',
     description: '每次点击重掷一次色相,掷出来的那个会被记住',
     // 占位:实际声明由 `resolveColorTheme` 按种子现算,见那里的注释
-    light: specFromSeed('#2d4739', 'light'),
-    dark: specFromSeed('#36d285', 'dark')
+    light: specFromSeed('#0071e3', 'light'),
+    dark: specFromSeed('#0071e3', 'dark')
   },
   {
     id: DEFAULT_COLOR_THEME_ID,
-    name: '墨绿',
-    description: '参考实现的原色:静息中性灰,只有激活态才是绿 —— 浅色墨绿、深色亮绿',
+    name: 'Apple',
+    description: 'macOS 系统色:冷调中性灰底,强调色是 apple.com 的那个蓝',
     light: identityOf('light'),
     dark: identityOf('dark')
+  },
+  {
+    id: 'ink-green',
+    name: '墨绿',
+    description: '旧版默认:静息中性灰,只有激活态才是绿 —— 浅色墨绿、深色亮绿',
+    // 基准表换成苹果灰之后,这套靠增量平移 + 彩度放大把底色拧回暖奶油 / 绿灰
+    light: {
+      neutral: 42,
+      tint: 55,
+      chroma: 2.5,
+      icon: '#7e7f7e',
+      accent: '#2d4739',
+      accentFg: '#ffffff',
+      accentSoft: '#8e8f8d'
+    },
+    dark: {
+      neutral: 153,
+      tint: 150,
+      chroma: 2,
+      icon: '#cfcfcf',
+      accent: '#36d285',
+      accentFg: '#0a2615',
+      accentSoft: '#5a8a72'
+    }
   },
   {
     id: 'celadon',

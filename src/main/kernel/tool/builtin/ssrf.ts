@@ -153,31 +153,61 @@ export interface SsrfRiskOptions {
    * 诱导模型去请求本机没鉴权的调试端口、内网设备，或云厂商的实例元数据端点
    * （`169.254.169.254`）—— 且不会再被这里拦下并报错。
    *
-   * 协议白名单（只认 http/https）和 URL 内嵌凭证（`user:pass@`）的拦截和「是不是
-   * 内网」无关，不受这个开关影响，任何调用方都躲不过去。
+   * 协议白名单和 URL 内嵌凭证（`user:pass@`）的拦截和「是不是内网」无关，不受
+   * **这个**开关影响：凭证拦截任何调用方都躲不过去；协议白名单的唯一例外是下面
+   * 另一个开关 `allowFileUrls`（2026-09-22 新增，仅浏览器工具传）——原先这里写的是
+   * 「任何调用方都躲不过去」，那句话在协议这一半上已经不成立，所以改成指名例外，
+   * 免得后来者以为协议闸是铁板一块、去别处重复实现一遍。
    *
    * 内置搜索（`search/builtin/*`）抓的是任意搜索结果域名，暴露面比用户主动指挥的
    * 浏览器工具/WebFetch 大得多，所以它没有传这个选项，继续拦截私网地址。
    */
   allowPrivateAddresses?: boolean
+
+  /**
+   * 需求：工作区所有者要求浏览器工具能打开 `file://` 本地页面（2026-09-22，
+   * 与放开内网地址是同一批要求）——本地生成的 HTML 报告要能直接进右侧工作台看。
+   * 传 `true` 时协议白名单**只**额外放行 `file:`；`javascript:`、`data:`、`ftp:`
+   * 等其余协议照旧拒绝。
+   *
+   * ★ 风险如实记下：`file://` 让模型指定的任意本地文件被渲染进隔离 webview，
+   * 页面内容随后经 `browser_snapshot` / 截图回到上下文 —— 相当于绕过 Read 的
+   * 提示把任意本地文件读进对话。地址一样可能不是用户给的（被投毒的正文、
+   * MCP 返回值）。目前只传给 `browser.ts`（浏览器工具那一族）；`WebFetch`
+   * （`web.ts`）与内置搜索不传，`file://` 在那边仍然指向 Read。
+   */
+  allowFileUrls?: boolean
 }
 
 /** 有风险就返回给模型看的说明,没有就返回 `null`。 */
 export function ssrfRisk(url: URL, options: SsrfRiskOptions = {}): string | null {
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+  const isFile = url.protocol === 'file:'
+  const fileAllowed = isFile && options.allowFileUrls === true
+  if (url.protocol !== 'http:' && url.protocol !== 'https:' && !fileAllowed) {
     return (
-      `Only http and https are supported, not "${url.protocol}". ` +
-      `To read a local file use Read — do not reach for file:// style addresses.`
+      `Only ${options.allowFileUrls === true ? 'http, https and file' : 'http and https'} are supported, ` +
+      `not "${url.protocol}". ` +
+      (options.allowFileUrls === true
+        ? ''
+        : `To read a local file use Read — do not reach for file:// style addresses.`)
     )
   }
 
   /*
     ★ URL 里带用户名密码的话,凭证会随请求发出去。模型不该有能力把一份凭证
     塞进一次它自己发起的请求里 —— 那是一条现成的外发通道。
+    ★ 不受 allowFileUrls 影响:file://user:pass@ 同样拒。
   */
   if (url.username !== '' || url.password !== '') {
     return 'The URL must not carry a username or password. Remove the "user:pass@" part and try again.'
   }
+
+  /*
+    ★ file:// 没有「主机」可言 —— 环回/私网那套判断对它无意义(hostname 是空串,
+    走到下面会被 refuseLocal('') 错拒)。能走到这一行说明调用方已经用
+    allowFileUrls 明确要了 file://,直接放行。
+  */
+  if (isFile) return null
 
   if (options.allowPrivateAddresses === true) return null
 

@@ -104,6 +104,13 @@ export interface InstalledPlugin {
    * 没有贡献工具时省略。
    */
   tools?: PluginToolProjection[]
+  /**
+   * 命令声明的品牌图标(`contributes.commands[].iconFile`)经主进程读出后的
+   * data URL,按 commandId 索引。装载时读一次、随 catalog 下来 —— 菜单在
+   * 插件激活之前就要画出图标,和 `messages` 同一条「激活前就得有」的理由。
+   * 没有声明 iconFile(或文件读不出来)时省略整个字段。
+   */
+  commandIcons?: Record<string, string>
   /*
     ★ 这里**故意没有** `skills` 字段,尽管详情页要显示「这个插件提供了哪几条 Skill」。
 

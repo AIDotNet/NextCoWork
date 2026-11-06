@@ -13,8 +13,11 @@
  * `services/app` 整个被替掉:它背后是 `window.nextcowork`,在 node 环境里不存在。
  * 替掉之后这些 store 就是纯粹的状态机,正好是该在无头环境里测的东西。
  */
+import { createElement, type ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Bootstrap } from '../../../../shared/domain/bootstrap'
+import type { SessionListItem } from '../../../../shared/domain/session'
 import { DEFAULT_SETTINGS } from '../../../../shared/domain/settings'
 import type { InnerTab, InnerTabState, OuterTab } from '../../../../shared/domain/tab'
 import type { Workspace } from '../../../../shared/domain/workspace'
@@ -35,6 +38,10 @@ import { getInnerTabs, persistInnerTabs, persistOuterTabs } from '../../services
 import { useTabsStore } from '../tabs'
 import { useWindowStore } from '../window'
 import { prepareWorkspace, commitWorkspaceActivation, releaseWorkspaceActivation } from '../../services/connections'
+import { I18nProvider } from '../../i18n'
+import { AppSkeleton } from '../../shell/AppSkeleton'
+import { OuterTabBar } from '../../shell/OuterTabBar'
+import { Sidebar } from '../../shell/Sidebar'
 
 const mockGetInnerTabs = vi.mocked(getInnerTabs)
 const mockPersistInner = vi.mocked(persistInnerTabs)
@@ -235,6 +242,162 @@ describe('useWindowStore.hydrate · 外层 Tab 的冷启动', () => {
     expect(s.activeOuterId).toBe('t1')
     expect(s.activeWorkspaceId).toBe('a')
     expect(s.outer.map((tab) => tab.id)).toEqual(['t1'])
+  })
+})
+
+describe('专注会话窗口 · 布局隔离', () => {
+  beforeEach(() => useWindowStore.getState().hydrate(boot({
+    windowKind: 'quick',
+    workspaces: [ws({ id: 'target' }), ws({ id: 'another', lastOpenedAt: 9_000 })],
+    tabState: { outer: [wsTab('old', 'another')], activeOuterId: 'old' }
+  })))
+
+  it('不恢复其他项目，也不自动打开最近的项目', () => {
+    expect(useWindowStore.getState()).toMatchObject({
+      windowKind: 'quick', outer: [], activeOuterId: null, activeWorkspaceId: null
+    })
+    expect(mockPersistOuter).not.toHaveBeenCalled()
+  })
+
+  it('只建立目标会话，ensure 不再读取共享布局或增加草稿', async () => {
+    const tabs = useTabsStore.getState()
+    tabs.openFocusedSession('target', 'session-target', '目标会话')
+    const initial = tabs.stateOf('target')
+    expect(await useWindowStore.getState().openWorkspace('target')).toBe(true)
+    tabs.ensure('target')
+    tabs.openFocusedSession('target', 'session-target')
+    await settle()
+
+    expect(tabs.stateOf('target')).toBe(initial)
+    expect(initial.tabs).toEqual([expect.objectContaining({
+      kind: 'chat', pane: 'main', title: '目标会话', ref: { sessionId: 'session-target' }
+    })])
+    expect(tabs.dockOf('target').root).toMatchObject({ type: 'group', activeTabId: initial.activeTabId })
+    expect(mockGetInnerTabs).not.toHaveBeenCalled()
+    expect(mockPersistInner).not.toHaveBeenCalled()
+    expect(mockPersistOuter).not.toHaveBeenCalled()
+  })
+
+  it('项目内切换会话、打开文件和调整面板不会覆盖主窗口布局', async () => {
+    const tabs = useTabsStore.getState()
+    tabs.openFocusedSession('target', 'session-target', '目标会话')
+    const firstId = tabs.stateOf('target').activeTabId
+    await useWindowStore.getState().openWorkspace('target')
+    tabs.openSession('target', 'session-next', '同项目另一段会话')
+    tabs.openSession('target', 'session-target')
+    expect(tabs.stateOf('target').activeTabId).toBe(firstId)
+    expect(tabs.tabsOf('target', 'main')).toHaveLength(2)
+
+    tabs.openPath('target', 'doc', 'notes.txt', 'notes.txt')
+    useWindowStore.getState().setRightPanelWidth(450)
+    useWindowStore.getState().setBottomPanelHeight(300)
+    expect(tabs.tabsOf('target', 'right')).toEqual([expect.objectContaining({
+      kind: 'doc', ref: { path: 'notes.txt' }
+    })])
+    expect(mockGetInnerTabs).not.toHaveBeenCalled()
+    expect(mockPersistInner).not.toHaveBeenCalled()
+    expect(mockPersistOuter).not.toHaveBeenCalled()
+  })
+
+  it('没有会话路由时只补本窗口的临时草稿', () => {
+    const tabs = useTabsStore.getState()
+    tabs.ensure('target')
+    tabs.ensure('target')
+    expect(tabs.stateOf('target').tabs).toEqual([expect.objectContaining({ kind: 'chat', ref: { sessionId: null } })])
+    expect(mockGetInnerTabs).not.toHaveBeenCalled()
+    expect(mockPersistInner).not.toHaveBeenCalled()
+  })
+
+  it('不允许切到其他项目或打开全局功能页', async () => {
+    const win = useWindowStore.getState()
+    await win.openWorkspace('target')
+    expect(await win.openWorkspace('another')).toBe(false)
+    for (const feature of ['browser', 'scheduled', 'git', 'extensions', 'review', 'settings'] as const) win.openFeature(feature)
+    expect(useWindowStore.getState().activeWorkspaceId).toBe('target')
+    expect(useWindowStore.getState().outer).toHaveLength(1)
+    expect(useWindowStore.getState().activeStandaloneFeature).toBeNull()
+    expect(useWindowStore.getState().settingsPage).toBeNull()
+    expect(mockPersistOuter).not.toHaveBeenCalled()
+  })
+
+  it('目标 SSH 项目仍需验证连接，不恢复无关项目作为兜底', async () => {
+    const remote = ws({ id: 'remote', environment: { kind: 'connection', connectionId: 'server' } })
+    useWindowStore.getState().updateWorkspaces([ws(), remote])
+    vi.mocked(prepareWorkspace).mockRejectedValueOnce(new Error('offline'))
+    expect(await useWindowStore.getState().openWorkspace('remote')).toBe(false)
+    expect(useWindowStore.getState().activeWorkspaceId).toBeNull()
+    expect(useWindowStore.getState().outer).toEqual([])
+    expect(mockPersistOuter).not.toHaveBeenCalled()
+  })
+})
+
+const renderShellPart = (children: ReactNode): string => renderToStaticMarkup(
+  createElement(I18nProvider, { initialLocale: 'zh-CN', children })
+)
+
+const renderSidebar = (focusMode: boolean, sessions: SessionListItem[] = [], activeSessionId: string | null = null): string => renderShellPart(
+  createElement(Sidebar, {
+    focusMode, workspace: ws(), chatTabs: [], sessions, activeFeature: null, activeSessionId,
+    runningSessionIds: new Set<string>(), auth: { mode: 'offline', user: null, expiresAt: null },
+    onNewChat: vi.fn(), onSearch: vi.fn(), onOpenFeature: vi.fn(), onOpenSettings: vi.fn(),
+    onSelectSession: vi.fn(), onDeleteSession: vi.fn(async () => {}), onCollapse: vi.fn()
+  })
+)
+
+const recentSession = (archived = false): SessionListItem => ({
+  id: 'recent-session', title: '上周的目标会话', updatedAt: new Date().setHours(0, 0, 0, 0) - 86_400_000,
+  archived, favorited: false, running: false
+})
+
+describe('专注会话窗口 · 精简界面', () => {
+  it('只显示当前项目名称，不出现项目标签与切换入口', () => {
+    const html = renderShellPart(createElement(OuterTabBar, {
+      compact: true, tabs: [wsTab('target', 'ws-default'), wsTab('other', 'another')], activeId: 'target',
+      activeWorkspaceId: 'ws-default', workspaces: [ws(), ws({ id: 'another', name: '不相关项目' })],
+      runningWorkspaceIds: new Set<string>(), rightPanelOpen: false, bottomPanelOpen: false,
+      onActivate: vi.fn(), onClose: vi.fn(), onTogglePin: vi.fn(), onMove: vi.fn(),
+      onOpenWorkspace: vi.fn(), onEditWorkspace: vi.fn(), onPickWorkspace: vi.fn(),
+      onCreateWorkspace: vi.fn(), onCreateSshWorkspace: vi.fn(), onToggleRightPanel: vi.fn(), onToggleBottomPanel: vi.fn()
+    }))
+    expect(html).toContain('默认工作区')
+    expect(html).not.toContain('不相关项目')
+    expect(html).not.toContain('data-outer-tab-id')
+    expect(html).not.toContain('aria-label="打开工作区"')
+    expect(html).toContain('aria-label="工作区文件"')
+    expect(html).toContain('aria-label="底部面板"')
+  })
+
+  it('隐藏品牌、账户和全局导航，保留当前项目会话及搜索', () => {
+    const html = renderSidebar(true)
+    expect(html).toContain('w-[240px]')
+    expect(html).toContain('最近对话')
+    expect(html).toContain('aria-label="搜索"')
+    expect(html).toContain('aria-label="新建对话"')
+    for (const label of ['NextCoWork', '定时任务', '浏览器', '扩展', 'aria-label="设置"']) expect(html).not.toContain(label)
+
+    const main = renderSidebar(false)
+    expect(main).toContain('w-[297px]')
+    expect(main).toContain('NextCoWork')
+    expect(main).toContain('定时任务')
+    expect(main).toContain('浏览器')
+  })
+
+  it('目标位于最近七天或归档时仍能直接看到它', () => {
+    const session = recentSession()
+    expect(renderSidebar(true, [session], session.id)).toContain(session.title)
+    expect(renderSidebar(false, [session], session.id)).not.toContain(session.title)
+    const archived = recentSession(true)
+    const html = renderSidebar(true, [archived], archived.id)
+    expect(html).toContain('aria-current="page"')
+    expect(html).not.toContain('inert=""')
+  })
+
+  it('专注窗口骨架屏不预留全局导航，侧边栏尺寸保持一致', () => {
+    const html = renderShellPart(createElement(AppSkeleton, { focusMode: true }))
+    expect(html).toContain('w-[240px]')
+    expect(html).not.toContain('size-5 rounded-full')
+    expect(html).not.toContain('w-[72%]')
+    expect(renderShellPart(createElement(AppSkeleton))).toContain('w-[297px]')
   })
 })
 

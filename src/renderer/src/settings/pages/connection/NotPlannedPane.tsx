@@ -8,7 +8,7 @@
  */
 import { Blocks, Bot, Plug } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { EmptyState } from '../../../components/ui/EmptyState'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { useI18n } from '../../../i18n'
 
 const ICON = { connector: <Plug size={26} />, plugin: <Blocks size={26} />, bot: <Bot size={26} /> } as const
@@ -22,7 +22,7 @@ export function NotPlannedPane({ sub }: { sub: string }): ReactNode {
       <EmptyState
         icon={ICON[key]}
         title={t(`connection.notPlanned.${key}.title` as 'connection.notPlanned.connector.title' | 'connection.notPlanned.plugin.title' | 'connection.notPlanned.bot.title')}
-        hint={t(`connection.notPlanned.${key}.hint` as 'connection.notPlanned.connector.hint' | 'connection.notPlanned.plugin.hint' | 'connection.notPlanned.bot.hint')}
+        description={t(`connection.notPlanned.${key}.hint` as 'connection.notPlanned.connector.hint' | 'connection.notPlanned.plugin.hint' | 'connection.notPlanned.bot.hint')}
       />
     </div>
   )

@@ -1,9 +1,25 @@
 /**
- * 需求：工作区管理——外层 Tab 条「+」菜单里每个工作区都能直接改名/改默认模型/
+ * 需求：工作区管理——工作区切换弹窗里的每个工作区都能直接改名/改默认模型/
  * 删除记录，而不必先切进去再双击标签改名（改名以外的项此前完全没有入口）。
  * 这个域此前不存在，按 §6.3 新建独立文件，不往 index.tsx 那三千行里堆。
  */
 export const workspaceZh = {
+  'workspace.switch': '切换工作区',
+  'workspace.count': '{count} 个工作区',
+  'workspace.switchHint': '点击卡片即可切换工作区',
+  'workspace.searchPlaceholder': '搜索名称、路径或 SSH 地址',
+  'workspace.filterLabel': '工作区筛选',
+  'workspace.filterAll': '全部',
+  'workspace.filterRecent': '最近使用',
+  'workspace.filterOpened': '已打开',
+  'workspace.filterSsh': 'SSH',
+  'workspace.noMatches': '没有匹配的工作区',
+  'workspace.noMatchesHint': '尝试搜索其他名称或路径。',
+  'workspace.local': '本地工作区',
+  'workspace.ssh': 'SSH 工作区',
+  'workspace.current': '当前',
+  'workspace.opened': '已打开',
+  'workspace.unavailable': '路径不可用',
   'workspace.edit': '编辑工作区',
   'workspace.name': '工作区名称',
   'workspace.nameHint': '支持中英文、数字、空格、连字符和下划线',
@@ -18,6 +34,22 @@ export const workspaceZh = {
 }
 
 export const workspaceEn: Record<keyof typeof workspaceZh, string> = {
+  'workspace.switch': 'Switch workspace',
+  'workspace.count': '{count} workspaces',
+  'workspace.switchHint': 'Click a card to switch workspaces',
+  'workspace.searchPlaceholder': 'Search by name, path, or SSH address',
+  'workspace.filterLabel': 'Workspace filters',
+  'workspace.filterAll': 'All',
+  'workspace.filterRecent': 'Recent',
+  'workspace.filterOpened': 'Opened',
+  'workspace.filterSsh': 'SSH',
+  'workspace.noMatches': 'No matching workspaces',
+  'workspace.noMatchesHint': 'Try another name or path.',
+  'workspace.local': 'Local workspace',
+  'workspace.ssh': 'SSH workspace',
+  'workspace.current': 'Current',
+  'workspace.opened': 'Opened',
+  'workspace.unavailable': 'Path unavailable',
   'workspace.edit': 'Edit workspace',
   'workspace.name': 'Workspace name',
   'workspace.nameHint': 'Supports Chinese, English, digits, spaces, hyphens and underscores',

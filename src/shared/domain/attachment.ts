@@ -200,6 +200,28 @@ export function buildNcwUrl(loc: AttachmentLocator): string | null {
   return `${NCW_SCHEME}://${NCW_HOST}/${encoded}`
 }
 
+/** 预览档的查询参数。★ 只有这一个取值;协议侧遇到别的取值直接拒绝(见 `main/net/attachment-protocol.ts`) */
+export const NCW_PREVIEW_PARAM = 'preview'
+export const NCW_PREVIEW_THUMB = 'thumb'
+
+/**
+ * 界面里小尺寸展示用的地址:会话附件里的 png/jpeg 换成缩略档,其余原样返回。
+ *
+ * 需求:转录里连着几十张截图时,每张 `<img>` 都按原尺寸(常见 2560×1440)解码常驻,
+ * 而卡片只画 360px 高。缩略档是主进程按需生成、单独缓存的小文件。
+ *
+ * ★ 只用于卡片/气泡里的 `<img src>`。灯箱、另存、发给模型的永远是原图地址 ——
+ * 这个地址绝不能写进转录。
+ */
+export function ncwPreviewUrl(dataRef: string): string {
+  const loc = parseNcwUrl(dataRef)
+  if (loc === null || loc.scope !== 'session') return dataRef
+  if (dataRef.includes('?') || dataRef.includes('#')) return dataRef
+  const mime = mimeOfExt(loc.fileName)
+  if (mime !== 'image/png' && mime !== 'image/jpeg') return dataRef
+  return `${dataRef}?${NCW_PREVIEW_PARAM}=${NCW_PREVIEW_THUMB}`
+}
+
 /**
  * `ncw://` URL → locator。**非法一律返回 null**,没有第二种失败表达。
  *
@@ -258,7 +280,17 @@ const EXT_BY_MIME: Record<string, string> = {
   'text/plain': '.txt',
   'text/markdown': '.md',
   'application/json': '.json',
-  'application/zip': '.zip'
+  'application/zip': '.zip',
+  /*
+    ★ 视频进这张表的理由是**协议侧要按扩展名回 Content-Type**:
+    `attachment-protocol.ts` 用 `mimeOfExt` 决定响应头,推不出来时浏览器
+    只会把文件当下载、`<video>` 播不了(它的注释里记的就是这条)。
+    少了这四行,生成的视频在卡片上是一个"下载"而不是一个播放器。
+  */
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'video/quicktime': '.mov',
+  'video/x-matroska': '.mkv'
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -273,7 +305,12 @@ const MIME_BY_EXT: Record<string, string> = {
   txt: 'text/plain',
   md: 'text/markdown',
   json: 'application/json',
-  zip: 'application/zip'
+  zip: 'application/zip',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  mkv: 'video/x-matroska'
 }
 
 export type SupportedImageMime = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
@@ -316,4 +353,8 @@ export function mimeOfExt(pathOrName: string): string {
 
 export function isImageMime(mime: string): boolean {
   return mime.trim().toLowerCase().startsWith('image/')
+}
+
+export function isVideoMime(mime: string): boolean {
+  return mime.trim().toLowerCase().startsWith('video/')
 }

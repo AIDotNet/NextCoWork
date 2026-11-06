@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { IMPORTED_ALIAS_DEFAULTS, type AnthropicCacheTtl, type ModelAlias, type UpstreamProvider } from '../../../../../../shared/domain/provider'
-import { Segmented } from '../../../../components/ui/Segmented'
+import SegmentedControl from '../../../../components/arc/segmented-control/segmented-control'
 import { I18nProvider, type Locale } from '../../../../i18n'
 import { ProviderPanel } from '../ProviderPanel'
 import type { ProviderEntry } from '../enabled-models'
@@ -57,7 +57,7 @@ describe('ProviderPanel · 协议专属配置', () => {
     expect(html).not.toContain('>关闭</span>')
     expect(html).toContain('5 分钟')
     expect(html).toContain('1 小时')
-    expect(html).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
     expect(html).toContain('始终携带缓存标记')
     expect(html).toContain('1 小时写入通常更贵')
     expect(html).toContain('Anthropic 兼容中转站不支持')
@@ -65,18 +65,18 @@ describe('ProviderPanel · 协议专属配置', () => {
 
   it('旧 off 配置也显示为 5 分钟', () => {
     const html = renderPanel('anthropic', 'off' as AnthropicCacheTtl)
-    expect(html).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
     expect(html).not.toContain('>关闭</span>')
   })
 
   it('已保存的 1 小时档位在重新渲染时恢复', () => {
     const html = renderPanel('anthropic', '1h')
-    expect(html).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 小时<\/span><\/button>/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 小时<\/span><\/button>/)
   })
 
   it('英文缓存设置同样默认启用，并说明命中限制', () => {
     const html = renderPanel('anthropic', undefined, 'en-US')
-    expect(html).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 minutes<\/span><\/button>/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 minutes<\/span><\/button>/)
     expect(html).not.toContain('>Off</span>')
     expect(html).toContain('always include cache markers')
     expect(html).toContain('Cache hits depend on upstream support')
@@ -102,8 +102,8 @@ describe('ProviderPanel · 协议专属配置', () => {
       expect(html).toContain('始终携带缓存标记')
       expect(html).not.toContain('>关闭</span>')
       expect(html).toMatch(cacheTtl === '1h'
-        ? /aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 小时<\/span><\/button>/
-        : /aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
+        ? /aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 小时<\/span><\/button>/
+        : /aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>5 分钟<\/span><\/button>/)
     }
     expect(renderPanel(protocol, undefined, 'zh-CN', 'relay', [
       { ...model, protocolOverride: 'openai-responses' }
@@ -118,7 +118,7 @@ describe('ProviderPanel · 协议专属配置', () => {
     }
     const html = renderPanel('openai-chat', '1h', 'en-US', 'relay', [], [model])
     expect(html).toContain('always include cache markers')
-    expect(html).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 hour<\/span><\/button>/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>1 hour<\/span><\/button>/)
   })
 
   it('两种协议页面都不提供 metadata.user_id 编辑框', () => {
@@ -185,21 +185,26 @@ describe('ProviderPanel · 账号登录的供应商', () => {
   })
 })
 
-describe('Segmented · 保存期间禁用', () => {
-  it('禁用状态传递给分段控件内的每一个原生按钮', () => {
+describe('SegmentedControl · 保存期间禁用', () => {
+  it('fieldset 的 disabled 原生地禁用分段控件内的每一个按钮', () => {
+    // Arc 的 SegmentedControl 没有 disabled prop —— 按迁移规则包一层
+    // `<fieldset disabled className="contents">`:浏览器按 HTML 语义禁用里面的
+    // 原生按钮,`contents` 让这层不参与布局。静态标记里因此可见的是 fieldset
+    // 自己的 disabled 属性;按钮不再各自带 disabled/aria-disabled。
     const html = renderToStaticMarkup(
-      createElement(Segmented, {
-        value: 'off',
-        options: [
-          { value: 'off', label: 'Off' },
-          { value: 'on', label: 'On' }
-        ],
-        onChange: () => {},
-        label: 'Cache',
-        disabled: true
-      })
+      createElement('fieldset', { disabled: true, className: 'contents' },
+        createElement(SegmentedControl, {
+          value: 'off',
+          options: [
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' }
+          ],
+          onValueChange: () => {},
+          label: 'Cache'
+        })
+      )
     )
-    expect(html).toContain('aria-disabled="true"')
-    expect(html.match(/ disabled=""/g)).toHaveLength(2)
+    expect(html).toContain('<fieldset disabled=""')
+    expect(html.match(/<button /g)).toHaveLength(2)
   })
 })

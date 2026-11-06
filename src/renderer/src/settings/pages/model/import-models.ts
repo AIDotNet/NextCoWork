@@ -11,26 +11,13 @@ import {
   type UpstreamProtocol
 } from '../../../../../shared/domain/provider'
 import { endpointFor, findPreset } from '../../../../../shared/domain/presets'
-import { BUILTIN_MODEL_CATALOG } from '../../../../../shared/domain/model-catalog-inventory'
+// 实现在 shared 的 model-catalog-inventory:主进程登录灌模型
+// (`ipc/client-auth.ts` 的 `syncClientModels`)要用**同一条**判断。
+// 分家的表现是同一个 ID 在这条弹窗里被过滤掉、登录后却又被当成文本模型,
+// 而两边都不报错。理由与两个消费方清单见那边的函数注释。
+import { isImageModelId } from '../../../../../shared/domain/model-catalog-inventory'
 
 export type ImportModality = 'text' | 'image'
-
-/**
- * Provider model-list endpoints do not expose a modality field. For image
- * imports we therefore use the bundled catalogue first, then a conservative
- * ID heuristic for preview/private image models that are not catalogued yet.
- */
-export function isImageModelId(modelId: string): boolean {
-  const wanted = modelId.trim().toLowerCase()
-  const known = BUILTIN_MODEL_CATALOG.find((model) =>
-    [model.id, ...(model.aliases ?? [])].some((id) => {
-      const value = id.toLowerCase()
-      return wanted === value || wanted.endsWith(`/${value}`)
-    }),
-  )
-  if (known !== undefined) return known.modality === 'image'
-  return /(?:^|[/_:-])(image|imagen|dall[-_]?e|dalle|flux|seedream|seedance|z[-_]?image|imagegen|imagine|wanx|kolors|sdxl|stable[-_]?diffusion|ideogram|midjourney|recraft|qwen[-_]?image|pixart|playground)(?:$|[/:.-])/i.test(wanted)
-}
 
 export function filterFetchedModels(
   fetched: readonly FetchedModel[],

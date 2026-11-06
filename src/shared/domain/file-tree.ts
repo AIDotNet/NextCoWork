@@ -90,6 +90,19 @@ export type FileCategory =
   | 'draw'
   | 'archive'
   | 'code'
+  /*
+    需求:办公文档也要认得出来。工作区里躺着的 `.docx` / `.xlsx` / `.pdf` 不是代码,
+    但它们是用户自己的东西,落进「未知 → text」那一档后,反而成了一列灰色文档图标里
+    最难找的几个。
+
+    ★ 四类分开写,不合并成一个 `office`:它们在界面上的**预期动作**不同
+    (文档是读、表格是查数、幻灯是放映、PDF 基本是只读附件),
+    合成一类等于放弃了图标本来要给的那点预判。
+  */
+  | 'doc'
+  | 'sheet'
+  | 'slides'
+  | 'pdf'
   | 'text'
 
 /** 后缀 → 类别。放在模块级,分类函数因此是一次查表而不是一串 if。 */
@@ -126,6 +139,26 @@ const BY_EXT: Readonly<Record<string, FileCategory>> = {
   avif: 'image',
   ico: 'image',
   excalidraw: 'draw',
+  doc: 'doc',
+  docx: 'doc',
+  rtf: 'doc',
+  odt: 'doc',
+  xls: 'sheet',
+  xlsx: 'sheet',
+  ods: 'sheet',
+  /*
+    ★ csv/tsv 归表格而不是 text:它们**打开来就是一张表**,给纯文本图标等于让人
+    以为要自己数逗号。类别说的是内容形态,不承诺用什么编辑器打开
+    (同一条理由见上面 `package-lock.json` 归 lock)。
+    ★ 故意**不收 `key`**:仓库里的 `*.key` 几乎都是私钥,不是 Keynote。
+    认错方向的图标比没有图标更糟。
+  */
+  csv: 'sheet',
+  tsv: 'sheet',
+  ppt: 'slides',
+  pptx: 'slides',
+  odp: 'slides',
+  pdf: 'pdf',
   zip: 'archive',
   gz: 'archive',
   tgz: 'archive',

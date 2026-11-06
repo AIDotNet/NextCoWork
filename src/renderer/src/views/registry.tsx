@@ -43,7 +43,7 @@ import type {
   InnerTabKind,
 } from "../../../shared/domain/tab";
 import type { Workspace } from "../../../shared/domain/workspace";
-import { EmptyState } from "../components/ui/EmptyState";
+import { EmptyState } from "../components/arc/empty-state/empty-state";
 import { FEATURE_ICON } from "../shell/icons";
 import type { FallbackModel } from "./chat/Composer";
 import { FilesTab } from "./files/FilesView";
@@ -223,7 +223,7 @@ function Placeholder({
 }): ReactNode {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center">
-      <EmptyState icon={<Icon size={26} />} title={title} hint={step} />
+      <EmptyState icon={<Icon size={26} />} title={title} description={step} />
     </div>
   );
 }

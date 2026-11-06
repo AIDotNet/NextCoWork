@@ -24,6 +24,7 @@ import {
 } from '../../../shared/domain/agent-def'
 import type { PermissionMode } from '../../../shared/agent/permission'
 import { PERMISSION_MODES } from '../../../shared/agent/permission'
+import { THINKING_LEVELS, type ThinkingLevel } from '../../../shared/agent/run-request'
 import { fmList, fmString, parseFrontmatter } from '../frontmatter'
 import type { KernelFs, WorkspacePaths } from '../host'
 import { EnvironmentError } from '../../../shared/domain/environment'
@@ -227,6 +228,26 @@ async function loadOne(
   const modelProviderId = model === undefined ? undefined : fmString(fm, 'modelProviderId')
 
   /*
+    ★ `thinking:` 读不懂就当没写,**不作废**(同 `color`):它只影响花多少钱和想多深,
+    而上面那两个 `'invalid'` 分支各自都有非装饰的理由。诊断里必须说清「照哪一档跑」 ——
+    只说「忽略了这一行」的话,用户改完文件也看不出子代理实际用的是哪一档。
+    `inherit` 不是合法的文件取值:文件里「跟随」表达为**没有这一行**。
+  */
+  const rawThinking = fmString(fm, 'thinking')?.trim().toLowerCase()
+  let thinking: ThinkingLevel | undefined
+  if (rawThinking !== undefined) {
+    if ((THINKING_LEVELS as readonly string[]).includes(rawThinking)) thinking = rawThinking as ThinkingLevel
+    else {
+      diagnostics.push({
+        path: file,
+        message:
+          `thinking "${rawThinking}" 不是 ${THINKING_LEVELS.join(' / ')} 之一,已忽略这一行 —— ` +
+          '这个子代理照「默认子代理思考深度」那一栏跑(该栏为「跟随对话」时再退回父 run 的档位)。'
+      })
+    }
+  }
+
+  /*
     ★ 颜色读不懂就当没写,**不作废**。它纯装饰,而上面那两个 `'invalid'` 分支
     各自都有非装饰的理由(空工具表会让子代理编答案;读错的权限档位会放宽权限)。
     为一条坏颜色让用户的子代理消失,代价完全不成比例。
@@ -241,6 +262,7 @@ async function loadOne(
     ...(tools !== undefined ? { tools } : {}),
     ...(model !== undefined ? { model: stripControlChars(model) } : {}),
     ...(modelProviderId !== undefined ? { modelProviderId: stripControlChars(modelProviderId) } : {}),
+    ...(thinking !== undefined ? { thinking } : {}),
     ...(mode !== undefined ? { permissionMode: mode } : {}),
     ...(color !== undefined ? { color } : {}),
     source: { kind: scope, path: file }

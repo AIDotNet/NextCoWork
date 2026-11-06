@@ -23,12 +23,14 @@ import {
 import {
   findPreset,
 } from "../../../../../shared/domain/presets";
+import { codingPlanFamilyFor } from "../../../../../shared/domain/coding-plan";
 import type {
   AnthropicCacheTtl,
   CredentialInfo,
   RevealedCredential,
   ModelAlias,
   ModelModality,
+  ProtocolFamily,
   ReasoningEffort,
   ThinkingConfig,
   ThinkingMode,
@@ -42,12 +44,12 @@ import {
   MAX_ALIASES_PER_PROVIDER,
   splitProtocol,
 } from "../../../../../shared/domain/provider";
-import { Button } from "../../../components/ui/Button";
+import { Button } from "../../../components/arc/button/button";
 import { Dialog } from "../../../components/ui/Dialog";
-import { Segmented } from "../../../components/ui/Segmented";
+import SegmentedControl from "../../../components/arc/segmented-control/segmented-control";
 import { Select } from "../../../components/ui/Select";
 import { TextInput } from "../../../components/ui/TextInput";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { cn } from "../../../lib/cn";
 import { openExternal } from "../../../services/app";
 import {
@@ -72,6 +74,7 @@ import { type ProviderEntry } from "./enabled-models";
 import { ImportModelsDialog } from "./ImportModelsDialog";
 import { modelListAvailability } from "./import-models";
 import { ProviderAvatar } from "./ProviderAvatar";
+import { ProviderAccounts } from "./ProviderAccounts";
 import { PROTOCOLS, protocolLabel } from "./ModelProtocol";
 import { baseUrlForProtocol } from "./provider-edit";
 import {
@@ -137,10 +140,19 @@ export function ProviderPanel({
   entry,
   modality = "text",
   preserveAliases = [],
+  accountRotation = true,
 }: {
   entry: ProviderEntry;
   modality?: ModelModality;
   preserveAliases?: readonly ModelAlias[];
+  /**
+   * 设置里的「账号自动切换」。只用来算账号列表顶部那句「下一次会用谁」。
+   *
+   * ★ 默认 `true` 和 `DEFAULT_SETTINGS.providerAccountRotation` 一致 ——
+   * 两处不一致的话,没传这个 prop 的调用点(图片模型页)会把「会用 A」
+   * 算成「会用 B」,而那一句话没有任何地方会提示它是猜的。
+   */
+  accountRotation?: boolean;
 }): ReactNode {
   const { t } = useI18n();
   const { provider: p, aliases } = entry;
@@ -621,10 +633,12 @@ export function ProviderPanel({
           {busy && (
             <Spinner size="sm" className="text-fg-faint" />
           )}
-          <Button size="sm" icon={<Download size={12} />} disabled={busy} onClick={() => { setError(null); setTransferOpen("export"); }}>
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => { setError(null); setTransferOpen("export"); }}>
+            <Download size={12} />
             {t("provider.export")}
           </Button>
-          <Button size="sm" icon={<Upload size={12} />} disabled={busy} onClick={() => { setError(null); setTransferOpen("import"); }}>
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => { setError(null); setTransferOpen("import"); }}>
+            <Upload size={12} />
             {t("provider.import")}
           </Button>
         </div>
@@ -705,19 +719,20 @@ export function ProviderPanel({
           ) : (
             <>
               <Field label={t("provider.apiFormat")}>
-                <Segmented
-                  label={t("provider.apiFormat")}
-                  className="w-full"
-                  value={family}
-                  options={[
-                    { value: "openai", label: t("provider.openaiFormat") },
-                    { value: "anthropic", label: t("provider.anthropicFormat") },
-                  ]}
-                  disabled={busy}
-                  onChange={(f) =>
-                    switchProtocol(joinProtocol(f, f === "openai" && responses))
-                  }
-                />
+                <fieldset disabled={busy} className="contents">
+                  <SegmentedControl
+                    label={t("provider.apiFormat")}
+                    className="w-full"
+                    value={family}
+                    options={[
+                      { value: "openai", label: t("provider.openaiFormat") },
+                      { value: "anthropic", label: t("provider.anthropicFormat") },
+                    ]}
+                    onValueChange={(f) =>
+                      switchProtocol(joinProtocol(f as ProtocolFamily, f === "openai" && responses))
+                    }
+                  />
+                </fieldset>
               </Field>
 
               {/* ★ 只在 OpenAI 族下出现 —— 三个协议值到「两控件」的投影,见 provider.ts */}
@@ -730,11 +745,11 @@ export function ProviderPanel({
                     </p>
                   </div>
                   <div className="shrink-0 pt-0.5">
-                    <Toggle
+                    <Switch
                       checked={responses}
                       disabled={busy}
-                      onChange={(on) => switchProtocol(joinProtocol("openai", on))}
-                      label={t("provider.responsesApi")}
+                      onCheckedChange={(on) => switchProtocol(joinProtocol("openai", on))}
+                      aria-label={t("provider.responsesApi")}
                     />
                   </div>
                 </div>
@@ -747,17 +762,17 @@ export function ProviderPanel({
               label={t("provider.cache")}
               hint={t("provider.cacheHint")}
             >
-              <Segmented
-                label={t("provider.cache")}
-                size="sm"
-                value={cacheTtl}
-                options={[
-                  { value: "5m", label: t("provider.fiveMinutes") },
-                  { value: "1h", label: t("provider.oneHour") },
-                ]}
-                disabled={busy}
-                onChange={changeCacheTtl}
-              />
+              <fieldset disabled={busy} className="contents">
+                <SegmentedControl
+                  label={t("provider.cache")}
+                  value={cacheTtl}
+                  options={[
+                    { value: "5m", label: t("provider.fiveMinutes") },
+                    { value: "1h", label: t("provider.oneHour") },
+                  ]}
+                  onValueChange={(ttl) => changeCacheTtl(ttl as AnthropicCacheTtl)}
+                />
+              </fieldset>
             </Field>
           )}
 
@@ -773,10 +788,11 @@ export function ProviderPanel({
               /* ★ 纯走登录的那家没有「创建 API Key」页面，预设里也没给 apiKeyUrl */
               authMode !== "oauth" && apiKeyUrl !== undefined ? (
                 <Button
-                  size="sm"
-                  icon={<ExternalLink size={12} />}
+                  type="button"
+                  variant="secondary"
                   onClick={() => void openExternal(apiKeyUrl)}
                 >
+                  <ExternalLink size={12} />
                   {apiKeyActionLabel}
                 </Button>
               ) : undefined
@@ -803,6 +819,30 @@ export function ProviderPanel({
                   revealing={revealingCredential}
                   onToggleReveal={toggleCredentialReveal}
                 />
+                {/*
+                  ★★ **账号列表和上面那块登录控件是两件事,所以并排而不是二选一。**
+                  上面那块负责**这一次登录流程**(设备码、粘回调地址、取消),
+                  下面这块负责**已经登录的那些号**(顺序、限流、额度、启停)。
+                  合成一个组件试过一次就会明白:登录中的三个阶段各有自己的界面,
+                  而它们和「三行账号」的布局没有任何共同之处。
+
+                  ★ 登录中把列表藏起来:此刻列表里那几行的状态正要变,
+                  而用户的注意力应该在浏览器那边(见 `oauthView` 的「正在登录时压过一切」)。
+                */}
+                {authView.state !== "signing-in" && (
+                  <div className="mt-2">
+                    <ProviderAccounts
+                      providerId={p.id}
+                      rotation={accountRotation}
+                      busy={busy}
+                      quotaFetchable={codingPlanFamilyFor(p.id) !== null}
+                      onError={setError}
+                      onSigningInChange={(active) =>
+                        setAuthFlow(active ? { phase: "opening" } : null)
+                      }
+                    />
+                  </div>
+                )}
               </div>
             )}
             {authMode === "oauth" ? null : managed ? (
@@ -833,8 +873,8 @@ export function ProviderPanel({
                   />
                 </div>
                 <Button
-                  size="sm"
-                  variant="accent"
+                  type="button"
+                  variant="primary"
                   disabled={busy || keyDraft.trim() === ""}
                   onClick={saveKey}
                 >
@@ -842,7 +882,8 @@ export function ProviderPanel({
                 </Button>
                 {hasKey && (
                   <Button
-                    size="sm"
+                    type="button"
+                    variant="secondary"
                     disabled={busy}
                     onClick={() => {
                       setKeyDraft("");
@@ -867,7 +908,8 @@ export function ProviderPanel({
                   onToggle={toggleCredentialReveal}
                 />
                 <Button
-                  size="sm"
+                  type="button"
+                  variant="secondary"
                   disabled={busy}
                   onClick={() => {
                     revealRequest.current += 1;
@@ -920,10 +962,11 @@ export function ProviderPanel({
                   </span>
                 )}
                 <Button
-                  size="sm"
-                  icon={<CloudDownload size={13} />}
+                  type="button"
+                  variant="secondary"
                   onClick={() => setImportOpen(true)}
                 >
+                  <CloudDownload size={13} />
                   {t("provider.fetchModels")}
                 </Button>
               </>
@@ -950,7 +993,7 @@ export function ProviderPanel({
                     aria-label={t("provider.modelIdLabel")}
                     placeholder={t("provider.modelIdPlaceholder")}
                     disabled={busy}
-                    className="selectable min-w-0 flex-1 rounded-[7px] border border-border bg-canvas px-2 text-[12px] text-fg outline-none placeholder:text-fg-faint focus:border-accent"
+                    className="apple-field selectable min-w-0 flex-1 rounded-[8px] border border-border bg-canvas px-2 text-[12px] text-fg outline-none placeholder:text-fg-faint focus:border-fg-faint"
                   />
                   <button
                     type="button"
@@ -978,8 +1021,8 @@ export function ProviderPanel({
                 </div>
               ) : (
                 <Button
-                  size="sm"
-                  icon={<Plus size={14} />}
+                  type="button"
+                  variant="secondary"
                   onClick={() => {
                     setError(null);
                     setModelDraft("");
@@ -987,6 +1030,7 @@ export function ProviderPanel({
                   }}
                   className="w-full justify-start rounded-[16px]"
                 >
+                  <Plus size={14} />
                   {t("provider.addModel")}
                 </Button>
               )}
@@ -1095,7 +1139,8 @@ export function ProviderPanel({
             </p>
             {confirmDelete && (
               <Button
-                size="sm"
+                type="button"
+                variant="secondary"
                 disabled={busy}
                 onClick={() => setConfirmDelete(false)}
               >
@@ -1103,15 +1148,15 @@ export function ProviderPanel({
               </Button>
             )}
             <Button
-              size="sm"
-              variant={confirmDelete ? "danger" : undefined}
-              icon={<Trash2 size={12} />}
+              type="button"
+              variant={confirmDelete ? "danger" : "secondary"}
               disabled={busy || managed}
               onClick={() => {
                 if (confirmDelete) remove();
                 else setConfirmDelete(true);
               }}
             >
+              <Trash2 size={12} />
               {confirmDelete ? t("common.confirmDelete") : t("provider.delete")}
             </Button>
           </div>
@@ -1134,8 +1179,8 @@ export function ProviderPanel({
         description={t("provider.transferHint")}
         footer={
           <>
-            <Button size="sm" disabled={transferBusy} onClick={closeTransfer}>{t("common.cancel")}</Button>
-            <Button size="sm" variant="accent" disabled={transferBusy || (transferOpen === "export" && transferCredentials && transferPassword.length < 8)} onClick={runTransfer}>
+            <Button type="button" variant="secondary" disabled={transferBusy} onClick={closeTransfer}>{t("common.cancel")}</Button>
+            <Button type="button" variant="primary" disabled={transferBusy || (transferOpen === "export" && transferCredentials && transferPassword.length < 8)} onClick={runTransfer}>
               {transferOpen === "export" ? t("provider.export") : t("provider.import")}
             </Button>
           </>
@@ -1144,7 +1189,7 @@ export function ProviderPanel({
         {error !== null && <p className="mb-3 rounded-[8px] bg-danger/10 px-3 py-2 text-[12px] leading-[1.6] text-danger">{error}</p>}
         {transferOpen === "export" ? (
           <div className="space-y-3">
-            <Toggle checked={transferCredentials} onChange={setTransferCredentials} label={t("provider.includeCredentials")} />
+            <Switch checked={transferCredentials} onCheckedChange={setTransferCredentials} aria-label={t("provider.includeCredentials")} />
             <p className="text-[11.5px] leading-[1.6] text-fg-faint">{t("provider.credentialsHint")}</p>
             {transferCredentials && (
               <TextInput value={transferPassword} onChange={setTransferPassword} ariaLabel={t("provider.exportPassword")} placeholder={t("provider.exportPasswordPlaceholder")} type="password" />
@@ -1291,8 +1336,8 @@ function ProviderAuthField({
               </span>
             </div>
             <Button
-              size="sm"
-              icon={<Copy size={12} />}
+              type="button"
+              variant="secondary"
               onClick={() => {
                 /*
                   ★ 复制失败**不报错**:剪贴板权限被拒时码仍然明晃晃地显示在
@@ -1301,9 +1346,10 @@ function ProviderAuthField({
                 void navigator.clipboard?.writeText(device.userCode).catch(() => undefined);
               }}
             >
+              <Copy size={12} />
               {t("common.copy")}
             </Button>
-            <Button size="sm" onClick={onCancel}>
+            <Button type="button" variant="secondary" onClick={onCancel}>
               {t("common.cancel")}
             </Button>
           </div>
@@ -1339,14 +1385,14 @@ function ProviderAuthField({
               />
             </div>
             <Button
-              size="sm"
-              variant="accent"
+              type="button"
+              variant="primary"
               disabled={pasteDraft.trim() === ""}
               onClick={submit}
             >
               {t("provider.authPasteSubmit")}
             </Button>
-            <Button size="sm" onClick={onCancel}>
+            <Button type="button" variant="secondary" onClick={onCancel}>
               {t("common.cancel")}
             </Button>
           </div>
@@ -1371,7 +1417,7 @@ function ProviderAuthField({
             {phaseLabel}
           </span>
         </div>
-        <Button size="sm" onClick={onCancel}>
+        <Button type="button" variant="secondary" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
       </div>
@@ -1380,7 +1426,8 @@ function ProviderAuthField({
 
   if (view.state === "signed-out") {
     return (
-      <Button size="sm" variant="accent" icon={<ExternalLink size={12} />} onClick={onSignIn}>
+      <Button type="button" variant="primary" onClick={onSignIn}>
+        <ExternalLink size={12} />
         {signInLabel}
       </Button>
     );
@@ -1416,20 +1463,22 @@ function ProviderAuthField({
           )}
         </div>
         {expired && (
-          <Button size="sm" variant="accent" disabled={busy} onClick={onSignIn}>
+          <Button type="button" variant="primary" disabled={busy} onClick={onSignIn}>
             {t("provider.reSignIn")}
           </Button>
         )}
         <Button
-          size="sm"
+          type="button"
+          variant="secondary"
           disabled={busy || revealing}
-          icon={revealed === null ? <Eye size={12} /> : <EyeOff size={12} />}
           onClick={onToggleReveal}
         >
+          {revealed === null ? <Eye size={12} /> : <EyeOff size={12} />}
           {revealed === null ? t("provider.viewToken") : t("provider.hideToken")}
         </Button>
         <Button
-          size="sm"
+          type="button"
+          variant="secondary"
           disabled={busy}
           onClick={() => {
             if (confirmOut) onSignOut();
@@ -1565,7 +1614,7 @@ function RowAction({
 }
 
 const modelDialogInputClass =
-  "h-8 w-full rounded-[7px] border border-border bg-surface-field px-2 text-[11.5px] text-fg outline-none focus:border-accent";
+  "apple-field h-8 w-full text-[12px]";
 
 function ModelEditDialog({
   model,
@@ -1639,10 +1688,10 @@ function ModelEditDialog({
       width={460}
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="accent" disabled={busy} onClick={save}>
+          <Button type="button" variant="primary" disabled={busy} onClick={save}>
             {t("common.save")}
           </Button>
         </>
@@ -1650,7 +1699,7 @@ function ModelEditDialog({
     >
       <div className="space-y-3">
         {invalid && (
-          <p className="rounded-[7px] border border-danger/30 bg-danger/5 px-2.5 py-2 text-[11.5px] text-danger">
+          <p className="rounded-[8px] border border-danger/30 bg-danger/5 px-2.5 py-2 text-[11.5px] text-danger">
             {t("models.modelInvalid")}
           </p>
         )}
@@ -1782,7 +1831,9 @@ function ThinkingDialog({
     const nextBudget = budget === "" ? undefined : Number(budget);
     if (
       (nextBudget !== undefined && (!Number.isInteger(nextBudget) || nextBudget < 0)) ||
-      (mode === 'effort' && !efforts.includes(defaultEffort))
+      (mode === 'effort' && (!efforts.includes(defaultEffort) ||
+        (original?.anthropicAdaptive === true && parameterPath.trim() === 'output_config.effort' &&
+          !defaultEnabled && !efforts.includes('none'))))
     ) {
       setInvalid(true);
       return;
@@ -1793,6 +1844,9 @@ function ThinkingDialog({
       defaultEnabled:
         mode === "unsupported" ? false : mode === "always" || defaultEnabled,
       ...(mode === "effort" ? { defaultEffort } : { defaultEffort: undefined }),
+      ...(mode === "effort" && parameterPath.trim() === "output_config.effort"
+        ? {}
+        : { anthropicAdaptive: undefined }),
       ...(mode === "toggle" || mode === "budget" || mode === "effort"
         ? { parameterPath: parameterPath.trim() || undefined }
         : { parameterPath: undefined }),
@@ -1811,10 +1865,10 @@ function ThinkingDialog({
       width={440}
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="accent" disabled={busy} onClick={save}>
+          <Button type="button" variant="primary" disabled={busy} onClick={save}>
             {t("common.save")}
           </Button>
         </>
@@ -1822,27 +1876,30 @@ function ThinkingDialog({
     >
       <div className="space-y-3">
         {invalid && (
-          <p className="rounded-[7px] border border-danger/30 bg-danger/5 px-2.5 py-2 text-[11.5px] text-danger">
+          <p className="rounded-[8px] border border-danger/30 bg-danger/5 px-2.5 py-2 text-[11.5px] text-danger">
             {t("models.modelInvalid")}
           </p>
         )}
         <DialogField label={t("models.reasoning")}>
-          <select
+          <Select
+            inModal
             value={mode}
-            onChange={(event) => {
-              const nextMode = event.target.value as ThinkingMode;
+            ariaLabel={t("models.reasoning")}
+            className="h-8 text-[13px]"
+            options={[
+              { value: "unsupported", label: t("models.unsupported") },
+              { value: "always", label: t("models.always") },
+              { value: "toggle", label: t("models.toggle") },
+              { value: "effort", label: t("models.effort") },
+              { value: "budget", label: t("models.budget") },
+            ]}
+            onValueChange={(value) => {
+              const nextMode = value as ThinkingMode;
               setMode(nextMode);
               if (nextMode !== mode) setParameterPath(nextMode === 'effort' ? 'reasoning_effort'
                 : nextMode === 'budget' ? 'thinking.budget_tokens' : 'thinking.type');
             }}
-            className={modelDialogInputClass}
-          >
-            <option value="unsupported">{t("models.unsupported")}</option>
-            <option value="always">{t("models.always")}</option>
-            <option value="toggle">{t("models.toggle")}</option>
-            <option value="effort">{t("models.effort")}</option>
-            <option value="budget">{t("models.budget")}</option>
-          </select>
+          />
         </DialogField>
         {(mode === "toggle" || mode === "budget" || mode === "effort") && (
           <>
@@ -1863,19 +1920,14 @@ function ThinkingDialog({
         {mode === "effort" && (
           <>
           <DialogField label={t("models.fieldDefaultEffort")}>
-            <select
+            <Select
+              inModal
               value={defaultEffort}
-              onChange={(event) =>
-                setDefaultEffort(event.target.value as ReasoningEffort)
-              }
-              className={modelDialogInputClass}
-            >
-              {efforts.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
-              ))}
-            </select>
+              ariaLabel={t("models.fieldDefaultEffort")}
+              className="h-8 text-[13px]"
+              options={efforts.map((effort) => ({ value: effort, label: effort }))}
+              onValueChange={(value) => setDefaultEffort(value as ReasoningEffort)}
+            />
           </DialogField>
           <fieldset className="space-y-2">
             <legend className="text-[11.5px] text-fg-muted">{t('models.supportedReasoningEfforts')}</legend>
@@ -1938,9 +1990,9 @@ function DialogToggle({
   onChange: (checked: boolean) => void;
 }): ReactNode {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[7px] border border-border bg-surface-field px-2.5 py-1.5">
+    <div className="flex items-center justify-between gap-3 rounded-[8px] border border-border bg-surface-field px-2.5 py-1.5">
       <span className="text-[11.5px] text-fg-muted">{label}</span>
-      <Toggle checked={checked} onChange={onChange} label={label} />
+      <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
     </div>
   );
 }

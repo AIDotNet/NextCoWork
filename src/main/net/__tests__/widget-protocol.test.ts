@@ -12,10 +12,12 @@
  * 测试环境里 `electron` 解析到的是那个"导出可执行文件路径"的 stub,
  * `protocol` 是 undefined —— 被测的是纯函数 `handleWidgetRequest`,不碰它。
  */
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleWidgetRequest } from '../widget-protocol'
+import { setPluginRuntimeDir } from '../../plugin/protocol'
 
 function request(path: string, host = 'shell'): Request {
   return new Request(`ncw-widget://${host}${path}`)
@@ -80,6 +82,38 @@ describe('handleWidgetRequest', () => {
     expect(response.status).toBe(404)
     expect(spy).toHaveBeenCalledTimes(1)
     expect(String(spy.mock.calls[0]?.[0])).toContain('自包含')
+  })
+
+  /**
+   * TSX 模式:外壳页面带一份 import map,运行时文件从插件运行时目录里读,路径是写死的白名单。
+   * ★ 门面文件里写死了 `./__react-core.js`,名字必须与插件协议那张表一致。
+   */
+  it('TSX 运行时:import map 点名 widget 模块,文件按白名单从运行时目录下发', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ncw-widget-rt-'))
+    writeFileSync(join(dir, 'widget.js'), 'export const ok = 1')
+    writeFileSync(join(dir, 'ui.css'), ':root{}')
+    setPluginRuntimeDir(dir)
+    try {
+      const html = await (await handleWidgetRequest(request('/index.html'))).text()
+      expect(html).toContain('type="importmap"')
+      expect(html).toContain('"nextcowork/widget":"/__widget.js"')
+      expect(html).toContain('"react":"/__react.js"')
+
+      const script = await handleWidgetRequest(request('/__widget.js'))
+      expect(script.status).toBe(200)
+      expect(script.headers.get('Content-Type')).toContain('javascript')
+      expect(await script.text()).toBe('export const ok = 1')
+
+      const css = await handleWidgetRequest(request('/__ui.css'))
+      expect(css.headers.get('Content-Type')).toContain('text/css')
+
+      // 不在表里的 `__` 文件、目录穿越都不认
+      expect((await handleWidgetRequest(request('/__view.js'))).status).toBe(404)
+      expect((await handleWidgetRequest(request('/__../widget.js'))).status).toBe(404)
+    } finally {
+      setPluginRuntimeDir('')
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('未知路径 404,且不打日志', async () => {

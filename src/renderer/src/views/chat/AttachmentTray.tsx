@@ -15,11 +15,12 @@
  * 用户只会以为自己少拖了一个。
  */
 import { AlertCircle, FileText, RotateCw, Upload, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Attachment, FileReferenceSource } from "../../../../shared/domain/attachment";
 import { isImageMime } from "../../../../shared/domain/attachment";
 import { useI18n } from "../../i18n";
 import { cn } from "../../lib/cn";
+import { ImageLightbox } from "./ImageLightbox";
 
 /**
  * 托盘里的一项。上传是异步的,所以「一个 chip」在拿到 `Attachment` 之前
@@ -71,6 +72,7 @@ export function AttachmentTray({
             upload: t("ssh.uploadToServer"),
             retry: t("accessibility.retry"),
             remove: t("accessibility.remove"),
+            preview: t("chat.zoomImage"),
           }}
         />
       ))}
@@ -87,10 +89,21 @@ function AttachmentChip({
   item: TrayItem;
   onRemove: () => void;
   onRetry: () => void;
-  labels: { uploading: string; upload: string; retry: string; remove: string };
+  labels: { uploading: string; upload: string; retry: string; remove: string; preview: string };
 }): ReactNode {
+  const [previewing, setPreviewing] = useState(false);
   const a = item.attachment;
   const isImage = a !== undefined && isImageMime(a.mime);
+  // ★ 协议直供。没有 blob URL,也就没有 revoke 的生命周期问题。
+  const thumbnail = isImage && a !== undefined ? (
+    <img
+      src={a.url}
+      alt=""
+      className="h-6 w-6 shrink-0 rounded-[4px] object-cover"
+      // 文件被外部删除 → 协议回 404 → 退化成文件图标,而不是裂图
+      onError={(e) => { e.currentTarget.style.display = "none"; }}
+    />
+  ) : null;
 
   return (
     <div
@@ -98,7 +111,7 @@ function AttachmentChip({
       data-status={item.status}
       title={item.status === "error" ? item.error : item.name}
       className={cn(
-        "group relative flex h-9 max-w-[180px] items-center gap-1.5 rounded-[7px] border pr-1 pl-1.5 text-[11.5px]",
+        "group relative flex h-9 max-w-[180px] items-center gap-1.5 rounded-[8px] border pr-1 pl-1.5 text-[11.5px]",
         item.status === "error"
           ? "border-danger/40 bg-danger/8 text-danger"
           : "border-border bg-tint text-fg-muted",
@@ -106,18 +119,17 @@ function AttachmentChip({
     >
       {item.status === "error" ? (
         <AlertCircle size={13} className="shrink-0" />
-      ) : isImage && a !== undefined ? (
-        // ★ 协议直供。没有 blob URL,也就没有 revoke 的生命周期问题
-        <img
-          src={a.url}
-          alt=""
-          className="h-6 w-6 shrink-0 rounded-[4px] object-cover"
-          // 文件被外部删除 → 协议回 404 → 退化成文件图标,而不是裂图
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
-      ) : (
+      ) : item.status === "done" && thumbnail !== null ? (
+        // 需求：只有上传完成的图片可预览；上传中的缩略图保持只读。
+        <button
+          type="button"
+          onClick={() => setPreviewing(true)}
+          aria-label={labels.preview}
+          className="app-no-drag shrink-0 rounded-[4px] cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        >
+          {thumbnail}
+        </button>
+      ) : thumbnail !== null ? thumbnail : (
         <FileText size={13} className="shrink-0 text-fg-faint" />
       )}
 
@@ -149,6 +161,13 @@ function AttachmentChip({
       >
         <X size={12} />
       </button>
+      {previewing && item.status === "done" && isImage && a !== undefined && (
+        <ImageLightbox
+          images={[{ mime: a.mime, dataRef: a.url }]}
+          startIndex={0}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
     </div>
   );
 }

@@ -20,9 +20,14 @@ import type { PluginMethod, PluginParams } from '../../shared/plugin/protocol'
 import { PLUGIN_STORAGE_QUOTA_BYTES } from '../../shared/plugin/protocol'
 import type { PluginManifest } from '../../shared/plugin/manifest'
 import {
+  MAX_NET_HEADER_COUNT,
+  MAX_NET_HEADER_VALUE_BYTES,
+  MAX_NET_REDIRECTS,
+  MAX_NET_RESPONSE_BYTES,
   MAX_PLUGIN_FILE_BYTES,
   narrowCommand,
   narrowFetchUrl,
+  narrowRedirectUrl,
   narrowStorageKey,
   narrowWorkspacePath,
   secretKeyFor
@@ -33,10 +38,62 @@ export interface CapabilityContext {
   pluginId: string
   manifest: PluginManifest
   host: KernelHost
-  /** 当前工作区根。空串 = 没有打开工作区,路径类能力一律拒绝 */
+  /**
+   * **这一次调用**的工作区根。空串 = 没有可用的本地工作区,路径类能力一律拒绝。
+   *
+   * ★ 它不再恒等于「用户此刻聚焦的工作区」。带 `callId` 的调用按**产生它的那次
+   * 工具调用**的工作区定位(`manager.ts` 的 `resolveCallScope`),不带 callId 时
+   * 才回落到发起时的工作区 —— 旧语义。两条路都在 manager 里冻结好再传进来,
+   * 这一层只认结果、不认来源。
+   */
   workspaceRoot: string
+  /** 同 `workspaceRoot` —— `storage` 的 workspace 分桶与 `scm` 适配器都用它。 */
   workspaceId: string
-  /** 清单里可选的命令白名单 —— 没有就等于一条都不许跑 */
+  /**
+   * 这次调用的中止信号。**至少**覆盖:RPC 超时、插件被禁用/卸载、宿主 shutdown、
+   * 产生它的那次工具调用被中止。
+   *
+   * ★ 拿到 signal 的工作路径(网络、子进程)**必须真的把它接下去** —— 只存不传
+   * 等于没接:一条卡在 `fetch` 上的调用会把主进程的那次操作留到响应回来为止。
+   */
+  signal: AbortSignal
+  /**
+   * **产生这次调用的那次工具调用的宿主 signal**(原始 `ToolContext.signal`)。
+   *
+   * ★ 与 `signal` 的分工:`signal` 是这次 RPC 的**期限**信号(deadline、插件被
+   * 禁用、以及工具被中止,三者都会 abort 它);而 `toolSignal` **只**跟随工具
+   * 调用本身。两者合一是错的 —— `process.execStream` 起的是一条可能跑几十秒的
+   * 命令,它必须跟随工具 abort(用户点停止要真的杀),但**不能**跟随这条 RPC 的
+   * 30 秒期限(那会把每个构建截成 30 秒,而且插件看不见原因)。
+   *
+   * 没有工具调用在跑(菜单 / 视图里的 UI 代码)时缺席。
+   */
+  toolSignal?: AbortSignal
+  /**
+   * 「这次调用还算数吗」。审批、异步 IO 之后重新核一遍:超时、插件被禁用、
+   * 权限被撤、作用域所属的工作区已经不可用 —— 任何一条成立就该停下来,
+   * 而不是把一个**用户在不知情下批准过的**副作用继续做完。
+   *
+   * 抛 `CapabilityError`(`rejected` / `timeout` 语义)让整条 RPC 就地失败。
+   */
+  checkActive: () => void
+  /**
+   * **副作用点就要到了。** 在真正动手之前调一次,宿主据此把这「这一次调用已经
+   * 越过可安全重试的边界」记下来(见 `manager.ts` 的 `sideEffectStarted`)。
+   *
+   * ★ 为什么需要它,而不是一张静态的「哪些方法有副作用」表:`documents.*` /
+   * `process.exec` 这类方法里,**审批迟到、排队太久、路径门被拒**都会在动手
+   * 之前就失败 —— 那种失败是**普通的取消/超时**,重试是安全的。只有真的
+   * 越过这一行之后的取消才必须报 `[result_unknown]`。表回答不了「这一次
+   * 到底走到哪了」,这个钩子能。
+   *
+   * ★ 同步的:它只做一次记账,不 await;放在副作用那一行**之前**。
+   * 可选:直接构造 ctx 的单测不必提供。
+   */
+  markSideEffectStarted?: () => void
+  /**
+   * 清单里可选的命令白名单 —— 没有就等于一条都不许跑
+   */
   allowedCommands: readonly string[]
   /**
    * 跑命令前问用户。`false` = 用户拒了。
@@ -202,6 +259,8 @@ export async function invokeCapability<M extends PluginMethod>(
       if (p.paths.length > 500) invalid('too many paths')
       // 每一条都过工作区收窄 —— `git add ../../..` 在仓库根之外同样是越界。
       const paths = p.paths.map((path) => relativeInside(ctx, path))
+      // 索引一旦被改就是副作用 —— 之后的取消属于 result_unknown,不是普通失败。
+      ctx.markSideEffectStarted?.()
       await ctx.scm().stage(paths)
       return { data: {}, summary: `scm.stage ${paths.length} path(s)` }
     }
@@ -211,12 +270,14 @@ export async function invokeCapability<M extends PluginMethod>(
       const message = typeof p.message === 'string' ? p.message.trim() : ''
       if (message === '') invalid('message is required')
       if (message.length > 4096) invalid('message is too long')
+      ctx.markSideEffectStarted?.()
       return { data: await ctx.scm().commit(message), summary: 'scm.commit' }
     }
 
     case 'scm.createBranch': {
       const p = params as PluginParams<'scm.createBranch'>
       const name = narrowBranchName(p.name)
+      ctx.markSideEffectStarted?.()
       await ctx.scm().createBranch(name, p.checkout === true)
       return { data: {}, summary: `scm.createBranch ${name}` }
     }
@@ -224,6 +285,7 @@ export async function invokeCapability<M extends PluginMethod>(
     case 'scm.checkout': {
       const p = params as PluginParams<'scm.checkout'>
       const name = narrowBranchName(p.name)
+      ctx.markSideEffectStarted?.()
       await ctx.scm().checkout(name)
       return { data: {}, summary: `scm.checkout ${name}` }
     }
@@ -281,7 +343,18 @@ export async function invokeCapability<M extends PluginMethod>(
       }
       // ★ 不再在这里弹确认框:`workspace.write` 是否被授予,能力门已经在
       // `manager.ts` 里查过了(答案落在 kv `plugins.state` 的 `granted` 里)。
+      // ★ 但**动手之前**再复核一次:上面那次 realpath 有几个 await,插件可能
+      //   在这期间被禁用、工作区可能被切走 —— 那种时候不能再写。
+      ctx.checkActive()
       await ctx.host.fs.mkdirp(target)
+      /*
+        ★ **副作用点就在下一行。** `mkdirp`(上一步)还没写数据,真正可能改盘的是
+        `writeFile` —— 所以复检与记账都排在它**之前**。晚一步的结果是:一次在
+        「已经写了」之后被取消的调用报不出 `[result_unknown]`,插件会以为可以安全
+        重试,而第一次的写入已经落盘了。
+      */
+      ctx.checkActive()
+      ctx.markSideEffectStarted?.()
       await ctx.host.fs.writeFile(target, bytes.toString('utf8'))
       const after = await ctx.host.fs.stat(target).catch(() => null)
       return { data: { revision: after === null ? 0 : Math.round(after.mtimeMs) }, summary: `write ${p.path}` }
@@ -299,6 +372,9 @@ export async function invokeCapability<M extends PluginMethod>(
         `fs.rm` 就等于插件可以静默地永久抹掉用户的文件。所以 `trash` 抛错
         就让整条调用失败,让插件收到一个明确的拒绝。
       */
+      // ★ 同 writeFile:删是不可逆的,动手之前复核一次,并记下「副作用点到了」。
+      ctx.checkActive()
+      ctx.markSideEffectStarted?.()
       await ctx.trash(target).catch(() => rejected('the file could not be moved to the trash'))
       return { data: {}, summary: `delete ${p.path}` }
     }
@@ -313,11 +389,14 @@ export async function invokeCapability<M extends PluginMethod>(
 
     case 'process.exec': {
       const p = params as PluginParams<'process.exec'>
+      // ★ `prepareExec` 里已经过了审批后的复检;这里把**这次调用自己的** signal 接给
+      //   spawn:超时 / 插件被禁用 / 工具被中止都能真的杀掉子进程,而不是留它在后台跑。
       const prepared = await prepareExec(ctx, p)
-      const controller = new AbortController()
+      // ★ 命令一旦交给 spawn 就可能已经跑起来了 —— 这一步之后被取消必须报 result_unknown。
+      ctx.markSideEffectStarted?.()
       const result = await ctx.host.spawn(prepared.line, {
         cwd: prepared.cwd,
-        signal: controller.signal,
+        signal: ctx.signal,
         timeoutMs: prepared.timeoutMs,
         shell: prepared.shell
       })
@@ -326,25 +405,19 @@ export async function invokeCapability<M extends PluginMethod>(
 
     case 'net.fetch': {
       const p = params as PluginParams<'net.fetch'>
-      const narrowed = narrowFetchUrl(ctx.manifest.hostPermissions, p.url)
-      if (!narrowed.ok) invalid(narrowed.reason)
       const method = (p.method ?? 'GET').toUpperCase()
       if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(method)) invalid(`unsupported method: ${method}`)
-      const response = await ctx.host.fetch(narrowed.value, {
+      const headers = sanitizeHeaders(p.headers)
+      // GET / HEAD 不带 body(与旧行为一致);其余方法才把 body 传下去。
+      const sendBody = p.body !== undefined && method !== 'GET' && method !== 'HEAD'
+      const result = await fetchWithBudget(ctx, {
+        url: p.url,
         method,
-        headers: sanitizeHeaders(p.headers),
-        ...(p.body === undefined || method === 'GET' || method === 'HEAD' ? {} : { body: p.body })
+        headers,
+        ...(sendBody ? { body: p.body } : {})
       })
-      const text = await response.text()
       // ★ response 剥成数据回传,不传流句柄。
-      return {
-        data: {
-          status: response.status,
-          headers: Object.fromEntries([...response.headers.entries()].slice(0, 64)),
-          body: text.length > MAX_PLUGIN_FILE_BYTES ? text.slice(0, MAX_PLUGIN_FILE_BYTES) : text
-        },
-        summary: `fetch ${new URL(narrowed.value).host}`
-      }
+      return { data: result, summary: `fetch ${new URL(result.finalUrl).host}` }
     }
 
     case 'storage.get': {
@@ -415,6 +488,20 @@ export async function prepareExec(
   const shell = ctx.host.platform.shell
   const line = `${narrowed.value.command} ${narrowed.value.args.map((arg) => quoteArg(arg, shell)).join(' ')}`.trim()
   if (!(await ctx.approve({ kind: 'exec', detail: line }))) rejected('the command was not approved')
+  /*
+    ★★ **审批之后的那一次复检。**
+
+    审批是在等**人** —— 几秒到几十秒都正常。这段时间里 RPC 自己的 deadline 可能
+    已经到了(旧实现只有一条 `Promise.race`,到点就回一条 timeout,而**没有人
+    去取消这次等待**),插件可能被禁用,审批可能刚刚撤掉 `process`,产生这次调用
+    的工具可能已经被用户中止。
+
+    不复检的后果是:插件那边早就收到「超时」并认为自己失败了,而这里**迟到**的
+    Allow 仍然会把命令 spawn 出去 —— 一次用户以为自己已经拦下来的执行,在他
+    看不见的地方跑了起来。所以批准只说明「他当时点了允许」,能不能真的跑由
+    **复检**说了算。
+  */
+  ctx.checkActive()
   return {
     command: narrowed.value.command,
     line,
@@ -477,6 +564,170 @@ function truncate(value: string): string {
   return value.length > MAX_PLUGIN_FILE_BYTES ? `${value.slice(0, MAX_PLUGIN_FILE_BYTES)}\n… (truncated)` : value
 }
 
+/**
+ * `net.fetch` 的完整一次请求 —— **URL 门 → manual 重定向 → 有上限的正文**。
+ *
+ * ## 为什么不用默认的 `follow`
+ *
+ * `fetch` 的默认重定向是**自动跟**的,而每一次跳转都是一次新的请求:旧的实现里
+ * 只有**首个** URL 过了 `hostPermissions` / 内网 / https 三道门,跳转之后去哪
+ * 由**远端**决定。后果是一个只声明了 `https://api.example.com/*` 的插件可以
+ * 被一次 302 带去任意域名(含内网字面量),而它自己一个字都不用改。
+ *
+ * 所以这里是 `redirect: 'manual'` + 逐跳:每一跳的 `Location` 都重过一遍
+ * `narrowRedirectUrl`(https + 无凭证 + 非内网字面量 + 命中 hostPermissions),
+ * 跳数上限 `MAX_NET_REDIRECTS`;超限或被拒 = `invalid_argument`,不是跟着走。
+ *
+ * ## ★ 仍然是「未解决」的那一项:DNS rebinding
+ *
+ * 门挡的是**字面量**。一个域名解析到 `127.0.0.1`,或者先解析到公网、连接时再
+ * 解析到内网(rebinding),这一层都拦不住 —— 预查询一次 DNS 再交给 `fetch`
+ * 是**两次不同的解析**,拿它冒充防护只是把问题藏起来。要真正闭合,得让实际建立
+ * 的连接绑定到已校验的那个地址,而 `KernelHost.fetch` 这一版没有这个口子。
+ * 这里如实标出来,不声称已经解决。
+ *
+ * ## 读正文
+ *
+ * 上限是**字节**数:旧实现先 `response.text()` 把整个响应读进内存、再按字符
+ * `slice(0, 8MB)` —— 一次 1GB 的响应会先把主进程撑爆,而中文页面里 8M 字符
+ * 实际是 24MB。现在边读边数,到 `MAX_NET_RESPONSE_BYTES` 就停下并取消 reader。
+ */
+async function fetchWithBudget(
+  ctx: CapabilityContext,
+  init: { url: string; method: string; headers: Record<string, string>; body?: string }
+): Promise<{ status: number; headers: Record<string, string>; body: string; finalUrl: string }> {
+  let url = init.url
+  let method = init.method
+  let body = init.body
+  for (let hop = 0; ; hop += 1) {
+    const narrowed = hop === 0
+      ? narrowFetchUrl(ctx.manifest.hostPermissions, url)
+      : narrowRedirectUrl(ctx.manifest.hostPermissions, url)
+    if (!narrowed.ok) invalid(narrowed.reason)
+    ctx.checkActive()
+    const response = await ctx.host.fetch(narrowed.value, {
+      method,
+      headers: init.headers,
+      // ★ manual:跳转由**我们**逐跳校验,不是交给 fetch 自动跟。
+      redirect: 'manual',
+      signal: ctx.signal,
+      ...(body === undefined ? {} : { body })
+    })
+    const location = response.headers.get('location')
+    if (isRedirect(response.status) && location !== null && location !== '') {
+      // 正文对一次跳转没有意义;显式清掉,免得连接被一个没人读的 body 占着。
+      await response.body?.cancel().catch(() => undefined)
+      if (hop >= MAX_NET_REDIRECTS) invalid('too many redirects')
+      /*
+        ★ 方法按 HTTP 的规则改写:`303` 一律变 GET,`301` / `302` 上的 POST 也变
+        GET 并丢掉正文;`307` / `308` 保持方法与正文。
+
+        不做这一步就是一个**回归**:默认的 `follow` 会做这件事,而改成 manual
+        之后不补回来,一个「POST → 302 → 200」的 API 会在插件那边变成一个
+        没见过的 302 —— 看起来像是接口坏了。
+      */
+      const rewritten = rewriteForRedirect(response.status, method)
+      method = rewritten.method
+      if (rewritten.dropBody) body = undefined
+      // 相对 Location 按**当前这一跳**的 URL 解析 —— 解析基准用远端给的地址就错了。
+      let next: string
+      try { next = new URL(location, new URL(narrowed.value)).toString() } catch { invalid('redirect location is not a valid URL') }
+      url = next
+      continue
+    }
+    return {
+      status: response.status,
+      headers: responseHeadersWithinBudget(response.headers),
+      body: await readBodyWithCap(response, ctx.signal),
+      finalUrl: narrowed.value
+    }
+  }
+}
+
+/** 3xx 里只有这几个带 Location 语义。304 不算「跳转」,它没有新地址可跟。 */
+function isRedirect(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308
+}
+
+/** 跳转之后这次请求还算不算「同一个」—— 见调用点那段说明。 */
+function rewriteForRedirect(status: number, method: string): { method: string; dropBody: boolean } {
+  if (status === 303) return { method: 'GET', dropBody: true }
+  if ((status === 301 || status === 302) && method === 'POST') return { method: 'GET', dropBody: true }
+  return { method, dropBody: false }
+}
+
+/**
+ * 响应头剥成数据。**条数与单条长度都有上限** —— 头同样是远端写的内容,
+ * 一个 200 条 `set-cookie` 的响应不该被整份复制进一次 RPC 的返回值。
+ */
+function responseHeadersWithinBudget(headers: Headers): Record<string, string> {
+  const out: Record<string, string> = {}
+  const encoder = new TextEncoder()
+  let count = 0
+  for (const [key, value] of headers.entries()) {
+    if (count >= MAX_NET_HEADER_COUNT) break
+    /*
+      ★ 量的是**字节**,不是字符。名字里写的是 BYTES,拿 `value.length`(UTF-16
+      码元)判的话,一条 4096 字的中文头值能放进约 12KB —— 与不变量对不上,
+      而下一个读到这个名字的人会以为它已经成立。
+    */
+    if (encoder.encode(value).byteLength > MAX_NET_HEADER_VALUE_BYTES) continue
+    out[key] = value
+    count += 1
+  }
+  return out
+}
+
+/**
+ * 读到字节上限就停,并**总是**清理 reader。
+ *
+ * ★ reader 不 cancel 的症状不是报错,是连接一直挂在那儿:子进程/套接字要等到
+ * 超时或对端关掉才释放,而 `net.fetch` 是可以被插件反复调用的。
+ *
+ * ★ `finally` 里的 `cancel` 只对「提前退出」这一次调用生效(正常读完时它是个
+ * 空操作)—— 这一点让「超上限」这条路上不会留下半个流。
+ */
+async function readBodyWithCap(response: Response, signal: AbortSignal): Promise<string> {
+  const body = response.body
+  if (body === null) return ''
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let tooLarge = false
+  try {
+    for (;;) {
+      if (signal.aborted) throw new Error('the call was aborted')
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value === undefined) continue
+      const remaining = MAX_NET_RESPONSE_BYTES - total
+      if (value.byteLength >= remaining) {
+        chunks.push(value.subarray(0, remaining))
+        total += remaining
+        tooLarge = true
+        break
+      }
+      chunks.push(value)
+      total += value.byteLength
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  const text = new TextDecoder().decode(concatBytes(chunks, total))
+  return tooLarge ? `${text}\n… (truncated)` : text
+}
+
+function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
+  if (chunks.length === 1 && chunks[0]?.byteLength === total) return chunks[0]
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.byteLength
+  }
+  return out
+}
+
 /** 词法边界 + realpath 归一。**两层都要**,理由见 `net/attachment-protocol.ts`。 */
 async function resolveInside(ctx: CapabilityContext, path: string): Promise<string> {
   const narrowed = narrowWorkspacePath(ctx.workspaceRoot, path)
@@ -534,6 +785,12 @@ async function findFiles(ctx: CapabilityContext, glob: string, limit: number): P
   const out: string[] = []
   const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
     if (out.length >= limit || depth > 8) return
+    /*
+      ★ 目录遍历是这条路上唯一可能跑很久的循环,而 `host.fs.readDir` 不认 signal。
+      进每个目录前复检一次:一次因为 deadline / 工具停止而失败的 findFiles 不该
+      继续在几万个文件里走 —— 插件那边早就收到失败了。
+    */
+    ctx.checkActive()
     const entries = await ctx.host.fs.readDir(dir).catch(() => [])
     for (const entry of entries) {
       if (out.length >= limit) return

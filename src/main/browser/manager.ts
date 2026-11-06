@@ -34,21 +34,47 @@ export interface BrowserManagerListener {
   (change: BrowserChange): void
 }
 
+/*
+  需求：工作区所有者要求浏览器能打开 `file://` 本地页面（2026-09-22，与放开
+  内网地址同一批要求，风险记在 `kernel/tool/builtin/ssrf.ts` 的 `allowFileUrls`）。
+  所以协议闸放行 http/https/file 三种；`javascript:`、`data:` 等照旧拒。
+
+  ★ 凭证拦截不受影响：file://user:pass@ 同样拒（理由见 ssrf.ts 的同名检查）。
+*/
 function normalizeUrl(raw: string): string {
   const value = raw.trim()
   let parsed: URL
   try {
     parsed = new URL(value)
   } catch {
-    throw new Error('浏览器只支持完整的 http:// 或 https:// 地址')
+    throw new Error('浏览器只支持完整的 http://、https:// 或 file:// 地址')
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('浏览器只支持 http:// 或 https:// 地址')
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:') {
+    throw new Error('浏览器只支持 http://、https:// 或 file:// 地址')
   }
   if (parsed.username !== '' || parsed.password !== '') {
     throw new Error('浏览器地址不能包含用户名或密码')
   }
   return parsed.href
+}
+
+/**
+ * 未给标题时从地址推一个。★ `file://` 的 hostname 是空串 —— 直接用它当标题
+ * 会得到一个没有文字的标签，症状是「右侧工作台开了个空白格子，认不出是哪一页」。
+ * 所以空 hostname 时退回路径末段（`file:///a/b.html` → `b.html`）。
+ */
+function titleFromUrl(url: string): string {
+  const parsed = new URL(url)
+  if (parsed.hostname !== '') return parsed.hostname
+  const last = parsed.pathname.split('/').filter(Boolean).pop()
+  if (last === undefined || last === '') return url
+  // 路径里可能有非法的 % 序列（`%zz`），decodeURIComponent 会抛 URIError ——
+  // 标题推导不该让整个 open() 失败，解不动就用原样。
+  try {
+    return decodeURIComponent(last)
+  } catch {
+    return last
+  }
 }
 
 function copyTab(tab: BrowserTab): BrowserTab {
@@ -166,7 +192,7 @@ export class BrowserManager {
       source: input.source,
       backend: input.backend ?? 'iab',
       url,
-      title: input.title?.trim() || new URL(url).hostname,
+      title: input.title?.trim() || titleFromUrl(url),
       status: 'loading',
       createdAt: now,
       updatedAt: now

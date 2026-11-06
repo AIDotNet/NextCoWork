@@ -43,6 +43,12 @@ export interface PluginMarketItem {
   author: string
 }
 
+export interface PluginMarketPage {
+  items: PluginMarketItem[]
+  hasNext: boolean
+  page: number
+}
+
 /**
  * 「这个已装的插件有新版」—— 主进程算完之后推给渲染层的一条。
  *

@@ -1,0 +1,13 @@
+.switch { display: inline-flex; min-height: var(--control-height-md); align-items: center; gap: var(--space-3); padding: 0; border: 0; color: var(--foreground); background: transparent; font: inherit; font-size: var(--text-sm); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.switch:disabled { cursor: not-allowed; opacity: .5; }
+/* Fixed box: the thumb moves inside it with transforms, so nothing around the switch shifts. The track crossfades between the two fills. */
+.track { position: relative; box-sizing: border-box; display: flex; flex: 0 0 auto; width: 38px; height: 22px; align-items: center; padding: 2px; border-radius: var(--radius-pill); background: var(--control-track); box-shadow: inset 0 0 0 .5px rgb(0 0 0 / .06); isolation: isolate; transition: background-color var(--duration-fast) var(--ease-standard); }
+.track::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--control-on); opacity: 0; transition: opacity var(--duration-standard) var(--ease-standard); }
+.switch[data-state="checked"] .track::before { opacity: 1; }
+.thumb { flex: 0 0 auto; width: 18px; height: 18px; border-radius: var(--radius-pill); background: var(--control-thumb); box-shadow: var(--control-thumb-shadow); will-change: transform; transition: background-color var(--duration-standard) var(--ease-standard); }
+.switch[data-state="checked"] .thumb { background: var(--control-thumb-on); }
+@media (hover: hover) and (pointer: fine) { .switch[data-state="unchecked"]:hover:not(:disabled) .track { background: var(--control-track-hover); } }
+.switch:focus-visible { outline: none; }
+.switch:focus-visible .track { box-shadow: 0 0 0 3px var(--focus-outline); }
+.label { line-height: var(--leading-body); }
+@media (prefers-reduced-motion: reduce) { .track, .track::before, .thumb { transition: none; } }

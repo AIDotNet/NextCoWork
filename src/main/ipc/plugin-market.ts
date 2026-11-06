@@ -21,7 +21,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { PluginCatalog } from '../../shared/plugin/state'
-import type { PluginMarketItem, PluginUpdate, PluginUpdateResult } from '../../shared/plugin/market'
+import type { PluginMarketItem, PluginMarketPage, PluginUpdate, PluginUpdateResult } from '../../shared/plugin/market'
 import { addedPermissions, isPluginPermission } from '../../shared/plugin/permission'
 import { hasNewerVersion } from '../../shared/plugin/manifest'
 import { getHost } from '../runtime'
@@ -40,8 +40,9 @@ async function marketRequest(path: string): Promise<unknown> {
   return body.data ?? body
 }
 
-export async function listMarketPlugins(req: { q?: string; category?: string }): Promise<PluginMarketItem[]> {
-  const params = new URLSearchParams()
+export async function listMarketPlugins(req: { q?: string; category?: string; page?: number }): Promise<PluginMarketPage> {
+  const page = Number.isInteger(req.page) && (req.page ?? 0) > 0 ? req.page as number : 1
+  const params = new URLSearchParams({ page: String(page), pageSize: '12' })
   if (req.q !== undefined && req.q !== '') params.set('q', req.q.slice(0, 100))
   if (req.category !== undefined && req.category !== '') params.set('category', req.category)
   /*
@@ -50,8 +51,12 @@ export async function listMarketPlugins(req: { q?: string; category?: string }):
     从没提过这件事(计划 §10.2 第 3 条)。
   */
   params.set('client', hostVersion())
-  const payload = (await marketRequest(`/plugins?${params.toString()}`)) as { items?: PluginMarketItem[] }
-  return (payload.items ?? []).map(normalizeItem)
+  const payload = (await marketRequest(`/plugins?${params.toString()}`)) as { items?: PluginMarketItem[]; hasNext?: boolean }
+  return {
+    items: (payload.items ?? []).map(normalizeItem),
+    hasNext: payload.hasNext === true,
+    page
+  }
 }
 
 export async function listMarketPluginCategories(): Promise<string[]> {

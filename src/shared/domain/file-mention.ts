@@ -217,3 +217,18 @@ export function insertMention(
     caret: range.start + link.length + pad.length
   }
 }
+
+/**
+ * 把一条文件引用**追加到草稿末尾** —— 文件树右键「添加到聊天」走这条。
+ *
+ * 需求:用户在右侧文件树上挑中一个文件,要的是「把它带进我正在写的这句话」,
+ * 而不是替换掉已经写了一半的草稿;草稿末尾没有空白时先补一个空格,
+ * 否则 `看下这个[a](a)` 在输入框里会和前一个字粘在一起。
+ *
+ * ★ 写法与 `insertMention` 逐字相同(同一个函数产出),于是追加进来的这一段在输入框里
+ *   照样画成 chip,发给模型的也还是那一种 `[name](path)` —— 两条入口不分叉。
+ */
+export function appendMention(text: string, file: { name: string; path: string }): string {
+  const base = text === '' || /\s$/.test(text) ? text : `${text} `
+  return insertMention(base, { start: base.length, end: base.length }, file).text
+}

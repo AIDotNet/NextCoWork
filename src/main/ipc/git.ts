@@ -19,12 +19,22 @@
  *   (`switch <branch>`)用 `safeRef()` 挡掉前导 `-`。
  */
 import { execFile } from 'node:child_process'
-import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs'
+import {
+  closeSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readlinkSync,
+  realpathSync
+} from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type {
   GitBranchSummary,
   GitCommitSummary,
   GitDiff,
+  GitDiffSides,
   GitOverview,
   GitUnavailableReason
 } from '../../shared/domain/git'
@@ -319,6 +329,20 @@ function clampDiff(path: string, staged: boolean, text: string): GitDiff {
 }
 
 /**
+ * 仓库相对路径 → 磁盘上的绝对路径。
+ *
+ * 只有两处真的去拼 fs 路径(`readUntracked` / `readWorktreeSide`)—— 越界一律拒。
+ */
+function resolveInRepo(repo: Repo, path: string): string {
+  const target = resolve(repo.root, path)
+  const rel = relative(repo.root, target)
+  if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+    throw new IpcError('tool_failed', 'git.invalidPath')
+  }
+  return target
+}
+
+/**
  * 未跟踪文件的 diff。
  *
  * ★ 自己拼,不走 `git diff --no-index /dev/null <path>`:那条命令在 Windows 上
@@ -328,12 +352,7 @@ function clampDiff(path: string, staged: boolean, text: string): GitDiff {
  */
 function readUntracked(repo: Repo, path: string): GitDiff {
   const empty: GitDiff = { path, staged: false, binary: false, truncated: false, text: '' }
-  // 这是唯一一处真的去拼 fs 路径的地方 —— 越界一律拒
-  const target = resolve(repo.root, path)
-  const rel = relative(repo.root, target)
-  if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
-    throw new IpcError('tool_failed', 'git.invalidPath')
-  }
+  const target = resolveInRepo(repo, path)
 
   let fd: number
   try {
@@ -398,6 +417,113 @@ export async function getGitDiff(req: {
   const result = await run(repo.root, args)
   if (result.code !== 0) fail(result, 'git diff 失败')
   return clampDiff(path, staged, result.stdout)
+}
+
+/**
+ * 对比视图里单侧全文的上限。超出就退回 unified 文本 —— 那条路自己会截断,
+ * 而全文对比要的是**完整**的两份,截一半的全文比不出任何可信的东西。
+ */
+const MAX_SIDE_CHARS = 1024 * 1024
+
+/** 读一侧内容的结果:`null` = 这一侧没法当文本比(二进制 / 超限 / 读失败)。 */
+type Side = string | null
+
+function textSide(content: string): Side {
+  // NUL = 二进制,和 git 自己的判据一致
+  if (content.length > MAX_SIDE_CHARS || content.includes('\u0000')) return null
+  return content
+}
+
+/**
+ * 从对象库读一个 blob。
+ *
+ * ★ 用 `cat-file blob` 而不是 `show`:前者给的是原始内容,不走 textconv。
+ *   退出码 128 = 对象不存在(新文件在 HEAD 里没有、空仓库没有 HEAD)——
+ *   那一侧就是空的,不是失败。
+ */
+async function readBlobSide(repo: Repo, object: string): Promise<Side> {
+  const result = await run(repo.root, ['cat-file', 'blob', object])
+  if (result.code === 128) return ''
+  if (result.code !== 0) return null
+  return textSide(result.stdout)
+}
+
+/**
+ * 读工作区里的那一侧。
+ *
+ * ★ 符号链接读**链接本身**(目标路径文本),不跟进去 —— git 存的就是这个,
+ *   跟进去读目标文件的话,一个没动过的链接也会显示成「整份重写」。
+ */
+function readWorktreeSide(repo: Repo, path: string): Side {
+  const target = resolveInRepo(repo, path)
+  let stat
+  try {
+    stat = lstatSync(target)
+  } catch {
+    // 工作区里删掉了 —— 这一侧就是空的
+    return ''
+  }
+  try {
+    if (stat.isSymbolicLink()) return readlinkSync(target, 'utf8')
+    if (!stat.isFile() || stat.size > MAX_SIDE_CHARS) return null
+    return textSide(readFileSync(target, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 这个路径在 index 里的条目。
+ *
+ * - `untracked`:不在 index 里
+ * - `special`:冲突中(有 1/2/3 号 stage)或子模块(160000)—— 全文对比说不清楚
+ * - 否则给出 stage 0 那条的 blob
+ */
+async function indexEntry(
+  repo: Repo,
+  path: string
+): Promise<'untracked' | 'special' | { blob: string }> {
+  const result = await run(repo.root, ['ls-files', '--stage', '-z', '--', path])
+  if (result.code !== 0) return 'special'
+  // 每条:`<mode> <blob> <stage>\t<path>`。pathspec 命中目录时会带出多条,只认精确路径
+  const entries = result.stdout
+    .split('\u0000')
+    .filter((item) => item !== '')
+    .map((item) => {
+      const tab = item.indexOf('\t')
+      const [mode = '', blob = '', stage = ''] = item.slice(0, tab).split(' ')
+      return { mode, blob, stage, path: item.slice(tab + 1) }
+    })
+    .filter((item) => item.path === path)
+  const [entry] = entries
+  if (entry === undefined) return 'untracked'
+  if (entries.length > 1 || entry.stage !== '0' || entry.mode === '160000') return 'special'
+  return { blob: entry.blob }
+}
+
+export async function getGitDiffSides(req: {
+  workspaceId: string
+  path: string
+  staged: boolean
+}): Promise<GitDiffSides | null> {
+  const repo = await requireRepo(req.workspaceId)
+  const path = safePath(req.path)
+  const entry = await indexEntry(repo, path)
+  if (entry === 'special') return null
+
+  const [original, modified]: [Side, Side] = req.staged === true
+    ? await Promise.all([
+      // 暂存区视图:HEAD → index。index 里没有 = 暂存了一次删除
+      readBlobSide(repo, `HEAD:${path}`),
+      entry === 'untracked' ? '' : readBlobSide(repo, entry.blob)
+    ])
+    : [
+      // 工作区视图:index → 工作区。未跟踪文件没有可比的一侧,原文就是空的
+      entry === 'untracked' ? '' : await readBlobSide(repo, entry.blob),
+      readWorktreeSide(repo, path)
+    ]
+  if (original === null || modified === null) return null
+  return { original, modified }
 }
 
 export async function stageGitPaths(req: { workspaceId: string; paths: string[] }): Promise<void> {

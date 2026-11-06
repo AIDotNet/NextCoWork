@@ -1,6 +1,12 @@
+/* Arc 的 token 必须是最低的一层 —— 理由见 arc.css 文件头 */
+@import './arc.css' layer(arc);
 @import 'tailwindcss';
 
 /*
+  ★ 苹果风格分支(feat/apple-style-ui):下面 @theme / 浅色 / 首屏兜底三处的色值已换成
+    macOS 系统色,权威来源是 `shared/domain/theme.ts` 的 `BASE`(那边有选值理由)。
+    本段以下关于「量自参考实现」的说明保留作历史,数值以 BASE 为准。
+
   方案 §8 的 token 层。数值不是调出来的,是**从参考实现的截图上量出来的** ——
   量法是区域直方图,不是取单像素:
 
@@ -79,27 +85,32 @@
 */
 @theme {
   /* ── 结构:量自 docs/image-latest/dark.png,全部 100% 单色 ── */
-  --color-app: #2a2d2b; /* 窗口底 —— 面板之间露出来的那条缝(实测 3px 宽) */
-  --color-canvas: #1e2020; /* 内容面板 / 激活的外层 Tab / 内层 Tab 条 */
-  --color-surface: #232726; /* 侧边栏 */
-  --color-chrome: #343a37; /* 外层 Tab 条 —— 深色下**比侧边栏亮**,见上 §1 */
-  --color-surface-raised: #2a2d2b; /* 侧边栏里的分区卡 —— 和窗口底同色,深浅都成立 */
-  --color-surface-input: #2a2d2b; /* 画布上的输入框 —— 深色下并入 raised,浅色下是纯白 */
+  --color-app: #252527; /* 窗口底 —— 面板之间露出来的那条缝(实测 3px 宽) */
+  --color-canvas: #1c1c1e; /* 内容面板 / 激活的外层 Tab / 内层 Tab 条 */
+  --color-surface: #202022; /* 侧边栏 */
+  --color-chrome: #2c2c2e; /* 外层 Tab 条 —— 深色下**比侧边栏亮**,见上 §1 */
+  --color-surface-raised: #2c2c2e; /* 侧边栏里的分区卡 —— 和窗口底同色,深浅都成立 */
+  --color-surface-input: #2c2c2e; /* 画布上的输入框 —— 深色下并入 raised,浅色下是纯白 */
   /*
     **浮层里的**输入框(设置浮层的搜索框、端口框、代理地址框)。这批截图里没有浮层,
     按 v1.1.15 的步长推:raised 往上一级(+10)。深色下和 chrome 撞值,浅色下分开 ——
     和 surface/chrome 那一对正好是镜像,同一个道理:两个 token 在一个主题里恰好相等,
     不等于它们是同一个东西。
   */
-  --color-surface-field: #343a37;
-  --color-surface-sunken: #252b28; /* 按下 / 激活的图标按钮:从 chrome 往下挖(推的) */
+  --color-surface-field: #3a3a3c;
+  --color-surface-sunken: #232325; /* 按下 / 激活的图标按钮:从 chrome 往下挖(推的) */
+
+  /* 菜单与子菜单以底色和阴影浮起,避免被 border 的对比度护栏提亮出一圈描边。 */
+  /* 苹果风格:菜单是半透明材质,配合下面 `.bg-surface-menu` 的背景模糊读作毛玻璃(NSVisualEffectView) */
+  --color-surface-menu: color-mix(in srgb, var(--color-surface-raised) 80%, transparent);
+  --shadow-menu: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 10px 30px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.08);
 
   /* ── 交互态 ── */
-  --color-tint: #2b2e2d; /* 激活的内层 Tab(实测)/ 控件槽 / 用户气泡 */
-  --color-tint-hover: #363b38; /* 悬停(推的:+11,带绿) */
-  --color-tint-strong: #3c423e; /* 菜单行悬停 / 分类 chip(推的:+17) */
+  --color-tint: #2c2c2e; /* 激活的内层 Tab(实测)/ 控件槽 / 用户气泡 */
+  --color-tint-hover: #323234; /* 悬停(推的:+11,带绿) */
+  --color-tint-strong: #3a3a3c; /* 菜单行悬停 / 分类 chip(推的:+17) */
 
-  --color-border: #2b2e2d; /* 与 tint 同值 —— 沿用 v1.1.15 里两者相等的关系 */
+  --color-border: #48484a; /* 与 tint 同值 —— 沿用 v1.1.15 里两者相等的关系 */
   /*
     ★ **`stroke` 和 `border` 值相同,但不是同一个东西 —— 别合并。**
 
@@ -114,22 +125,22 @@
     「功能性轮廓」和「装饰性收边」两个职责,护栏只能按前者算,后者必然被牺牲。
 
     所以分工是:
-      border  → 输入框 / 下拉 / 菜单 / 对话框,**要被人点的东西的轮廓**,受护栏保护
+      border  → 输入框 / 下拉触发器 / 对话框,**要被人点的东西的轮廓**,受护栏保护
       stroke  → 卡片 / 面板 / 区块的收边,**纯装饰**,永远是设计值
     分隔线仍然走 `hairline`(卡片**内部**的横线),这三个别混。
   */
-  --color-stroke: #2b2e2d;
-  --color-hairline: #252727; /* 内容区里的行分隔线,比 canvas 只高一点点 */
+  --color-stroke: #2e2e30;
+  --color-hairline: #28282a; /* 内容区里的行分隔线,比 canvas 只高一点点 */
 
-  --color-fg: #ececec;
-  --color-fg-muted: #959897;
-  --color-fg-faint: #7b7d7c;
+  --color-fg: #f5f5f7;
+  --color-fg-muted: #aeaeb2;
+  --color-fg-faint: #8e8e93;
 
-  --color-icon: #cfcfcf; /* ★ 中性灰,**不是**强调色 —— 见上 §3。缩图下界 */
-  --color-accent: #36d285; /* ★ 亮绿(激活芯片实心底 / 「完全访问」盾牌与文字) */
-  --color-accent-fg: #0a2615; /* 压在 accent 上的文字 —— 深绿近黑 */
-  --color-accent-soft: #5a8a72; /* 正文里的装饰性小图标(推的:accent 去饱和) */
-  --color-danger: #d9614e; /* 未量到,沿用 v1.1.15 */
+  --color-icon: #c7c7cc; /* ★ 中性灰,**不是**强调色 —— 见上 §3。缩图下界 */
+  --color-accent: #0071e3; /* ★ 亮绿(激活芯片实心底 / 「完全访问」盾牌与文字) */
+  --color-accent-fg: #ffffff; /* 压在 accent 上的文字 —— 深绿近黑 */
+  --color-accent-soft: #4a6c99; /* 正文里的装饰性小图标(推的:accent 去饱和) */
+  --color-danger: #ff453a; /* 未量到,沿用 v1.1.15 */
   /*
     ★ **`warning` 之前根本不存在。**
 
@@ -145,7 +156,50 @@
 
     色值取 accent 的补色方向(琥珀),在 canvas #1e2020 上对比度 ≈ 8.9:1。
   */
-  --color-warning: #e0a33a;
+  --color-warning: #ff9f0a; /* systemOrange(深色) */
+  --color-success: #30d158; /* systemGreen(深色)—— 状态药丸「成功」用 */
+
+  /*
+    ── 图表分类色(使用统计页:按模型着色)──
+
+    需求:用量页要能一眼分出「哪一块是哪个模型」,并且**同一个模型在环形图、
+    趋势堆叠图、费用条里是同一个颜色**。早先的做法是 accent 往 tint 里掺出一条
+    单色相梯度(见 `settings/pages/usage/charts/colors.ts` 的历史注释),8 个以上
+    模型时相邻两片只差十来个百分点,肉眼分不开 —— 图例上八个点全是同一个色。
+
+    **这组值是推的,不是量的**:参考实现里没有分类色。取法是 8 个色相按
+    「相邻两项色相差尽量大」排序(蓝 → 琥珀 → 紫 → 青绿 → 珊瑚 → 青 → 粉 → 橄榄),
+    深色下统一抬到中高明度:8 色在 surface #232726 上对比度 5.4–8.1:1(算的,
+    WCAG 相对亮度公式),other 为 3.0:1。
+
+    ★ 它们**不进 `THEME_TOKENS`**,和 warning 同理:这是数据编码,不是品牌色 ——
+    跟着换色器走的话,换一次 accent 可能把第 3 类和第 5 类换成同一个色,
+    而图表不会报错,只会「看不出区别」。换色器照旧只影响 accent 及其派生
+    (热力图、总量折线仍然是 accent)。
+
+    `chart-other` 是「其他(合并的尾部)」专用的中性灰 —— 它不是一个模型,
+    不该抢一个分类色。
+  */
+  --color-chart-1: #0a84ff;
+  --color-chart-2: #ff9f0a;
+  --color-chart-3: #bf5af2;
+  --color-chart-4: #30d158;
+  --color-chart-5: #ff6961;
+  --color-chart-6: #64d2ff;
+  --color-chart-7: #ff375f;
+  --color-chart-8: #ffd60a;
+  --color-chart-other: #636366;
+
+  /*
+    ── 文档页面上的墨色(办公画布的文字光标)──
+
+    需求:办公编辑器的画布画的是引擎渲染出来的**白纸**,纸不跟随界面深浅色。光标若用 `fg`,
+    深色主题下就是一根浅灰线压在白纸上,几乎看不见 —— 用户会以为画布没有获得焦点。
+    **推的,不是量的**:参考实现(WPS / LibreOffice)纸面上的文字光标是纯黑。
+    ★ 不进 `THEME_TOKENS`,和 warning 同理:纸面是文档内容,不是界面皮肤,换色器不该碰它;
+      浅色主题也不重赋值(两套主题下纸都是白的)。
+  */
+  --color-page-ink: #000000;
 
   /*
     ★ **遮罩是纯黑 + 透明度,不是一个实色。** 反解 v1.1.15 的设置浮层截图:
@@ -167,8 +221,8 @@
   */
   --ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
 
-  --radius-panel: 12px; /* 浮动面板 —— 采样:侧边栏左上角圆角 ≈ 12px */
-  --radius-card: 10px;
+  --radius-panel: 16px; /* 浮动面板 —— Liquid Glass 的面板圆角 */
+  --radius-card: 14px; /* 卡片(工具卡、思考块、计划面板…)*/
   --radius-pill: 999px;
 
   /*
@@ -184,9 +238,9 @@
   --spacing-window-controls: 128px;
 
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', Consolas, monospace;
   /* 品牌字标专用 —— 圆润几何感,和正文的 --font-sans 拉开区分度,只用在「NextCoWork」标题上 */
   --font-brand: 'SF Pro Rounded', 'Avenir Next', 'PingFang SC', var(--font-sans);
 }
@@ -200,36 +254,50 @@
   所以这一版改的只有深色,浅色原样保留。
 */
 :root[data-theme='light'] {
-  --color-app: #f2eee6; /* 窗口底 —— 面板之间的缝 */
-  --color-canvas: #faf9f5; /* 内容面板 / 激活的外层 Tab / 选中的会话行 */
-  --color-surface: #f6f4ef; /* 侧边栏 / 画布上的工具卡 */
-  --color-chrome: #e8e4dd; /* 外层 Tab 条 —— 浅色下**比侧边栏暗**,见上 §1 */
-  --color-surface-raised: #f2eee6; /* 侧边栏里的分区卡 / 菜单 —— 同窗口底 */
+  --color-app: #ececf0; /* 窗口底 —— 面板之间的缝 */
+  --color-canvas: #ffffff; /* 内容面板 / 激活的外层 Tab / 选中的会话行 */
+  --color-surface: #f5f5f7; /* 侧边栏 / 画布上的工具卡 */
+  --color-chrome: #e3e3e8; /* 外层 Tab 条 —— 浅色下**比侧边栏暗**,见上 §1 */
+  --color-surface-raised: #f2f2f7; /* 侧边栏里的分区卡 / 菜单 —— 同窗口底 */
   --color-surface-input: #ffffff; /* 输入框:整个界面唯一的纯白 */
   --color-surface-field: #ffffff; /* 浮层里的输入框 —— 浅色下靠纯白+描边分出来 */
-  --color-surface-sunken: #dbd8d1; /* 按下 / 激活的图标按钮(量自收起态的侧边栏按钮) */
+  --color-surface-sunken: #dcdce1; /* 按下 / 激活的图标按钮(量自收起态的侧边栏按钮) */
 
-  --color-tint: #efefec; /* 激活的内层 Tab / 时间戳药丸 / 发丝线,都是这一个值 */
-  --color-tint-hover: #edeae6; /* Explore 芯片 / 头像圆 */
-  --color-tint-strong: #e2ded7;
+  --color-tint: #ededf2; /* 激活的内层 Tab / 时间戳药丸 / 发丝线,都是这一个值 */
+  --color-tint-hover: #e8e8ed; /* Explore 芯片 / 头像圆 */
+  --color-tint-strong: #dedee3;
 
-  --color-border: #e6e6e2; /* 输入框描边 */
-  --color-stroke: #e6e6e2; /* 卡片收边 —— 见深色那段:和 border 同值但不受护栏改写 */
-  --color-hairline: #efefec; /* 内层 Tab 条下那一道 */
+  --color-border: #c7c7cc; /* 输入框描边 */
+  --color-stroke: #e5e5ea; /* 卡片收边 —— 见深色那段:和 border 同值但不受护栏改写 */
+  --color-hairline: #ececf0; /* 内层 Tab 条下那一道 */
 
-  --color-fg: #181c19;
-  --color-fg-muted: #72736f;
-  --color-fg-faint: #96958f;
+  --color-fg: #1d1d1f;
+  --color-fg-muted: #5f5f64;
+  --color-fg-faint: #8e8e93;
 
-  --color-icon: #7e7f7e; /* ★ 中性灰,不是强调色 —— 见上 §3 */
-  --color-accent: #2d4739; /* ★ 墨绿 —— 深色是亮绿 #36d285,明暗相反 */
+  --color-icon: #6e6e73; /* ★ 中性灰,不是强调色 —— 见上 §3 */
+  --color-accent: #0071e3; /* ★ 墨绿 —— 深色是亮绿 #36d285,明暗相反 */
   --color-accent-fg: #ffffff;
-  --color-accent-soft: #8e8f8d;
-  --color-danger: #c4412c;
+  --color-accent-soft: #86a8d6;
+  --color-danger: #e0352b;
   /* 浅色下压暗一档:#e0a33a 在近白底上只有 2.1:1,读不出来 */
-  --color-warning: #9a6b12;
+  --color-warning: #b25000; /* systemOrange 压暗到浅底可读 */
+  --color-success: #248a3d; /* systemGreen 压暗到浅底可读 */
 
-  --color-scrim: #2b2a27; /* 暖近黑 —— 浅色下压暗要压暖,压蓝会发灰(无参考,按规律推) */
+  /* 图表分类色:色相顺序同深色,明度压到中低档 —— 深色那套在近白底上
+     琥珀 / 橄榄远低于 3:1,色块边界会糊。这套在 surface #f6f4ef 上 3.3–4.9:1,
+     过非文本 3:1 线(推的 + 算的,理由见 @theme 里那段) */
+  --color-chart-1: #0071e3;
+  --color-chart-2: #c46a00;
+  --color-chart-3: #8944ab;
+  --color-chart-4: #248a3d;
+  --color-chart-5: #d70015;
+  --color-chart-6: #0071a4;
+  --color-chart-7: #d30f45;
+  --color-chart-8: #a05a00;
+  --color-chart-other: #aeaeb2;
+
+  --color-scrim: #000000; /* 苹果风格:两个外观都是纯黑遮罩 */
 }
 
 /*
@@ -252,14 +320,14 @@
 */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
-    --color-app: #f2eee6;
-    --color-canvas: #faf9f5;
-    --color-surface: #f6f4ef;
-    --color-chrome: #e8e4dd;
-    --color-tint: #efefec;
-    --color-border: #e6e6e2;
-    --color-stroke: #e6e6e2;
-    --color-fg: #181c19;
+    --color-app: #ececf0;
+    --color-canvas: #ffffff;
+    --color-surface: #f5f5f7;
+    --color-chrome: #e3e3e8;
+    --color-tint: #ededf2;
+    --color-border: #c7c7cc;
+    --color-stroke: #e5e5ea;
+    --color-fg: #1d1d1f;
   }
 }
 
@@ -395,7 +463,7 @@ body {
 .theme-studio-layout { display: grid; grid-template-columns: 190px minmax(300px, 1fr) minmax(280px, 340px); gap: 16px; min-height: 0; flex: 1; }
 .theme-studio-library, .theme-studio-inspector { min-height: 0; overflow: auto; }
 .theme-studio-center { min-width: 0; display: flex; flex-direction: column; }
-.studio-select { width: 100%; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-surface-field); color: var(--color-fg); padding: 7px 9px; font-size: 12px; }
+.studio-select { width: 100%; padding-block: 6px; font-size: 12px; }
 .theme-preview-frame { position: relative; display: flex; min-height: 390px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-canvas); background-size: cover; isolation: isolate; }
 .theme-preview-sidebar { width: 22%; min-width: 82px; display: flex; flex-direction: column; gap: 13px; padding: 14px 10px; background: color-mix(in srgb, var(--color-surface) 90%, transparent); backdrop-filter: blur(16px); }
 .theme-preview-logo { width: 56px; height: 8px; border-radius: 999px; background: var(--color-accent); }
@@ -472,7 +540,7 @@ body {
 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-tint) transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-fg) 22%, transparent) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
@@ -482,13 +550,14 @@ body {
 /* thumb 靠 border + background-clip 挤出内缩,而不是直接把 scrollbar 调窄:
    8px 的命中区保留给鼠标,视觉上只有中间 4px 有颜色。改成 width:4px 会很难点中。 */
 *::-webkit-scrollbar-thumb {
-  background: var(--color-tint);
+  /* 苹果风格:macOS 叠加式滚动条 —— 前景色半透明,深浅两个外观都自然 */
+  background: color-mix(in srgb, var(--color-fg) 22%, transparent);
   border: 2px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--color-tint-strong);
+  background: color-mix(in srgb, var(--color-fg) 38%, transparent);
   background-clip: content-box;
 }
 *::-webkit-scrollbar-corner,
@@ -580,6 +649,47 @@ body {
   animation: reveal-delayed 160ms ease-out 250ms both;
 }
 
+/*
+  共享 `Select` 面板的入场:从触发器那一侧轻轻展开(借自 beUI Select 的「面板分离」)。
+  transform-origin 由 Radix 给的 `--radix-select-content-transform-origin` 决定,
+  面板翻到触发器上方时会自动跟着翻,这里不用分上下两套。
+*/
+@keyframes select-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/*
+  run 正常收束时,过程段整体换装成「用时」摘要行 —— 摘要行淡入的那一帧。
+  换装本身是两棵子树的瞬时交接(理由见 Thread 的 appliedCollapse),没有这
+  180ms,观感是几百像素的过程区「传送」成一行字;淡入让它读作「折进了这一行」。
+  ★ 挂 `both`:首帧就得是 opacity 0,否则先闪一帧不透明的再淡。
+  ★ reduced/off 除了全局 duration 归零兜底,这里照 .skills-view-enter 的
+  写法再显式 animation:none —— both 的 fill 在 0ms 下会直接停在终态,但
+  显式关掉少一次「靠推导成立」。
+*/
+@keyframes run-fold-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.run-fold-enter {
+  animation: run-fold-enter 180ms var(--ease-panel) both;
+}
+:root[data-theme-motion='reduced'] .run-fold-enter,
+:root[data-theme-motion='off'] .run-fold-enter {
+  animation: none;
+}
+
 @keyframes skills-view-enter {
   from {
     opacity: 0;
@@ -619,6 +729,104 @@ body {
 }
 
 /*
+  文件树展开目录时,新露出来的子项从上方 6px 处淡入落下,逐行错开(错开量在
+  `views/files/tree-rows.ts` 的 `enterDelays`)。
+  ★ 数值不是量出来的:照搬 beUI File Tree 的 `ROW_ENTER`
+  (`{ opacity: 0, y: -6 }`,0.22s,EASE_OUT = cubic-bezier(0.16, 1, 0.3, 1))。
+  ★ 用 CSS 而不是 Motion:一次展开可能摊出上千行,每行一个 motion 组件太重;
+  `both` 让错开等待期间停在 opacity 0,而不是先闪一帧再淡入。
+  ★ reduced/off 显式 animation:none,写法同上面的 .skills-view-enter。
+*/
+@keyframes file-tree-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.file-tree-row-enter {
+  animation: file-tree-row-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+:root[data-theme-motion='reduced'] .file-tree-row-enter,
+:root[data-theme-motion='off'] .file-tree-row-enter {
+  animation: none;
+}
+
+/*
+  输入框上方那条任务清单的收 / 展。两个方向都是**换一棵子树**(收起是小球、展开是整张
+  卡片,见 `views/chat/TaskChecklist.tsx` 的 `TaskChecklistShell`),换装本身是瞬时的 ——
+  没有这一段,观感是卡片被凭空抽走 / 凭空砸下来,而它旁边那颗球就是刚刚那张卡片的化身。
+
+  ★ 四段分工:
+    - 收起:卡片留在原地淡出(`-card-exit`)+ 小球 pop 入场(`-ball-enter`),
+      交叉的那 150ms 就是「过渡」本身。摘掉卡片的那一帧由 Shell 的 timeout 交回,
+      时长与这里的 150ms 是一对(见 `TaskChecklist.CARD_LEAVE_MS`)。
+    - 展开:卡片淡入并轻微放大(`-card-enter`),列表**随后**铺开(`-list-enter` 延迟
+      75ms),两拍读起来像「卡片先落位、内容再展开」。
+  ★ 四段都挂 `both`:入场那几段的首帧必须是起点,否则会先闪一帧终态;
+    `-card-exit` 还靠它停在 opacity 0,直到 Shell 把它从 DOM 里摘掉。
+  ★ reduced/off 显式 animation:none,写法同上面的 .skills-view-enter —— 这两档下
+    Shell 也不进「离开态」,卡片当场卸载,不会留一段静止的残影。
+*/
+@keyframes checklist-card-enter {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes checklist-card-exit {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+@keyframes checklist-ball-enter {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes checklist-list-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.checklist-card-enter {
+  animation: checklist-card-enter 150ms ease-out both;
+}
+.checklist-card-exit {
+  animation: checklist-card-exit 150ms ease-out both;
+}
+.checklist-ball-enter {
+  animation: checklist-ball-enter 150ms ease-out both;
+}
+.checklist-list-enter {
+  animation: checklist-list-enter 200ms ease-out 75ms both;
+}
+:root[data-theme-motion='reduced'] :is(.checklist-card-enter, .checklist-card-exit, .checklist-ball-enter, .checklist-list-enter),
+:root[data-theme-motion='off'] :is(.checklist-card-enter, .checklist-card-exit, .checklist-ball-enter, .checklist-list-enter) {
+  animation: none;
+}
+
+/*
   进度条在「不知道还要多久」时的斜纹。装插件的授权、解压两段没有百分比可报,
   而一条一动不动的空槽和一条卡死的进度条在界面上是一模一样的。
 
@@ -651,6 +859,7 @@ body {
 /*
   Agent 活动反馈。需求：思考块和状态行要共享同一套“仍在工作”的信号，
   但不能靠组件内定时器伪造进度；像素波和文字微光都只表达活跃，不表达百分比。
+  （像素波曾按需求删过一轮，后因状态行趣味词是短词、纯微光看不出在动而加回。）
 */
 @keyframes agent-activity-cell {
   0%,
@@ -691,6 +900,74 @@ body {
 }
 
 /*
+  生图卡片的专属加载格(`views/chat/ImageGenDetail.tsx`)。
+
+  需求:一张图要十几秒,这段时间里每一格占位都得**看得出在动**,而且要和「空白框」
+  「加载失败」一眼分开 —— 所以是一道斜向的光带从左往右扫过整格(像相纸显影),
+  而不是一个转圈:一次出 4 张时四个 spinner 各转各的,正是 `ToolIcon.tsx` 文件头
+  记过的那种噪音。光带用 `--color-fg` 的 7% 叠色,不新增颜色 token,深浅主题自然跟着走
+  (数值是推的,不是量的:取和 `.progress-stripes` 同一档的 7%)。
+
+  `image-gen-reveal`:图到手那一刻从占位淡入,避免一格从光带瞬间「跳」成图。
+
+  ★ reduced/off 档下两者都显式关掉(同 `.run-fold-enter` 的写法);减弱档的「还活着」
+  由组件用 Motion 做无位移呼吸补上(见组件里 `useMotionLevel` 那段),关闭档保持静止。
+*/
+@keyframes image-gen-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.image-gen-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    105deg,
+    transparent 30%,
+    color-mix(in srgb, var(--color-fg) 7%, transparent) 50%,
+    transparent 70%
+  );
+  animation: image-gen-sweep 1.8s ease-in-out infinite;
+}
+@keyframes image-gen-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.image-gen-reveal {
+  animation: image-gen-reveal 260ms var(--ease-panel) both;
+}
+/*
+  输入框灰字(Tab 接受)。见 `views/chat/MentionInput.tsx` 的 `ghost` 与 `docs/composer-autocomplete.md`。
+  ★ 画成伪元素而不是节点:`readDraft` / `domDirty` / 光标 / 撤销栈都看不见它,组词也不会被它打断。
+    它接在最后一个子节点后面,而灰字只在「光标折叠在末尾」时出现,所以正好落在光标后面。
+*/
+[data-composer-input][data-ghost]::after {
+  content: attr(data-ghost);
+  color: var(--color-fg-faint);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ★ `::after` 不能放进 `:is()`(伪元素不是合法的选择器列表项,整条规则会被丢弃),所以拆开写 */
+:root[data-theme-motion='reduced'] .image-gen-sweep::after,
+:root[data-theme-motion='off'] .image-gen-sweep::after,
+:root[data-theme-motion='reduced'] .image-gen-reveal,
+:root[data-theme-motion='off'] .image-gen-reveal {
+  animation: none;
+}
+
+/*
   系统里勾了「减弱动态效果」就别播 —— 前庭功能敏感的人看这类大块位移会晕。
   不写 0 而写 0.01ms:`transitionend` / `animationend` 照常触发,靠事件收尾的
   逻辑不会因为「动画从来没开始过」而卡住。usePresence 用的是定时器,不受影响。
@@ -726,3 +1003,221 @@ body {
          照样能点,这一档就是为了让另外两个平台不比它差 —— 否则设置面板一开
          就没法最小化/关窗。别往这一档里放第二样东西。
 */
+
+/*
+  ── 苹果风格的全局收尾(feat/apple-style-ui)──────────────────────────────
+
+  · 菜单材质:所有 `bg-surface-menu` 的浮层(Menu / ContextMenu / Submenu / Select)
+    都是半透明底,这里补上背景模糊和饱和度提升,读作 macOS 的毛玻璃。
+    系统里开了「降低透明度」就退回实底。
+  · 文本选区用强调色(macOS 的 selectedTextBackgroundColor 是强调色的浅版)。
+  · 字体渲染:关掉 Chromium 的合成字重,开启光学尺寸(SF Text / Display 自动切换)。
+*/
+.bg-surface-menu {
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bg-surface-menu {
+    background-color: var(--color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+body {
+  font-synthesis-weight: none;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+  ── Liquid Glass:半透明窗口 + 浮动玻璃面板(仅 macOS,`data-vibrancy`)──────────
+
+  窗口本身是系统毛玻璃(main/index.ts 的 `vibrancy: 'under-window'`),这里把各层
+  底色换成**同色的半透明版本**,让桌面壁纸的颜色透上来。
+
+  ★ 做法是在面板节点上**重定义 `--color-*` 变量**,而不是逐个改组件的 bg 类:
+    主题 token 是写在 <html> 上的行内样式,面板节点自己声明的同名变量会遮住它,
+    并一路继承给整棵子树 —— 于是面板里所有 `bg-canvas` / `bg-chrome` 一次性变成玻璃。
+    `--glass-*` 在 :root 上先算好(var() 在声明它的元素上就地求值),面板里再引用,
+    避免「--color-canvas 引用自己」的循环。
+  ★ 菜单、弹窗 portal 到 body,不在面板子树里,保持原来的不透明度,读起来才清楚。
+*/
+:root[data-vibrancy] {
+  --glass-app: color-mix(in srgb, var(--color-app) 18%, transparent);
+  --glass-surface: color-mix(in srgb, var(--color-surface) 52%, transparent);
+  --glass-canvas: color-mix(in srgb, var(--color-canvas) 66%, transparent);
+  --glass-chrome: color-mix(in srgb, var(--color-canvas) 30%, transparent);
+  --glass-edge: rgb(255 255 255 / 0.55);
+  --glass-shadow: 0 10px 30px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.06);
+}
+:root[data-vibrancy][data-theme='dark'] {
+  --glass-surface: color-mix(in srgb, var(--color-surface) 48%, transparent);
+  --glass-canvas: color-mix(in srgb, var(--color-canvas) 62%, transparent);
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --glass-shadow: 0 12px 36px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+:root[data-vibrancy],
+:root[data-vibrancy] body {
+  background: transparent;
+}
+:root[data-vibrancy] .app-ground {
+  --color-app: var(--glass-app);
+}
+:root[data-vibrancy] [data-theme-region='sidebar'],
+:root[data-vibrancy] main.app-canvas {
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 0.5px var(--glass-edge), var(--glass-shadow);
+}
+:root[data-vibrancy] [data-theme-region='sidebar'] {
+  --color-surface: var(--glass-surface);
+  --color-surface-raised: color-mix(in srgb, var(--color-fg) 6%, transparent);
+}
+:root[data-vibrancy] [data-theme-region='sidebar'] > aside {
+  border-radius: 16px;
+}
+:root[data-vibrancy] main.app-canvas {
+  --color-canvas: var(--glass-canvas);
+  --color-chrome: var(--glass-chrome);
+}
+/* 内容区里本来就要求不透明的视图(终端、代码编辑器)仍然挡住玻璃:它们用的是 surface,不受上面影响 */
+
+/*
+  ── 苹果风格的共享控件类 ──────────────────────────────────────────────────
+  给**不走 Arc 组件、自己手写 <input> / <textarea> / <select> / <button>** 的那些地方用,
+  外观和 Arc 的 Input / Select / Button 是同一套(取的就是 arc.css 里那几个变量):
+    .apple-field          胶囊输入框:半透明玻璃底 + 1px 浅描边,聚焦时强调色描边 + 3px 焦点环
+                          <textarea> 自动换成 12px 圆角;<select> 自动画上下箭头
+    .apple-btn            次要按钮(玻璃底 + 描边)
+    .apple-btn-primary    主按钮(强调色实底)
+    .apple-sheet          模态大面板(设置、搜索面板):毛玻璃材质 + 16px 圆角 + 浅色收边
+  ★ 写成无层样式:手写控件上常带着 `rounded-[8px] border-border` 这类旧类名,
+    无层规则压得住 Tailwind 的 utilities 层,不用逐个删干净也不会打架。
+*/
+.apple-field {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background-color: var(--surface);
+  color: var(--color-fg);
+  padding-inline: 12px;
+  outline: none;
+  transition: border-color 160ms var(--ease-standard), box-shadow 160ms var(--ease-standard), background-color 160ms var(--ease-standard);
+}
+.apple-field::placeholder {
+  color: var(--color-fg-faint);
+}
+.apple-field:hover:not(:disabled, :focus) {
+  border-color: color-mix(in srgb, var(--color-fg) 24%, transparent);
+}
+.apple-field:is(input, textarea, select):focus,
+.apple-field:focus-visible,
+.apple-field:not(input, textarea, select):focus-within:has(:focus-visible) {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--focus-outline);
+}
+.apple-field[aria-invalid='true'],
+.apple-field[data-state='error'] {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 28%, transparent);
+}
+.apple-field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+textarea.apple-field {
+  border-radius: 12px;
+  padding-block: 8px;
+}
+select.apple-field {
+  appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+}
+
+.apple-btn,
+.apple-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--color-fg);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 160ms var(--ease-standard), filter 160ms var(--ease-standard);
+}
+.apple-btn:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-fg) 9%, transparent);
+}
+.apple-btn-primary {
+  border-color: transparent;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0)) var(--color-accent);
+  color: var(--color-accent-fg);
+  box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.12);
+}
+.apple-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.apple-btn-primary:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+.apple-btn:disabled,
+.apple-btn-primary:disabled {
+  opacity: 0.5;
+}
+
+/* 模态大面板:先在 :root 上把半透明值算好,面板里再遮住同名 token(手法同上面的 Liquid Glass) */
+:root {
+  --sheet-surface: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  --sheet-canvas: color-mix(in srgb, var(--color-canvas) 86%, transparent);
+}
+/*
+  ★ 模糊挂在 `::before` 上,**不能挂在面板本身**:带 backdrop-filter 的元素会成为
+    `position: fixed` 后代的包含块,设置面板里的 Menu(按视口坐标摆放)就会整块偏走 ——
+    见 ui/Menu.tsx 文件头和 SettingsOverlay 里「keep the ancestor transform-free」那句。
+    伪元素是面板的子节点,它的 backdrop-filter 不影响面板里其他内容的定位。
+*/
+.apple-sheet {
+  --color-surface: var(--sheet-surface);
+  --color-canvas: var(--sheet-canvas);
+  isolation: isolate;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.5), var(--shadow-floating);
+}
+.apple-sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-surface-raised) 40%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  backdrop-filter: saturate(180%) blur(40px);
+}
+:root[data-theme='dark'] .apple-sheet {
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.12), var(--shadow-floating);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .apple-sheet::before {
+    background: var(--color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* 原生复选框 / 单选框:跟随强调色(macOS 的勾选框就是强调色实底 + 白勾) */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-accent);
+}

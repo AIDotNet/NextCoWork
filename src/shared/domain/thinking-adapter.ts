@@ -1,6 +1,7 @@
-import { THINKING_BUDGET } from '../agent/run-request'
-import type { ResolvedModelThinking } from './model-runtime'
-import type { ReasoningEffort, RequestAdapterConfig, ThinkingConfig, UpstreamProtocol } from './provider'
+import { THINKING_BUDGET, type ThinkingLevel } from '../agent/run-request'
+import { resolveModelThinking, type ResolvedModelThinking } from './model-runtime'
+import { adaptiveAnthropicBinding } from './model-catalog-inventory/vendors/anthropic'
+import type { ReasoningEffort, ReasoningReplay, RequestAdapterConfig, ThinkingConfig, UpstreamProtocol } from './provider'
 
 export class ThinkingAdapterError extends Error {
   constructor(message: string) {
@@ -17,6 +18,8 @@ export interface ThinkingAdapterInput {
   maxOutputTokens: number
   preset?: RequestAdapterConfig['preset']
   reasoningEfforts?: readonly ReasoningEffort[]
+  /** Original UI selection, before a legacy token budget was clamped. */
+  thinkingLevel?: ThinkingLevel
 }
 
 type AdapterKind = 'anthropic' | 'openai-chat' | 'openai-responses' | 'deepseek' | 'glm' | 'hunyuan' | 'custom'
@@ -63,7 +66,19 @@ function stripThinking(body: Record<string, unknown>): void {
   for (const key of THINKING_ROOTS) delete body[key]
 }
 
+/**
+ * 模型名里带的厂商族。抽出来是给 `kindFor` 与 `reasoningReplayFor` **共用同一份正则** ——
+ * 两处各抄一份,迟早只改一处,表现是请求线形按一家走、历史思考的回传按另一家走。
+ */
+function nameFamily(upstreamModel: string): 'deepseek' | 'glm' | 'hunyuan' | undefined {
+  if (/(?:^|\/)(?:deepseek|deep-seek)[/:._-]/iu.test(upstreamModel)) return 'deepseek'
+  if (/(?:^|\/)(?:glm|chatglm)[/:._-]/iu.test(upstreamModel)) return 'glm'
+  if (/(?:^|\/)(?:hy4-preview|hy3(?:-preview)?)(?:$|[/:._-])/iu.test(upstreamModel)) return 'hunyuan'
+  return undefined
+}
+
 function kindFor(input: ThinkingAdapterInput): AdapterKind {
+  if (input.config?.anthropicAdaptive === true && input.preset === 'custom') return input.protocol
   switch (input.preset) {
     case 'anthropic':
       return 'anthropic'
@@ -77,6 +92,7 @@ function kindFor(input: ThinkingAdapterInput): AdapterKind {
       break
   }
   if (input.protocol === 'anthropic') return 'anthropic'
+  if (input.config?.anthropicAdaptive === true) return input.protocol
   /*
    * ★★ standardWire(见 provider.ts 的 ThinkingConfig):条目声明这家读标准线形时,
    * 不套按模型名的厂商方言 —— Ollama 托管的 deepseek/glm 走这里。注意必须放在
@@ -84,17 +100,38 @@ function kindFor(input: ThinkingAdapterInput): AdapterKind {
    * 就是名字启发式补上它家要的 thinking:{type},顺序反了会改掉官方渠道的行为。
    */
   if (input.config?.standardWire === true) return input.protocol
-  if (/(?:^|\/)(?:deepseek|deep-seek)[/:._-]/iu.test(input.upstreamModel)) return 'deepseek'
-  if (/(?:^|\/)(?:glm|chatglm)[/:._-]/iu.test(input.upstreamModel)) return 'glm'
-  if (/(?:^|\/)(?:hy4-preview|hy3(?:-preview)?)(?:$|[/:._-])/iu.test(input.upstreamModel)) {
-    return 'hunyuan'
-  }
+  const family = nameFamily(input.upstreamModel)
+  if (family !== undefined) return family
   if (
     input.config?.parameterPath !== undefined &&
     !['reasoning_effort', 'reasoning.effort'].includes(input.config.parameterPath)
   )
     return 'custom'
   return input.protocol
+}
+
+/**
+ * 这次请求该按哪种方言回传历史思考(语义见 provider.ts 的 `ThinkingConfig.reasoningReplay`)。
+ *
+ * 需求:官方 OpenAI 的 `input` 里 reasoning item 的 `content` 上限是 0,带非空正文的
+ * item 会让整轮 400(`array_above_max_length`);DeepSeek 思考模式反过来要求正文全文
+ * 回传,缺了同样 400。两边互斥,所以这个判定必须发生在**知道上游是谁**的这一层,
+ * 编码器只收结论(它看不到供应商,那是路由器那一层的事实)。
+ *
+ * 不满足会怎样:出事的 item 埋在转录里、每轮都被重放,表现是**会话从某一轮起每轮都
+ * 发不出去,`input[N]` 的 N 随历史长度漂移,且本地零报错**。
+ *
+ * 顺序照 `standardWire` 自己的先例:显式声明 > 声明读标准线形的托管方 > 模型名兜底。
+ */
+export function reasoningReplayFor(
+  config: ThinkingConfig | undefined,
+  upstreamModel: string,
+): ReasoningReplay {
+  if (config?.reasoningReplay !== undefined) return config.reasoningReplay
+  // Ollama 这类托管方跑的是 deepseek-* 名字的模型,但读的是标准线形 —— 回传同样按
+  // 标准约束走,不能被下面的名字启发式抓回 DeepSeek 官方方言。
+  if (config?.standardWire === true) return 'opaque-only'
+  return nameFamily(upstreamModel) === 'deepseek' ? 'text-required' : 'opaque-only'
 }
 
 function budgetForEffort(
@@ -186,7 +223,49 @@ function setDotted(body: Record<string, unknown>, path: string, value: unknown):
  * Unsupported declarations remove every known Think field, even when a
  * legacy encoder or stale request supplied one.
  */
+function adaptiveInput(input: ThinkingAdapterInput): ThinkingAdapterInput {
+  const projected = adaptiveAnthropicBinding(
+    input.upstreamModel, input.config, input.protocol, input.preset, input.reasoningEfforts
+  )
+  if (projected === undefined) return input
+  const effective = projected.thinkingConfig!
+  const efforts = projected.reasoningEfforts!
+  const config = input.config!
+  let reasoning = input.reasoning
+  if (input.thinkingLevel !== undefined) {
+    // Budget-mode Minimal has no adaptive equivalent; use the lowest effort.
+    const level = config.mode === 'budget' && input.thinkingLevel === 'minimal' ? 'low' : input.thinkingLevel
+    reasoning = resolveModelThinking(level, effective, input.maxOutputTokens, efforts)
+  } else if (reasoning !== undefined && !reasoning.explicit) {
+    reasoning = resolveModelThinking('auto', effective, input.maxOutputTokens, efforts)
+  }
+  // An Off-only binding needs no enabled effort, but still requires confirmed Off support.
+  if (reasoning?.enabled === false && efforts.includes('none')) {
+    return { ...input, config: effective, reasoning, reasoningEfforts: efforts }
+  }
+  const defaultEffort = effective.defaultEffort
+  if (defaultEffort === undefined || !efforts.includes(defaultEffort) || efforts.every((effort) => effort === 'none')) {
+    throw new ThinkingAdapterError('Anthropic adaptive thinking 缺少可用推理强度。')
+  }
+  if (input.thinkingLevel === undefined && reasoning !== undefined) {
+    if (reasoning.enabled && reasoning.effort === undefined) {
+      // Budget-only legacy API callers have no UI selection. This conversion
+      // is used only there; modern calls preserve the original level above.
+      const tokens = reasoning.budgetTokens
+      const wanted = tokens === undefined ? defaultEffort : tokens <= THINKING_BUDGET.low ? 'low' :
+        tokens <= THINKING_BUDGET.medium ? 'medium' : tokens <= THINKING_BUDGET.high ? 'high' :
+          tokens <= THINKING_BUDGET.higher ? 'xhigh' : 'max'
+      const order: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+      const supported = order.filter((effort) => efforts.includes(effort))
+      const weaker = supported.filter((effort) => order.indexOf(effort) <= order.indexOf(wanted))
+      reasoning = { ...reasoning, mode: 'effort', effort: weaker.at(-1) ?? supported[0] ?? defaultEffort }
+    }
+  }
+  return { ...input, config: effective, reasoning, reasoningEfforts: efforts }
+}
+
 export function applyThinkingAdapter(body: unknown, input: ThinkingAdapterInput): unknown {
+  input = adaptiveInput(input)
   if (input.config === undefined) return body
   const next = cloneBody(body)
 
@@ -232,6 +311,20 @@ export function applyThinkingAdapter(body: unknown, input: ThinkingAdapterInput)
     if (!reasoning.enabled) {
       // Compatible relays may default to thinking even when Anthropic itself
       // does not. Omitting the field does not express the user's Off choice.
+      if (input.config.anthropicAdaptive === true) {
+        if (input.reasoningEfforts === undefined || !input.reasoningEfforts.includes('none')) {
+          throw new ThinkingAdapterError('未确认该模型支持关闭 Anthropic adaptive thinking。')
+        }
+        // Omitting thinking enables it on newer models. Clear stale high effort
+        // so conditional Off (Opus 5 / Haiku 5.5) stays at a supported level.
+        next['thinking'] = { type: 'disabled' }
+        const outputConfig = next['output_config']
+        if (isRecord(outputConfig)) {
+          delete outputConfig['effort']
+          if (Object.keys(outputConfig).length === 0) delete next['output_config']
+        }
+        return next
+      }
       next['thinking'] = { type: 'disabled' }
       return next
     }
@@ -243,6 +336,19 @@ export function applyThinkingAdapter(body: unknown, input: ThinkingAdapterInput)
      * 为什么仍写 `thinking:{type:'disabled'}`:那条路上 output_config 只能
      * 「开 + 定档」,表达不了「关」。
      */
+    if (input.config.anthropicAdaptive === true) {
+      const effort = reasoning.effort
+      if (effort === undefined) throw new ThinkingAdapterError('Anthropic adaptive thinking 缺少推理强度。')
+      if (effort === 'none' || effort === 'minimal') {
+        throw new ThinkingAdapterError(`Anthropic adaptive thinking 不支持推理强度「${effort}」。`)
+      }
+      next['thinking'] = { type: 'adaptive' }
+      next['output_config'] = {
+        ...(isRecord(next['output_config']) ? next['output_config'] : {}),
+        effort
+      }
+      return next
+    }
     if (input.config.standardWire === true && reasoning.effort !== undefined) {
       next['output_config'] = { effort: reasoning.effort }
       return next
@@ -336,6 +442,7 @@ export function removeUnsupportedThinking(body: unknown, config: ThinkingConfig 
 
 /** An explicit conversation Off takes precedence over saved model patches. */
 export function enforceThinkingPreference(body: unknown, input: ThinkingAdapterInput): unknown {
+  input = adaptiveInput(input)
   const guarded = removeUnsupportedThinking(body, input.config)
   if (input.config === undefined || input.config.mode === 'unsupported' || input.config.mode === 'always'
     || input.reasoning?.explicit !== true || input.reasoning.enabled) return guarded

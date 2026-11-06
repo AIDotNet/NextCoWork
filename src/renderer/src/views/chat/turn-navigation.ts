@@ -83,17 +83,43 @@ function responsePreview(group: ThreadTurnGroup): string | undefined {
   return text === '' ? undefined : truncateTurnPreview(text, DESCRIPTION_LENGTH)
 }
 
+/**
+ * 每个回合的刻度**按 group 对象缓存**。
+ *
+ * ★ 理由和 `thread-content.threadHistoryRows` 是同一个:长会话流式期间,历史组
+ * 对象引用不变,而每来一个 token 都要重新算全部刻度的话,每轮的 `responsePreview`
+ * 都要把它下面所有 assistant 块拼一遍取前 96 字。缓存以 group 身份为键,流式那
+ * 一组每帧是新对象、自然不会被缓存命中 —— 只有它需要重算。
+ *
+ * 缓存的键还带 `untitledLabel`:同一组在切换语言后要重新出文案。
+ *
+ * ★ 缓存省的是每组那两段字符串构造(`promptLabel` / `responsePreview` 要遍历该组
+ * 全部 assistant 块);`turnNavigationItems` 本身仍会新建结果数组,因为调用方的
+ * memo 依赖 `turns`,`turns` 每 token 变一次。要挡的是「几百轮的预览文案跟着重算」,
+ * 不是这个 O(turns) 的浅拷贝。
+ */
+const navigationCache = new WeakMap<ThreadTurnGroup, { label: string; item: TurnNavigationItem | null }>()
+
+function navigationItemFor(group: ThreadTurnGroup, untitledLabel: string): TurnNavigationItem | null {
+  if (group.navigationId === undefined || group.prompt === undefined) return null
+  const cached = navigationCache.get(group)
+  if (cached !== undefined && cached.label === untitledLabel) return cached.item
+  const description = responsePreview(group)
+  const item: TurnNavigationItem = {
+    id: group.navigationId,
+    label: promptLabel(group.prompt, untitledLabel),
+    ...(description === undefined ? {} : { description })
+  }
+  navigationCache.set(group, { label: untitledLabel, item })
+  return item
+}
+
 export function turnNavigationItems(
   groups: readonly ThreadTurnGroup[],
   untitledLabel: string
 ): TurnNavigationItem[] {
   return groups.flatMap((group) => {
-    if (group.navigationId === undefined || group.prompt === undefined) return []
-    const description = responsePreview(group)
-    return [{
-      id: group.navigationId,
-      label: promptLabel(group.prompt, untitledLabel),
-      ...(description === undefined ? {} : { description })
-    }]
+    const item = navigationItemFor(group, untitledLabel)
+    return item === null ? [] : [item]
   })
 }

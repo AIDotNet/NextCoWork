@@ -8,8 +8,12 @@ import type { SkillDiagnostic } from './load'
  *
  * ★ 它是「能不能覆盖」的唯一依据:带哨兵 = 我们上次铺的,可以刷新;不带 = 用户
  * 自己装的(folder/zip),哪怕同名也绝不动。哨兵是空文件,skill 加载器不认它、忽略。
+ *
+ * ★ 导出给 `load.ts` 的远端资产判定用:那里按「目录里有没有 SKILL.md 之外的文件」
+ * 判断 client-assets,不放过这个哨兵的话,**每一条**内置 Skill(哪怕是单文件)
+ * 在 SSH 会话里都会被拒掉。
  */
-const BUNDLED_MARKER = '.nextcowork-bundled'
+export const BUNDLED_MARKER = '.nextcowork-bundled'
 
 /**
  * 启动时把内置 skill 从 `resources/skills` 铺到全局 skill 根。

@@ -165,6 +165,8 @@ describe('router · OAuth 凭证', () => {
     expect(h['chatgpt-account-id']).toBe('acct-42')
     expect(h['openai-beta']).toBe('responses=experimental')
     expect(h['originator']).toBe('codex_cli_rs')
+    // ★ UA 与 originator 同族,不是 NextCoWork —— 漏了不会报错,只是匿名发出去
+    expect(h['user-agent']).toMatch(/^codex_cli_rs\//u)
     expect(h['session_id']).toMatch(/^[0-9a-f]{8}-/u)
   })
 

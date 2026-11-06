@@ -7,6 +7,7 @@ const base = {
   prompt: '你是一个代码审查者。',
   model: '',
   modelProviderId: '',
+  thinking: '',
   color: '',
   toolsMode: 'all' as const,
   tools: [] as string[]
@@ -86,6 +87,18 @@ describe('子代理表单映射', () => {
 
   it('认不出的颜色当作没标', () => {
     expect(formFromFile('a', { color: 'chartreuse' }, 'x').color).toBe('')
+  })
+
+  it('思考档位往返不变,inherit 不是合法的文件取值', () => {
+    const fm = { name: 'a', description: 'd', thinking: 'high' }
+    const form = formFromFile('a', fm, '正文')
+    expect(form.thinking).toBe('high')
+    expect(fileFromForm(form, fm).frontmatter.thinking).toBe('high')
+  })
+
+  it('认不出的思考档位、以及 inherit 本身,都当作没写', () => {
+    expect(formFromFile('a', { thinking: 'deep' }, 'x').thinking).toBe('')
+    expect(formFromFile('a', { thinking: 'inherit' }, 'x').thinking).toBe('')
   })
 
   it('白名单外的工具留着,只是复选格勾不出来', () => {

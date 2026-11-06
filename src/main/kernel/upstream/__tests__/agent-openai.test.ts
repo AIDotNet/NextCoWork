@@ -75,6 +75,51 @@ function rig(protocol: typeof protocols[number], responses: Response[], resumeDe
   return { request, host, router, tools, gate, handle, events, saved, session, execute, bodies, urls, ledger, ready }
 }
 
+it('continues Responses tool rounds and reloaded history after an oversized reasoning id', async () => {
+  // Matches the failing upstream shape: a 428-character id and encrypted reasoning without visible text.
+  const oversized = { ...reasoningItem, id: `${'A'.repeat(427)}=`, summary: [], content: [] }
+  const secondCall = { ...functionItem, id: 'fc-2', call_id: 'call-2', arguments: '{"text":"second"}' }
+  const r = rig('openai-responses', [
+    callResponse('openai-responses'),
+    sse(responseDone([oversized, secondCall])),
+    finalResponse('openai-responses'),
+    finalResponse('openai-responses')
+  ])
+  await r.ready
+  const running = r.session.run()
+  for (const callId of ['call-1', 'call-2']) {
+    await vi.waitFor(() => expect(r.gate.list()[0]).toMatchObject({ kind: 'tool_permission', callId }))
+    r.gate.respond({ id: r.gate.list()[0]!.id, kind: 'tool_permission', decision: { kind: 'allow_once' } })
+  }
+  await running
+  expect(r.handle.status).toBe('done')
+  expect(r.execute).toHaveBeenCalledTimes(2)
+  expect(orphanedToolCalls([...r.session.history])).toEqual([])
+  expect(r.saved.flatMap((message) => message.parts)).toContainEqual(expect.objectContaining({
+    type: 'thinking', opaque: { protocol: 'openai-responses', item: oversized }
+  }))
+
+  // Keep the original opaque item in storage; encoding must also repair existing conversations on retry.
+  const history: AgentMessage[] = JSON.parse(JSON.stringify(r.saved))
+  const before = structuredClone(history)
+  const nextRequest = { ...r.request, runId: 'r2', input: [{ type: 'text' as const, text: '继续' }] }
+  const nextHandle = new RunHandle(nextRequest)
+  const next = new AgentSession({ host: r.host, upstream: r.router, tools: r.tools, workspaceRoot: '/workspace',
+    history, resumeDelaysMs: [] }, nextHandle, nextRequest)
+  await next.run()
+  expect(nextHandle.status).toBe('done')
+  expect(history).toEqual(before)
+  expect(r.execute).toHaveBeenCalledTimes(2)
+  expect(r.bodies).toHaveLength(4)
+  expect(visibleText(next.history.at(-1)!)).toBe('完成')
+  for (const body of [r.bodies[2], r.bodies[3]]) {
+    const input = body?.input as Array<Record<string, unknown>>
+    expect(input.filter((item) => item.type === 'reasoning')).toEqual([reasoningItem])
+    expect(input).toContainEqual({ type: 'function_call_output', call_id: 'call-1', output: '{"text":"hello"}' })
+    expect(input).toContainEqual({ type: 'function_call_output', call_id: 'call-2', output: '{"text":"second"}' })
+  }
+})
+
 describe.each(protocols)('%s real router → agent → interaction → tool → continuation', (protocol) => {
   it('waits for approval, executes edited input, persists reasoning and sends a valid continuation', async () => {
     const r = rig(protocol, [callResponse(protocol), finalResponse(protocol), finalResponse(protocol)])

@@ -85,6 +85,18 @@ class FakeWebContents {
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
   }
+
+  /**
+   * WindowRegistry 判「帧还活不活」靠的是这里,不是 send 抛不抛 ——
+   * 真实的 `webFrameMain.send` 自己把异常吞了(见 window/registry.ts)。
+   */
+  get mainFrame(): { isDestroyed: () => boolean; detached: boolean; send: (channel: string, payload: unknown) => void } {
+    return {
+      isDestroyed: () => this.isDestroyed(),
+      detached: false,
+      send: (channel, payload) => this.send(channel, payload)
+    }
+  }
   envelopes(): AgentEventEnvelope[] {
     return this.sent
       .filter((m) => m.channel === 'agent:event')
@@ -271,7 +283,7 @@ beforeEach(() => {
     `ensureSeeded()` 就是为「先把种子跑完」准备的那个入口。
   */
   ensureSeeded()
-  store.updateSettings({ subagent: { model: '', modelProviderId: undefined } })
+  store.updateSettings({ subagent: { model: '', modelProviderId: undefined, thinking: 'inherit' } })
 })
 
 afterEach(() => {
@@ -542,6 +554,67 @@ describe('子代理继承模型时的别名/供应商配对', () => {
     await waitForEnd(r.runId)
 
     expect(seen[0]).toMatchObject({ model: DEMO_ALIAS, modelProviderId: DEMO_PROVIDER_ID })
+  })
+})
+
+/**
+ * ★★ 「子代理思考深度」那一栏 —— 和上面模型那组是**同一件事的两半**:
+ * 三档来源(声明的 > 设置里那一栏 > 父 run)必须真的接到子 run 上,
+ * 而且落地前要按子 run 自己的模型归一化一次(见 `runtime.ts` 的 `childThinkingFor`)。
+ */
+describe('子代理继承思考深度', () => {
+  const captureChildReq = (): RunRequest[] => {
+    const seen: RunRequest[] = []
+    installChildRunLauncher((parent, childReq, driver) => {
+      seen.push(childReq)
+      return startChildRun(parent, childReq, driver)
+    })
+    return seen
+  }
+
+  it('设置里那一栏配了档位时,子 run 用它', async () => {
+    store.updateSettings({ subagent: { thinking: 'high' } })
+    const seen = captureChildReq()
+    const r = req({ thinking: 'low' })
+
+    startRun(r, fakeWindow().ctx)
+    await waitForEnd(r.runId)
+
+    expect(seen[0]?.thinking).toBe('high')
+  })
+
+  it('默认(「跟随对话」)时,子 run 拿到父 run 这一轮的档位', async () => {
+    const seen = captureChildReq()
+    const r = req({ thinking: 'low' })
+
+    startRun(r, fakeWindow().ctx)
+    await waitForEnd(r.runId)
+
+    expect(seen[0]?.thinking).toBe('low')
+  })
+
+  it('★ 归一化:子代理的模型不支持这一档时静默降级,不是把它原样发出去', async () => {
+    // 演示别名默认 capabilities.thinking:true、没有 thinkingConfig —— 对它
+    // `modelThinkingLevels` 会放行全档,测不出归一化。这里另造一条只认
+    // low/medium 的别名,专门触发降级。
+    const NARROW_ALIAS = 'nextcowork-demo-narrow-thinking'
+    store.putAlias({
+      ...DEMO_ALIASES[0]!,
+      alias: NARROW_ALIAS,
+      thinkingConfig: { mode: 'effort', defaultEnabled: true },
+      reasoningEfforts: ['low', 'medium']
+    })
+    store.updateSettings({
+      subagent: { model: NARROW_ALIAS, modelProviderId: DEMO_PROVIDER_ID, thinking: 'high' }
+    })
+    const seen = captureChildReq()
+    const r = req({ modelProviderId: DEMO_PROVIDER_ID, thinking: 'low' })
+
+    startRun(r, fakeWindow().ctx)
+    await waitForEnd(r.runId)
+
+    expect(seen[0]?.model).toBe(NARROW_ALIAS)
+    expect(seen[0]?.thinking).toBe('auto')
   })
 })
 

@@ -174,14 +174,14 @@ export function SearchPalette({
       aria-modal="true"
       aria-label={t('search.title')}
     >
-      <div className="absolute inset-0 bg-scrim/35 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim/20" onClick={onClose} />
 
       <div
         ref={panelRef}
         style={{ width: 560 }}
         className={cn(
-          'relative flex h-fit max-h-[60vh] w-full flex-col overflow-hidden bg-surface',
-          'rounded-panel shadow-2xl shadow-black/40 outline-none',
+          'relative flex h-fit max-h-[60vh] w-full flex-col overflow-hidden',
+          'apple-sheet outline-none',
           'transition-[opacity,transform,scale] duration-220 ease-panel motion-reduce:transition-none motion-reduce:transform-none motion-reduce:scale-100',
           visible ? 'scale-100 opacity-100' : 'scale-[.98] opacity-0'
         )}
@@ -213,7 +213,7 @@ export function SearchPalette({
                         onClose()
                         void command.run()
                       }}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-[9px] px-2.5 py-2 aria-selected:bg-tint-hover"
+                      className="flex cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 py-2 aria-selected:bg-accent/15"
                     >
                       <Icon size={15} className="shrink-0 text-icon" />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-fg">
@@ -249,7 +249,7 @@ export function SearchPalette({
                     key={hit.messageId}
                     value={hit.messageId}
                     onSelect={() => select(hit)}
-                    className="flex cursor-pointer items-start gap-2.5 rounded-[9px] px-2.5 py-2 aria-selected:bg-tint-hover"
+                    className="flex cursor-pointer items-start gap-2.5 rounded-[8px] px-2.5 py-2 aria-selected:bg-accent/15"
                   >
                     <MessageSquare size={15} className="mt-0.5 shrink-0 text-icon" />
                     <span className="min-w-0 flex-1">

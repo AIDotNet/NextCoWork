@@ -2,12 +2,13 @@
  * L2:运行中的分组折叠时间线。
  *
  * ★ 它**只负责一段连续的过程块**，不关心自己上方或下方有没有正文。
- * 每个连续工具组在所有调用拿到成功结果后自动收起；运行中的组仍保持可见。
+ * 每个连续工具组在所有调用拿到成功结果后**停 FOLD_HOLD_MS** 再自动收起
+ * （先让人看清完成态，延迟与逐帧补偿的理由见 ToolGroup / useFoldAnchor）；
+ * 运行中的组仍保持可见。
  * 这条边界让同一个组件能同时服务于「已提交消息」和「还在流的块」两条路径。
  */
-import { ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatDuration } from "../../../../shared/agent/duration";
 import type { SubagentState, ToolCallState } from "../../../../shared/agent/transcript";
 import {
@@ -23,9 +24,11 @@ import { cn } from "../../lib/cn";
 import { useI18n, type TranslationKey } from "../../i18n";
 import { motionScale, useMotionLevel } from "../../theme/useMotionLevel";
 import { SubagentNode, ThinkingBlock, ToolCallCard } from "./parts";
+import { ROW_CLASS, RowChevron } from "./row";
 import { ShapeStrip } from "./ToolIcon";
-import { AgentActivityGrid } from "./AgentActivity";
+import { AgentShimmerText } from "./AgentActivity";
 import { useGroupCollapse } from "./useGroupCollapse";
+import { FOLD_HOLD_MS, useFoldAnchor } from "./useFoldAnchor";
 
 export function ToolTimeline({
   items,
@@ -46,7 +49,7 @@ export function ToolTimeline({
   const autoCollapsed = groups.map((group) => isCompletedToolGroup(group, tools));
 
   return (
-    <div className="flex flex-col gap-2" data-testid="tool-timeline">
+    <div className="flex flex-col gap-0.5" data-testid="tool-timeline">
       {/*
         ★★ **`initial={false}` 是这里唯一重要的那个参数,不是随手加的。**
 
@@ -105,11 +108,35 @@ function ToolGroup({
     focusCallId !== undefined &&
     items.some((it) => it.kind === "tool" && it.callId === focusCallId);
 
+  /*
+    需求:组里最后一个调用拿到 ok 之后,先让人把完成态(✓、耗时)看一眼,
+    **再**停 FOLD_HOLD_MS 收起。不满足会怎样:结果一到就折,完成态一帧都
+    留不住;连续几个组先后完成时正文被连拽几次,表现为「工具跑完界面自己
+    抖了几下」。
+    ★ 挂载初值直接取 autoCollapsed:历史会话里每个组天生是完成态,走延迟
+    的话会先全体展开 400ms 再一起收,满屏闪一次 —— 延迟只服务于「运行中
+    翻成完成」这一次跳变。
+  */
+  const [autoReady, setAutoReady] = useState(autoCollapsed);
+  useEffect(() => {
+    if (autoCollapsed === autoReady) return;
+    if (!autoCollapsed) {
+      setAutoReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setAutoReady(true), FOLD_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [autoCollapsed, autoReady]);
+
   const { collapsed, toggle } = useGroupCollapse(
-    autoCollapsed,
+    autoReady,
     hasError || hasFocus,
   );
   const ref = useRef<HTMLDivElement>(null);
+  // 单项组永不自动收起(isCompletedToolGroup 要求 >1 个调用),不会发生
+  // false→true 的折叠跳变 —— 给它记基线纯属浪费:历史里几十个单项组会在
+  // 流式期间每帧各多读一次布局。
+  useFoldAnchor(ref, collapsed, undefined, items.length > 1);
 
   /**
    * 回跳定位。用 `nearest` 而不是 `center` —— `center` 会让**已经在视口里**的
@@ -130,7 +157,7 @@ function ToolGroup({
   }
 
   return (
-    <motion.div ref={ref} layout className="flex flex-col gap-1.5">
+    <motion.div ref={ref} layout className="flex flex-col gap-0.5">
       <GroupHeader
         items={items}
         tools={tools}
@@ -147,7 +174,12 @@ function ToolGroup({
             transition={{ duration: 0.2 * scale, ease: [0.32, 0.72, 0, 1] }}
             style={{ overflow: "hidden" }}
           >
-            <div className="flex flex-col gap-1.5 pl-2">
+            {/*
+              组内各行缩进到组标题的文字下方(21px = 箭头 12/13 + gap 8),
+              和 `SURFACE_INDENT` 对齐 —— 无边框之后,缩进是「这些行属于这个组」
+              的唯一证据,随手写 `pl-2` 会让同级的块对不齐。
+            */}
+            <div className="flex flex-col gap-0.5 pl-[21px]">
               {items.map((it) => (
                 <TimelineRow key={it.key} item={it} tools={tools} subagents={subagents} />
               ))}
@@ -193,38 +225,32 @@ function GroupHeader({
       data-testid="tool-group"
       data-collapsed={collapsed}
       className={cn(
-        "flex min-h-8 w-full items-center gap-2 rounded-[7px] border px-2.5 py-1.5 text-left text-[11.5px] transition-colors",
-        collapsed
-          ? "border-stroke bg-surface-raised/55 text-fg-muted hover:bg-tint-hover/45"
-          : "border-transparent text-fg-faint hover:border-hairline hover:bg-tint-hover/35",
+        // 文本风格:不画描边和底色,收起/展开的差别只靠文字颜色
+        // (收起时这一行代表着 N 行内容,所以亮一档)。
+        ROW_CLASS,
+        "text-[12.5px]",
+        collapsed ? "text-fg-muted" : "text-fg-faint",
       )}
     >
-      <ChevronRight
-        size={12}
-        className={cn(
-          "shrink-0 transition-transform motion-reduce:transition-none",
-          !collapsed && "rotate-90",
-        )}
-      />
       <ShapeStrip shapes={shapes} />
       <span className="min-w-0 flex-1 truncate">{title}</span>
       {runningCount > 0 && (
         <span className="inline-flex shrink-0 items-center gap-1.5 text-accent">
-          <AgentActivityGrid />
-          {t("chat.tool.runningStatus")}
+          <AgentShimmerText>{t("chat.tool.runningStatus")}</AgentShimmerText>
         </span>
       )}
       {ms > 0 && (
-        <span className="shrink-0 rounded-[6px] border border-hairline bg-surface-input/55 px-1.5 py-0.5 font-mono text-[10.5px]">
+        <span className="shrink-0 font-mono text-[11.5px] text-fg-faint">
           {formatDuration(ms)}
         </span>
       )}
       {/* 失败标记即使在收起态也必须可见 —— 「这里有个失败被我收起来了」 */}
       {errorCount > 0 && (
-        <span className="shrink-0 rounded-[6px] bg-danger/10 px-1.5 py-0.5 text-danger">
+        <span className="shrink-0 text-danger">
           {t("chat.failedCount", { count: errorCount })}
         </span>
       )}
+      <RowChevron open={!collapsed} />
     </button>
   );
 }
@@ -239,6 +265,16 @@ const GROUP_TITLE_KEYS = {
   orchestration: "chat.tool.group.orchestration",
   interaction: "chat.tool.group.interaction",
   widget: "chat.tool.group.widget",
+  image: "chat.tool.group.image",
+  // 生成视频。同 image:产物不进过程段,但一个组里仍可能混进它 —— 少了这一行
+  // 那个组的标题会显示成 key 本身。
+  video: "chat.tool.group.video",
+  // 页面截图（browser_screenshot）。它不进过程段（见 isPinnedShape），
+  // 但一个组里仍可能混进它（比如卡片还没提交、或用户手动展开了工作区）——
+  // 少了这一行，那个组的标题会显示成 key 本身。
+  screenshot: "chat.tool.group.screenshot",
+  // 工作流画布同样不进过程段,理由同上一行
+  workflow: "chat.tool.group.workflow",
   external: "chat.tool.group.external",
 } as const satisfies Record<ReturnType<typeof shapeOfItem>, TranslationKey>;
 
@@ -258,7 +294,7 @@ function TimelineRow({
 }): ReactNode {
   switch (item.kind) {
     case "thinking":
-      return <ThinkingBlock text={item.text} streaming={item.streaming} />;
+      return <ThinkingBlock text={item.text} streaming={item.streaming} stats={item.stats} />;
     case "subagent":
       return (
         <SubagentNode

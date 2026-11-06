@@ -23,6 +23,12 @@
  * | `WebFetch` / `Browser` 工具 | 同上,它们抓的也是网页,不是 API |
  * | OAuth 的两条通道(`kernel/oauth/**`) | 上游对客户端标识很可能有白名单 —— 同一件事的 `originator` 已经踩过这条线(见 `oauth/issuers/chatgpt.ts` 文件头)。改错的表现是 403 或者静默降级 |
  *
+ * ★ 2026-09-23 起有一处**按家分的**覆盖:codex(ChatGPT 订阅线)自带
+ * `codex_cli_rs/<版本>` 的私货 UA,挂在 `oauth/issuers/chatgpt.ts` 的
+ * `transport.headers`(业务请求)与 `oauthHeaders`(换 token / 刷新)上 ——
+ * 和 kimi / zcode 是同一模式,不是这张表说的「全局改 UA」;
+ * 授权 URL 那一跳仍然走浏览器 UA,表里第 1 行的理由照旧成立。
+ *
  * 所以这里**不是** `app.userAgentFallback`:那一处是全局默认值,会把上面三条
  * 连同这三条一起改掉,而它们要的恰好是相反的东西。
  *

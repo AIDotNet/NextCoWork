@@ -67,12 +67,14 @@ describe('upstreamTransport · NextCoWork 平台登录态', () => {
 })
 
 describe('upstreamTransport · ChatGPT 订阅通道', () => {
-  it('四个头齐全', () => {
+  it('五个头齐全,UA 自报成 Codex CLI', () => {
     const t = upstreamTransport(provider, oauth, { sessionId: 's-1' })
     expect(t.headers['chatgpt-account-id']).toBe('acct-789')
     expect(t.headers['openai-beta']).toBe('responses=experimental')
     expect(t.headers['originator']).toBe('codex_cli_rs')
     expect(t.headers['session_id']).toBe(sessionUuid('s-1'))
+    // 与 originator 同族;写在 transport 上才能压过 router 那行通用的 NextCoWork UA
+    expect(t.headers['user-agent']).toMatch(/^codex_cli_rs\//u)
   })
 
   it('★ 用户 patch 把 store 改成 true,仍被按回 false', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { modelBindingResolver } from '../model-binding'
 import { findCatalogModel, type ModelCatalogDefinition } from '../model-catalog'
-import { findBuiltinModel, OLLAMA_STANDARD_THINKING } from '../model-catalog-inventory'
+import { BUILTIN_MODEL_CATALOG, findBuiltinModel, OLLAMA_STANDARD_THINKING } from '../model-catalog-inventory'
 import { effectiveModelProtocol, IMPORTED_ALIAS_DEFAULTS, type ModelAlias } from '../provider'
 
 const imported = (overrides: Partial<ModelAlias> = {}): ModelAlias => ({
@@ -11,6 +11,294 @@ const imported = (overrides: Partial<ModelAlias> = {}): ModelAlias => ({
 const glm = findBuiltinModel('glm-5.3-flash')!
 
 describe('catalogue-backed provider metadata', () => {
+  it('migrates an unmodified Opus 5.5 budget binding to adaptive effort', () => {
+    const resolver = modelBindingResolver()
+    const legacy = imported({
+      alias: 'opus', upstreamModel: 'claude-opus-5-5',
+      thinkingConfig: { mode: 'budget', defaultEnabled: true, defaultBudgetTokens: 64_000,
+        parameterPath: 'thinking.budget_tokens' }
+    })
+    const resolved = resolver.resolve(legacy)
+    expect(resolved.thinkingConfig).toMatchObject({ mode: 'effort', anthropicAdaptive: true, defaultEffort: 'medium' })
+    expect(resolved.catalogOverrides).not.toContain('thinkingConfig')
+    expect(resolved.reasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(resolver.resolve({ ...legacy, catalogOverrides: ['thinkingConfig'] }).thinkingConfig?.mode).toBe('budget')
+    expect(resolver.resolve(imported({ upstreamModel: 'claude-opus-5' })).thinkingConfig?.mode).toBe('effort')
+  })
+
+  /*
+    旧目录抄下来的 budget 只有三档:opus 64K、haiku 16K、其余 32K。
+    抄得一字不差才跟着新 adaptive 声明走;改过的预算和显式 override 仍是用户的。
+  */
+  const legacyAdaptive = [
+    ['claude-opus-5-5', 64_000, 'medium', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-5', 64_000, 'high', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-sonnet-5-5', 32_000, 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-sonnet-5', 32_000, 'high', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-haiku-5-5', 16_000, 'medium', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-mythos-5-1', 32_000, 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-fable-5-1', 32_000, 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-mythos-5', 32_000, 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-fable-5', 32_000, 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-4-8', 64_000, 'high', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-4-7', 64_000, 'high', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-4-6', 64_000, 'high', ['none', 'low', 'medium', 'high', 'max']],
+    ['claude-sonnet-4-6', 32_000, 'high', ['none', 'low', 'medium', 'high', 'max']]
+  ] as const
+
+  it('names every adaptive Anthropic catalogue row in the legacy budget table', () => {
+    const adaptive = BUILTIN_MODEL_CATALOG
+      .filter((row) => row.manufacturerId === 'anthropic' && row.thinkingConfig.anthropicAdaptive === true)
+      .map((row) => row.id)
+      .sort()
+    expect(adaptive).toEqual([...legacyAdaptive.map(([id]) => id)].sort())
+  })
+
+  it.each(legacyAdaptive)('migrates an unmodified %s budget copy of %i to adaptive effort', (id, budget, defaultEffort, efforts) => {
+    const resolved = modelBindingResolver().resolve(imported({
+      upstreamModel: id,
+      thinkingConfig: {
+        mode: 'budget', defaultEnabled: true, defaultBudgetTokens: budget,
+        parameterPath: 'thinking.budget_tokens'
+      }
+    }))
+    expect(resolved.thinkingConfig).toMatchObject({
+      mode: 'effort', anthropicAdaptive: true, defaultEffort, parameterPath: 'output_config.effort'
+    })
+    expect(resolved.reasoningEfforts).toEqual([...efforts])
+    expect(resolved.catalogOverrides).toEqual([])
+  })
+
+  it('keeps an explicit budget override and a budget that is not the old catalogue copy', () => {
+    const resolver = modelBindingResolver()
+    const copied = {
+      mode: 'budget' as const, defaultEnabled: true, defaultBudgetTokens: 64_000,
+      parameterPath: 'thinking.budget_tokens'
+    }
+    const pinned = resolver.resolve(imported({
+      upstreamModel: 'claude-opus-5-5', thinkingConfig: copied, catalogOverrides: ['thinkingConfig']
+    }))
+    expect(pinned.thinkingConfig).toMatchObject(copied)
+    expect(pinned.catalogOverrides).toContain('thinkingConfig')
+    for (const [upstreamModel, defaultBudgetTokens] of [
+      ['claude-opus-5-5', 32_000],
+      ['claude-haiku-5-5', 32_000],
+      ['claude-sonnet-5-5', 64_000],
+      ['claude-fable-5', 4_096]
+    ] as const) {
+      const model = resolver.resolve(imported({
+        upstreamModel,
+        thinkingConfig: {
+          mode: 'budget', defaultEnabled: true, defaultBudgetTokens,
+          parameterPath: 'thinking.budget_tokens'
+        }
+      }))
+      expect(model.thinkingConfig, upstreamModel).toMatchObject({ mode: 'budget', defaultBudgetTokens })
+      expect(model.thinkingConfig, upstreamModel).not.toHaveProperty('anthropicAdaptive')
+      expect(model.catalogOverrides, upstreamModel).toEqual(['thinkingConfig', 'reasoningEfforts'])
+    }
+  })
+
+  it.each([
+    ['gateway/claude-opus-6-1', 'high', ['low', 'medium', 'high']],
+    ['claude-newline-6', 'high', ['low', 'medium', 'high']],
+    ['claude-opus-4.6', 'high', ['none', 'low', 'medium', 'high', 'max']],
+    ['vendor/claude-sonnet-4-6-20260301', 'high', ['none', 'low', 'medium', 'high', 'max']],
+    ['claude-opus-4.7', 'high', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-sonnet-5.5', 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-5-5-20261008', 'medium', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-5-5.20261008', 'medium', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-sonnet-5-5.20261008', 'high', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['claude-opus-4-6.20260205', 'high', ['none', 'low', 'medium', 'high', 'max']],
+    ['claude-opus-4.6.20260205', 'high', ['none', 'low', 'medium', 'high', 'max']]
+  ] as const)('infers a conservative adaptive binding for uncatalogued %s', (id, defaultEffort, efforts) => {
+    expect(findBuiltinModel(id)).toBeUndefined()
+    const resolved = modelBindingResolver().resolve(imported({ upstreamModel: id }))
+    expect(resolved.thinkingConfig).toMatchObject({
+      mode: 'effort', anthropicAdaptive: true, defaultEffort, parameterPath: 'output_config.effort'
+    })
+    expect(resolved.reasoningEfforts).toEqual([...efforts])
+    expect(resolved.capabilities.thinking).toBe(true)
+    expect(resolved.catalogOverrides).not.toContain('thinkingConfig')
+  })
+
+  /*
+    未知 id 上 catalogOverrides:[] 表示「没人改过」,过期的 budget / adaptive 副本
+    跟着当前推断走。显式 thinkingConfig 与 reasoningEfforts 仍钉住。legacy 记录没有
+    这份清单:推断结果重读不能把自己记成覆盖,改过的 budget 才是用户的。
+  */
+  const staleUnknownOpus = [
+    {
+      thinkingConfig: {
+        mode: 'budget' as const, defaultEnabled: true, defaultBudgetTokens: 64_000,
+        parameterPath: 'thinking.budget_tokens'
+      },
+      reasoningEfforts: ['none', 'low', 'medium', 'high', 'max'] as const
+    },
+    {
+      thinkingConfig: {
+        mode: 'effort' as const, defaultEnabled: true, defaultEffort: 'medium' as const,
+        parameterPath: 'output_config.effort', anthropicAdaptive: true
+      },
+      reasoningEfforts: ['none', 'low', 'medium', 'high', 'max'] as const
+    }
+  ]
+
+  it('reinfers adaptive effort for unknown claude-opus-6-1 when an empty override list stored a stale copy', () => {
+    expect(findBuiltinModel('claude-opus-6-1')).toBeUndefined()
+    const resolver = modelBindingResolver()
+    const fresh = resolver.resolve(imported({ upstreamModel: 'claude-opus-6-1', catalogOverrides: [] }))
+    for (const raw of [
+      imported({ upstreamModel: 'claude-opus-6-1', catalogOverrides: [] }),
+      ...staleUnknownOpus.map((stored) => imported({
+        upstreamModel: 'claude-opus-6-1', catalogOverrides: [], ...stored
+      })),
+      imported({
+        upstreamModel: 'claude-opus-6-1', catalogOverrides: [],
+        thinkingConfig: fresh.thinkingConfig, reasoningEfforts: fresh.reasoningEfforts
+      })
+    ]) {
+      const resolved = resolver.resolve(raw)
+      expect(resolved.thinkingConfig).toMatchObject({
+        mode: 'effort', anthropicAdaptive: true, defaultEffort: 'high', parameterPath: 'output_config.effort'
+      })
+      expect(resolved.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+      expect(resolved.catalogOverrides).toEqual([])
+    }
+  })
+
+  it('keeps explicit thinkingConfig and reasoningEfforts overrides on those unknown Claude records', () => {
+    const resolver = modelBindingResolver()
+    for (const stored of staleUnknownOpus) {
+      const resolved = resolver.resolve(imported({
+        upstreamModel: 'claude-opus-6-1', ...stored,
+        catalogOverrides: ['thinkingConfig', 'reasoningEfforts']
+      }))
+      expect(resolved.thinkingConfig).toEqual(stored.thinkingConfig)
+      expect(resolved.reasoningEfforts).toEqual([...stored.reasoningEfforts])
+      expect(resolved.catalogOverrides).toEqual(['thinkingConfig', 'reasoningEfforts'])
+    }
+  })
+
+  it('does not pin inferred thinking when a resolved unknown Claude id is reread without catalogOverrides', () => {
+    const resolver = modelBindingResolver()
+    const generated = resolver.resolve(imported({ upstreamModel: 'claude-opus-6-1' }))
+    delete generated.catalogOverrides
+    const again = resolver.resolve(generated)
+    expect(again.catalogOverrides).not.toContain('thinkingConfig')
+    expect(again.catalogOverrides).not.toContain('reasoningEfforts')
+    expect(again.catalogOverrides).not.toContain('capabilities.thinking')
+    expect(again.thinkingConfig).toEqual(generated.thinkingConfig)
+    expect(again.reasoningEfforts).toEqual(generated.reasoningEfforts)
+  })
+
+  it('keeps a user budget on an unknown Claude id that never recorded catalogOverrides', () => {
+    const budget = {
+      mode: 'budget' as const, defaultEnabled: true, defaultBudgetTokens: 4_096,
+      parameterPath: 'thinking.budget_tokens'
+    }
+    const model = modelBindingResolver().resolve(imported({
+      upstreamModel: 'claude-opus-6-1', thinkingConfig: budget
+    }))
+    expect(model.thinkingConfig).toMatchObject(budget)
+    expect(model.thinkingConfig).not.toHaveProperty('anthropicAdaptive')
+    expect(model.catalogOverrides).toEqual(['thinkingConfig', 'reasoningEfforts'])
+  })
+
+  it('leaves non-Claude and Claude 4.5 declarations unchanged', () => {
+    const resolver = modelBindingResolver()
+    const gpt = resolver.resolve(imported({ upstreamModel: 'gpt-5.4' }))
+    expect(gpt.thinkingConfig).toMatchObject({ mode: 'effort', parameterPath: 'reasoning_effort' })
+    expect(gpt.thinkingConfig).not.toHaveProperty('anthropicAdaptive')
+    expect(resolver.resolve(imported({ upstreamModel: 'claude-opus-4-5' })).thinkingConfig)
+      .toMatchObject({ mode: 'budget', defaultBudgetTokens: 64_000, parameterPath: 'thinking.budget_tokens' })
+    expect(resolver.resolve(imported({ upstreamModel: 'claude-sonnet-4-5' })).thinkingConfig)
+      .toMatchObject({ mode: 'budget', defaultBudgetTokens: 32_000 })
+    expect(resolver.resolve(imported({ upstreamModel: 'claude-haiku-4-5-20251001' })).thinkingConfig)
+      .toMatchObject({ mode: 'budget', defaultBudgetTokens: 16_000 })
+    const dotted = resolver.resolve(imported({ upstreamModel: 'claude-opus-4.5' }))
+    expect(dotted.thinkingConfig).toBeUndefined()
+    expect(dotted.capabilities.thinking).toBe(false)
+  })
+
+  it.each(['ollama', 'ollama-cloud'] as const)('does not invent adaptive thinking for an unknown Claude id on %s', (providerId) => {
+    const model = modelBindingResolver().resolve(imported({ providerId, upstreamModel: 'claude-opus-6-1' }))
+    expect(model.thinkingConfig).toBeUndefined()
+    expect(model.reasoningEfforts).toBeUndefined()
+  })
+
+  it('keeps a catalogued Claude model on Ollama on the standard wire', () => {
+    const model = modelBindingResolver().resolve(imported({
+      providerId: 'ollama-cloud', upstreamModel: 'claude-opus-5-5'
+    }))
+    expect(model.thinkingConfig).toEqual(OLLAMA_STANDARD_THINKING)
+    expect(model.reasoningEfforts).toEqual(['none', 'low', 'medium', 'high', 'max'])
+  })
+
+  it('lets a custom catalogue row replace the unknown Claude adaptive fallback', () => {
+    const custom: ModelCatalogDefinition = {
+      ...glm, id: 'claude-opus-6-1', displayName: 'Custom Opus',
+      thinkingConfig: {
+        mode: 'budget', defaultEnabled: true, defaultBudgetTokens: 4_096,
+        parameterPath: 'thinking.budget_tokens'
+      }
+    }
+    const model = modelBindingResolver([custom]).resolve(imported({ upstreamModel: 'claude-opus-6-1' }))
+    expect(model.thinkingConfig).toMatchObject({ mode: 'budget', defaultBudgetTokens: 4_096 })
+    expect(model.thinkingConfig).not.toHaveProperty('anthropicAdaptive')
+  })
+
+  it('treats an explicit thinking-capability override as off, including unknown Claude ids', () => {
+    const resolver = modelBindingResolver()
+    const capabilities = { ...IMPORTED_ALIAS_DEFAULTS.capabilities, thinking: false }
+    const known = resolver.resolve(imported({
+      upstreamModel: 'claude-opus-5-5', capabilities, catalogOverrides: ['capabilities.thinking']
+    }))
+    expect(known.thinkingConfig).toEqual({ mode: 'unsupported', defaultEnabled: false })
+    expect(known.capabilities.thinking).toBe(false)
+    const unknown = resolver.resolve(imported({
+      upstreamModel: 'claude-opus-6-1', capabilities, catalogOverrides: ['capabilities.thinking']
+    }))
+    expect(unknown.thinkingConfig).toBeUndefined()
+    expect(unknown.capabilities.thinking).toBe(false)
+    expect(unknown.reasoningEfforts).toBeUndefined()
+  })
+
+  it('round-trips resolved adaptive bindings without pinning inferred config or dropping a custom budget', () => {
+    const resolver = modelBindingResolver()
+    for (const raw of [
+      imported({
+        upstreamModel: 'claude-opus-5-5',
+        thinkingConfig: {
+          mode: 'budget', defaultEnabled: true, defaultBudgetTokens: 64_000,
+          parameterPath: 'thinking.budget_tokens'
+        }
+      }),
+      imported({ upstreamModel: 'gateway/claude-opus-6-1' }),
+      imported({ upstreamModel: 'claude-newline-6' })
+    ]) {
+      const first = resolver.resolve(raw)
+      expect(first.thinkingConfig).toMatchObject({ mode: 'effort', anthropicAdaptive: true })
+      const saved = resolver.update(first, { ...first })
+      expect(saved.thinkingConfig).toEqual(first.thinkingConfig)
+      expect(saved.reasoningEfforts).toEqual(first.reasoningEfforts)
+      expect(saved.catalogOverrides).not.toContain('thinkingConfig')
+      const again = resolver.resolve(saved)
+      expect(again.thinkingConfig).toEqual(first.thinkingConfig)
+      expect(again.reasoningEfforts).toEqual(first.reasoningEfforts)
+    }
+    const custom = resolver.resolve(imported({
+      upstreamModel: 'claude-haiku-5-5',
+      thinkingConfig: {
+        mode: 'budget', defaultEnabled: true, defaultBudgetTokens: 4_096,
+        parameterPath: 'thinking.budget_tokens'
+      }
+    }))
+    const customSaved = resolver.update(custom, { ...custom })
+    expect(customSaved.thinkingConfig).toMatchObject({ mode: 'budget', defaultBudgetTokens: 4_096 })
+    expect(customSaved.catalogOverrides).toContain('thinkingConfig')
+    expect(resolver.resolve(customSaved).thinkingConfig).toMatchObject({ mode: 'budget', defaultBudgetTokens: 4_096 })
+  })
   it('resolves a binding protocol override while keeping missing values inherited', () => {
     expect(effectiveModelProtocol({ protocol: 'openai-responses' }, imported())).toBe('openai-responses')
     expect(effectiveModelProtocol({ protocol: 'openai-responses' }, imported({ protocolOverride: 'anthropic' }))).toBe('anthropic')
@@ -42,6 +330,25 @@ describe('catalogue-backed provider metadata', () => {
     expect(model.capabilities).toEqual(glm.capabilities)
     expect(raw.thinkingConfig).toBeUndefined()
     expect(raw.capabilities.thinking).toBe(false)
+  })
+
+  /*
+    ★★ **「选了图片模型却说没有工具」那次事故的前提就在这。**
+    目录收录的图片模型,落库记录可能一行图片信息都没写,甚至带着
+    `imageOutput: false` 的导入默认值(登录同步/老导入发生在目录收录之前):
+    **原始记录**因此长得像文本模型,**解析后**才有 `modality: 'image'` /
+    `imageOutput: true`。消费方是 `kernel/image-gen.ts` 的桥 —— 它判断「设置里
+    点名的是不是图片模型」时必须吃 `listResolvedModels()`(runtime.ts 的装配点),
+    吃 `store.listAliases()` 的症状是:设置页下拉里能选中(那边是解析后的)、
+    保存成功,但对话里 `generate_image` 整体不下发,零报错。
+  */
+  it('目录才知道是图片的模型:原始记录没写模态(还带着 imageOutput:false 的导入默认值),解析后才是图片模型', () => {
+    const raw = imported({ alias: 'gpt-image-2.5-sunburst', upstreamModel: 'gpt-image-2.5-sunburst' })
+    expect(raw.modality).toBeUndefined()
+    expect(raw.capabilities.imageOutput).toBe(false)
+    const model = modelBindingResolver().resolve(raw)
+    expect(model.modality).toBe('image')
+    expect(model.capabilities.imageOutput).toBe(true)
   })
 
   it('keeps identifiable legacy provider customizations while filling other metadata', () => {

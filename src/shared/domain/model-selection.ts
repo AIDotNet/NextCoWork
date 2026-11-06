@@ -12,6 +12,7 @@
  * 从来就不足以定位一条绑定,缺的那一半必须一路带着走。
  */
 import type { ModelAlias, UpstreamProvider } from './provider'
+import { isChatModelAlias } from './provider'
 
 /**
  * ★ 第四个参数是**必填**的(值可以是 `undefined`)。
@@ -60,6 +61,7 @@ export function selectModelBinding(
 
 /**
  * 下拉框的 `value` / Map 的键。**只用在这两处**,不落盘、不进 IPC。
+ * 空别名代表未指定模型，下拉框必须与值为 `''` 的选项一致；否则会显示空白。
  *
  * ★ 分隔符是 `/`,而且**只切第一个** —— 顺序必须是 `providerId/alias` 而不是
  * 反过来。别名里真的会有斜杠(`openrouter/claude-sonnet-4`),而 providerId
@@ -72,6 +74,8 @@ export function selectModelBinding(
  * `Composer.tsx` 那个列表 key 已经在用的写法。
  */
 export function modelSelectionKey(modelProviderId: string | undefined, alias: string): string {
+  // 需求：未配置与「跟随对话」共用空值；编码成 '/' 会让 Select 找不到选项，触发器显示空白。
+  if (alias === '') return ''
   return `${modelProviderId ?? ''}/${alias}`
 }
 
@@ -124,4 +128,53 @@ export function subagentModelSelection(
     return { model: configured.model, modelProviderId: configured.modelProviderId }
   }
   return { model: parent.model, modelProviderId: parent.modelProviderId }
+}
+
+/**
+ * 校正兜底:第一个能当对话模型的绑定。
+ *
+ * 需求:对话模型选择器(输入框、通用页、工作区、Hooks)只列文本模型;存量配置里
+ * 已经选中图片模型的,**打开选择器时**落到这一个,并 toast 提示用户(不静默改)。
+ * 不这样做的症状是选择器里勾着一个列表里根本不存在的项,用户一打开就以为坏了。
+ *
+ * ★ 沿用输入数组的顺序(`listResolvedModels()` 已按「供应商顺序 → priority → 别名」
+ * 排好,正是选择器的显示顺序)——「第一个」必须和用户在列表里看到的第一个一致。
+ * ★ `enabled === false` 的别名/供应商都不算:落到一个发不出请求的模型比不校正更糟。
+ */
+export function firstChatModelAlias(
+  models: readonly ModelAlias[],
+  providers: readonly UpstreamProvider[]
+): ModelAlias | null {
+  const enabled = new Set(providers.filter((p) => p.enabled === true).map((p) => p.id))
+  for (const model of models) {
+    if (model.enabled === false) continue
+    if (!enabled.has(model.providerId)) continue
+    if (!isChatModelAlias(model)) continue
+    return model
+  }
+  return null
+}
+
+/**
+ * 打开对话模型选择器时的校正:当前选中的是**不能对话**的模型(图片/纯非文本输出)
+ * 就换成 `firstChatModelAlias`,否则 `null`(不用动)。
+ *
+ * 需求:决定 4 —— 不动存量配置,**打开选择器时**才就地校正并提示;
+ * 不静默改写是因为用户可能正打算去换回来,而提示让他知道发生了什么。
+ *
+ * ★ 悬空(alias 解析不到)**不归这里管**:那是 `repairModelSelection` 的活,
+ * 混进来会让「换模型」和「修数据」两件事挤在同一个副作用里。
+ * ★ 别名为空串(「跟随对话」这类空档)同样不动:它本来就不是模型。
+ */
+export function chatModelCorrection(
+  models: readonly ModelAlias[],
+  providers: readonly UpstreamProvider[],
+  alias: string,
+  modelProviderId: string | undefined
+): { alias: string; modelProviderId: string } | null {
+  if (alias === '') return null
+  const binding = selectModelBinding(models, providers, alias, modelProviderId)
+  if (binding === undefined || isChatModelAlias(binding)) return null
+  const fallback = firstChatModelAlias(models, providers)
+  return fallback === null ? null : { alias: fallback.alias, modelProviderId: fallback.providerId }
 }

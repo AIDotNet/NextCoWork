@@ -1,6 +1,6 @@
 /**
  * 通用 LCS 与「按行数增删计数」—— 主进程封包改动集时算 `+X −Y`,渲染层的
- * `views/chat/diff.ts` 也复用同一份 LCS,避免两处 diff 口径漂移。
+ * `components/diff/compute.ts` 也复用同一份 LCS,避免两处 diff 口径漂移。
  *
  * 纯函数、零依赖(不碰 electron / DOM),所以放 shared,main 与 renderer 都能 import。
  */
@@ -60,13 +60,65 @@ export function countLineDiff(before: string | null, after: string | null): { ad
   const afterLines = toLines(after)
   if (before === null) return { additions: afterLines.length, deletions: 0 }
   if (after === null) return { additions: 0, deletions: beforeLines.length }
-  let additions = 0
-  let deletions = 0
-  for (const op of lcsOps(beforeLines, afterLines, (x, y) => x === y)) {
-    if (op.tag === 'add') additions++
-    else if (op.tag === 'del') deletions++
+  const common = lcsLength(beforeLines, afterLines)
+  return { additions: afterLines.length - common, deletions: beforeLines.length - common }
+}
+
+/**
+ * 超过这个格子数就不做精确 LCS,退化成按行计数的多重集差。
+ * 4000 × 4000 行的两段改动在去掉公共首尾之后仍然很少见;真碰到时宁可数字略偏,
+ * 也不让渲染层或主进程同步跑上几亿次比较。
+ */
+const MAX_LCS_CELLS = 16_000_000
+
+/**
+ * 只要计数的话不需要回溯:增删数 = 各自行数 − LCS 长度。
+ *
+ * - 先剥掉公共首尾行。它们一定在某个最长公共子序列里,剥掉不改变结果;
+ *   一次典型的 Edit 只改中间几行,剩下要比的往往只有个位数。
+ * - 剩下的部分用两行滚动数组求长度,内存 O(m),不再分配 n×m 的矩阵。
+ */
+function lcsLength(a: readonly string[], b: readonly string[]): number {
+  let start = 0
+  while (start < a.length && start < b.length && a[start] === b[start]) start++
+  let endA = a.length
+  let endB = b.length
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--
+    endB--
   }
-  return { additions, deletions }
+  const shared = start + (a.length - endA)
+  const n = endA - start
+  const m = endB - start
+  if (n === 0 || m === 0) return shared
+  if (n * m > MAX_LCS_CELLS) return shared + multisetOverlap(a.slice(start, endA), b.slice(start, endB))
+  let prev = new Int32Array(m + 1)
+  let next = new Int32Array(m + 1)
+  for (let i = 0; i < n; i++) {
+    const ai = a[start + i]
+    for (let j = 0; j < m; j++) {
+      next[j + 1] = ai === b[start + j] ? prev[j]! + 1 : Math.max(prev[j + 1]!, next[j]!)
+    }
+    const swap = prev
+    prev = next
+    next = swap
+  }
+  return shared + prev[m]!
+}
+
+/** 两边都出现的行数(按出现次数取小)。是 LCS 长度的上界,用作超大输入时的近似。 */
+function multisetOverlap(a: readonly string[], b: readonly string[]): number {
+  const counts = new Map<string, number>()
+  for (const line of a) counts.set(line, (counts.get(line) ?? 0) + 1)
+  let overlap = 0
+  for (const line of b) {
+    const left = counts.get(line) ?? 0
+    if (left > 0) {
+      counts.set(line, left - 1)
+      overlap++
+    }
+  }
+  return overlap
 }
 
 /** 空文件 → 0 行;否则按 \n 切分并剔除唯一的尾随空行。 */

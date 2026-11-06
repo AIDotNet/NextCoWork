@@ -29,7 +29,7 @@ export interface MarkdownResourceFile {
   frontmatter: Record<string, string | string[]>
   body: string
   /**
-   * 解析器读不懂、**保存时会丢**的语法(嵌套 map、块标量、锚点)。
+   * 解析器读不懂、**保存时会丢**的语法(两层以上的嵌套、锚点)。
    *
    * 值本身在 parse 阶段就已经没了,序列化器无从恢复 —— 所以非空时 UI 必须在
    * 保存前当面说清楚,而不是默默写出去。这和 `local-settings.ts` 那条

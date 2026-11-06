@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Readable, Writable } from 'node:stream'
 import { SFTPStream, type Stats } from 'ssh2-streams'
 import type { EnvironmentFs, EnvironmentStat } from '../contract'
+import { writeStreamToFile, type StreamSink, type StreamTarget } from '../../kernel/stream-write'
 import { EnvironmentError, errorCode, missingPath, sftpError } from '../errors'
 import { fromSftpPath, toSftpPath } from '../paths'
 
@@ -217,6 +218,47 @@ export class SftpFileSystem implements EnvironmentFs {
   async mkdir(path: string): Promise<void> {
     const timestamp = Math.floor(Date.now() / 1000)
     await this.request<void>((done) => this.stream.mkdir(this.path(path), { mode: 0o700, atime: timestamp, mtime: timestamp }, done), true)
+  }
+
+  /**
+   * 需求:`SaveVideo` 把几十到几百兆的视频写进**远程**工作区。`writeBytes` 那条路
+   * 有 32 MiB 上限,而且是整包 —— 视频上都不成立。所以单开一条:边读边分块发,
+   * 上限、背压、失败清理都在 `stream-write.ts` 那份共享逻辑里(见它的文件头:
+   * 两份实现必须逐字相同)。
+   */
+  async writeStream(
+    path: string,
+    source: ReadableStream<Uint8Array>,
+    options: { exclusive?: boolean; mode?: number; maxBytes: number },
+    signal: AbortSignal
+  ): Promise<{ ok: true; size: number } | { ok: false; reason: string }> {
+    return writeStreamToFile(this.streamTarget(), path, source, options, signal)
+  }
+
+  private streamTarget(): StreamTarget {
+    return {
+      openSink: async (path, exclusive, mode): Promise<StreamSink> => {
+        const timestamp = Math.floor(Date.now() / 1000)
+        const handle = await this.request<Buffer>((done) => this.stream.open(this.path(path), exclusive ? 'wx' : 'w',
+          { mode, atime: timestamp, mtime: timestamp }, done), true)
+        return {
+          // ★ 分块走 32 KiB:与 `writeBytes` 同一个粒度 —— SFTP 的单包大小是有上限的,
+          //   而那个值不是我们能随手放大的。
+          write: async (chunk) => {
+            for (let offset = 0; offset < chunk.length; offset += 32 * 1024) {
+              const slice = chunk.subarray(offset, Math.min(chunk.length, offset + 32 * 1024))
+              await this.request<void>((done) => this.stream.writeData(handle, Buffer.from(slice), 0, slice.length, offset, done), true)
+            }
+          },
+          sync: async () => { await this.sync(handle) },
+          close: async () => { await this.request<void>((done) => this.stream.close(handle, done), true) }
+        }
+      },
+      rename: async (from, to, replace) => { await this.rename(from, to, replace) },
+      unlink: async (path) => { await this.unlink(path) },
+      exists: async (path) => this.exists(path),
+      mkdirp: async (path) => { await this.mkdirp(path) }
+    }
   }
   async mkdirp(filePath: string): Promise<void> {
     const paths = this.os === 'win32' ? win32 : posix

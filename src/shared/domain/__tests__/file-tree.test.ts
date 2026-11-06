@@ -127,6 +127,19 @@ describe('fileCategory', () => {
   })
 
   /**
+   * 办公文档分四类,不是一个笼统的 office —— 图标要给出不同的预期动作。
+   * `.csv` 归表格是有意的:它打开是一张表,给纯文本图标会让人以为要自己数逗号。
+   * ★ `.key` **不该**是幻灯片:仓库里的 `*.key` 几乎都是私钥。
+   */
+  it('办公文档按用途分四类', () => {
+    for (const n of ['a.doc', 'a.docx', 'a.rtf', 'a.odt']) expect(fileCategory(n), n).toBe('doc')
+    for (const n of ['a.xlsx', 'a.ods', 'a.csv', 'a.tsv']) expect(fileCategory(n), n).toBe('sheet')
+    for (const n of ['a.ppt', 'a.pptx', 'a.odp']) expect(fileCategory(n), n).toBe('slides')
+    expect(fileCategory('规格书.pdf')).toBe('pdf')
+    expect(fileCategory('server.key')).toBe('text')
+  })
+
+  /**
    * ★ 三种「没有后缀」长得不一样,但都该落到 `text`:
    * 完全没有点、以点开头且只有那一个点、以及点在末尾。
    * 第三种是最容易漏的 —— `slice(dot + 1)` 会得到空串,

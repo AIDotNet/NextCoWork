@@ -24,8 +24,8 @@ export type MigrationStepKind = 'collapse-flat-layout' | 'merge-legacy-rows' | '
 /**
  * 闸门的四个阶段。
  *
- * - `idle`     —— 什么都不用做。★ 这是绝大多数启动会落到的分支,渲染层**不画任何东西**,
- *                 在 `ipcReady` 之后把 App 挂起来。多一层「正在检查」的过场就是一次白闪。
+ * - `idle`     —— 什么都不用做。★ 这是绝大多数启动会落到的分支,渲染层先画首屏骨架,
+ *                 在 `ipcReady` 之后把 App 挂起来；不能留空，否则启动异常会表现成永久白屏。
  * - `running`  —— 正在搬。全屏盖住,期间数据库还没打开,任何 IPC 都用不了。
  * - `failed`   —— 停在错误页。重试 / 跳过 / 打开数据目录 / 撤销本次合并。
  * - `skipped`  —— 用户在错误页选了「跳过并继续」。库是完整的(合并只 INSERT 且按
@@ -94,6 +94,13 @@ export interface MigrationState {
   merged: MigrationMergeSummary | null
   /** 是否还留着可以撤销的合并记录。 */
   undoAvailable: boolean
+  /**
+   * 主进程启动流程抛出的原始诊断；`null` 表示尚未失败。
+   *
+   * 需求：窗口早于数据库和完整 IPC 创建，后续任一步抛错都必须能落到首屏错误页，
+   * 否则渲染层只会永远等着 `ipcReady`，表现为 Windows 上整窗白屏且没有任何提示。
+   */
+  startupFailure: string | null
   /**
    * 主进程**能不能应答 IPC** —— 即 `registerIpc()` 是否已经跑完。
    *

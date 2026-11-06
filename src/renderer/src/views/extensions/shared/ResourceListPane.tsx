@@ -8,8 +8,8 @@
  */
 import { Plus, Search } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Button } from '../../../components/ui/Button'
-import { Segmented } from '../../../components/ui/Segmented'
+import { Button } from '../../../components/arc/button/button'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { TextInput } from '../../../components/ui/TextInput'
 import { useI18n } from '../../../i18n'
 import { filterRows, type ScopeFilter } from './filter'
@@ -57,10 +57,9 @@ export function ResourceListPane<T extends ResourceRow>({
           ariaLabel={t('ext.searchPlaceholder')}
           className="max-w-[220px]"
         />
-        <Segmented<ScopeFilter>
-          size="sm"
+        <SegmentedControl
           value={scopeFilter}
-          onChange={setScopeFilter}
+          onValueChange={(value) => setScopeFilter(value as ScopeFilter)}
           label={t('ext.scopeFilter')}
           options={[
             { value: 'all', label: t('ext.scope.all') },
@@ -68,7 +67,8 @@ export function ResourceListPane<T extends ResourceRow>({
             { value: 'project', label: t('ext.scope.project') }
           ]}
         />
-        <Button size="sm" variant="accent" icon={<Plus size={13} />} className="ml-auto" onClick={onNew}>
+        <Button type="button" variant="primary" size="sm" className="ml-auto" onClick={onNew}>
+          <Plus size={13} />
           {t('ext.new')}
         </Button>
       </div>

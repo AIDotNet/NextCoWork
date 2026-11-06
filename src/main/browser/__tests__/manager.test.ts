@@ -131,6 +131,56 @@ describe('BrowserManager · workspace and run isolation', () => {
     expect(second.id).toBe(first.id)
     expect(manager.list('workspace-a')).toHaveLength(1)
   })
+
+  /*
+    需求：浏览器要能打开 file:// 本地页面（2026-09-22，见 normalizeUrl 头注）。
+    标题这条是配套的：file:// 的 hostname 是空串，不兜底就是一个没有文字的标签。
+  */
+  it('允许 file:// 打开与导航，标题取路径末段而不是空串', () => {
+    const manager = new BrowserManager()
+    const tab = manager.open({
+      workspaceId: 'workspace-a',
+      source: 'agent',
+      ownerRunId: 'run-a',
+      url: 'file:///tmp/reports/q3.html'
+    })
+
+    expect(tab.url).toBe('file:///tmp/reports/q3.html')
+    expect(tab.title).toBe('q3.html')
+    expect(
+      manager.navigate(tab.id, 'file:///tmp/next.html', { workspaceId: 'workspace-a', runId: 'run-a' }).url
+    ).toBe('file:///tmp/next.html')
+  })
+
+  it('file:// 之外的非 http(s) 协议仍然被拒', () => {
+    const manager = new BrowserManager()
+    expect(() => manager.open({ workspaceId: 'workspace-a', source: 'user', url: 'javascript:alert(1)' })).toThrow('http')
+  })
+
+  /*
+    需求：Agent 一打开浏览器，右侧工作台就要展开（2026-09-22）。整条链是
+    open({openRightPanel}) → emit(rightPanelOpen) → 渲染层 setRightPanelForWorkspace，
+    这里钉住第一步：flag 丢了的话上游全部照常工作、只有面板永远不展开，
+    而那种「工具跑成功了但界面没反应」最难查。
+  */
+  it('openRightPanel 会随变更事件发给监听方，不传时不带这个标记', () => {
+    const manager = new BrowserManager()
+    const seen: Array<{ rightPanelOpen?: boolean }> = []
+    manager.setListener((change) => seen.push(change))
+
+    manager.open({
+      workspaceId: 'workspace-a',
+      source: 'agent',
+      ownerRunId: 'run-a',
+      url: 'https://example.com',
+      openRightPanel: true
+    })
+    manager.open({ workspaceId: 'workspace-a', source: 'user', url: 'https://example.org' })
+
+    expect(seen[0]?.rightPanelOpen).toBe(true)
+    expect(seen[1]?.rightPanelOpen).toBeUndefined()
+    manager.setListener(null)
+  })
 })
 
 describe('BrowserManager · Profiles', () => {

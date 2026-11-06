@@ -184,7 +184,7 @@ try {
   // 四个 Tab 是 Segmented(role=radio)。逐个点过去,各截一张。
   const tabs = ['技能', '命令', '子代理', '钩子']
   const labels = await cdp.eval(
-    `[...document.querySelectorAll('[role="radio"]')].map((r) => r.textContent?.trim())`
+    `[...document.querySelectorAll('button[aria-pressed]')].map((r) => r.textContent?.trim())`
   )
   check('四个 Tab 都在', tabs.every((x) => labels.includes(x)), `实际:${JSON.stringify(labels)}`)
 
@@ -204,7 +204,7 @@ try {
   for (const [i, name] of tabs.entries()) {
     if (i === 0) continue
     await cdp.eval(`(() => {
-      const r = [...document.querySelectorAll('[role="radio"]')].find((x) => x.textContent?.trim() === ${JSON.stringify(name)})
+      const r = [...document.querySelectorAll('button[aria-pressed]')].find((x) => x.textContent?.trim() === ${JSON.stringify(name)})
       if (!r) throw new Error('找不到 Tab:' + ${JSON.stringify(name)})
       r.click()
       return true
@@ -234,7 +234,7 @@ try {
 
   // 回到技能 Tab，确认 Skills 的操作按钮还在（chromeless 只该去掉返回键和标题）。
   await cdp.eval(`(() => {
-    const r = [...document.querySelectorAll('[role="radio"]')].find((x) => x.textContent?.trim() === '技能')
+    const r = [...document.querySelectorAll('button[aria-pressed]')].find((x) => x.textContent?.trim() === '技能')
     r.click(); return true
   })()`)
   await sleep(500)

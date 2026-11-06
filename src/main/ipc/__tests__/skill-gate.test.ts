@@ -10,9 +10,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../../../shared/domain/workspace'
 
 const mocks = vi.hoisted(() => ({
-  scanned: [] as Array<{ id: string; unavailableReason?: string }>,
+  scanned: [] as Array<{ id: string; name?: string; scope?: string; source?: { path: string }; unavailableReason?: string }>,
   workspace: undefined as Workspace | undefined,
-  put: vi.fn()
+  put: vi.fn(),
+  emit: vi.fn()
 }))
 
 vi.mock('electron', () => ({ dialog: {} }))
@@ -25,12 +26,13 @@ vi.mock('../../runtime', () => ({
 vi.mock('../../state/store', () => ({
   store: {
     getWorkspace: () => mocks.workspace,
+    listWorkspaces: () => [],
     putWorkspace: mocks.put
   }
 }))
-vi.mock('../../window/registry', () => ({ windows: { emitToAll: vi.fn() } }))
+vi.mock('../../window/registry', () => ({ windows: { emitToAll: mocks.emit } }))
 
-const { setSkillWorkspaceActive } = await import('../skills')
+const { activateWrittenSkills, setSkillWorkspaceActive } = await import('../skills')
 
 function workspace(activeSkillIds: string[]): Workspace {
   return { id: 'workspace', name: 'w', rootPath: '/w', createdAt: 0, updatedAt: 0,
@@ -63,5 +65,25 @@ describe('技能的工作区开关', () => {
     mocks.put.mockClear()
     await setSkillWorkspaceActive({ skillId: 'plain', workspaceId: 'workspace', active: true })
     expect((mocks.put.mock.calls[0]![0] as Workspace).settings.activeSkillIds).toEqual(['plain'])
+  })
+
+  it('activates a project Skill by its written directory, not only frontmatter name', async () => {
+    mocks.scanned = [{
+      id: 'pricing-rules', name: 'pricing-rules', scope: 'project',
+      source: { path: '/repo/.next-cowork/skills/pricing-rule/SKILL.md' }
+    }]
+    mocks.workspace = workspace(['existing'])
+    mocks.put.mockClear()
+    await activateWrittenSkills({ workspaceId: 'workspace', names: ['pricing-rule'] })
+    expect((mocks.put.mock.calls[0]![0] as Workspace).settings.activeSkillIds).toEqual(['existing', 'pricing-rules'])
+    expect(mocks.emit).toHaveBeenCalledWith('workspace:changed', { workspaces: [] })
+  })
+
+  it('does not write settings when all Skills are implicitly active', async () => {
+    mocks.scanned = [{ id: 'pricing-rules', name: 'pricing-rules', scope: 'project', source: { path: '/repo/.next-cowork/skills/pricing-rule/SKILL.md' } }]
+    mocks.workspace = { ...workspace([]), settings: { ...workspace([]).settings, skillSelectionMode: 'all' } }
+    mocks.put.mockClear()
+    await activateWrittenSkills({ workspaceId: 'workspace', names: ['pricing-rule'] })
+    expect(mocks.put).not.toHaveBeenCalled()
   })
 })

@@ -1,0 +1,18 @@
+.button { position: relative; display: inline-flex; min-height: var(--control-height-md); align-items: center; justify-content: center; overflow: hidden; padding: 0 var(--space-5); border: 1px solid transparent; border-radius: var(--radius-control); background: linear-gradient(to bottom, rgb(255 255 255 / .1), rgb(255 255 255 / 0)) var(--accent); color: var(--accent-foreground); box-shadow: 0 0 0 .5px color-mix(in srgb, var(--accent), black 25%), 0 1px 1.5px rgb(0 0 0 / .12); font: inherit; font-size: 13px; font-weight: 500; line-height: var(--leading-body); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .button:hover:not(:disabled) { background-color: color-mix(in srgb, var(--accent), white 8%); } }
+.button:disabled { cursor: not-allowed; }
+.button:disabled:not([data-state="pending"]) { opacity: .7; }
+.button[data-state="pending"] { cursor: progress; }
+.content { display: inline-flex; min-height: 1.25rem; align-items: center; justify-content: center; gap: var(--space-2); white-space: nowrap; }
+.morph { display: inline-flex; min-width: 0; }
+.morph[data-morphing] { clip-path: inset(-.6em 0 -.6em -.3em); }
+.glyphs { position: relative; display: inline-flex; flex: none; white-space: pre; }
+.glyph { display: inline-block; }
+.iconSlot { display: grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; }
+.phase { grid-area: 1 / 1; display: grid; width: 17px; height: 17px; place-items: center; }
+.arrow { flex: none; }
+.statusIcon { color: currentColor; }
+.spinner { display: inline-block; width: var(--space-4); height: var(--space-4); border: 1.5px solid currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: spin .7s linear infinite; }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } .spinner { animation: none; } }

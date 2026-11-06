@@ -14,7 +14,7 @@ import { cn } from "../../lib/cn";
 
 /** chip 的外观。可点开的那一份额外叠 hover/focus —— 见 `onOpen`。 */
 const CHIP_CLASS =
-  "flex h-8 max-w-full items-center gap-1.5 rounded-[7px] border border-stroke bg-tint px-2 text-[11.5px] text-fg-muted";
+  "flex h-8 max-w-full items-center gap-1.5 rounded-[8px] border border-stroke bg-tint px-2 text-[11.5px] text-fg-muted";
 
 export function MessageFileRef({
   name,

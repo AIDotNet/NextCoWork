@@ -11,8 +11,9 @@
  * 本地与 SSH 两条路都走那一个端口),工具通过 `ToolContext.shells` 够到它。
  * 内核因此仍然零 electron、可单测 —— 同 `SchedulingBridge` / `SpawnSubagentFn` 的道理。
  *
- * ★ **故意不做**「后台 shell 面板」这类界面。后台进程的存在感来自
- * `BashOutput` 的回读与工具卡片,多一个常驻面板就多一份要和注册表对齐的状态。
+ * 界面侧只有右上角活动胶囊的「Bash」栏(`ActivityCapsule`):它**不自己存状态**,
+ * 列表靠 `shell:backgroundChanged` 全量广播收敛,输出靠 `shell:peekBackground`
+ * 看尾巴 —— 不消费模型那份缓冲,注册表仍是唯一事实源。
  */
 
 /**
@@ -62,16 +63,22 @@ export interface BackgroundShellRead {
  * ★ 失败一律 **throw 一个模型读得懂的英文 Error**,由工具转成 `toolFail`。
  * 返回 `{ ok: false }` 型结果会让每个调用点都要写一遍分支,而漏写的那处
  * 会把失败当成成功报给模型。
+ *
+ * `P` 是「一条从前台转走的进程」的形状。★ 写成类型参数而不是直接引用:
+ * 那个形状带着 Node 的流类型,而本文件也被渲染层编译 —— 具体类型由
+ * 内核那一侧(`ToolContext.shells`)填上。
  */
-export interface ShellBridge {
+export interface ShellBridge<P = unknown> {
   /**
    * 前台命令:登记一个「只停这一条命令」的句柄,返回注销函数。
    *
    * ★ 注销**必须**在 `finally` 里调。漏掉的话注册表会攥着一个早就跑完的
    * callId,而用户下一次点那张卡上的停止,停的是一条已经不存在的命令 ——
    * 没有任何报错,只是按钮不起作用。
+   *
+   * `detach`:同一条命令的「转去后台」句柄。只在 `adopt` 存在时才有意义。
    */
-  hold(call: { runId: string; callId: string; command: string }, stop: () => void): () => void
+  hold(call: { runId: string; callId: string; command: string }, stop: () => void, detach?: () => void): () => void
   start(req: {
     command: string
     cwd: string
@@ -82,6 +89,21 @@ export interface ShellBridge {
   read(id: string, filter?: string): BackgroundShellRead
   kill(id: string): BackgroundShellInfo
   list(): BackgroundShellInfo[]
+  /**
+   * 收编一条**从前台转走、仍在跑**的进程,从此它就是一个普通的后台 shell。
+   *
+   * ★ 可选:缺席 = 这个环境里前台命令转不了后台(SSH 的前台命令走 exec 通道,
+   * 拿不出一个活着的进程)。工具据此决定告不告诉界面「这条可以转后台」——
+   * 画一颗按下去没反应的按钮,比没有按钮难解释得多。
+   */
+  adopt?(req: {
+    command: string
+    cwd: string
+    description?: string
+    runId: string
+    callId: string
+    process: P
+  }): BackgroundShellInfo
 }
 
 export const BACKGROUND_SHELL_LIMITS = {

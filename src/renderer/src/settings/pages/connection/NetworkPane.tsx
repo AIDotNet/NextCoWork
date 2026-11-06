@@ -20,11 +20,11 @@ import {
   DIRECT_BYPASS,
   PROXY_SCHEMES,
 } from "../../../../../shared/domain/proxy";
-import { Button } from "../../../components/ui/Button";
-import { Segmented } from "../../../components/ui/Segmented";
+import { Button } from "../../../components/arc/button/button";
+import SegmentedControl from "../../../components/arc/segmented-control/segmented-control";
 import { TextArea } from "../../../components/ui/TextArea";
 import { TextInput } from "../../../components/ui/TextInput";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { useI18n } from "../../../i18n";
 import { cn } from "../../../lib/cn";
 import {
@@ -59,10 +59,10 @@ export function NetworkPane({ settings, patch }: SettingsPageProps): ReactNode {
         title={t("connection.network.enable")}
         description={t("connection.network.enableHint")}
       >
-        <Toggle
-          label={t("connection.network.enable")}
+        <Switch
+          aria-label={t("connection.network.enable")}
           checked={p.enabled}
-          onChange={(enabled) => patch({ proxy: { enabled } })}
+          onCheckedChange={(enabled) => patch({ proxy: { enabled } })}
         />
       </SettingRow>
 
@@ -71,14 +71,14 @@ export function NetworkPane({ settings, patch }: SettingsPageProps): ReactNode {
         description={t("connection.network.modeHint")}
         wide
       >
-        <Segmented
+        <SegmentedControl
           label={t("connection.network.mode")}
           value={p.mode}
           options={[
             { value: "system", label: t("connection.network.followSystem") },
             { value: "manual", label: t("connection.network.manual") },
           ]}
-          onChange={(mode) => patch({ proxy: { mode } })}
+          onValueChange={(mode) => patch({ proxy: { mode: mode as "system" | "manual" } })}
           className={cn(!p.enabled && "pointer-events-none opacity-40")}
         />
       </SettingRow>
@@ -88,12 +88,11 @@ export function NetworkPane({ settings, patch }: SettingsPageProps): ReactNode {
         description={<>{t("connection.network.addressHint")}</>}
       >
         <div className="flex items-center gap-2">
-          <Segmented
+          <SegmentedControl
             label={t("connection.network.protocol")}
-            size="sm"
             value={p.scheme}
             options={SCHEME_OPTIONS}
-            onChange={(scheme: ProxyScheme) => patch({ proxy: { scheme } })}
+            onValueChange={(scheme) => patch({ proxy: { scheme: scheme as ProxyScheme } })}
             className={cn(!manual && "pointer-events-none opacity-40")}
           />
           <div className="min-w-0 flex-1">
@@ -125,11 +124,11 @@ export function NetworkPane({ settings, patch }: SettingsPageProps): ReactNode {
         title={t("connection.network.auth")}
         description={t("connection.network.authHint")}
       >
-        <Toggle
-          label={t("connection.network.auth")}
+        <Switch
+          aria-label={t("connection.network.auth")}
           checked={p.authEnabled}
           disabled={!manual}
-          onChange={(authEnabled) => patch({ proxy: { authEnabled } })}
+          onCheckedChange={(authEnabled) => patch({ proxy: { authEnabled } })}
         />
       </SettingRow>
 
@@ -416,9 +415,9 @@ function ProxyPasswordField({ disabled }: { disabled: boolean }): ReactNode {
         <span className="flex-1 text-[12.5px] text-fg-muted">
           {t("connection.network.saved")}
         </span>
-        <Button
-          size="sm"
-          variant="ghost"
+        <Button size="sm"
+          type="button"
+          variant="secondary"
           disabled={disabled || busy}
           onClick={clear}
         >
@@ -441,17 +440,13 @@ function ProxyPasswordField({ disabled }: { disabled: boolean }): ReactNode {
           icon={<Eye size={13} />}
         />
       </div>
-      <Button
-        size="sm"
-        variant="accent"
+      <Button size="sm"
+        type="button"
+        variant="primary"
         disabled={disabled || busy || draft === ""}
         onClick={save}
       >
-        {busy ? (
-          <Spinner size="sm" />
-        ) : (
-          t("connection.network.save")
-        )}
+        {busy ? <Spinner size="sm" /> : t("connection.network.save")}
       </Button>
     </div>
   );

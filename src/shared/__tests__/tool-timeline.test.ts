@@ -279,41 +279,41 @@ describe('decideWorkspace', () => {
     decideWorkspace(o)
 
   it('正常结束 + 有结尾正文 + 项数够 → 收束', () => {
-    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: true, errorCount: 0 })).toEqual({
+    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: true })).toEqual({
       collapse: true,
       defaultOpen: false
     })
   })
 
   it('★ 没有结尾正文时不收束 —— 否则界面上只剩一个空壳,结论被藏没了', () => {
-    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: false, errorCount: 0 }).collapse).toBe(
+    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: false }).collapse).toBe(
       false
     )
   })
 
   it('★ 被中断时不收束 —— 用户正要看「跑到哪一步停的」', () => {
-    expect(d({ outcome: 'aborted', itemCount: 9, hasTrailingText: true, errorCount: 0 }).collapse).toBe(
+    expect(d({ outcome: 'aborted', itemCount: 9, hasTrailingText: true }).collapse).toBe(
       false
     )
-    expect(d({ outcome: 'error', itemCount: 9, hasTrailingText: true, errorCount: 1 }).collapse).toBe(
+    expect(d({ outcome: 'error', itemCount: 9, hasTrailingText: true }).collapse).toBe(
       false
     )
   })
 
   it('run 还在跑时不收束', () => {
-    expect(d({ outcome: 'running', itemCount: 9, hasTrailingText: true, errorCount: 0 }).collapse).toBe(
+    expect(d({ outcome: 'running', itemCount: 9, hasTrailingText: true }).collapse).toBe(
       false
     )
   })
 
   it('★ 只有一项时也收束 —— 完成后的过程统一归入摘要行', () => {
-    expect(d({ outcome: 'ok', itemCount: 1, hasTrailingText: true, errorCount: 0 }).collapse).toBe(true)
+    expect(d({ outcome: 'ok', itemCount: 1, hasTrailingText: true }).collapse).toBe(true)
   })
 
-  it('有失败时收束但默认展开', () => {
-    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: true, errorCount: 2 })).toEqual({
+  it('★ 曾有失败工具调用也不再强制默认展开 —— 否则后台任务(如更新检查)失败一次,「用时」面板从此永久展开', () => {
+    expect(d({ outcome: 'ok', itemCount: 5, hasTrailingText: true })).toEqual({
       collapse: true,
-      defaultOpen: true
+      defaultOpen: false
     })
   })
 })

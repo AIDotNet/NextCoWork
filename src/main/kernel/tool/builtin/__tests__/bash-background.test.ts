@@ -1,7 +1,8 @@
+import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import type { BackgroundShellInfo, ShellBridge } from '../../../../../shared/domain/shell'
 import { abortError } from '../../../abort'
-import { nodeHost, type KernelHost } from '../../../host'
+import { nodeHost, type DetachedProcess, type KernelHost } from '../../../host'
 import type { ToolContext } from '../../registry'
 import { bashTool } from '../bash'
 import { bashOutputTool, killShellTool } from '../bash-background'
@@ -69,7 +70,7 @@ describe('Bash · 后台执行', () => {
   it('★ 没有注册表时明说,而不是悄悄降级成前台跑', async () => {
     const spawn = vi.fn()
     const r = await bashTool.execute(
-      { command: 'npm run dev', run_in_background: true },
+      { command: 'npm run dev', run_in_background: true, description: '测试命令' },
       ctx({ host: nodeHost({ spawn }) })
     )
     expect(r.isError).toBe(true)
@@ -91,14 +92,15 @@ describe('Bash · 后台执行', () => {
     expect(r.output.content).toContain('KillShell')
     // 后台走的是注册表,不是 SpawnFn —— 走错的话这条命令会把整轮卡到超时
     expect(spawn).not.toHaveBeenCalled()
-    expect(shells.start).toHaveBeenCalledWith(expect.objectContaining({ command: 'npm run dev', cwd: '/w' }))
+    // description 是必填,且必须原样转给注册表 —— 后台 shell 列表显示的就是它
+    expect(shells.start).toHaveBeenCalledWith(expect.objectContaining({ command: 'npm run dev', cwd: '/w', description: '起开发服务' }))
   })
 
   it('起不来时把原因原样转给模型', async () => {
     const shells = fakeBridge({
       start: vi.fn(async () => { throw new Error('Too many background shells are already running (8).') })
     })
-    const r = await bashTool.execute({ command: 'npm run dev', run_in_background: true }, ctx({ shells }))
+    const r = await bashTool.execute({ command: 'npm run dev', run_in_background: true, description: '测试命令' }, ctx({ shells }))
     expect(r.isError).toBe(true)
     expect(r.output.content).toContain('Too many background shells')
   })
@@ -120,7 +122,7 @@ describe('Bash · 单条停止', () => {
   it('★ 用户停这一条 = toolFail,不是抛出 —— 抛出会把整轮回复也停掉', async () => {
     const shells = fakeBridge()
     const pending = bashTool.execute(
-      { command: 'sleep 30' },
+      { command: 'sleep 30', description: '测试命令' },
       ctx({ shells, host: nodeHost({ spawn: hangingSpawn }) })
     )
     // hold 在 spawn 之前同步调用,但 execute 本身要先过一遍 schema 校验
@@ -137,7 +139,7 @@ describe('Bash · 单条停止', () => {
     const shells = fakeBridge()
     const run = new AbortController()
     const pending = bashTool.execute(
-      { command: 'sleep 30' },
+      { command: 'sleep 30', description: '测试命令' },
       ctx({ shells, signal: run.signal, host: nodeHost({ spawn: hangingSpawn }) })
     )
     await Promise.resolve()
@@ -148,11 +150,86 @@ describe('Bash · 单条停止', () => {
   it('停止句柄在命令收尾时注销 —— 留着的话下一次点停止会停到一条不存在的命令', async () => {
     const shells = fakeBridge()
     await bashTool.execute(
-      { command: 'true' },
+      { command: 'true', description: '测试命令' },
       ctx({ shells, host: nodeHost({ spawn: async () => ({ code: 0, stdout: '', stderr: '' }) }) })
     )
     expect(shells.held).toEqual([{ runId: 'run_1', callId: 'call_1' }])
     expect(stops.has('run_1:call_1')).toBe(false)
+  })
+})
+
+describe('Bash · 前台转后台', () => {
+  function detachedProcess(): DetachedProcess {
+    return { stdout: new PassThrough(), stderr: new PassThrough(), exited: new Promise(() => {}), kill: vi.fn() }
+  }
+
+  /** 一个只会被「转后台」放出来的 spawn —— 和 nodeSpawn 一样,detach 响了就交出进程 */
+  const detachableSpawn = (process: DetachedProcess): KernelHost['spawn'] => (_cmd, opts) =>
+    new Promise((resolve) => {
+      opts.detach?.addEventListener('abort', () => resolve({ code: 0, stdout: 'building…', stderr: '', detached: process }), { once: true })
+    })
+
+  it('没有 adopt(SSH)时不告诉界面能转,也不给 spawn 传 detach', async () => {
+    const shells = fakeBridge()
+    const emit = vi.fn()
+    const spawn = vi.fn<KernelHost['spawn']>(async () => ({ code: 0, stdout: '', stderr: '' }))
+    await bashTool.execute({ command: 'true', description: '测试命令' }, ctx({ shells, emit, host: nodeHost({ spawn }) }))
+    expect(emit.mock.calls[0]?.[0]).not.toHaveProperty('detachable')
+    expect(spawn.mock.calls[0]?.[1]).not.toHaveProperty('detach')
+  })
+
+  it('★ 用户转后台:收编进程、回包里有 shell id 与已有输出,而且是成功不是失败', async () => {
+    const process = detachedProcess()
+    const adoptFn = vi.fn(() => info({ id: 'bash_7' }))
+    const detaches = new Map<string, () => void>()
+    const shells = fakeBridge({
+      adopt: adoptFn,
+      hold: (call, _stop, detach) => {
+        if (detach !== undefined) detaches.set(call.callId, detach)
+        return () => detaches.delete(call.callId)
+      }
+    })
+    const emit = vi.fn()
+    const pending = bashTool.execute(
+      { command: 'npm run build', description: '构建' },
+      ctx({ shells, emit, host: nodeHost({ spawn: detachableSpawn(process) }) })
+    )
+    await Promise.resolve()
+    expect(emit.mock.calls[0]?.[0]).toMatchObject({ detachable: true })
+    detaches.get('call_1')?.()
+
+    const r = await pending
+    expect(r.isError).toBeFalsy()
+    expect(r.output.content).toContain('bash_7')
+    expect(r.output.content).toContain('building…')
+    expect(r.output.content).toContain('BashOutput')
+    expect(adoptFn).toHaveBeenCalledWith(expect.objectContaining({ command: 'npm run build', description: '构建', process }))
+    expect(process.kill).not.toHaveBeenCalled()
+    // 句柄在收尾时注销
+    expect(detaches.size).toBe(0)
+  })
+
+  it('★ 收编失败时杀掉它 —— 否则就是一个谁也看不见的孤儿', async () => {
+    const process = detachedProcess()
+    const detaches = new Map<string, () => void>()
+    const shells = fakeBridge({
+      adopt: vi.fn(() => { throw new Error('Too many background shells are already running (8).') }),
+      hold: (call, _stop, detach) => {
+        if (detach !== undefined) detaches.set(call.callId, detach)
+        return () => detaches.delete(call.callId)
+      }
+    })
+    const pending = bashTool.execute(
+      { command: 'npm run build', description: '构建' },
+      ctx({ shells, host: nodeHost({ spawn: detachableSpawn(process) }) })
+    )
+    await Promise.resolve()
+    detaches.get('call_1')?.()
+
+    const r = await pending
+    expect(r.isError).toBe(true)
+    expect(r.output.content).toContain('Too many background shells')
+    expect(process.kill).toHaveBeenCalledOnce()
   })
 })
 

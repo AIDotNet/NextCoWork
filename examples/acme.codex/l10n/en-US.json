@@ -1,0 +1,7 @@
+{
+  "cmd.launch": "Codex",
+  "config.title": "Codex connection",
+  "config.baseUrl": "Base URL (optional)",
+  "config.model": "Model (optional, passed via -m)",
+  "config.apiKey": "API Key (optional, for relay endpoints)"
+}

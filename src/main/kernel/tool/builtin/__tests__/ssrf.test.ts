@@ -271,3 +271,42 @@ describe('ssrfRisk · allowPrivateAddresses 选项', () => {
     expect(ssrfRisk(new URL('http://127.0.0.1/'))).not.toBeNull()
   })
 })
+
+/**
+ * `allowFileUrls` 是给 `browser.ts` 用的（工作区所有者 2026-09-22 要求本地
+ * HTML 报告能进右侧工作台看）。要钉住的同样是「它只放行 file:// 这一件事」：
+ * 其余协议、凭证拦截都不受影响。少了这组，以后有人往这个分支里塞别的豁免
+ * 不会有任何测试变红 —— 理由同上面 allowPrivateAddresses 那组。
+ */
+describe('ssrfRisk · allowFileUrls 选项', () => {
+  it('放行 file:// —— 浏览器工具要用它打开本地页面', () => {
+    expect(ssrfRisk(new URL('file:///tmp/report.html'), { allowFileUrls: true })).toBeNull()
+    expect(ssrfRisk(new URL('file:///tmp/report.html'), { allowPrivateAddresses: true, allowFileUrls: true })).toBeNull()
+  })
+
+  it('★ 不传时 file:// 仍被拒并指路到 Read —— 这个豁免只属于浏览器工具', () => {
+    const r = ssrfRisk(new URL('file:///etc/passwd'), { allowPrivateAddresses: true })
+    expect(r).not.toBeNull()
+    expect(r).toContain('Read')
+    expect(ssrfRisk(new URL('file:///etc/passwd'))).not.toBeNull()
+  })
+
+  it('★ 只多放行 file: —— 其余非 http(s) 协议即使传了选项也拒', () => {
+    for (const raw of ['ftp://example.com/x', 'gopher://example.com/', 'data:text/html,hi', 'javascript:alert(1)']) {
+      expect(ssrfRisk(new URL(raw), { allowFileUrls: true }), raw).not.toBeNull()
+    }
+  })
+
+  it('★ 凭证拦截不受这个选项影响 —— 带 user:pass@ 的地址照样拒', () => {
+    // 注意：`file://user:pass@…` 连 URL 构造都过不了（WHATWG 直接抛），
+    // 所以凭证这条边界只能用 http(s) 地址来钉 —— 它和 allowFileUrls 是两道
+    // 独立的闸，传了协议豁免也不能把凭证拦截一起带松。
+    const r = ssrfRisk(new URL('https://user:pass@example.com/'), { allowFileUrls: true })
+    expect(r).not.toBeNull()
+    expect(r).toContain('user:pass@')
+  })
+
+  it('内网拦截也不受这个选项影响 —— 只传 allowFileUrls 时 http 内网地址仍拒', () => {
+    expect(ssrfRisk(new URL('http://127.0.0.1/'), { allowFileUrls: true })).not.toBeNull()
+  })
+})

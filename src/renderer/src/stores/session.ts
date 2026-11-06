@@ -10,11 +10,13 @@
  * 加上主进程侧 16–33ms 合批和这里的 rAF 再缓冲,就是全部的流式性能方案。
  * 不做 ack/流控 —— 真背压是研究课题(方案 §10)。
  */
+import { useMemo } from 'react'
 import { create, type UseBoundStore, type StoreApi } from 'zustand'
 import type { PermissionMode } from '../../../shared/agent/permission'
-import type { SessionChange } from '../../../shared/domain/session'
+import type { SessionChange, SessionPage } from '../../../shared/domain/session'
 import type { AgentEvent } from '../../../shared/agent/event'
-import { isToolResultOnly, mergeGoalStatusMessage, userMessage, visibleText, type AgentMessage, type ContentPart } from '../../../shared/agent/message'
+import { mergeGoalStatusMessage, userMessage, type AgentMessage, type ContentPart } from '../../../shared/agent/message'
+import { editUserMessage, editedParts, removeSpan, replySpan, turnSpan } from '../../../shared/agent/history-edit'
 import type { ActiveGoal, GoalChange } from '../../../shared/domain/goal'
 import { getGoal, onGoalChanged } from '../services/goal'
 import type { SendOptions, SessionMode } from '../../../shared/agent/run-request'
@@ -25,30 +27,36 @@ import {
   hasRun,
   subagentsFromMessages,
   toolsFromMessages,
-  type SubagentState,
   type TranscriptState
 } from '../../../shared/agent/transcript'
-import { orphanedCheckpoints, type ContextCheckpoint } from '../../../shared/agent/context-management'
-import type { QueuedInput } from '../../../shared/domain/queued-input'
-import {
-  QUEUE_MAX_ITEMS,
-  QUEUE_MAX_TEXT,
-  SESSION_INPUT_VERSION,
-  batchToParts,
-  isLive,
-  makeQueuedInput,
-  mergeBatch,
-  partsToAttachments,
-  pickNextBatch
-} from '../../../shared/domain/queued-input'
+import type { QueuedInput, SessionQueueOp, SessionQueueSnapshot, SubagentReportStatus } from '../../../shared/domain/queued-input'
+import { QUEUE_MAX_ITEMS, QUEUE_MAX_TEXT, partsToAttachments } from '../../../shared/domain/queued-input'
 import type { AgentEventEnvelope } from '../../../shared/ipc/contract'
 import { hasSeqGap } from '../../../shared/ipc/contract'
 import { ulid } from '../../../shared/util/id'
-import { abortRun, attachRun, interjectRun, onActiveRuns, onAgentEvent, startRun } from '../services/agent'
-import { getSessionInput, persistSessionInput } from '../services/app'
+import {
+  abortRun,
+  attachRun,
+  interjectRun,
+  onActiveRuns,
+  onAgentEvent,
+  onSessionQueueChanged,
+  onSubagentReport,
+  onWindowVisibility,
+  queueSessionInput,
+  reportBackground,
+  setRunPermissionMode,
+  startRun,
+  unwatchRun
+} from '../services/agent'
+import { getSessionInput, persistSessionDraft } from '../services/app'
 import { compactContext as compactSessionContext } from '../services/context'
-import { replaceHistory } from '../services/sessions'
-import { getSession } from '../services/sessions'
+import {
+  deleteSessionReply,
+  deleteSessionTurn,
+  editSessionMessage,
+  getSessionPage
+} from '../services/sessions'
 
 /**
  * ★ 类型本体已挪到 `shared/agent/run-request.ts` —— 队列条目要逐条冻结它,
@@ -70,8 +78,33 @@ export interface SessionState {
    *
    * ★ 从 `string[]` 升格为结构化条目:截图要求逐条插话/编辑/删除,
    * 而字符串数组里**两条内容相同的消息不可区分**。只含非终态条目。
+   *
+   * ★ **这是主进程那份队列的镜像,不是真源。** 入队、插话、续跑全在主进程
+   * (`main/session-runtime.ts`)决定 —— 没有窗口在看这条会话时排队的消息也得续上。
+   * 这里只按 `queueRev` 收更新的快照。
    */
   queuedInputs: QueuedInput[]
+  /** 已应用的最后一份队列快照的版本号;回执与广播可能乱序,只收更新的 */
+  queueRev: number
+  /**
+   * 手上这页之前库里还有更早的消息。转录只读最近的一页(`HISTORY_PAGE_SIZE`),
+   * 更早的由 `loadEarlier` 按页往前取。
+   */
+  historyHasMore: boolean
+  /**
+   * 打开时那一页历史已经成功读回(库里本来就没有这条会话也算)。
+   *
+   * ★ 需求:长会话的首页要等一次 IPC,这段时间转录是空的 —— 只看 `messages` 的话
+   * 视图会把它当成「全新会话」画成问候语 + 居中输入框,用户以为记录丢了。
+   * 视图据此在读回来之前画骨架。
+   */
+  historyLoaded: boolean
+  /** 读取失败不能当作空会话；保留错误直到重试或读到历史。 */
+  historyError: string | null
+  retryHistory: () => Promise<void>
+  loadingEarlier: boolean
+  /** 往前再取一页,接在手上那页前面 */
+  loadEarlier: () => Promise<void>
   /**
    * 上一次发送用的档位/模型/模式。
    *
@@ -99,17 +132,32 @@ export interface SessionState {
    */
   compactContext: () => Promise<void>
   setDraft: (v: string) => void
+  /** 把一段文字接在草稿后面(已有草稿时空一行),不覆盖用户正在写的内容。widget 的 `draft()` 走它 */
+  appendDraft: (text: string) => void
+  /**
+   * widget 经 `host.setContext()` 发布、等着随下一条消息一起交给模型的状态摘要。
+   * 键是 widget 的 callId:同一张卡再发布一次是替换,不是追加。
+   *
+   * ★ 只活在内存里、只在**直接起 run** 时取走:排队的消息由主进程续跑,带不上它,
+   *   所以排队时它留着,等下一条直接发出的消息。
+   */
+  widgetContext: Array<{ key: string; title: string; text: string }>
+  setWidgetContext: (key: string, title: string, text: string) => void
+  removeWidgetContext: (key: string) => void
   /** 插话 —— toggle:pending ⇄ promoted。不发起任何请求 */
   promoteInput: (id: string) => void
   editInput: (id: string, text: string) => void
   /**
    * 权限档位药丸切换时调用:还没被消费的排队消息**改用新档位**,
-   * 而不是继续背着入队那一刻冻结的旧档位。
+   * 而不是继续背着入队那一刻冻结的旧档位;**以及**如果这个会话正有一个 run
+   * 在跑,把新档位同步推给它(`agent:setPermissionMode`),让它接下来的工具
+   * 调用立刻改用新档位,不必等这个 run 跑完、发一条新消息才生效。
    *
    * ★ 只改 `permissionMode` 这一个字段,不动 `options` 里的模型/思考强度/联网开关 ——
    * 那几个字段「逐条冻结」的既有设计(见 `queued-input.ts` 头注)仍然成立,
    * 这里是刻意为「审批档位」单独开的例外:用户切到完全访问,图的就是不想再被后面
-   * 排着的每一条追问打断,那份意图理应立刻覆盖到整条队列,而不是只对新排的消息生效。
+   * 排着的每一条追问打断,那份意图理应立刻覆盖到整条队列和正在跑的这个 run,
+   * 而不是只对新排的消息生效。
    */
   retagQueuedPermission: (mode: PermissionMode) => void
   /**
@@ -129,6 +177,11 @@ export interface SessionState {
   editMessage: (id: string, text: string, continueRun: boolean, options: SendOptions) => Promise<void>
   /** 删掉一整轮问答(user 消息 + 它引出的全部回复与工具回执)。 */
   deleteTurn: (userMessageId: string) => Promise<void>
+  /**
+   * 只删一条助手回复(`fromId..toId` 两条 assistant 消息之间的全部,外加紧随其后的
+   * 工具回执),**引出它的提问留着**。跨度来自 `ThreadRow.span`。
+   */
+  deleteReply: (fromId: string, toId: string) => Promise<void>
   dropInput: (id: string) => void
   /** 「⋯ → 撤回到输入框」:出队并回填草稿 */
   moveInputToDraft: (id: string) => void
@@ -150,10 +203,49 @@ function createSessionStore(sessionId: string): SessionStore {
     transcript: emptyTranscript(),
     goalVersion: 0,
     queuedInputs: [],
+    queueRev: 0,
+    historyHasMore: false,
+    historyLoaded: false,
+    historyError: null,
+    retryHistory: () => hydrateHistory(sessionId, true),
+    loadingEarlier: false,
     lastOptions: null,
     draft: '',
+    widgetContext: [],
     compacting: false,
     compactError: null,
+
+    async loadEarlier() {
+      const s = get()
+      const first = s.transcript.messages[0]
+      if (!s.historyHasMore || s.loadingEarlier || first === undefined) return
+      set({ loadingEarlier: true })
+      try {
+        const page = await getSessionPage(sessionId, HISTORY_PAGE_SIZE, first.id)
+        set((state) => {
+          // 等待期间转录被整段换过(刷新 / 删除):这一页接不上了,丢掉
+          if (state.transcript.messages[0]?.id !== first.id) return { loadingEarlier: false }
+          const known = new Set(state.transcript.messages.map((message) => message.id))
+          const earlier = page.messages.filter((message) => !known.has(message.id))
+          const messages = [...earlier, ...state.transcript.messages]
+          return {
+            loadingEarlier: false,
+            historyHasMore: page.hasMore,
+            transcript: {
+              ...state.transcript,
+              messages,
+              // 新接上的那几轮的工具卡片与子代理卡片;已有的实时遥测原样保留
+              tools: toolsFromMessages(messages, state.transcript.tools),
+              subagents: subagentsFromMessages(messages, state.transcript.subagents),
+              messageRuns: { ...page.messageRuns, ...state.transcript.messageRuns }
+            }
+          }
+        })
+      } catch (err) {
+        set({ loadingEarlier: false })
+        console.error('[agent] 读取更早的消息失败:', err)
+      }
+    },
 
     async send(text, opts, parts, internal = false, goalId) {
       const s = get()
@@ -168,23 +260,23 @@ function createSessionStore(sessionId: string): SessionStore {
         // ★ 软上限:超过就不是队列了,是便签本。**拒绝入队并保留草稿** ——
         // 静默丢弃会让用户以为消息进了队列。
         if (s.queuedInputs.length >= QUEUE_MAX_ITEMS) return
-        set({
-          queuedInputs: [
-            ...s.queuedInputs,
-            // ★ 逐条冻结 options:排队 5 分钟里改两次模型,三条消息该有三份档位。
-            //   ★ 附件也必须一起存 —— 不存的话,生成期间带图发的那条消息
-            //     续跑时会只剩文字,图静默消失,而用户明明看到自己发了图。
-            makeQueuedInput(
-              ulid(),
-              text.slice(0, QUEUE_MAX_TEXT),
-              opts,
-              Date.now(),
-              parts === undefined ? [] : partsToAttachments(parts)
-            )
-          ],
-          draft: ''
+        set({ draft: '' })
+        persistDraft(sessionId, true)
+        // ★ 逐条冻结 options:排队 5 分钟里改两次模型,三条消息该有三份档位。
+        //   ★ 附件也必须一起存 —— 不存的话,生成期间带图发的那条消息
+        //     续跑时会只剩文字,图静默消失,而用户明明看到自己发了图。
+        const result = await queueSessionInput(sessionId, {
+          kind: 'enqueue',
+          text: text.slice(0, QUEUE_MAX_TEXT),
+          options: opts,
+          attachments: parts === undefined ? [] : partsToAttachments(parts)
         })
-        persistInput(sessionId, true)
+        applyQueueSnapshot(sessionId, result)
+        // 主进程那边已经满了(另一个窗口刚排满):把话还给输入框,而不是让它凭空消失
+        if (!result.accepted && get().draft === '') {
+          set({ draft: text })
+          persistDraft(sessionId, true)
+        }
         return
       }
 
@@ -199,7 +291,10 @@ function createSessionStore(sessionId: string): SessionStore {
       const now = Date.now()
       const inputMessage = { ...userMessage(inputMessageId, [...input], now), ...(internal ? { internal: true } : {}) }
       registerRun(runId, sessionId, opts.workspaceId)
+      // widget 的状态摘要随这条(用户亲手发的)消息走一次;内部消息不带
+      const widgetContext = internal ? [] : s.widgetContext.map(({ title, text: body }) => ({ title, text: body }))
       set({
+        ...(internal ? {} : { widgetContext: [] }),
         activeRunId: runId,
         lastSeq: 0,
         // ★ 只清「本轮」的部分。`messages` 和 `tools` 必须留着 —— 它们是**整段对话**,
@@ -220,16 +315,13 @@ function createSessionStore(sessionId: string): SessionStore {
         lastOptions: opts,
         draft: internal ? s.draft : ''
       })
-      persistInput(sessionId, true)
+      if (!internal) persistDraft(sessionId, true)
 
-      try {
-        await startRun({ ...opts, runId, sessionId, input, inputMessageId, ...(internal ? { inputInternal: true } : {}),
-          ...(goalId === undefined ? {} : { inputGoalId: goalId }) })
-      } catch (err) {
+      const rollback = (): void => {
         unregisterRun(runId)
         set((state) => ({
           activeRunId: null,
-          // IPC 启动失败时主进程不会确认这条消息,所以撤掉本地乐观副本。
+          // 主进程没有起这个 run,所以撤掉本地乐观副本。
           // 用 ID 删除而不是按末尾位置删除,避免并发的历史刷新改变数组顺序。
           transcript: {
             ...state.transcript,
@@ -240,7 +332,28 @@ function createSessionStore(sessionId: string): SessionStore {
             runEndedAt: undefined
           }
         }))
+      }
+      let started: Awaited<ReturnType<typeof startRun>>
+      try {
+        started = await startRun({ ...opts, runId, sessionId, input, inputMessageId, ...(internal ? { inputInternal: true } : {}),
+          ...(goalId === undefined ? {} : { inputGoalId: goalId }),
+          ...(widgetContext.length === 0 ? {} : { widgetContext }) })
+      } catch (err) {
+        rollback()
         throw err
+      }
+      if (started.started) return
+      /*
+        ★ 主进程那边这条会话其实已经在跑(排队的消息刚被续上,或者另一个窗口先发了),
+        这句话被放进了队列。撤掉乐观消息,接上真正在跑的那个 run —— 它的角标广播
+        可能比这条回执先到,那时 `adoptActiveRuns` 因为本地还挂着乐观 runId 而跳过了它。
+      */
+      rollback()
+      applyQueueSnapshot(sessionId, started.queue)
+      const actual = [...runIndex.values()].find((run) => run.sessionId === sessionId)
+      if (actual !== undefined && get().activeRunId === null) {
+        set({ activeRunId: actual.runId })
+        void ensureActiveRunRestored(sessionId, actual.runId)
       }
     },
 
@@ -249,7 +362,11 @@ function createSessionStore(sessionId: string): SessionStore {
       if (runId === null) return
       // 状态不在这里改 —— 等 run_end 事件回来。中断路径上主进程还要做收尾
       // (方案 §4.8 的五件事),UI 抢先置成 idle 就看不到那个过程了。
-      await abortRun(runId, true)
+      try {
+        await abortRun(runId, true)
+      } finally {
+        settleAfterStop(sessionId, runId)
+      }
     },
 
     async compactContext() {
@@ -257,14 +374,20 @@ function createSessionStore(sessionId: string): SessionStore {
       if (s.activeRunId !== null || s.compacting) return
       set({ compacting: true, compactError: null })
       try {
-        const { checkpoint, inputTokens } = await compactSessionContext(s.sessionId)
+        const { message, inputTokens } = await compactSessionContext(s.sessionId)
         set((st) => ({
           transcript: {
             ...st.transcript,
-            contextCheckpoints: [
-              ...st.transcript.contextCheckpoints.filter((c) => c.id !== checkpoint.id),
-              checkpoint
-            ],
+            /*
+              ★ 本地先把边界消息接上,不等 hydrate。
+              手动压缩走的是一条**没有 run** 的 IPC,不会有 `message_commit` 事件推回来;
+              只依赖下一次全量回填的话,症状是点完 /compact 界面上什么都没变,
+              用户会以为没生效并再点一次 —— 而每一次都是一次真实的摘要请求。
+              按 id 去重是为了和随后的 hydrate 对上,不至于出现两条同样的分隔线。
+            */
+            messages: st.transcript.messages.some((m) => m.id === message.id)
+              ? st.transcript.messages
+              : [...st.transcript.messages, message],
             /*
               ★ 换成**估算值**,而不是等下一轮真实 usage 回来。
               等的话,用户压完看到读数纹丝不动,只会再点两次 ——
@@ -284,116 +407,103 @@ function createSessionStore(sessionId: string): SessionStore {
     setDraft(v) {
       set({ draft: v })
       // ★ 按键级频率,走防抖。丢失窗口 ≤500ms,代价是半个词
-      persistInput(sessionId, false)
+      persistDraft(sessionId, false)
+    },
+
+    appendDraft(text) {
+      if (text === '') return
+      set((state) => ({ draft: state.draft === '' ? text : `${state.draft}\n\n${text}` }))
+      persistDraft(sessionId, true)
+    },
+
+    setWidgetContext(key, title, text) {
+      set((state) => {
+        const rest = state.widgetContext.filter((entry) => entry.key !== key)
+        return { widgetContext: text.trim() === '' ? rest : [...rest, { key, title, text }] }
+      })
+    },
+
+    removeWidgetContext(key) {
+      set((state) => ({ widgetContext: state.widgetContext.filter((entry) => entry.key !== key) }))
     },
 
     /**
      * 插话 —— **toggle**。用户点第二次的意图明确就是取消,报错或无操作都不对。
-     *
-     * ★ 取消时清掉 `promotedAt`:再次引入应当排到已引入者的**队尾**,
-     * 而不是凭借第一次点击的时刻插回中间。
+     * 排序、空闲时立即发送、推给正在跑的 run,全由主进程的队列决定。
      */
     promoteInput(id) {
-      const s = get()
-      const item = s.queuedInputs.find((q) => q.id === id)
-      if (item === undefined) return
-
-      // ★ **不能直接用 Date.now()。** 它是毫秒分辨率,而排序的正确性不该依赖
-      //   「两次点击不会落在同一毫秒」。同值时 sort 稳定退化成入队序 ——
-      //   于是先插的乙、后插的甲会按甲、乙发出去,与用户点击顺序相反。
-      //   取 max(now, 已有最大值 + 1) 保证严格单调,同时保住时间戳语义
-      //   (UI 仍可拿它显示「刚刚引入」),且重启恢复后新插话依然排在旧的之后。
-      const maxAt = s.queuedInputs.reduce((m, q) => Math.max(m, q.promotedAt ?? 0), 0)
-      const at = Math.max(Date.now(), maxAt + 1)
-
-      const next = s.queuedInputs.map((q) =>
-        q.id === id
-          ? q.status === 'promoted'
-            ? { ...q, status: 'pending' as const, promotedAt: undefined }
-            : { ...q, status: 'promoted' as const, promotedAt: at }
-          : q
-      )
-      set({ queuedInputs: next })
-      persistInput(sessionId, true)
-
-      // ★ 空闲态被点插话:条目本不该存在于队列(空闲时 send 直接发)。
-      //   若因竞态残留,等价于「立即发送」,而不是让它永远躺在那儿。
-      if (s.activeRunId === null) drainQueue(sessionId)
-      // ★ 运行中才是插话的正题:推给主进程,由它在下一个轮次边界注入。
-      //   取消引入走的也是这一句 —— 全量替换,少了那条就等于撤回。
-      else syncInterject(sessionId)
+      if (!get().queuedInputs.some((q) => q.id === id)) return
+      runQueueOp(sessionId, { kind: 'promote', id })
     },
 
     editInput(id, text) {
-      const s = get()
-      // ★ 不重置 options(档位仍是入队时刻的快照),也不重置 promotedAt
-      //   (编辑不改变加塞顺序)。
-      set({
-        queuedInputs: s.queuedInputs.map((q) =>
-          q.id === id ? { ...q, text: text.slice(0, QUEUE_MAX_TEXT) } : q
-        )
-      })
-      persistInput(sessionId, true)
-      // 编辑一条已引入的条目:主进程信箱里存的是旧文本,必须重发覆盖。
-      syncInterject(sessionId)
+      // ★ 不重置档位快照,也不重置 promotedAt(编辑不改变加塞顺序)
+      runQueueOp(sessionId, { kind: 'edit', id, text: text.slice(0, QUEUE_MAX_TEXT) })
     },
 
     retagQueuedPermission(mode) {
       const s = get()
+      if (s.activeRunId !== null) {
+        void setRunPermissionMode(s.activeRunId, mode).catch((err: unknown) => {
+          console.error('[agent] 同步权限档位失败:', err)
+        })
+      }
       if (s.queuedInputs.length === 0) return
-      set({
-        queuedInputs: s.queuedInputs.map((q) =>
-          q.options.permissionMode === mode ? q : { ...q, options: { ...q.options, permissionMode: mode } }
-        )
-      })
-      persistInput(sessionId, true)
+      runQueueOp(sessionId, { kind: 'retagPermission', mode })
     },
 
     retagQueuedMode(mode) {
-      const s = get()
-      if (s.queuedInputs.length === 0) return
-      set({
-        queuedInputs: s.queuedInputs.map((q) =>
-          q.options.mode === mode ? q : { ...q, options: { ...q.options, mode } }
-        )
-      })
-      persistInput(sessionId, true)
+      if (get().queuedInputs.length === 0) return
+      runQueueOp(sessionId, { kind: 'retagMode', mode })
     },
 
     async editMessage(id, text, continueRun, options) {
       const s = get()
       if (s.activeRunId !== null) return
-      const index = s.transcript.messages.findIndex((message) => message.id === id && message.role === 'user')
-      if (index < 0) return
-      const original = s.transcript.messages[index]
+      const original = s.transcript.messages.find((message) => message.id === id && message.role === 'user')
       if (original === undefined) return
       // Keep attachments and other structured parts, while replacing the
       // visible text as one canonical part so stale text fragments cannot
       // survive an edit.
-      const parts: ContentPart[] = [
-        ...(text === '' ? [] : [{ type: 'text' as const, text }]),
-        ...original.parts.filter((part) => part.type !== 'text')
-      ]
-      const edited = userMessage(original.id, parts, original.createdAt)
-      const messages = continueRun
-        ? s.transcript.messages.slice(0, index)
-        : s.transcript.messages.map((message, i) => i === index ? edited : message)
-      await replaceHistory(sessionId, messages)
+      const parts: ContentPart[] = editedParts(original, text)
+      const messages = editUserMessage(s.transcript.messages, id, text, continueRun)
+      if (messages === null) return
+      /*
+        ★ 按 id 交给主进程在**完整历史**上改 —— 这里手上只有一页,拿这一页整段
+        `replaceHistory` 会把页外的历史当成「删掉了」。本地这一页做同样的改动来更新显示。
+      */
+      await editSessionMessage(sessionId, id, text, continueRun)
       set((state) => ({
         transcript: {
           ...state.transcript,
-          messages: continueRun ? messages : state.transcript.messages.map((message, i) => i === index ? edited : message),
+          messages: editUserMessage(state.transcript.messages, id, text, continueRun) ?? messages,
           // 改写历史同样让窗口占用的读数过期,理由同 `deleteTurn` 里那段注释。
           // 截断重跑(`continueRun`)会立刻发起新请求把它填回来,不截断的纯文本编辑
           // 则等到下一次发送 —— 两种情况显示 `–` 都比显示一个对不上的数诚实。
           lastInputTokens: undefined,
           contextUsage: undefined,
-          ...(continueRun
-            ? { contextCheckpoints: pruneCheckpoints(messages, state.transcript.contextCheckpoints) }
-            : {}),
           live: continueRun ? [] : state.transcript.live,
-          tools: continueRun ? {} : state.transcript.tools,
-          subagents: continueRun ? {} : state.transcript.subagents,
+          /*
+            需求:截断重跑之后,**留下来的那部分历史**里的工具卡片仍要认得出自己。
+
+            ★ 这两行曾经是 `tools: {}` / `subagents: {}`,而它就是用户报的那条卡片的
+            成因:一次生图跑完、之后编辑(或点「重新生成」)一条**更晚**的消息重跑,
+            更早那张生成图卡片会退回「等待」+「生成中」。判据是 `tools[callId]` 还在
+            不在 —— 不在时 `ToolCallCard` 把行状态读成 `pending`(「等待」),而
+            `ImageGenDetail` 拿到的 `output` 是 `undefined`,图像卡的未结算分支就摆出
+            加载格(「生成中」)。input 来自消息里的 `tool_call` part,所以提示词照常
+            显示 —— 看上去像「这一张还没生成完」,而它其实早就落库了。
+
+            ★ 而且它不会自己好:`loadHistory` 在 run 期间拒绝水合,run 正常结束后也
+            没有人再水合一次,于是这份缺失一直留到重开这个会话。
+
+            清空的**本意**只是「别把被切掉那一轮的工具状态留着」,`toolsFromMessages`
+            正好只做这件事:留下的消息重建,切掉的 callId 自然不在结果里。把当前值当
+            `live` 传进去是照 `loadHistory` 的口径 —— 已提交的 part 说了算,`live` 只
+            补它没有的(耗时、后台子代理的遥测)。
+          */
+          tools: continueRun ? toolsFromMessages(messages, state.transcript.tools) : state.transcript.tools,
+          subagents: continueRun ? subagentsFromMessages(messages, state.transcript.subagents) : state.transcript.subagents,
           ...(continueRun ? { status: 'done' as const, error: undefined, usage: undefined } : {})
         }
       }))
@@ -425,23 +535,17 @@ function createSessionStore(sessionId: string): SessionStore {
       const s = get()
       if (s.activeRunId !== null) return
       const messages = s.transcript.messages
-      const start = messages.findIndex((m) => m.id === userMessageId && m.role === 'user')
-      if (start < 0) return
-      let end = start + 1
-      while (end < messages.length) {
-        const m = messages[end]
-        if (m !== undefined && m.role === 'user' && !isToolResultOnly(m)) break
-        end += 1
-      }
-      const next = [...messages.slice(0, start), ...messages.slice(end)]
-      await replaceHistory(sessionId, next)
+      const span = turnSpan(messages, userMessageId)
+      if (span === null) return
+      const next = removeSpan(messages, span)
+      // 按 id 在完整历史上删,理由同 `editMessage`
+      await deleteSessionTurn(sessionId, userMessageId)
       // 删到尾巴时,残留的 usage/error 说的是一个已经不存在的回合。
-      const trailing = end >= messages.length
+      const trailing = span[1] >= messages.length
       set((state) => ({
         transcript: {
           ...state.transcript,
           messages: next,
-          contextCheckpoints: pruneCheckpoints(next, state.transcript.contextCheckpoints),
           /*
             ★ 这两个读数量的是「**这段历史**有多大」,不是某一轮的账 —— 删掉任意一轮
             之后它们描述的那段历史就不存在了,而圆环和压力条会原样继续显示那个旧数
@@ -458,30 +562,60 @@ function createSessionStore(sessionId: string): SessionStore {
           */
           lastInputTokens: undefined,
           contextUsage: undefined,
-          ...(trailing ? { error: undefined, usage: undefined, runStartedAt: undefined, runEndedAt: undefined } : {})
+          // status 也要复位:被删掉的那一轮留下的「已停止 / 出错」说的是一个已经不存在的回复。
+          ...(trailing ? { error: undefined, usage: undefined, runStartedAt: undefined, runEndedAt: undefined, status: 'done' as const } : {})
+        }
+      }))
+    },
+
+    /**
+     * 只删一条助手回复,提问留着。
+     *
+     * ★ 末端要**吃掉紧随其后的工具回执**。回复以 tool_call 收尾(跑到一半被停、
+     * 或者报错)时,它的 tool_result 在 `toId` 后面;留下来就是一条失去配对的
+     * tool_result —— 与 `deleteTurn` 防的是同一种非法请求。
+     *
+     * ★ 只吃纯工具回执,别的一律停下:可见提问、后台汇报、压缩边界都是下一行的东西。
+     */
+    async deleteReply(fromId, toId) {
+      const s = get()
+      if (s.activeRunId !== null) return
+      const messages = s.transcript.messages
+      const span = replySpan(messages, fromId, toId)
+      if (span === null) return
+      const next = removeSpan(messages, span)
+      await deleteSessionReply(sessionId, fromId, toId)
+      const trailing = span[1] >= messages.length
+      set((state) => ({
+        transcript: {
+          ...state.transcript,
+          messages: next,
+          // 窗口占用与末轮账单的处理口径同 `deleteTurn`,理由见那里的注释。
+          lastInputTokens: undefined,
+          contextUsage: undefined,
+          // status 也要复位:被删掉的那一轮留下的「已停止 / 出错」说的是一个已经不存在的回复。
+          ...(trailing ? { error: undefined, usage: undefined, runStartedAt: undefined, runEndedAt: undefined, status: 'done' as const } : {})
         }
       }))
     },
 
     dropInput(id) {
-      set({ queuedInputs: get().queuedInputs.filter((q) => q.id !== id) })
-      persistInput(sessionId, true)
-      // 删掉一条已引入的条目 = 从主进程信箱里撤回它。
-      syncInterject(sessionId)
+      // 删掉一条已引入的条目 = 从 run 的信箱里撤回它(主进程一并处理)
+      runQueueOp(sessionId, { kind: 'drop', id })
     },
 
     moveInputToDraft(id) {
-      const s = get()
-      const item = s.queuedInputs.find((q) => q.id === id)
-      if (item === undefined) return
-      set({
-        queuedInputs: s.queuedInputs.filter((q) => q.id !== id),
+      if (!get().queuedInputs.some((q) => q.id === id)) return
+      void queueSessionInput(sessionId, { kind: 'take', id }).then((result) => {
+        applyQueueSnapshot(sessionId, result)
+        if (result.text === undefined) return
+        const taken = result.text
         // 已有草稿时接在后面,不覆盖 —— 覆盖会吞掉用户正在写的半句话
-        draft: s.draft === '' ? item.text : `${s.draft}\n\n${item.text}`
+        set((state) => ({ draft: state.draft === '' ? taken : `${state.draft}\n\n${taken}` }))
+        persistDraft(sessionId, true)
+      }).catch((err: unknown) => {
+        console.error('[agent] 撤回排队消息失败:', err)
       })
-      persistInput(sessionId, true)
-      // 撤回到草稿同样是「它不再是插话了」。
-      syncInterject(sessionId)
     },
 
     applyEnvelope(env) {
@@ -501,16 +635,12 @@ function createSessionStore(sessionId: string): SessionStore {
         env.runId,
         env.events
       )
+      // 续跑、插话回执、后台汇报都由主进程的会话运行时处理;这里只管显示
       set({
         transcript,
         lastSeq: env.seq,
         ...settleRun(env.runId, env.events)
       })
-      // ★ 先收队列再续跑。反过来的话,`drainQueue` 会看见一条刚刚已经被注入、
-      //   只是还没从队列里摘掉的条目,把同一句话再发一遍。
-      reapInjected(sessionId, env.events)
-      reportCompletedBackgroundFromState(sessionId, env.events)
-      if (endedCleanly(env.events)) drainQueue(sessionId)
     },
 
     applyEvents(events) {
@@ -524,9 +654,6 @@ function createSessionStore(sessionId: string): SessionStore {
         transcript,
         ...settleRun(runId, events)
       })
-      reapInjected(sessionId, events)
-      reportCompletedBackgroundFromState(sessionId, events)
-      if (endedCleanly(events)) drainQueue(sessionId)
     },
 
     applyChildEvents(childRunId, events, firstSeq) {
@@ -542,146 +669,50 @@ function createSessionStore(sessionId: string): SessionStore {
         )
         return { transcript }
       })
-      reportCompletedBackgroundFromState(sessionId, events, childRunId)
     },
 
+    /**
+     * 主进程汇报到哪一步了(`session:subagentReport`)。**只改本地显示** ——
+     * 回执的持久化在主进程;渲染层再整段 `replaceHistory` 一遍的话,
+     * 分页之后它手里根本没有整段历史。
+     */
     setSubagentReportStatus(callId, status) {
       set((state) => {
         const current = state.transcript.subagents[callId]
         if (current === undefined || current.reportStatus === status) return state
-        const messages = state.transcript.messages.map((message) => ({
-          ...message,
-          parts: message.parts.map((part) => part.type === 'tool_result' && part.callId === callId && part.subagent !== undefined
-            ? { ...part, subagent: { ...part.subagent, reportStatus: status } }
-            : part)
-        }))
-        void replaceHistory(sessionId, messages).catch(() => undefined)
+        const messages = state.transcript.messages.map((message) => message.parts.some((part) => part.type === 'tool_result' && part.callId === callId && part.subagent !== undefined)
+          ? {
+              ...message,
+              parts: message.parts.map((part) => part.type === 'tool_result' && part.callId === callId && part.subagent !== undefined
+                ? { ...part, subagent: { ...part.subagent, reportStatus: status } }
+                : part)
+            }
+          : message)
         return { transcript: { ...state.transcript, messages, subagents: { ...state.transcript.subagents, [callId]: { ...current, reportStatus: status } } } }
       })
     }
   }))
 }
 
-const backgroundReports = new Set<string>()
-
-function reportCompletedBackgroundFromState(sessionId: string, events: readonly AgentEvent[], childRunId?: string): void {
-  const store = stores.get(sessionId)
-  if (!store) return
-  const childIds = new Set<string>()
-  for (const event of events) {
-    if (event.type === 'subagent_end') childIds.add(event.callId)
-    if (event.type === 'run_end' && childRunId !== undefined) childIds.add(childRunId)
-  }
-  for (const [callId, state] of Object.entries(store.getState().transcript.subagents)) {
-    if (state.background === true && state.reportStatus === 'pending' && (childIds.has(callId) || childIds.has(state.childRunId))) {
-      void reportBackgroundChild(sessionId, callId)
-    }
-  }
-}
-
 /**
- * 子代理**最后一条助手消息**的正文 —— 也就是它这趟活儿交出来的东西。
+ * 用户在后台子代理卡片上点「处理」—— 重启之后,或者自动那一趟被挡住(blocked)之后。
  *
- * 和主进程 `runtime.ts` 收尾时算 `text` 的口径逐字一致(倒着找第一条
- * assistant、取 `visibleText`),右侧那个只读面板看到的也是它。
- * 读不到一律返回 undefined 交给调用方兜底 —— 汇报这件事不该因为
- * 取不到全文就整个失败。
- */
-async function childFinalText(child: SubagentState): Promise<string | undefined> {
-  const childSessionId = child.childSessionId
-  if (childSessionId === undefined) return undefined
-  try {
-    const detail = await getSession(childSessionId)
-    const last = [...detail.messages].reverse().find((m) => m.role === 'assistant')
-    const text = last === undefined ? '' : visibleText(last).trim()
-    return text === '' ? undefined : text
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Deliver a detached child result to the main agent exactly once.
+ * ★ 汇报本身在主进程(`main/session-runtime.ts`):全文、档位、起 run 还是进信箱,
+ * 都在那边决定。自动那一趟根本不经过这里 —— 子代理跑完时没有窗口在看也得交差。
  *
- * ★★ **`lastOptions` 在重启之后是 null** —— 它只在 `send` 里写,不落盘。
- * 于是一个跨重启的 pending 汇报走到这里会直接 return:界面上那颗待办圆点、
- * 那句「结果待汇报给主代理」、后台任务中心里那颗「处理」按钮全都在,
- * 点下去**什么都不发生,也不报错**。子代理跑完的结果就此烂在库里。
- *
- * 所以这里收一份 `fallback` —— 由调用方(React 那一侧,手上有 workspace)
- * 按「不经过输入框的路径」的老规矩从工作区默认值拼出来,和「编辑某条消息后
- * 重新生成」用的是同一份档位。自动触发那条路不需要它:那时刚发过消息,
- * `lastOptions` 必然在。
- *
- * ★ 连 fallback 都没有时置 `blocked` 而**不是**静默 return。
- * 「等待主代理处理」至少说的是实话,而一个什么都不做的按钮不是。
+ * `fallback` 由 React 那一侧按工作区默认值拼出来:本进程没见过这条会话发消息时
+ * (重启之后),主进程靠它才发得出去;连它都没有时主进程置 `blocked`,而不是让
+ * 那颗按钮成为一个按下去什么都不发生的死键。
  */
 export async function reportBackgroundChild(
   sessionId: string,
   callId: string,
   fallback?: SendOptions
 ): Promise<void> {
-  const key = `${sessionId}:${callId}`
-  if (backgroundReports.has(key)) return
-  const store = stores.get(sessionId)
-  if (!store) return
-  const before = store.getState()
-  const child = before.transcript.subagents[callId]
-  if (!child || child.background !== true || (child.reportStatus !== 'pending' && child.reportStatus !== 'blocked')) return
-  const options = before.lastOptions ?? fallback
-  if (options === undefined || options === null) {
-    store.getState().setSubagentReportStatus(callId, 'blocked')
-    return
-  }
-  backgroundReports.add(key)
-  store.getState().setSubagentReportStatus(callId, 'injecting')
-  /*
-    ★★ **发给主代理的是全文,不是 `child.summary`。**
-
-    那个字段是主进程切出来的前 240 字(`runtime.ts` 两处 `slice(0, 240)`),
-    生来是给卡片当一行预览用的。拿它当汇报正文的话,一份「改了八个文件、
-    逐条说明」的报告到主代理手上只剩开头一句,而且断在半个标识符中间 ——
-    主代理据此接着往下做,却以为自己看到了全部。不报错,只是做错。
-
-    对照前台那条路就知道这是个偏差而不是设计:`task.ts` 返回的是
-    `toolOk(outcome.text)`,**全文**进 tool_result,240 字的摘要只装点卡片。
-    同一个子代理改成后台跑,交给主代理的内容缩到二十分之一。
-
-    取不到全文(旧转录没有 childSessionId、子会话已删、IPC 失败)才退回摘要 ——
-    残缺的汇报也好过没有汇报,那毕竟是这个子代理留下的唯一痕迹。
-  */
-  const full = await childFinalText(child)
-  const summary = full ?? child.summary ?? 'The background subagent finished without a summary.'
-  const report = `Background subagent result (${child.subagentType ?? 'subagent'}, ${child.childRunId}):\n\n${summary}\n\nReview this result and continue the conversation if action is needed.`
   try {
-    /*
-      ★ 第二个 part 是**给界面看的**,不给模型 —— `subagent` 在两个编码器里都被丢弃
-      (anthropic 编码器显式 `return null`,openai 那条 if-else 链不认它)。
-      它在这里的唯一职责是让 `threadRows` 认出「这条 internal 消息是某个后台子代理
-      的结果回传」,从而画一行可展开的汇报行,而不是把整条消息藏起来。
-
-      ★ 用现成的 part 类型而不是在 `AgentMessage` 上加字段:这条通道已经打通了
-      持久化校验、IPC、上下文估算三处,加字段要把这三处再走一遍。
-    */
-    const parts: ContentPart[] = [
-      { type: 'text', text: report },
-      /*
-        ★ 这里挂的是**短摘要**,不是上面那份全文:全文已经在 text part 里落盘了,
-        再存一份就是同一段话在库里出现两次。界面那一行展开时会自己去子会话
-        取全文(见 `parts.tsx` 的 `SubagentReportRow`),这个字段只是它的兜底预览。
-      */
-      { type: 'subagent', callId, childRunId: child.childRunId,
-        ...(child.summary === undefined ? {} : { summary: child.summary }) }
-    ]
-    if (before.activeRunId !== null) {
-      await interjectRun(before.activeRunId, [{ id: ulid(), parts, internal: true }])
-    } else {
-      await before.send(report, options, parts, true)
-    }
-    store.getState().setSubagentReportStatus(callId, 'reported')
+    const { status } = await reportBackground(sessionId, callId, fallback)
+    stores.get(sessionId)?.getState().setSubagentReportStatus(callId, status)
   } catch (error) {
-    backgroundReports.delete(key)
-    store.getState().setSubagentReportStatus(callId, 'pending')
     console.error('[agent] background subagent report failed:', error)
   }
 }
@@ -747,7 +778,7 @@ function recordMessageRuns(
  * 内层对话 Tab、侧边栏会话行同时挂着三颗,直到关掉工作区才消。
  * 状态行明明写着「已完成」,旁边圆点还在转,是截图里一眼就看出来的那种错。
  *
- * 出队续跑不在这里,由 `drainQueue` 接手 —— 它得能调 `send()`。
+ * 出队续跑不在这里,也不在渲染层:主进程的会话运行时在 run 收尾落盘之后决定。
  */
 function settleRun(runId: string | null, events: readonly AgentEvent[]): Partial<SessionState> {
   if (!events.some((e) => e.type === 'run_end')) return {}
@@ -756,137 +787,39 @@ function settleRun(runId: string | null, events: readonly AgentEvent[]): Partial
 }
 
 /**
- * run 是否**正常**跑完。
- *
- * ★ 只有 `done` 才自动续跑。`aborted` 时用户按的是停止 —— 他要的是接管控制权,
- * 此时自动发出下一条等于无视那个意图;`error` 时自动灌入下一条往往连着错 N 次
- * 并烧掉 N 轮 token。两种情况队列都**留在原地**,由用户点「继续执行」。
- */
-function endedCleanly(events: readonly AgentEvent[]): boolean {
-  return events.some((e) => e.type === 'run_end' && e.status === 'done')
-}
-
-/**
- * run 结束后自动发出排队的下一批 —— 截图里生成中的占位符写的就是
- * 「当前回复完成后按队列继续执行」。
- *
- * 不写进 `settleRun`,是因为那里只能返回状态补丁,而这里要发起一次新的 `send()`。
- */
-function drainQueue(sessionId: string): void {
-  const store = stores.get(sessionId)
-  if (!store) return
-  const s = store.getState()
-  if (s.activeRunId !== null) return
-
-  const batch = pickNextBatch(s.queuedInputs)
-  if (batch.length === 0) return
-
-  const merged = mergeBatch(batch)
-  // 超限被排除的条目**退回队列**并降回 pending —— 它们没被发出去,
-  // 留在 promoted 会让下一轮又把它们排到最前,而用户以为已经发了。
-  const deferred = new Set(merged.deferredIds)
-  const sentIds = new Set(batch.filter((q) => !deferred.has(q.id)).map((q) => q.id))
-
-  store.setState({
-    queuedInputs: s.queuedInputs
-      .filter((q) => !sentIds.has(q.id))
-      .map((q) => (deferred.has(q.id) ? { ...q, status: 'pending' as const, promotedAt: undefined } : q))
-  })
-  persistInput(sessionId, true)
-
-  // ★ 档位取**最早被引入**那条的快照:用户按他当时看到的设置写下这句话。
-  //   `lastOptions` 只在条目自身没有快照时兜底(理论上不会发生)。
-  const opts = batch[0]?.options ?? s.lastOptions
-  if (opts === null || opts === undefined) return
-
-  void s.send(merged.text, opts, batchToParts(merged)).catch((err: unknown) => {
-    console.error('[agent] 队列续跑失败:', err)
-  })
-}
-
-/**
  * 用户手动继续 —— 中断/报错/进程重启后队列不会自己动,由这里接手。
- * 与自动续跑走同一条路径,不存在第二套发送逻辑。
+ * 与自动续跑走同一条路径(主进程的 `drain`),不存在第二套发送逻辑。
  */
 export function resumeQueue(sessionId: string): void {
-  drainQueue(sessionId)
+  runQueueOp(sessionId, { kind: 'resume' })
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 插话 —— run 跑着的时候把消息塞进去
+// 队列 —— 主进程那份的镜像
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * 把当前全部 promoted 条目推给正在跑的 run。
+ * 发一个队列操作,并把回执里的权威队列应用到本地。
  *
- * ## 为什么「插话」必须走这条路,而不是只改本地状态
- *
- * 原实现里 promote 是**纯本地**的:它只把条目排到 `pickNextBatch` 的最前面,
- * 真正发出去要等当前 run 整个跑完。用户看到的却是一颗写着「已插话」的按钮 ——
- * 于是点完之后一切照旧,模型继续跑它的工具,那句话一个字都没进去。
- * **界面承诺了插入,实现做的是排序。**
- *
- * 现在 promote 会把条目送到主进程的信箱,由 `AgentSession` 在下一个轮次边界
- * (一次 API 响应 + 它的工具全部执行完)注入成用户消息,然后带着它再请求一次。
- *
- * ## 仍然只发 promoted,不捎带 pending
- *
- * 与 `pickNextBatch` 同一条规矩,理由也一样:pending 是「排队等着」,
- * 用户没有表达「现在就说」。这里再加一层 —— 把 pending 也灌进去等于
- * 任何人排队都会打断当前执行,那就没有队列可言了。
- *
- * ## 失败只记日志
- *
- * 主进程侧 run 已结束时会静默忽略(见 `interjectRun`),条目原样留在队列里,
- * 由 run 结束后的 `drainQueue` 发出去 —— 没有任何东西丢失,不值得打扰用户。
+ * ★ 失败只记日志:条目原样留在主进程那边,下一次广播会把镜像拉回一致。
  */
-function syncInterject(sessionId: string): void {
-  const store = stores.get(sessionId)
-  if (!store) return
-  const s = store.getState()
-  const runId = s.activeRunId
-  if (runId === null) return
-
-  // ★ 用 `pickNextBatch` 而不是自己 filter:promoted 的取用顺序(promotedAt 升序、
-  //   缺失时退化成入队序)只该有一个定义。但空闲态那条 pending 兜底在这里
-  //   **必须排除** —— 那条兜底属于「run 结束后发下一条」,不属于插话。
-  const items = pickNextBatch(s.queuedInputs)
-    .filter((q) => q.status === 'promoted')
-    .map((q) => ({ id: q.id, parts: batchToParts(mergeBatch([q])) }))
-    .filter((item) => item.parts.length > 0)
-
-  void interjectRun(runId, items).catch((err: unknown) => {
-    console.error('[agent] 同步插话失败:', err)
-  })
+function runQueueOp(sessionId: string, op: SessionQueueOp): void {
+  void queueSessionInput(sessionId, op)
+    .then((result) => applyQueueSnapshot(sessionId, result))
+    .catch((err: unknown) => {
+      console.error('[agent] 队列操作失败:', err)
+    })
 }
 
 /**
- * 主进程确认注入之后,把对应条目移出队列。
- *
- * ★ **判据是「提交的用户消息 id 等于队列条目 id」** —— 注入时刻主进程复用了
- * 条目 id 当消息 id,正是为了让这个判据存在(见 `shared/agent/interject.ts`)。
- * 于是「恰好一次」不依赖任何新事件、任何新状态:
- * 收到 commit 才移出,没收到就还在队列里等 `drainQueue`。
- *
- * 重放同样安全:⌘R 之后 attach 把 `message_commit` 重发一遍,队列再收敛一次,
- * 而第二次是 no-op(条目早已不在)。
+ * 收一份队列快照。回执与 `session:queueChanged` 广播可能乱序到达,
+ * 所以只收 `rev` 更新的那份。没建 store 的会话不收 —— 打开时 `hydrateInput` 会读到最新的。
  */
-function reapInjected(sessionId: string, events: readonly AgentEvent[]): void {
+function applyQueueSnapshot(sessionId: string, snapshot: SessionQueueSnapshot): void {
   const store = stores.get(sessionId)
-  if (!store) return
-  const s = store.getState()
-  if (s.queuedInputs.length === 0) return
-
-  const committed = new Set(
-    events
-      .filter((e) => e.type === 'message_commit' && e.message.role === 'user')
-      .map((e) => (e.type === 'message_commit' ? e.message.id : ''))
-  )
-  const next = s.queuedInputs.filter((q) => !committed.has(q.id))
-  if (next.length === s.queuedInputs.length) return
-
-  store.setState({ queuedInputs: next })
-  persistInput(sessionId, true)
+  if (store === undefined) return
+  if (snapshot.rev <= store.getState().queueRev) return
+  store.setState({ queuedInputs: snapshot.queued, queueRev: snapshot.rev })
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -896,26 +829,39 @@ function reapInjected(sessionId: string, events: readonly AgentEvent[]): void {
 /**
  * ★ 已发出的内容在转录里有据可查,**只有未发出的输入是唯一副本** ——
  * 进程一死就永久消失,用户连「我刚才写了什么」都无从追溯。
+ * 这里只落草稿:队列由主进程独占,它自己落盘。
  */
-function persistInput(sessionId: string, immediate: boolean): void {
+function persistDraft(sessionId: string, immediate: boolean): void {
   const store = stores.get(sessionId)
   if (!store) return
-  const s = store.getState()
-  persistSessionInput(
-    sessionId,
-    {
-      v: SESSION_INPUT_VERSION,
-      draft: s.draft,
-      // 只落非终态 —— 终态条目本就已经移出数组,这层过滤是对不变式的兜底
-      queued: s.queuedInputs.filter(isLive),
-      savedAt: Date.now()
-    },
-    immediate
-  )
+  persistSessionDraft(sessionId, store.getState().draft, immediate)
 }
 
 /** 已发起过 hydrate 的会话。重复调用是无害的,但白费一次 IPC */
 const hydrated = new Set<string>()
+
+/**
+ * 打开一条会话时读多少条(之后往上翻一次再取这么多)。服务端会把页首补到一轮的开头,
+ * 所以实际条数可能略多。
+ *
+ * 需求:长会话不再把整段历史 —— 连同每次工具输出与截图 —— 一次性读进渲染层。
+ */
+export const HISTORY_PAGE_SIZE = 200
+/**
+ * 打开一条会话时**首屏**读多少条。
+ *
+ * ★ 比翻页那一档小:首屏只需要盖满视口,滚到顶会自动接着取(`Thread` 的顶部哨兵)。
+ * 长会话里一条工具回执就可能是几十 KB,首屏读 200 条意味着主进程解析、IPC 结构化克隆、
+ * 渲染层逐条建卡片全都按 200 条付钱,而用户第一眼只看得到最后几轮。
+ */
+export const HISTORY_INITIAL_PAGE_SIZE = 60
+/** 刷新时把已经翻出来的那几页一并重取,但再多就不要了 */
+export const HISTORY_PAGE_MAX = 2_000
+
+/** 刷新一个已经翻过页的会话时取多少条 —— 不把用户翻出来的那几页收回去 */
+function pageLimitFor(transcript: TranscriptState | undefined): number {
+  return Math.min(HISTORY_PAGE_MAX, Math.max(HISTORY_INITIAL_PAGE_SIZE, transcript?.messages.length ?? 0))
+}
 const deletedHistory = new Set<string>()
 const historyLoads = new Map<string, {
   store: SessionStore
@@ -931,9 +877,12 @@ const historyLoads = new Map<string, {
  * 无条件 `setState` 会用旧快照盖掉刚敲进去的内容 —— 这是持久化最常见的翻车方式。
  * 同 `tabs.ts` 那条 `persisted.tabs.length > 0` 守卫的精神。
  *
- * ★ **恢复后不自动续跑**:即便队列非空且空闲,也不调 `drainQueue` ——
+ * ★ **恢复后不自动续跑**:即便队列非空且空闲,主进程也不会自己续 ——
  * 用户重启应用时绝不期待它自己开始发消息。进程死亡本质上就是一次异常中断,
  * 与 aborted 同等对待,由界面上的「继续执行」交还给用户。
+ *
+ * ★ 队列与草稿的守卫不一样:队列以主进程为准,只要这里还没收到过带版本号的快照
+ * (`queueRev === 0`)就直接采用;草稿只在输入框还空着、也没在发送时才回填。
  */
 async function hydrateInput(sessionId: string): Promise<void> {
   const store = stores.get(sessionId)
@@ -942,33 +891,14 @@ async function hydrateInput(sessionId: string): Promise<void> {
     const saved = await getSessionInput(sessionId)
     if (saved === null || stores.get(sessionId) !== store || deletedHistory.has(sessionId)) return
     const s = store.getState()
-    if (s.draft !== '' || s.queuedInputs.length > 0 || s.activeRunId !== null) return
-
-    store.setState({ draft: saved.draft, queuedInputs: saved.queued })
+    const patch: Partial<SessionState> = {}
+    if (s.queueRev === 0 && s.queuedInputs.length === 0) patch.queuedInputs = saved.queued
+    if (s.draft === '' && s.activeRunId === null) patch.draft = saved.draft
+    if (Object.keys(patch).length > 0) store.setState(patch)
   } catch (err) {
     // 回填失败不该拦住会话可用 —— 最坏结果是少一份草稿
     console.error('[agent] 恢复未发出的输入失败:', err)
   }
-}
-
-/**
- * 改写历史之后,本地同步剪掉锚不回去的检查点。
- *
- * 库里那几条主进程已经在同一次 `replaceHistory` 的事务里删掉了(判据见
- * `orphanedCheckpoints`),这里只是让界面**当帧**对上 —— 否则那条孤儿会一直
- * 挂在顶部的「上下文检查点」面板上,直到下一次全量回填才消失,而删完消息
- * 恰恰是用户盯着看的那一刻。
- *
- * 没有孤儿时原样返回同一个数组:zustand 靠引用比较,换新数组就是白重渲染一遍。
- */
-function pruneCheckpoints(
-  messages: readonly AgentMessage[],
-  checkpoints: ContextCheckpoint[]
-): ContextCheckpoint[] {
-  const orphans = orphanedCheckpoints(new Set(messages.map((m) => m.id)), checkpoints)
-  if (orphans.length === 0) return checkpoints
-  const ids = new Set(orphans.map((c) => c.id))
-  return checkpoints.filter((c) => !ids.has(c.id))
 }
 
 /**
@@ -981,22 +911,22 @@ function pruneCheckpoints(
  */
 function conversationScoped(
   t: TranscriptState
-): Pick<TranscriptState, 'runUsage' | 'runModel' | 'messageRuns' | 'lastInputTokens' | 'contextCheckpoints'> {
+): Pick<TranscriptState, 'runUsage' | 'runModel' | 'messageRuns' | 'lastInputTokens'> {
   return {
     ...(t.runUsage === undefined ? {} : { runUsage: t.runUsage }),
     ...(t.runModel === undefined ? {} : { runModel: t.runModel }),
     ...(t.messageRuns === undefined ? {} : { messageRuns: t.messageRuns }),
     // 上下文占用是**整段对话**的属性:新一轮还没发出请求之前,
     // 圆环该继续显示上一轮结束时的读数,而不是空着。
-    ...(t.lastInputTokens === undefined ? {} : { lastInputTokens: t.lastInputTokens }),
+    ...(t.lastInputTokens === undefined ? {} : { lastInputTokens: t.lastInputTokens })
     /*
-      ★ 检查点标的是**消息流里的位置**,它比任何一轮都活得久 ——
-      漏带这一处,用户一发下条消息,消息流里所有压缩分隔线就一起消失,
-      要等下一次 authoritative hydrate 才回来。
+      ★ 压缩边界不在这张表里 —— 它现在**就是 `messages` 里的一条消息**(见
+      `shared/agent/compaction.ts`),跟着消息走,天然活得比任何一轮久。
+      原先这里带着 `contextCheckpoints`,是因为检查点住在另一张表上,漏带就会让
+      所有压缩分隔线在发下条消息时一起消失;换成转录内边界之后这条约束自动成立。
       ★ `contextStatus` 是**本轮**的瞬时相位,故意不带:上一轮的「正在压缩…」
       跟到新一轮就是一句谎话。
     */
-    contextCheckpoints: t.contextCheckpoints
   }
 }
 
@@ -1004,6 +934,9 @@ function conversationScoped(
 function hydrateHistory(sessionId: string, authoritative = false): Promise<void> {
   const store = stores.get(sessionId)
   if (!store || deletedHistory.has(sessionId)) return Promise.resolve()
+  // Active-run restoration already reads the page. Do not issue another read that will be discarded.
+  const activeRunId = store.getState().activeRunId
+  if (activeRunId !== null) return ensureActiveRunRestored(sessionId, activeRunId)
   const pending = historyLoads.get(sessionId)
   if (pending?.store === store) {
     pending.authoritative ||= authoritative
@@ -1012,6 +945,7 @@ function hydrateHistory(sessionId: string, authoritative = false): Promise<void>
   }
   const request = { store, authoritative, dirty: false, promise: Promise.resolve() }
   historyLoads.set(sessionId, request)
+  store.setState({ historyError: null })
   request.promise = (async () => {
     do {
       request.dirty = false
@@ -1030,7 +964,8 @@ async function loadHistory(sessionId: string, request: NonNullable<ReturnType<ty
     && stores.get(sessionId) === store && !deletedHistory.has(sessionId) && !request.dirty
   try {
     const version = store.getState().goalVersion
-    const detail = await getSession(sessionId)
+    // ★ 一页,不是整段:往上翻过的那几页一并重取,刷新不会把它们收起来(有上限)
+    const detail = await getSessionPage(sessionId, pageLimitFor(before))
     if (!current()) return
     void getGoal(sessionId).then((goal) => {
       if (stores.get(sessionId) === store && !deletedHistory.has(sessionId)
@@ -1039,27 +974,31 @@ async function loadHistory(sessionId: string, request: NonNullable<ReturnType<ty
     store.setState((s) => {
       // IPC 往返期间可能刚好启动了新的 run；不要用旧数据库快照覆盖
       // 正在流式显示的内容。
-      if (s.transcript !== before || s.activeRunId !== null
-        || [...runIndex.values()].some((r) => r.sessionId === sessionId)
-        || [...childRunIndex.values()].some((r) => r.sessionId === sessionId)) return s
+      if (s.activeRunId !== null || [...runIndex.values()].some((r) => r.sessionId === sessionId)) return s
+      if ([...childRunIndex.values()].some((r) => r.sessionId === sessionId)) return mergeRestoredHistory(s, detail, before.messages)
+      if (s.transcript !== before) {
+        if (hasRun(s.transcript, false)) return { historyLoaded: true, historyError: null }
+        request.dirty = true
+        return s
+      }
 
-      const databaseIds = new Set(detail.messages.map((m) => m.id))
-      // 正常情况下当前 renderer 消息都已经先于事件写入数据库；这里只
-      // 追加极短竞态窗口里尚未返回的本地消息，并且始终把数据库的
-      // `ordinal` 顺序放在前面，绝不按 createdAt 重新排序。
-      const localOnly = request.authoritative
-        ? []
-        : s.transcript.messages.filter((m) => !databaseIds.has(m.id))
-      const messages = [...detail.messages, ...localOnly]
+      // 权威刷新可以删除消息;普通回填须保留页外旧轮次的位置,而不是一律追加到末尾。
+      const messages = request.authoritative
+        ? detail.messages
+        : mergeHistoryMessages(detail.messages, s.transcript.messages, s.historyLoaded && detail.hasMore)
+      const retainedPrefix = s.historyLoaded && messages[0]?.id !== detail.messages[0]?.id
       return {
         ...s,
+        historyHasMore: detail.hasMore && (!retainedPrefix || s.historyHasMore),
+        // 与转录同一次 setState:中间不能有一帧「已读完但转录还空着」被画成问候语
+        historyLoaded: true,
+        historyError: null,
         transcript: {
           ...s.transcript,
           messages,
           live: [],
           tools: toolsFromMessages(messages, s.transcript.tools),
           subagents: subagentsFromMessages(messages, s.transcript.subagents),
-          contextCheckpoints: detail.contextCheckpoints ?? s.transcript.contextCheckpoints,
           // 重启之后逐轮用量的唯一来源。内存里那份 `usage` 只说得清当前 run,
           // 这两张表说的是整段对话的账,来自 SQLite。
           runUsage: detail.runUsage ?? s.transcript.runUsage,
@@ -1078,11 +1017,14 @@ async function loadHistory(sessionId: string, request: NonNullable<ReturnType<ty
     // 新 Tab 可能还没有主进程会话记录；真正发送时 runtime 会补齐。
     if (err instanceof Error && /会话不存在|不存在该会话|session.*not found/i.test(err.message)) {
       store.setState((s) => {
-        if (s.transcript !== before || s.activeRunId !== null
+        if (s.activeRunId !== null
           || [...runIndex.values()].some((r) => r.sessionId === sessionId)
           || [...childRunIndex.values()].some((r) => r.sessionId === sessionId)) return s
+        if (s.transcript !== before) return { historyLoaded: true, historyError: null }
         return {
           ...s,
+          historyLoaded: true,
+          historyError: null,
           transcript: {
             ...s.transcript,
             messages: [],
@@ -1099,6 +1041,7 @@ async function loadHistory(sessionId: string, request: NonNullable<ReturnType<ty
         }
       })
     } else {
+      store.setState({ historyError: err instanceof Error ? err.message : String(err) })
       console.error('[agent] 加载会话历史失败:', err)
     }
   }
@@ -1115,6 +1058,8 @@ export function sessionStore(sessionId: string): SessionStore {
   if (!s) {
     s = createSessionStore(sessionId)
     stores.set(sessionId, s)
+    // 没有视图来接的 store 不常驻 —— 见 `retainSessionView`
+    scheduleIdleDrop(sessionId)
     const active = [...runIndex.values()].find((run) => run.sessionId === sessionId)
     if (active !== undefined) {
       s.setState({ activeRunId: active.runId })
@@ -1126,9 +1071,115 @@ export function sessionStore(sessionId: string): SessionStore {
     if (!deletedHistory.has(sessionId)) {
       void hydrateInput(sessionId)
       void hydrateHistory(sessionId)
+    } else {
+      // 已删除的会话不再读库 —— 没人会把它标成「读过了」,骨架就会一直挂着
+      s.setState({ historyLoaded: true })
     }
   }
   return s
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 视图持有 —— 没人在看的会话不留转录
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 一个没有任何视图在用的会话 store,多久之后放掉。
+ *
+ * 需求:切走或关掉的会话不再常驻整段转录,也不再接收它的正文 —— Agent 照常在主进程跑,
+ * 续跑、汇报、目标检查都不需要渲染层(见 `main/session-runtime.ts`)。
+ * ★ 留一小段宽限而不是立刻放:来回切两个 Tab 是常态,每切一次就整段重读一遍历史不划算。
+ */
+export const SESSION_IDLE_RELEASE_MS = 8_000
+
+/** 每个会话 store 此刻被几个挂着的视图(对话视图、子代理只读面板)用着 */
+const viewRefs = new Map<string, number>()
+const idleDrops = new Map<string, ReturnType<typeof setTimeout>>()
+
+/**
+ * 视图挂载时调用,返回卸载时调用的释放函数(幂等)。最后一个视图走了之后,
+ * 宽限期内没有再被持有,store 就被放掉。
+ */
+export function retainSessionView(sessionId: string): () => void {
+  viewRefs.set(sessionId, (viewRefs.get(sessionId) ?? 0) + 1)
+  cancelIdleDrop(sessionId)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const next = (viewRefs.get(sessionId) ?? 1) - 1
+    if (next > 0) {
+      viewRefs.set(sessionId, next)
+      return
+    }
+    viewRefs.delete(sessionId)
+    scheduleIdleDrop(sessionId)
+  }
+}
+
+function scheduleIdleDrop(sessionId: string): void {
+  if ((viewRefs.get(sessionId) ?? 0) > 0) return
+  cancelIdleDrop(sessionId)
+  idleDrops.set(sessionId, setTimeout(() => {
+    idleDrops.delete(sessionId)
+    dropSessionStore(sessionId)
+  }, SESSION_IDLE_RELEASE_MS))
+}
+
+function cancelIdleDrop(sessionId: string): void {
+  const timer = idleDrops.get(sessionId)
+  if (timer === undefined) return
+  clearTimeout(timer)
+  idleDrops.delete(sessionId)
+}
+
+/**
+ * 放掉一个没有视图在用的会话 store —— **包括正在跑的那些**,并摘掉它的正文订阅。
+ *
+ * ★ 和 `releaseSession` 不是一回事:那个拒绝放掉正在跑的会话,是因为当年续跑、插话回执、
+ * 后台汇报都长在 store 上。现在它们在主进程,store 只剩「显示」这一个用途 ——
+ * 没人在看就没有理由留着。run 照跑,运行中索引(角标)不动;再打开时由
+ * `sessionStore` 按历史 + 快照重建,和 ⌘R 重载走的是同一条路。
+ *
+ * ★ 草稿不在这里写:每次按键都已经交给主进程,防抖也由主进程持有。
+ */
+export function dropSessionStore(sessionId: string): boolean {
+  if ((viewRefs.get(sessionId) ?? 0) > 0) return false
+  const store = stores.get(sessionId)
+  if (store === undefined) return false
+  const state = store.getState()
+  // 手动压缩的那一来一回还在路上:等它落地再放,否则分隔线会落进一个已经没人要的 store
+  if (state.compacting) {
+    scheduleIdleDrop(sessionId)
+    return false
+  }
+  cancelIdleDrop(sessionId)
+  stores.delete(sessionId)
+  hydrated.delete(sessionId)
+  historyLoads.delete(sessionId)
+  for (const [runId, panel] of childSessionOfRun) {
+    if (panel === sessionId) childSessionOfRun.delete(runId)
+  }
+  const watched = new Set<string>()
+  if (state.activeRunId !== null) watched.add(state.activeRunId)
+  for (const [runId, entry] of childRunIndex) {
+    if (entry.sessionId === sessionId) watched.add(runId)
+  }
+  // 只有没有别的 store 还要它的正文时才摘 —— 父会话的卡片可能还在看同一个子 run
+  for (const runId of watched) {
+    if (!runStillWanted(runId)) void unwatchRun(runId).catch(() => undefined)
+  }
+  return true
+}
+
+function runStillWanted(runId: string): boolean {
+  for (const store of stores.values()) {
+    if (store.getState().activeRunId === runId) return true
+  }
+  const child = childRunIndex.get(runId)
+  if (child !== undefined && stores.has(child.sessionId)) return true
+  const panel = childSessionOfRun.get(runId)
+  return panel !== undefined && stores.has(panel)
 }
 
 /**
@@ -1184,6 +1235,7 @@ export function releaseSession(sessionId: string): boolean {
   for (const r of childRunIndex.values()) if (r.sessionId === sessionId) return false
   const deleted = stores.delete(sessionId)
   if (deleted) {
+    cancelIdleDrop(sessionId)
     hydrated.delete(sessionId)
     historyLoads.delete(sessionId)
   }
@@ -1208,8 +1260,9 @@ export function adoptDraftSession(draftKey: string, sessionId: string): void {
   if (draftKey === sessionId) return
   const draftStore = stores.get(draftKey)
   const draft = draftStore?.getState().draft ?? ''
-  if (draft !== '') sessionStore(sessionId).setState({ draft })
-  persistSessionInput(draftKey, { v: SESSION_INPUT_VERSION, draft: '', queued: [], savedAt: Date.now() }, true)
+  // 刚铸出来的 id,库里必然是空的:不必等首页回来才认定它是新会话(否则重挂那一下会闪一帧骨架)
+  sessionStore(sessionId).setState(draft === '' ? { historyLoaded: true } : { draft, historyLoaded: true })
+  persistSessionDraft(draftKey, '', true)
   releaseSession(draftKey)
 }
 
@@ -1228,7 +1281,7 @@ export async function refreshHydratedSessions(change?: SessionChange): Promise<v
         || [...childRunIndex.values()].some((run) => run.sessionId === sessionId)) continue
       deletedHistory.add(sessionId)
       historyLoads.delete(sessionId)
-      store?.setState({ draft: '', queuedInputs: [], transcript: { ...emptyTranscript(), status: 'done' } })
+      store?.setState({ draft: '', queuedInputs: [], historyLoaded: true, historyError: null, transcript: { ...emptyTranscript(), status: 'done' } })
     }
     return
   }
@@ -1282,6 +1335,8 @@ export interface RunIndexEntry {
   runId: string
   sessionId: string
   workspaceId: string
+  /** 这个 run(含子代理)正等着用户处理的审批 / 提问数。缺席 = 0 */
+  pendingInteractions?: number
 }
 
 const runIndex = new Map<string, RunIndexEntry>()
@@ -1330,8 +1385,21 @@ export function adoptActiveRuns(runs: readonly RunIndexEntry[]): void {
   for (const r of runs) {
     runIndex.set(r.runId, r)
     const store = stores.get(r.sessionId)
-    if (store !== undefined && store.getState().activeRunId === null) {
-      store.setState({ activeRunId: r.runId })
+    if (store !== undefined) {
+      const activeRunId = store.getState().activeRunId
+      // 新一轮广播可能先于旧 run_end 的 rAF 批次到达;旧运行已不在权威索引时立即接管。
+      if (activeRunId === r.runId || (activeRunId !== null && runIndex.has(activeRunId))) continue
+      store.setState((state) => ({
+        activeRunId: r.runId,
+        lastSeq: 0,
+        transcript: {
+          ...emptyTranscript(),
+          messages: state.transcript.messages,
+          tools: state.transcript.tools,
+          subagents: state.transcript.subagents,
+          ...conversationScoped(state.transcript)
+        }
+      }))
       void ensureActiveRunRestored(r.sessionId, r.runId)
     }
   }
@@ -1364,11 +1432,32 @@ export function syncActiveRuns(entries: readonly RunIndexEntry[]): void {
     // 和停止按钮还停在运行态(这正是用户说的「三个状态没同步」的第三个)。
     void settleMissedRun(entry.sessionId, entry.runId)
   }
+  /*
+    ★ 已在索引里的 run 也要跟上「有几条在等你处理」—— 这是没有窗口在看那条会话时,
+    应用里唯一能看出「它停下来等你了」的地方。
+  */
+  for (const entry of entries) {
+    const current = runIndex.get(entry.runId)
+    if (current !== undefined && (current.pendingInteractions ?? 0) !== (entry.pendingInteractions ?? 0)) {
+      runIndex.set(entry.runId, { ...current, pendingInteractions: entry.pendingInteractions ?? 0 })
+    }
+  }
   // 补的方向与 bootstrap 完全一样,所以直接复用它 —— 它顺带把已经建出来的 store
   // 接回这个 run 并 attach 补齐,那段逻辑不该有第二份。
   // ★ 放在最后调:它自己会 `publishRunIndex()`,上面那几次删除搭它这一趟车,
   //   于是一次广播只换一个新数组、只触发一次重渲染。
-  adoptActiveRuns(entries.filter((entry) => !runIndex.has(entry.runId)))
+  adoptActiveRuns(entries.map((entry) => runIndex.get(entry.runId) ?? entry))
+}
+
+/**
+ * 正等着用户处理(审批 / 回答)的会话。应用内标一下,不强制切换。
+ */
+export function useAttentionSessionIds(): ReadonlySet<string> {
+  const runs = useRunIndex()
+  return useMemo(
+    () => new Set(runs.filter((run) => (run.pendingInteractions ?? 0) > 0).map((run) => run.sessionId)),
+    [runs]
+  )
 }
 
 /**
@@ -1398,6 +1487,18 @@ async function settleMissedRun(sessionId: string, runId: string): Promise<void> 
   // 两种情况都不该再动它,所以在这里重新取一次,不复用上面那个引用。
   const store = stores.get(sessionId)
   if (store === undefined || store.getState().activeRunId !== runId) return
+  /*
+    ★ 窗口藏着:不去 attach。attach 会把这个窗口重新订阅回来,还会把藏着期间的整段正文
+    一次性灌进 store —— 那正是藏起来要省掉的东西。先离开运行态,露出来时再从库里读一遍。
+  */
+  if (!windowVisible) {
+    store.setState((s) => ({
+      activeRunId: null,
+      transcript: { ...s.transcript, live: [], status: s.transcript.status === 'running' ? 'done' : s.transcript.status }
+    }))
+    staleWhileHidden.add(sessionId)
+    return
+  }
   await resync(sessionId, runId, store.getState().lastSeq)
   if (store.getState().activeRunId !== runId) return
   store.setState((s) => ({
@@ -1406,6 +1507,31 @@ async function settleMissedRun(sessionId: string, runId: string): Promise<void> 
   }))
   // 事件补不回来时,库里那份已提交的转录就是最完整的版本。
   void hydrateHistory(sessionId, true)
+}
+
+/**
+ * 按了停止之后多久还没等到 `run_end`,就去主进程问一次实情。
+ *
+ * ★ 比主进程那边的强制收口(`ABORT_SETTLE_GRACE_MS` = 5s)略长:那边收口时会发
+ * run_end,正常情况下它先到,这里什么都不用做。
+ */
+const STOP_SETTLE_GRACE_MS = 7_000
+
+/**
+ * 停止的渲染层兜底(#187)。
+ *
+ * 症状是「计时一直走、停止按了没反应」:主进程那个 run 早就结束(甚至已被回收),
+ * 而这个窗口漏了它的 `run_end` —— 此时 `agent:abort` 是无声的空操作,界面会一直
+ * 等一条永远不会来的事件。宽限期一过还停在这个 run 上,就 attach 一次:主进程说
+ * 已结束就把尾巴补上并离开运行态;说查不到(已回收)就从库里重读(见 `resync`)。
+ * 主进程说仍在跑就不动 —— 真正的 run_end 会自己到。
+ */
+function settleAfterStop(sessionId: string, runId: string): void {
+  setTimeout(() => {
+    const store = stores.get(sessionId)
+    if (store === undefined || store.getState().activeRunId !== runId) return
+    void resync(sessionId, runId, store.getState().lastSeq)
+  }, STOP_SETTLE_GRACE_MS)
 }
 
 export interface ActiveSubagentIndexEntry {
@@ -1456,6 +1582,31 @@ export function adoptActiveSubagents(entries: readonly ActiveSubagentIndexEntry[
   }
 }
 
+/**
+ * 用户点子代理卡片的停止时,主进程可能早就没有这个 run 了(它已跑完/被回收),
+ * 此时 `agent:abort` 是无声的空操作,而父会话里那张卡片因为漏了结束事件还停在「运行中」。
+ * 这里按主进程的实际状态把卡片收口:还在跑就什么都不动(真正的 run_end 会自己到),
+ * 已经结束或查不到了就补一条结束。
+ */
+export async function settleSubagent(childRunId: string): Promise<void> {
+  const owner = [...stores.values()].find((store) => Object.values(store.getState().transcript.subagents)
+    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running'))
+  if (owner === undefined) return
+  let status: 'done' | 'error' | 'aborted' = 'aborted'
+  try {
+    const entry = Object.values(owner.getState().transcript.subagents).find((subagent) => subagent.childRunId === childRunId)
+    const snap = await attachRun(childRunId, entry?.childSeq ?? 0)
+    owner.getState().applyChildEvents(childRunId, snap.events, snap.seq - snap.events.length + 1)
+    if (snap.status === 'running') return
+    status = snap.status
+  } catch {
+    // 查不到 = 已被回收,即已结束
+  }
+  const stuck = Object.values(owner.getState().transcript.subagents)
+    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running')
+  if (stuck) owner.getState().applyChildEvents(childRunId, [{ type: 'run_end', status, at: Date.now() }])
+}
+
 async function restoreChildSnapshot(entry: ActiveSubagentIndexEntry): Promise<void> {
   try {
     const store = stores.get(entry.sessionId)
@@ -1477,16 +1628,93 @@ async function restoreChildSnapshot(entry: ActiveSubagentIndexEntry): Promise<vo
   }
 }
 
+/** 按共同消息定位本地片段,保留页外的早期轮次;不能用时间戳代替数据库顺序。 */
+function mergeHistoryMessages(
+  history: readonly AgentMessage[],
+  local: readonly AgentMessage[],
+  localPrecedesHistory = false
+): AgentMessage[] {
+  const historyIds = new Set(history.map((message) => message.id))
+  const localById = new Map(local.map((message) => [message.id, message]))
+  const before = new Map<string, AgentMessage[]>()
+  let pending: AgentMessage[] = []
+  let anchored = false
+  for (const message of localById.values()) {
+    if (!historyIds.has(message.id)) {
+      pending.push(message)
+      continue
+    }
+    anchored = true
+    before.set(message.id, pending)
+    pending = []
+  }
+  if (!anchored && localPrecedesHistory) return [...localById.values(), ...history]
+  const messages = history.flatMap((message) => [
+    ...(before.get(message.id) ?? []), localById.get(message.id) ?? message
+  ])
+  return [...messages, ...pending]
+}
+
+/** 已落盘但不在当前历史窗口内的旧提交,不能被快照重新追加到尾部。 */
+function restoredEvents(events: readonly AgentEvent[], state: SessionState, detached = false): AgentEvent[] {
+  if (!state.historyLoaded) return [...events]
+  const known = new Set(state.transcript.messages.map((message) => message.id))
+  let lastKnown = -1
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!
+    if (event.type === 'message_commit' && known.has(event.message.id)) lastKnown = index
+  }
+  return events.filter((event, index) => event.type !== 'message_commit'
+    || known.has(event.message.id) || (!detached && index > lastKnown))
+}
+
+/** Show durable messages immediately; live snapshots may take longer to attach. */
+function mergeRestoredHistory(
+  state: SessionState,
+  page: SessionPage,
+  loaded: readonly AgentMessage[] = state.transcript.messages
+): Partial<SessionState> {
+  const base = mergeHistoryMessages(page.messages, loaded, state.historyLoaded && page.hasMore)
+  const messages = mergeHistoryMessages(base, state.transcript.messages)
+  const retainedPrefix = state.historyLoaded && messages[0]?.id !== page.messages[0]?.id
+  const runUsage = { ...page.runUsage, ...state.transcript.runUsage }
+  // The active snapshot rebuilds this run's usage; including its persisted subtotal would count it twice.
+  if (state.activeRunId !== null) delete runUsage[state.activeRunId]
+  return {
+    historyHasMore: page.hasMore && (!retainedPrefix || state.historyHasMore),
+    historyLoaded: true,
+    historyError: null,
+    transcript: {
+      ...state.transcript,
+      messages,
+      tools: toolsFromMessages(messages, state.transcript.tools),
+      subagents: subagentsFromMessages(messages, state.transcript.subagents),
+      runUsage,
+      runModel: { ...page.runModel, ...state.transcript.runModel },
+      messageRuns: { ...page.messageRuns, ...state.transcript.messageRuns },
+      status: state.activeRunId === null ? 'done' : state.transcript.status
+    }
+  }
+}
+
 async function restoreDetachedParent(
   sessionId: string,
   parentRunId: string,
   owner: ActiveSubagentIndexEntry
 ): Promise<void> {
+  const store = stores.get(sessionId)
+  if (store === undefined) return
+  store.setState({ historyError: null })
+  const loaded = store.getState().transcript
   try {
-    const detail = await getSession(sessionId).catch(() => undefined)
+    const detail = await getSessionPage(sessionId, pageLimitFor(loaded)).catch((err: unknown) => {
+      if (stores.get(sessionId) === store) store.setState({ historyError: err instanceof Error ? err.message : String(err) })
+      return undefined
+    })
+    if (stores.get(sessionId) !== store || store.getState().activeRunId !== null) return
+    if (detail !== undefined) store.setState((s) => mergeRestoredHistory(s, detail, loaded.messages))
     const snap = await attachRun(parentRunId, 0)
-    const store = stores.get(sessionId)
-    if (store === undefined) return
+    if (stores.get(sessionId) !== store) return
     store.setState((s) => {
       // A user may have started a new turn while the detached snapshot was in
       // flight. Preserve that live turn rather than replacing it with old data.
@@ -1498,13 +1726,13 @@ async function restoreDetachedParent(
         subagents: s.transcript.subagents,
         ...conversationScoped(s.transcript)
       }
+      const events = restoredEvents(snap.events, s, true)
       const transcript = recordMessageRuns(
-        archiveRunUsage(applyEvents(base, snap.events), parentRunId, snap.events),
+        archiveRunUsage(applyEvents(base, events), parentRunId, events),
         parentRunId,
-        snap.events
+        events
       )
-      const messages = [...new Map([...(detail?.messages ?? []), ...transcript.messages]
-        .map((m) => [m.id, m])).values()]
+      const messages = transcript.messages
       return {
         transcript: {
           ...transcript,
@@ -1539,13 +1767,39 @@ async function restoreDetachedParent(
  * 然后把 lastSeq 置成 snapshot.seq。对它再查一次连续性会导致无限 resync。
  */
 async function restoreActiveRun(sessionId: string, runId: string): Promise<void> {
-  const detail = await getSession(sessionId).catch(() => undefined)
-  await resync(sessionId, runId, 0, detail?.messages)
+  /*
+    ★ 调用方一律是 `void ensureActiveRunRestored(...)`:这里漏出去的任何异常都会变成一次
+    没人接的 rejection。读页失败就退化成「只按快照重建」,和读不到历史时一样。
+  */
+  const store = stores.get(sessionId)
+  if (store === undefined) return
+  const loaded = store.getState().transcript
+  store.setState({ historyError: null })
+  let detail: Awaited<ReturnType<typeof getSessionPage>> | undefined
+  try {
+    detail = await getSessionPage(sessionId, pageLimitFor(loaded))
+  } catch (err) {
+    if (stores.get(sessionId) === store) store.setState({ historyError: err instanceof Error ? err.message : String(err) })
+    detail = undefined
+  }
+  if (stores.get(sessionId) !== store || store.getState().activeRunId !== runId) return
+  if (detail !== undefined) store.setState((s) => mergeRestoredHistory(s, detail, loaded.messages))
+  await resync(sessionId, runId, 0)
 }
 
 const restoreInFlight = new Map<string, Promise<void>>()
 
+/**
+ * 这个窗口此刻露不露在外面(主进程 `window:visibility`)。藏着的时候不 attach、
+ * 不接正文 —— 主进程那边已经摘掉了订阅,这里也不能自己再订回去。
+ * 露出来时由 `startAgentEventPump` 里的那条监听把在看的会话一次性重建。
+ */
+let windowVisible = true
+/** 藏着期间收尾的会话:露出来时要从库里重读一遍(那时没有去 attach) */
+const staleWhileHidden = new Set<string>()
+
 function ensureActiveRunRestored(sessionId: string, runId: string): Promise<void> {
+  if (!windowVisible) return Promise.resolve()
   const existing = restoreInFlight.get(runId)
   if (existing !== undefined) return existing
   const pending = restoreActiveRun(sessionId, runId).finally(() => {
@@ -1555,7 +1809,41 @@ function ensureActiveRunRestored(sessionId: string, runId: string): Promise<void
   return pending
 }
 
-async function resync(sessionId: string, runId: string, sinceSeq: number, history?: AgentMessage[]): Promise<void> {
+/**
+ * 窗口藏起来 / 露出来。
+ *
+ * ★ 露出来时**整段重建**而不是从 `lastSeq` 续:藏着的那段时间里主进程的 run 日志可能已经
+ * 越过 2000 条的硬上限被截掉头部,续出来的会是一段中间有洞的转录。重建走的是 ⌘R 重载那条路:
+ * 库里的历史 + 从 0 开始的快照。
+ */
+function applyWindowVisibility(visible: boolean): void {
+  if (visible === windowVisible) return
+  windowVisible = visible
+  if (!visible) {
+    // 已经在路上的那几批丢掉:露出来时整段重建,不需要它们
+    if (raf !== 0) cancelAnimationFrame(raf)
+    if (flushTimer !== null) clearTimeout(flushTimer)
+    raf = 0
+    flushTimer = null
+    pending = []
+    pendingChars = 0
+    return
+  }
+  for (const [sessionId, store] of stores) {
+    const runId = store.getState().activeRunId
+    if (runId !== null) void ensureActiveRunRestored(sessionId, runId)
+    else if (staleWhileHidden.delete(sessionId)) void hydrateHistory(sessionId, true)
+  }
+  staleWhileHidden.clear()
+  // 父 run 已经结束、还在跑的后台子代理:它们的卡片遥测要单独接回来
+  for (const entry of childRunIndex.values()) {
+    if (stores.has(entry.sessionId) && !runIndex.has(entry.runId)) {
+      void restoreChildSnapshot({ ...entry, parentRunId: '' })
+    }
+  }
+}
+
+async function resync(sessionId: string, runId: string, sinceSeq: number): Promise<void> {
   const store = stores.get(sessionId)
   if (!store) return
   console.warn(`[agent] seq 不连续,attach 补齐 · run=${runId} since=${sinceSeq}`)
@@ -1563,10 +1851,15 @@ async function resync(sessionId: string, runId: string, sinceSeq: number, histor
     const snap = await attachRun(runId, sinceSeq)
     const current = store.getState()
     if (current.activeRunId !== runId) return
+    // 主进程的日志头部被截过:从某个 seq 续接可能正好续在洞上。改走整段重建(库里的历史 + 从 0 的快照)
+    if (sinceSeq !== 0 && snap.logTrimmed === true) {
+      await restoreActiveRun(sessionId, runId)
+      return
+    }
     // An incremental snapshot may overlap events received while attach was in
     // flight. Ask again from the new cursor instead of counting usage twice.
     if (sinceSeq !== 0 && current.lastSeq > sinceSeq && current.lastSeq < snap.seq) {
-      await resync(sessionId, runId, current.lastSeq, history)
+      await resync(sessionId, runId, current.lastSeq)
       return
     }
     store.setState((s) => {
@@ -1581,16 +1874,17 @@ async function resync(sessionId: string, runId: string, sinceSeq: number, histor
             ...(s.transcript.runStartedAt === undefined ? {} : { runStartedAt: s.transcript.runStartedAt })
           }
         : s.transcript
+      const events = sinceSeq === 0 ? restoredEvents(snap.events, s) : snap.events
       const transcript = recordMessageRuns(
         archiveRunUsage(
-          s.lastSeq >= snap.seq ? s.transcript : applyEvents(base, snap.events),
+          s.lastSeq >= snap.seq ? s.transcript : applyEvents(base, events),
           runId,
-          snap.events
+          events
         ),
         runId,
-        snap.events
+        events
       )
-      const messages = [...new Map([...(history ?? []), ...transcript.messages].map((m) => [m.id, m])).values()]
+      const messages = transcript.messages
       return {
         transcript: {
           ...transcript, messages,
@@ -1606,16 +1900,26 @@ async function resync(sessionId: string, runId: string, sinceSeq: number, histor
       }
     })
     rememberChildRuns(runId, snap.events)
-    reapInjected(sessionId, snap.events)
     if (snap.status !== 'running') unregisterRun(runId)
-    // ★ 重载后主进程的信箱仍然是对的(它没死),但**这个渲染层的队列刚从
-    //   kv 里回填出来**,两边可能已经不一致(重载前那一瞬间的取消/编辑)。
-    //   重发一次当前全集,让主进程以渲染层为准 —— 全量替换语义在这里第二次
-    //   还本:恢复路径不需要任何专门的对账逻辑。
-    else syncInterject(sessionId)
-    if (snap.status === 'done') drainQueue(sessionId)
+    // 插话信箱、续跑、送达回执都在主进程;重载之后不需要任何对账
   } catch (err) {
     console.error('[agent] attach 失败:', err)
+    /*
+      run 已经被主进程回收(结束满 TTL、或超出已结束 run 的缓存预算,见 `reapFinishedRuns`)。
+      它的终态在库里:收尾这条会话、从库里重读。不收尾的话它会一直停在「运行中」。
+    */
+    if (err instanceof Error && /run 不存在/.test(err.message)) {
+      let ended = false
+      store.setState((s) => {
+        if (s.activeRunId !== runId) return s
+        ended = true
+        return { activeRunId: null }
+      })
+      if (ended) {
+        unregisterRun(runId)
+        void hydrateHistory(sessionId, true)
+      }
+    }
   }
 }
 
@@ -1627,16 +1931,91 @@ async function resync(sessionId: string, runId: string, sinceSeq: number, histor
  */
 let unsubscribe: (() => void) | null = null
 let pending: AgentEventEnvelope[] = []
+let pendingChars = 0
 let raf = 0
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 事件泵的有界预算。
+ *
+ * ★★ **为什么必须有界。** 缓冲对齐到的这一帧是这样拿的:`requestAnimationFrame`。
+ * 窗口被隐藏(最小化、切到别的 Space、副屏熄了)时浏览器**不再派发 rAF**,于是
+ * `drain` 永远等不到;而后台 run 还在往里推。做一个多小时的后台任务下来,这一个
+ * 数组能把整个渲染进程撑爆 —— 而且恢复可见那一刻要一次性应用几万条事件,界面直接卡死。
+ *
+ * 三条路一起收:
+ * 1. **条数上限**:一帧内攒够 `PUMP_MAX_ENVELOPES` 就直接派发(不等帧)。
+ * 2. **字符上限**:单个 `text_delta` 可能几十 KB,纯按条数算挡不住;按每条事件的
+ *    字符串增量累一个缓冲总量,越过 `PUMP_MAX_CHARS` 同样立即派发。
+ * 3. **兜底定时器**:即使一帧都没有,超过 `PUMP_FLUSH_MS` 也强制派发一次 ——
+ *    这也是「隐藏窗口里消息不至于一个都不落地」的那条保证。
+ *
+ * `PUMP_FLUSH_MS` 取 50ms(约三帧):比人眼一次「卡顿」的感知还短,却足够让
+ * 隐藏窗口里的事件以有限的批大小持续落地,而不是攒到恢复可见时才一起爆。
+ *
+ * ★ 溢出**不丢信封**:立即派发就是平常那条 `drain()`,它按 runId 找会话、
+ * 走 `applyEnvelope`;那里本来就有 seq 连续性检查,断流会去 attach 补齐
+ * (见 `applyEnvelope` 的 `hasSeqGap` 分支)。半个信封永远不会被留在数组里 ——
+ * 数组里存的都是完整信封,派发也是整条整条地取。
+ */
+const PUMP_MAX_ENVELOPES = 256
+const PUMP_MAX_CHARS = 1_000_000
+const PUMP_FLUSH_MS = 50
+
+/** 达到预算即停止估算；提交的整段消息和工具结果也会占内存，不能只数 stream 增量。 */
+function envelopeChars(env: AgentEventEnvelope): number {
+  const pending: unknown[] = [env.events]
+  const seen = new Set<object>()
+  let sum = 0
+  while (pending.length > 0 && sum < PUMP_MAX_CHARS) {
+    const value = pending.pop()
+    if (typeof value === 'string') { sum += value.length + 16; continue }
+    if (typeof value !== 'object' || value === null) { sum += 16; continue }
+    if (seen.has(value)) continue
+    seen.add(value)
+    if (value instanceof ArrayBuffer) { sum += value.byteLength; continue }
+    if (ArrayBuffer.isView(value)) { sum += value.byteLength; continue }
+    for (const child of Object.values(value)) {
+      if (typeof child === 'string') sum += child.length + 16
+      else if (typeof child === 'object' && child !== null) pending.push(child)
+      else sum += 16
+      if (sum >= PUMP_MAX_CHARS || pending.length >= 1024) return PUMP_MAX_CHARS
+    }
+  }
+  return sum
+}
+
+/**
+ * 请求下一帧派发,并挂上兜底定时器。
+ *
+ * 每批最多一帧和一个兜底定时器；提前派发时两者一并撤销，避免隐藏期间积累旧回调。
+ */
+function schedulePump(): void {
+  if (raf === 0) raf = requestAnimationFrame(drain)
+  if (flushTimer === null) {
+    flushTimer = setTimeout(() => { flushTimer = null; drain() }, PUMP_FLUSH_MS)
+  }
+}
 
 export function startAgentEventPump(): () => void {
   if (unsubscribe) return unsubscribe
 
   const off = onAgentEvent((env) => {
+    // 藏着的时候还在路上的那几批:露出来时整段重建,这里不收
+    if (!windowVisible) return
     pending.push(env)
-    // rAF 再缓冲:主进程已经合过一次批,这里再对齐到帧。
-    // 一帧内到达的多个批合成一次 set() —— 也就是一次 React 渲染。
-    if (raf === 0) raf = requestAnimationFrame(drain)
+    pendingChars += envelopeChars(env)
+    /*
+      ★ 越界立刻派发,而不是等帧 —— 但那还是**平常那条 `drain()`**:
+      按 runId 找会话、走 `applyEnvelope` 的 seq 连续性检查,断流照旧 attach 补齐。
+      溢出这一路不丢、不拆信封,数组里存的也始终是完整信封。
+    */
+    if (pending.length >= PUMP_MAX_ENVELOPES || pendingChars >= PUMP_MAX_CHARS
+      || env.events.some((event) => event.type === 'run_end' || event.type === 'interaction_request')) {
+      drain()
+      return
+    }
+    schedulePump()
   })
 
   const offGoal = onGoalChanged(applyGoalChange)
@@ -1646,22 +2025,42 @@ export function startAgentEventPump(): () => void {
     而漏退订在 HMR 下就是监听器叠加(方案 §3 规则 4)。
   */
   const offRuns = onActiveRuns(syncActiveRuns)
+  // 队列与后台汇报的真源在主进程;这里只把镜像跟上
+  const offQueue = onSessionQueueChanged((snapshot) => applyQueueSnapshot(snapshot.sessionId, snapshot))
+  const offReport = onSubagentReport(({ sessionId, callId, status }) => applySubagentReport(sessionId, callId, status))
+  const offVisibility = onWindowVisibility(applyWindowVisibility)
   unsubscribe = () => {
     off()
     offGoal()
     offRuns()
+    offQueue()
+    offReport()
+    offVisibility()
     if (raf !== 0) cancelAnimationFrame(raf)
+    if (flushTimer !== null) clearTimeout(flushTimer)
     raf = 0
+    flushTimer = null
     pending = []
+    pendingChars = 0
     unsubscribe = null
   }
   return unsubscribe
 }
 
-/** State-only updates must not use message_commit: doing so would erase live text. */
+function applySubagentReport(sessionId: string, callId: string, status: SubagentReportStatus): void {
+  stores.get(sessionId)?.getState().setSubagentReportStatus(callId, status)
+}
+
+/**
+ * 目标状态变了。State-only updates must not use message_commit: doing so would erase live text.
+ *
+ * ★ 空闲时的目标检查**不经过这里**:主进程的会话运行时直接起那一轮
+ * (见 `main/goal/runtime.ts` 的 `wakeGoal`),没有窗口在看这条会话时它也得发生。
+ * 所以这里不会、也不该再为一次变化去建 store 或者发消息。
+ */
 export function applyGoalChange(change: GoalChange): void {
   if (deletedHistory.has(change.sessionId)) return
-  const target = stores.get(change.sessionId) ?? (change.input === undefined ? undefined : sessionStore(change.sessionId))
+  const target = stores.get(change.sessionId)
   if (target === undefined) return
   target.setState((state) => {
     const message = change.message
@@ -1671,25 +2070,16 @@ export function applyGoalChange(change: GoalChange): void {
         : [...state.transcript.messages, message]
     return { goal: change.goal, goalVersion: state.goalVersion + 1, transcript: { ...state.transcript, messages } }
   })
-  const input = change.input
-  if (input === undefined) return
-  void getGoal(change.sessionId).then(async (current) => {
-    if (current?.id !== input.goalId || deletedHistory.has(change.sessionId)) return
-    // A closed tab may have no store yet. Hydrate it before inserting optimistic run state.
-    await historyLoads.get(change.sessionId)?.promise
-    if (deletedHistory.has(change.sessionId)) return
-    return target.getState().send('', input.options, input.parts, true, input.goalId)
-  }).catch(() => {
-    target.setState((state) => ({ transcript: { ...state.transcript, warning: {
-      code: 'unknown', retryable: false, message: 'Could not deliver the goal check-in.', messageKey: 'goal.error.checkinFailed'
-    } } }))
-  })
 }
 
 function drain(): void {
+  if (raf !== 0) cancelAnimationFrame(raf)
+  if (flushTimer !== null) clearTimeout(flushTimer)
   raf = 0
+  flushTimer = null
   const batch = pending
   pending = []
+  pendingChars = 0
   for (const env of batch) {
     const child = childRunIndex.get(env.runId)
     if (child !== undefined) {

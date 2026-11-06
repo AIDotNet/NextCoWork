@@ -27,7 +27,7 @@ vi.mock('../../runtime', () => ({
 }))
 
 vi.mock('../../window/registry', () => ({ windows: { broadcast: vi.fn() } }))
-vi.mock('../../kernel/run-registry', () => ({ runs: { activeRunIds: (): string[] => [] } }))
+vi.mock('../../kernel/run-registry', () => ({ runs: { activeRunIds: (): string[] => [], hasSessionOperations: (): boolean => false } }))
 
 import { DATA_SUBDIRNAME, closeDatabase, openDatabase } from '../../db'
 import { attachmentRoot } from '../../net/attachment-protocol'

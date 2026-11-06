@@ -184,7 +184,7 @@ try {
   await cdp.eval(clickButton('扩展'))
   await sleep(700)
   await cdp.eval(`(() => {
-    const r = [...document.querySelectorAll('[role="radio"]')].find((x) => x.textContent?.trim() === '插件')
+    const r = [...document.querySelectorAll('button[aria-pressed]')].find((x) => x.textContent?.trim() === '插件')
     if (!r) throw new Error('找不到「插件」Tab')
     r.click(); return true
   })()`)

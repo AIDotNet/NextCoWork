@@ -16,13 +16,11 @@ function broadcast(): void {
   windows.emitToAll('provider:changed', { providers: store.listProviders(), models: listResolvedModels() })
 }
 
-export function upsertUserModelCatalog(
-  model: ModelCatalogDefinition
-): ModelCatalogDefinition {
+function normalizeCatalogModel(model: ModelCatalogDefinition): ModelCatalogDefinition {
   if (!isModelCatalogDefinition(model)) throw new Error('自定义模型目录记录格式无效。')
   const patchValidation = validateRequestPatches(model.requestAdapter?.patches ?? [])
   if (!patchValidation.ok) throw new Error('自定义模型目录的请求 Patch 格式无效。')
-  const normalized: ModelCatalogDefinition = {
+  return {
     ...model,
     id: model.id.trim(),
     displayName: model.displayName.trim(),
@@ -44,10 +42,25 @@ export function upsertUserModelCatalog(
       : { reasoningEfforts: [...model.reasoningEfforts] }),
     ...(model.aliases === undefined ? {} : { aliases: [...model.aliases] })
   }
+}
+
+export function upsertUserModelCatalog(
+  model: ModelCatalogDefinition
+): ModelCatalogDefinition {
+  const normalized = normalizeCatalogModel(model)
   preserveModelBindingOverrides()
   const saved = store.putUserModelCatalog(normalized)
   broadcast()
   return saved
+}
+
+/** 批量写入:全部校验通过才落库,且只广播一次(逐条广播会让设置页刷新几十遍)。 */
+export function upsertUserModelCatalogBatch(models: readonly ModelCatalogDefinition[]): void {
+  const normalized = models.map(normalizeCatalogModel)
+  if (normalized.length === 0) return
+  preserveModelBindingOverrides()
+  for (const m of normalized) store.putUserModelCatalog(m)
+  broadcast()
 }
 
 export function removeUserModelCatalog(id: string): void {

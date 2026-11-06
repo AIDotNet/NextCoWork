@@ -17,7 +17,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { InteractionResponse, PendingInteraction } from '../../../../../shared/agent/interaction'
 import { I18nProvider } from '../../../i18n'
-import { listInteractions } from '../../../services/agent'
+import { listInteractions, respondInteraction } from '../../../services/agent'
 import { InteractionPanel } from '../InteractionPanel'
 
 const sent: InteractionResponse[] = []
@@ -201,6 +201,14 @@ describe('工具授权卡 · 同一套行', () => {
     createdAt: 0
   }
 
+  it('默认允许仍只批准原始调用一次', async () => {
+    const container = await renderPanel(TOOL)
+
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_once')!)
+
+    expect(sent).toEqual([{ id: TOOL.id, kind: 'tool_permission', decision: { kind: 'allow_once' } }])
+  })
+
   it('★ 展开「改完参数再允许」时收起只读预览 —— 同一份参数不摆两遍', async () => {
     const container = await renderPanel(TOOL)
     expect(container.querySelector('pre')).not.toBeNull()
@@ -230,6 +238,92 @@ describe('工具授权卡 · 同一套行', () => {
 
     expect(sent).toHaveLength(0)
     expect(container.querySelector('[role="alert"]')).not.toBeNull()
+  })
+
+  it.each(['metaKey', 'ctrlKey'] as const)('编辑器移到正文后,%s+Enter 仍提交修改后的参数', async (modifier) => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    const field = container.querySelector('textarea')!
+    await type(field, '{"command":"ls build"}')
+
+    await press(field, 'Enter', { [modifier]: true })
+
+    expect(sent).toEqual([{
+      id: TOOL.id,
+      kind: 'tool_permission',
+      decision: { kind: 'allow_edited', input: { command: 'ls build' } }
+    }])
+  })
+
+  it('编辑器里的裸 Enter 和数字键不会触发授权', async () => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    const field = container.querySelector('textarea')!
+
+    await press(field, 'Enter')
+    await press(field, '2')
+
+    expect(sent).toHaveLength(0)
+    expect(container.querySelector('textarea')).toBe(field)
+  })
+
+  it('Esc 放弃修改并清掉校验错误,重新编辑从原始参数开始', async () => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    const field = container.querySelector('textarea')!
+    await type(field, '{ invalid')
+    await press(field, 'Enter', { metaKey: true })
+    expect(container.querySelector('[role="alert"]')).not.toBeNull()
+
+    await press(field, 'Escape')
+
+    expect(sent).toHaveLength(0)
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.querySelector('pre')?.textContent).toBe(JSON.stringify(TOOL.input, null, 2))
+    expect(rows(container).map((row) => row.dataset.rowValue)).toContain('allow_always')
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    expect(container.querySelector('textarea')?.value).toBe(JSON.stringify(TOOL.input, null, 2))
+  })
+
+  it('使用原始参数只退出编辑,不执行授权', async () => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    await type(container.querySelector('textarea')!, '{"command":"ls build"}')
+
+    await click([...container.querySelectorAll('button')].find((button) => button.textContent === '使用原始参数')!)
+
+    expect(sent).toHaveLength(0)
+    expect(container.querySelector('pre')?.textContent).toBe(JSON.stringify(TOOL.input, null, 2))
+  })
+
+  it('编辑时仍可拒绝,不会提交修改后的参数', async () => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    await type(container.querySelector('textarea')!, '{"command":"ls build"}')
+
+    await click([...container.querySelectorAll('button')].find((button) => button.textContent === '拒绝')!)
+
+    expect(sent).toEqual([{ id: TOOL.id, kind: 'tool_permission', decision: { kind: 'deny' } }])
+  })
+
+  it('提交失败保留编辑草稿,可在固定操作区重试', async () => {
+    const container = await renderPanel(TOOL)
+    await click(rows(container).find((row) => row.dataset.rowValue === 'allow_edited')!)
+    const edited = '{"command":"ls build"}'
+    await type(container.querySelector('textarea')!, edited)
+    vi.mocked(respondInteraction).mockRejectedValueOnce(new Error('offline'))
+    const submit = [...container.querySelectorAll('button')].find((button) => button.textContent === '允许这一次')!
+
+    await click(submit)
+
+    expect(container.querySelector('[role="alert"]')).not.toBeNull()
+    expect(container.querySelector('textarea')?.value).toBe(edited)
+    expect(submit.disabled).toBe(false)
+    await click(submit)
+    expect(sent).toEqual([{
+      id: TOOL.id, kind: 'tool_permission', decision: { kind: 'allow_edited', input: { command: 'ls build' } }
+    }])
   })
 })
 

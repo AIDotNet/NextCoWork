@@ -95,6 +95,11 @@ export const usageZh = {
   'usage.overview.title': '概览',
   'usage.overview.refresh': '刷新统计',
   'usage.overview.empty': '所选时间范围内还没有用量记录',
+  // 使用统计云同步:概览合并其它设备,请求日志只含本机 —— 口径差必须说出来
+  'usage.sync.merged': ({ count }: Params) =>
+    `概览已合并另外 ${count} 台设备同步来的用量；请求日志与明细统计只含本机。`,
+  'usage.sync.toggle': '同步使用统计',
+  'usage.sync.toggleHint': '在已登录同一账号的设备间合并使用统计概览；请求日志不会上传。',
 
   // 指标卡(参考图顶部那一排)
   'usage.metric.totalTokens': '累计 Token 数',
@@ -125,8 +130,8 @@ export const usageZh = {
   'usage.granularity.cumulative': '累计',
   'usage.granularityLabel': '统计粒度',
 
-  // 每日趋势
-  'usage.trend.title': '每日 Token 趋势',
+  // Token 趋势。★ 标题不带「每日」:粒度切到每周 / 累计时它就是错的
+  'usage.trend.title': 'Token 趋势',
   'usage.trend.tokens': 'Token 数',
   'usage.trend.requests': '请求数',
   'usage.trend.empty': '所选时间范围内没有数据',
@@ -136,6 +141,8 @@ export const usageZh = {
   'usage.models.total': '总计',
   'usage.models.others': '其他',
   'usage.models.empty': '所选时间范围内没有模型用量',
+  'usage.models.requests': ({ count }: Params) => `${count} 次请求`,
+  'usage.models.legendLabel': '模型图例',
 
   // 费用统计
   'usage.cost.title': '模型费用',
@@ -233,6 +240,10 @@ export const usageEn = {
   'usage.overview.title': 'Overview',
   'usage.overview.refresh': 'Refresh stats',
   'usage.overview.empty': 'No usage recorded in the selected time range',
+  'usage.sync.merged': ({ count }: Params) =>
+    `Overview includes usage synced from ${count} other ${Number(count) === 1 ? 'device' : 'devices'}; request logs and breakdowns cover this device only.`,
+  'usage.sync.toggle': 'Sync usage statistics',
+  'usage.sync.toggleHint': 'Merge the usage overview across devices signed in to the same account. Request logs are never uploaded.',
 
   'usage.metric.totalTokens': 'Total tokens',
   'usage.metric.totalCost': 'Total cost',
@@ -260,7 +271,7 @@ export const usageEn = {
   'usage.granularity.cumulative': 'Cumulative',
   'usage.granularityLabel': 'Granularity',
 
-  'usage.trend.title': 'Daily token trend',
+  'usage.trend.title': 'Token trend',
   'usage.trend.tokens': 'Tokens',
   'usage.trend.requests': 'Requests',
   'usage.trend.empty': 'No data in the selected time range',
@@ -269,6 +280,8 @@ export const usageEn = {
   'usage.models.total': 'Total',
   'usage.models.others': 'Others',
   'usage.models.empty': 'No model usage in the selected time range',
+  'usage.models.requests': ({ count }: Params) => `${count} requests`,
+  'usage.models.legendLabel': 'Model legend',
 
   'usage.cost.title': 'Cost by model',
   'usage.cost.model': 'Model',

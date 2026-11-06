@@ -29,3 +29,11 @@ electron.vite.config.d.ts
 # 插件视图运行时的构建产物(react-core.js / ui.js / ui.css / view.js)。
 # `npm run dev` 与 `npm run build` 都会先跑一次生成,按 mtime 跳过无谓重建。
 resources/plugin-runtime/
+
+# 会话恢复工具落在仓库根的转录产物(`*.jsonl` / `*.md`)。
+# 需求:里面是**别的会话 / 别的仓库**的原文,可能带绝对路径、内网地址与第三方代码;
+# 它既不是本仓库的源码,也不该进发布包 —— electron-builder 的 `files` 是排除式的
+# (见 electron-builder.yml),漏一条就会跟着进 app.asar。
+# 不满足会怎样:一次裸 `git add -A` 就把整段第三方转录写进历史,想清掉只能改写历史。
+# 要把它当夹具用就放进带说明的 `src/**/__tests__/fixtures/`,别删这一行。
+recovered/

@@ -60,7 +60,17 @@ describe('dataMergeDecision', () => {
 })
 
 describe('cutoffForAge', () => {
-  it.each([3, 6, 12] as const)('按 %s 个日历月计算并保留时分秒', (months) => {
+  it('15d 按日历日回退 15 天并保留时分秒', () => {
+    const now = new Date(2026, 8, 5, 13, 14, 15, 123).getTime()
+    expect(new Date(cutoffForAge(now, '15d'))).toEqual(new Date(2026, 7, 21, 13, 14, 15, 123))
+  })
+
+  it('7d 按日历日回退 7 天并保留时分秒', () => {
+    const now = new Date(2026, 8, 5, 13, 14, 15, 123).getTime()
+    expect(new Date(cutoffForAge(now, '7d'))).toEqual(new Date(2026, 7, 29, 13, 14, 15, 123))
+  })
+
+  it.each([1, 3, 6, 12] as const)('按 %s 个日历月计算并保留时分秒', (months) => {
     const now = new Date(2026, 8, 5, 13, 14, 15, 123).getTime()
     const expected = new Date(2026, 8 - months, 5, 13, 14, 15, 123).getTime()
     expect(cutoffForAge(now, months)).toBe(expected)

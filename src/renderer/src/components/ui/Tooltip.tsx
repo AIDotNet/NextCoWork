@@ -22,6 +22,8 @@
  * ★ **延迟只加在「开」上,「关」是立刻。** 鼠标扫过一排元素时,50ms 的开启延迟
  *   让沿途的提示都不弹出来;而一旦移开就该马上消失 —— 关也加延迟的话,提示会
  *   黏在光标后面追着跑。
+ *   原先所有浮层都不可交互；现在仅账单类长内容可选 interactive，允许跨过间隙
+ *   进入可滚动卡片，其余浮层继续遵守移开立即关闭。
  */
 import { AnimatePresence, motion } from 'motion/react'
 import {
@@ -49,7 +51,8 @@ export function Tooltip({
   children,
   align = 'start',
   className,
-  contentClassName
+  contentClassName,
+  interactive = false
 }: {
   /** 提示体。给 `undefined` 就退化成纯粹的包裹层,不挂任何监听 */
   content: ReactNode
@@ -58,6 +61,8 @@ export function Tooltip({
   align?: 'start' | 'center'
   className?: string
   contentClassName?: string
+  /** 仅长内容滚动浮层启用；普通提示仍不可进入、移开即关。 */
+  interactive?: boolean
 }): ReactNode {
   const id = `tooltip-${useId()}`
   const scale = motionScale(useMotionLevel())
@@ -77,6 +82,13 @@ export function Tooltip({
     window.clearTimeout(timer.current)
     setOpen(false)
   }, [])
+  // 需求：长账单要能从触发器越过 8px 间隙进入浮层滚动；普通提示仍立即关闭。
+  const leaveAnchor = (): void => {
+    if (!interactive) return hide()
+    // 需求：经过费用读数但没停留 50ms 时，取消待开启的浮层与账目查询。
+    window.clearTimeout(timer.current)
+    if (open) timer.current = window.setTimeout(hide, 150)
+  }
 
   /*
     ★ 位置算在 `useLayoutEffect` 里 —— 浏览器绘制之前同步跑完,所以提示的第一帧
@@ -88,22 +100,32 @@ export function Tooltip({
   */
   useLayoutEffect(() => {
     if (!open) return setPos(null)
-    const anchor = anchorRef.current?.getBoundingClientRect()
-    const tip = tipRef.current?.getBoundingClientRect()
-    if (!anchor || !tip) return
+    const element = tipRef.current
+    if (element === null) return
+    const measure = (): void => {
+      const anchor = anchorRef.current?.getBoundingClientRect()
+      const tip = element.getBoundingClientRect()
+      if (anchor === undefined) return
 
-    // 上方放不下就翻到下方 —— 而不是硬塞进去被视口裁掉
-    const fitsAbove = anchor.top - tip.height - GAP >= EDGE
-    const placement: Placement = fitsAbove ? 'top' : 'bottom'
-    const top = fitsAbove ? anchor.top - tip.height - GAP : anchor.bottom + GAP
+      // 上方放不下就翻到下方 —— 而不是硬塞进去被视口裁掉
+      const fitsAbove = anchor.top - tip.height - GAP >= EDGE
+      const placement: Placement = fitsAbove ? 'top' : 'bottom'
+      const top = fitsAbove ? anchor.top - tip.height - GAP : anchor.bottom + GAP
 
-    const rawLeft = align === 'center' ? anchor.left + anchor.width / 2 - tip.width / 2 : anchor.left
-    // 夹回视口内。`Math.max` 放在外面:窗口窄到装不下提示时,宁可右边溢出
-    // 也要保证左边可见 —— 从左往右读,左边被切等于整条读不了
-    const left = Math.max(EDGE, Math.min(rawLeft, window.innerWidth - tip.width - EDGE))
-
-    setPos({ left, top, placement })
-  }, [open, align, content])
+      const rawLeft = align === 'center' ? anchor.left + anchor.width / 2 - tip.width / 2 : anchor.left
+      // 夹回视口内。`Math.max` 放在外面:窗口窄到装不下提示时,宁可右边溢出
+      // 也要保证左边可见 —— 从左往右读,左边被切等于整条读不了
+      const left = Math.max(EDGE, Math.min(rawLeft, window.innerWidth - tip.width - EDGE))
+      setPos((current) => current?.left === left && current.top === top && current.placement === placement
+        ? current : { left, top, placement })
+    }
+    measure()
+    // 需求：账目异步加载后卡片从一行变为多行，必须重测位置；否则会盖住输入框。
+    if (!interactive) return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [open, align, content, interactive])
 
   if (content === undefined || content === null) {
     return <span className={className}>{children}</span>
@@ -119,9 +141,12 @@ export function Tooltip({
         // 所以这里写 onFocus 就够 —— 但键盘触发要**立刻**显示,不走延迟:
         // 延迟是为了过滤「路过」,而 Tab 过去是明确的意图。
         onPointerEnter={() => show()}
-        onPointerLeave={hide}
+        onPointerLeave={leaveAnchor}
         onFocus={() => show(true)}
-        onBlur={hide}
+        onBlur={(event) => {
+          if (interactive && tipRef.current?.contains(event.relatedTarget as Node)) return
+          hide()
+        }}
         aria-describedby={open ? id : undefined}
       >
         {children}
@@ -134,6 +159,10 @@ export function Tooltip({
               id={id}
               ref={tipRef}
               role="tooltip"
+              tabIndex={interactive ? 0 : undefined}
+              onPointerEnter={interactive ? () => window.clearTimeout(timer.current) : undefined}
+              onPointerLeave={interactive ? hide : undefined}
+              onBlur={interactive ? hide : undefined}
               initial={{ opacity: 0, y: pos?.placement === 'bottom' ? -4 : 4, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
@@ -148,7 +177,8 @@ export function Tooltip({
                 // 「portal 到 body 的浮层被放进模态时的例外档」。提示挂在 body 上,
                 // 和 Dialog 是同级兄弟,同为 z-100 时谁后挂谁在上,顺序不可控;
                 // 抬到 150 才稳定压住弹窗。(`Select` 的 `inModal` 用的是同一档。)
-                'pointer-events-none fixed z-[150] w-max max-w-[min(360px,calc(100vw-48px))]',
+                'fixed z-[150] w-max max-w-[min(360px,calc(100vw-48px))]',
+                interactive ? 'pointer-events-auto' : 'pointer-events-none',
                 'rounded-card border border-stroke bg-surface-raised px-3 py-2',
                 'text-[11px] text-fg shadow-lg',
                 contentClassName

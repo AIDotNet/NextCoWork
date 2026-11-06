@@ -1,7 +1,8 @@
 /**
  * 判定调用 —— 一次**无工具、禁思考、只读对话**的旁路模型请求。
  *
- * 形状照抄 `agent-session.ts` 的 `createContextCheckpoint`（那条旁路调用已经验证过），
+ * 形状照抄压缩那条旁路调用（原先是 `agent-session.ts` 的 `createContextCheckpoint`，
+ * 上下文压缩重写后改叫 `kernel/compaction/compact.ts` 的 `summarizeOnce`；那条调用已经验证过），
  * 差别只在输出契约：这里要的是一个 `{ok, reason, impossible}` 的 JSON 结论。
  *
  * ★ 上游端口是**注入**的（`GoalEvaluatorPort`），不 import `getRouter()` ——
@@ -27,6 +28,8 @@ import type { ProviderStreamEvent } from '../../shared/agent/stream'
 import type { GoalVerdict } from '../../shared/domain/goal'
 import { parseGoalVerdict } from '../../shared/domain/goal'
 import type { ModelAlias } from '../../shared/domain/provider'
+import { auxiliaryThinkingLevel } from '../../shared/domain/model-runtime'
+import type { ThinkingLevel } from '../../shared/agent/run-request'
 import { PROMPT_HOOK_DEFAULT_TIMEOUT_MS } from '../../shared/domain/hook'
 import { userMessage } from '../../shared/agent/message'
 import { ulid } from '../../shared/util/id'
@@ -100,6 +103,19 @@ export async function evaluateGoal(input: EvaluateGoalInput): Promise<GoalVerdic
   if (input.signal.aborted) return { kind: 'skipped', reason: 'error' }
 
   const window = Math.min(alias.contextWindow ?? ASSUMED_LARGE_WINDOW, ASSUMED_LARGE_WINDOW)
+  /*
+    需求:判定器要的是一个 JSON 结论,能不思考就不思考(快、便宜)。但**不能硬发 `'off'`**:
+    `gpt-6-*` 这类 effort 模型的 `reasoningEfforts` 不含 `'none'`,`thinking-adapter` 会
+    直接抛「该模型不支持关闭推理」,router 把它包成不可重试的错 —— 表现是每个回合末的
+    判定全部 `skipped`,而用户看到的只是「目标永远判不出来」。
+    `auxiliaryThinkingLevel` 在关不掉的模型上降到最低可用档,绝不抛。
+    压缩、权限审核、会话标题四处共用这一个规则。
+  */
+  const wire = {
+    thinking: auxiliaryThinkingLevel('off', alias),
+    // 输出额度夹一次窗口:一个声明了极小窗口的条目上,1024 的输出本身就可能越界。
+    maxOutputTokens: Math.max(1, Math.min(MAX_OUTPUT_TOKENS, window))
+  }
 
   // ── 整个判定只有一个墙钟（含两次尝试）───────────────────────────────
   const controller = new AbortController()
@@ -118,8 +134,9 @@ export async function evaluateGoal(input: EvaluateGoalInput): Promise<GoalVerdic
       input,
       model,
       providerId,
-      transcriptBudget(window, TRANSCRIPT_BUDGET_RATIO, input.question),
-      control
+      transcriptBudget(window, TRANSCRIPT_BUDGET_RATIO, input.question, wire.maxOutputTokens),
+      control,
+      wire
     )
     if (first.kind !== 'retry_smaller') return first.verdict
     /*
@@ -135,8 +152,9 @@ export async function evaluateGoal(input: EvaluateGoalInput): Promise<GoalVerdic
       input,
       model,
       providerId,
-      transcriptBudget(window, TRANSCRIPT_RETRY_RATIO, input.question),
-      control
+      transcriptBudget(window, TRANSCRIPT_RETRY_RATIO, input.question, wire.maxOutputTokens),
+      control,
+      wire
     )
     return second.kind === 'retry_smaller' ? { kind: 'skipped', reason: 'error' } : second.verdict
   } finally {
@@ -152,9 +170,9 @@ export async function evaluateGoal(input: EvaluateGoalInput): Promise<GoalVerdic
  *   漏扣的那部分会以「上游报 context_length」的形式回来 —— 而那正好触发一次
  *   白白多打的上游请求。
  */
-function transcriptBudget(window: number, ratio: number, question: string): number {
+function transcriptBudget(window: number, ratio: number, question: string, maxOutputTokens: number): number {
   const reserved =
-    estimateTokens(GOAL_EVALUATOR_SYSTEM) + estimateTokens(question) + MAX_OUTPUT_TOKENS
+    estimateTokens(GOAL_EVALUATOR_SYSTEM) + estimateTokens(question) + maxOutputTokens
   return Math.max(0, Math.floor(window * ratio) - reserved)
 }
 
@@ -172,7 +190,9 @@ async function runOnce(
   model: string,
   providerId: string | undefined,
   budgetTokens: number,
-  control: AttemptControl
+  control: AttemptControl,
+  /** 这个判定模型能接受的档位与输出额度 —— 在 `evaluateGoal` 里算一次,两次尝试共用。 */
+  wire: { thinking: ThinkingLevel; maxOutputTokens: number }
 ): Promise<Attempt> {
   const now = input.now ?? ((): number => Date.now())
   const selection = selectTranscript(input.messages, budgetTokens)
@@ -194,8 +214,8 @@ async function runOnce(
     system: GOAL_EVALUATOR_SYSTEM,
     messages: [userMessage(ulid(now()), [{ type: 'text', text: prompt }], now())],
     tools: [],
-    maxOutputTokens: MAX_OUTPUT_TOKENS,
-    thinkingLevel: 'off'
+    maxOutputTokens: wire.maxOutputTokens,
+    thinkingLevel: wire.thinking
   }
 
   let text = ''

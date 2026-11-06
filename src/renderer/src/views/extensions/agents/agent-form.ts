@@ -11,6 +11,7 @@
 import type { AgentColor, AgentDraft } from '../../../../../shared/domain/agent-def'
 import { AGENT_NAME_RE, AGENT_TOOL_CHOICES, isAgentColor } from '../../../../../shared/domain/agent-def'
 export { AGENT_COLOR_HEX, agentColorHex } from '../../../../../shared/domain/agent-def'
+import { INHERIT_THINKING, isSubagentThinking } from '../../../../../shared/domain/subagent-thinking'
 import { readField, readListField, setField, setListField, type Frontmatter } from '../markdown/frontmatter-form'
 
 /**
@@ -35,6 +36,8 @@ export interface AgentForm {
    *   `fileFromForm` 会顺手把它删掉。
    */
   modelProviderId: string
+  /** `''` = 跟随「子代理思考深度」那一栏(文件里没有 `thinking:` 这一行)。 */
+  thinking: string
   /** `''` = 不标颜色。 */
   color: string
   toolsMode: 'all' | 'custom'
@@ -46,6 +49,7 @@ export interface AgentForm {
 export function formFromFile(name: string, fm: Frontmatter, body: string): AgentForm {
   const tools = readListField(fm, 'tools')
   const color = readField(fm, 'color').trim().toLowerCase()
+  const thinking = readField(fm, 'thinking').trim().toLowerCase()
   return {
     name,
     description: readField(fm, 'description'),
@@ -54,6 +58,9 @@ export function formFromFile(name: string, fm: Frontmatter, body: string): Agent
     modelProviderId: readField(fm, 'modelProviderId'),
     // 认不出的颜色当作没标 —— 同 `agent/load.ts`,它纯装饰,不该让表单显示一个空选项。
     color: isAgentColor(color) ? color : '',
+    // 同 `color`:认不出就当没写。`inherit` 不是合法的文件取值 —— 文件里的
+    // 「跟随」表达为没有这一行,所以这里也把它当作没写处理。
+    thinking: isSubagentThinking(thinking) && thinking !== INHERIT_THINKING ? thinking : '',
     toolsMode: tools.length > 0 ? 'custom' : 'all',
     // 文件里写的名字可能不在白名单里(比如 MCP 工具的全名),那些格子勾不出来,
     // 但也**不能丢** —— 丢了就是用户编辑一次就少了一个工具。留在这里由
@@ -77,6 +84,7 @@ export function fileFromForm(form: AgentForm, base: Frontmatter): { frontmatter:
   fm = setField(fm, 'model', model)
   // 选了「继承默认」就把锁一起删掉,不留一个孤零零的供应商。
   fm = setField(fm, 'modelProviderId', model === '' ? '' : form.modelProviderId.trim())
+  fm = setField(fm, 'thinking', form.thinking.trim())
   fm = setField(fm, 'color', form.color.trim())
   // ★ `all` 档**删掉** `tools` 键,而不是写一张全表:写全表的话,以后新增一个工具,
   //   这条子代理不会拿到它 —— 而用户当初选的是「默认全部」。

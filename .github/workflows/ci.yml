@@ -47,3 +47,67 @@ jobs:
 
       - name: Test release uploader
         run: npm run test:release
+
+      # 独立设备服务与自部署中转:不只是单元测试 —— 把构建产物当真实进程跑一遍
+      # (启动、邀请、单实例锁、SIGUSR2 排空、SIGHUP 重载、拒绝明文/root)。
+      - name: Test service build checks
+        run: npm run test:agent-build
+
+      - name: Build device service and relay
+        run: npm run build:agent && npm run build:relay
+
+      - name: Smoke-test the built service and relay
+        run: npm run smoke:agent
+
+      # 打成可独立部署的包,并在仓库之外真实安装依赖、启动一次(证明它不依赖仓库的 node_modules)。
+      - name: Package and verify the device service
+        run: npm run package:agent -- --verify
+
+  # 设备服务要在三个系统上常驻,不能只在 Ubuntu 上看绿灯。这里只跑服务链路相关的测试 + 构建,
+  # 不重复整仓质量检查(那在 quality 里)。
+  # ★ 三个系统都要列进来:质量检查确实跑在 Ubuntu 上,但「把构建产物当真实进程跑一遍」
+  #   (smoke:agent)只在 Linux 与 macOS 上跑,和 quality 那一步不是同一件事 —— Linux 正是一大票
+  #   用户自部署设备服务的目标机,少了它,Linux 上的信号、锁与安装路径只在单元测试里过一遍。
+  # ★ Windows 目前只作信息性检查(continue-on-error):服务链路从未在 Windows 上跑通过,
+  #   终端(PTY)、git、路径与信号相关用例可能需要先修;失败会显示在 PR 上但不挡合并。
+  #   在 Windows 上全部通过后,删掉这一行,让它变成必过。
+  #   smoke:agent 依赖 POSIX 信号,Windows 上自己跳过(见 scripts/agent-smoke.mjs)。
+  service-platforms:
+    name: Device service on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Test the service, transport, relay and migration paths
+        run: npx vitest run src/agent src/transport src/relay src/controller-client src/shared/device src/main/migration src/main/db
+
+      - name: Test service build checks
+        run: npm run test:agent-build
+
+      - name: Build device service and relay
+        run: npm run build:agent && npm run build:relay
+
+      # 脚本自己在 Windows 上跳过(信号),所以这里只需要判断「不是 Windows」。
+      - name: Smoke-test the built service and relay
+        if: runner.os != 'Windows'
+        run: npm run smoke:agent
+
+      - name: Package and verify the device service
+        run: npm run package:agent -- --verify

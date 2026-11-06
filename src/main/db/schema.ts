@@ -973,6 +973,425 @@ CREATE TABLE file_snapshots (
 );
 `
 
+/**
+ * 第 24 条：OAuth 供应商的**多账号**。
+ *
+ * ## 为了什么需求建的
+ *
+ * 订阅制的那几家(Codex / Kimi / GLM …)额度是按账号算的,一个账号被限流时
+ * 另一个账号的额度还在。在这张表之前,一家 provider 只有一个凭证槽,
+ * 「限流了自动换个号」在数据模型上表达不出来。
+ *
+ * ## ★★ 表里一个字节的密文都没有
+ *
+ * token 仍然只住 `credentials` 表(经 `host.secrets` 加解密、经
+ * `physicalCredentialRef` 做账户隔离)。把 access/refresh token 塞进这张业务表
+ * 会绕过整条加密边界,而症状是**没有症状**:功能照常跑,直到有人打开数据库文件。
+ * 这里存的是「哪个账号、排第几、停用没、限流到什么时候、额度快照」这些元数据,
+ * 密文由 `provider:<id>#<account_id>` 这个 ref 指过去。
+ *
+ * ## `is_current` 为什么和排序分开
+ *
+ * `sort_order` 决定**轮换时谁先上**,`is_current` 只决定「镜像回旧槽 `provider:<id>`
+ * 的是谁」和界面上那个「当前」标。合成一个字段的话,限流轮换到下一个账号时会把
+ * 用户显式设的「当前账号」悄悄改掉 —— 他会发现自己的选择莫名其妙变了,而他从没点过。
+ *
+ * ## 存量迁移为什么不在这条 SQL 里
+ *
+ * SQL 读不到密文,判不出 `provider:<id>` 那一行装的是 OAuth 凭证还是一把 API Key,
+ * 而把 API Key 供应商也迁成「账号」会让它的界面整个换成账号列表。迁移因此放在
+ * 主进程启动路径上的一次性 `ensureProviderAccountsSeeded()`(`db/provider-accounts.ts`),
+ * 幂等靠「这家已经有账号行就跳过」,不靠迁移版本号 —— 版本号管不到
+ * 「用户是升级之后才第一次登录的」这种情况。
+ */
+const V24_PROVIDER_ACCOUNTS = `
+CREATE TABLE provider_accounts (
+  id            TEXT PRIMARY KEY,
+  provider_id   TEXT NOT NULL,
+  issuer        TEXT NOT NULL,
+  label         TEXT,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  is_current    INTEGER NOT NULL DEFAULT 0,
+  -- ★★ 从密文里**反范式**出来的一个位:刷新被上游明确拒过(invalid_grant)。
+  -- 真值住在凭证 JSON 的 needsReauth 里,但「这一刻用哪个账号」发生在请求的
+  -- 热路径上、必须同步,而解密是异步的。不反范式的话,每选一次账号都要先解一次
+  -- 密文(四个并发子代理就是四次),且解密失败会让「选账号」这件事本身可能抛。
+  -- 写入点只有一处:ipc/provider-auth.ts 的 announce —— 凭证一变就跟着写这一列。
+  needs_reauth  INTEGER NOT NULL DEFAULT 0,
+  -- 限流闸门。四列同进同出:until 为 NULL 即「没被限流」,其余三列一并无意义
+  limit_until   INTEGER,
+  limit_since   INTEGER,
+  limit_source  TEXT,
+  limit_reason  TEXT,
+  -- ProviderQuotaSnapshot 的 JSON。只有 ChatGPT 那家会有值
+  quota_json    TEXT,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+-- 读路径只有一条:「这家的账号,按轮换顺序」。写多了索引只是给每次写多一棵 B 树
+CREATE INDEX provider_accounts_by_provider ON provider_accounts (provider_id, sort_order);
+`
+
+/**
+ * 第 25 条：压缩检查点记下「这一刀实际做了什么」。
+ *
+ * ## 需求
+ *
+ * 在此之前检查点只有 `note` 和一对 token 读数,于是界面上能说的只有「压缩了」三个字。
+ * 用户(和下一个接手的 agent)问的两个问题一个都答不上来:**哪些消息已经不再发给
+ * 模型**、**摘要到底读没读过它们**。后者尤其要命 —— digest 有 token 预算,超了会从
+ * 最早的一侧整条丢,而检查点原先一律把覆盖锚点写成转录的最后一条,于是那些没进
+ * 摘要的消息以「已覆盖」的身份被投影裁掉:既不在摘要里,也不在上下文里。
+ *
+ * ★ 一列 JSON 而不是七个平行列,同 `search_hits` 的先例:这些字段是**一起有、
+ * 一起没有**的一份事实,而且还会长(将来要加「哪几条被降级了」之类)。拆成列的话,
+ * 每加一个字段就是一次 ALTER TABLE,而读路径上它们从不作为查询条件。
+ *
+ * ★ 可空且**不回填**。老检查点无从知道自己丢过什么 —— 猜一个 0 会把「不知道」
+ * 谎报成「一条都没丢」,而界面对这两种必须有不同反应(见 `ContextCompactionDetail`)。
+ */
+const V25_CONTEXT_COMPACTION_DETAIL = `
+ALTER TABLE context_checkpoints ADD COLUMN detail TEXT;
+`
+
+/**
+ * 第 26 条：检查点表随上下文压缩重写一并退役。
+ *
+ * ## 需求
+ *
+ * 压缩按 Claude Code 的模型重写之后,「这段对话从哪里开始发给模型」由转录里的
+ * 一条边界消息回答(`compact_boundary` 块,见 `shared/agent/compaction.ts`),
+ * 不再由另一张表回答。两处并存就会出现「界面按检查点画线、请求却按边界切」
+ * 这类**零报错**的错位 —— 那正是上一版最难查的那一类 bug。
+ *
+ * ## 为什么是 DROP 而不是留着不读
+ *
+ * 留着的代价不是零:它有 `ON DELETE CASCADE` 外键、唯一约束和一条索引,
+ * 每一次 `deleteSession` / 导入合并都还在为它付账;更要紧的是,下一个人读到
+ * 建表语句会以为压缩状态住在这里。**没有读路径的表不是零成本,是一份会骗人的文档。**
+ *
+ * ★ 老检查点**不迁移**成边界消息。检查点记的是「窗口序号 + 一段笔记」,
+ * 而边界消息要的是摘要正文和压缩前后的真实读数 —— 前者推不出后者,硬造出来的
+ * 是一段编的摘要,而模型会当真。老会话因此退回「整段历史照发」,到阈值时
+ * 自动压缩会立刻给它建一条真的边界。这是明知的代价,换的是不撒谎。
+ *
+ * ★ `IF EXISTS`:V9 之前建库、又从没跑过 V9 的库不存在(迁移是顺序执行的),
+ * 但导入 / 合并路径上可能拿到一份缺表的库,而一次建表失败会让整个迁移事务回滚。
+ */
+const V26_DROP_CONTEXT_CHECKPOINTS = `
+DROP TABLE IF EXISTS context_checkpoints;
+`
+
+/**
+ * 第 27 条：其它设备同步来的使用统计。
+ *
+ * ## 需求
+ *
+ * 使用统计概览要合并同一账户下多台设备的数据（云同步 `usage` category，
+ * 见 `config-sync-usage-snapshot.ts`）。这两张表存的是**别的设备**的日汇总，
+ * 本机自己的仍在 `usage_daily`；请求日志（`usage_records`）不跨设备。
+ *
+ * ★ 不能并进 `usage_daily`：刷新器发现时区变了会 `DELETE FROM usage_daily` 整表重建
+ *   （`usage-rollup.ts`），远端数据混在里面会被一起清掉，而本机算不回来 ——
+ *   表现为换个时区之后其它设备的用量从图上消失，零报错。
+ * ★ 带 `account_id`：换账号登录后，上一个账号同步来的用量不能出现在这个账号的图上；
+ *   按账号隔离而不是直接删，是为了切回来时不用重新拉。
+ */
+const V27_USAGE_REMOTE = `
+CREATE TABLE usage_daily_remote (
+  account_id            TEXT NOT NULL,
+  -- 写入设备的 originId（那台机器的 ensureSyncDeviceId），一台设备一片
+  origin_id             TEXT NOT NULL,
+  day                   TEXT NOT NULL,
+  provider_id           TEXT NOT NULL,
+  provider_name         TEXT NOT NULL DEFAULT '',
+  upstream_model        TEXT NOT NULL,
+  alias                 TEXT NOT NULL DEFAULT '',
+  currency              TEXT NOT NULL DEFAULT '',
+  request_count         INTEGER NOT NULL DEFAULT 0,
+  success_count         INTEGER NOT NULL DEFAULT 0,
+  input_tokens          INTEGER NOT NULL DEFAULT 0,
+  output_tokens         INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens    INTEGER NOT NULL DEFAULT 0,
+  cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
+  thinking_tokens       INTEGER NOT NULL DEFAULT 0,
+  -- ★ 与 usage_daily 同义：NULL = 这一桶一条也算不出钱，不是 0
+  cost_micros           INTEGER,
+  priced_count          INTEGER NOT NULL DEFAULT 0,
+  latency_sum           INTEGER NOT NULL DEFAULT 0,
+  ttft_sum              INTEGER NOT NULL DEFAULT 0,
+  ttft_count            INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, origin_id, day, provider_id, upstream_model, currency)
+);
+CREATE INDEX usage_daily_remote_by_day ON usage_daily_remote (account_id, day);
+
+-- 每台远端设备一行：它自己算出的「最长一场聊天」（依赖 messages，本机替它算不了）。
+-- 行数本身也是「这个账号下有几台别的设备贡献了数据」的来源。
+CREATE TABLE usage_remote_origin (
+  account_id      TEXT NOT NULL,
+  origin_id       TEXT NOT NULL,
+  longest_chat_ms INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, origin_id)
+);
+`
+
+/**
+ * 第 28 条:视频生成任务。
+ *
+ * ★★ **这张表是后台视频生命周期的唯一真源**(见 shared/domain/video-generation.ts
+ * 的 `VideoJob`)。它必须落盘而不是只留在内存里,因为一个视频任务要跑几分钟,
+ * 而应用随时可能被退出、重启、切账户 —— 恢复查询全靠这里的上游任务身份。
+ *
+ * ★ 三处刻意的列选择,都按"查询形状"来(schema.ts 文件头那条规矩):
+ *   - `credential_fingerprint` **提成真列**:恢复前要按它筛"哪些任务还能用当前
+ *     凭据继续查",而那是恢复路径每一次启动都要跑的一次过滤;
+ *   - `cloud` / `retrieval` 也是真列:前者决定"还要不要轮询",后者决定
+ *     "云端成功了但文件没取回来"那条最容易被漏掉的分支;
+ *   - 其余整块塞进 `json`,因为它们永远是整行读写,没有按字段查的需求。
+ *
+ * ★★ **一个字节的视频都不进这张表**:只存上游 URL 与本地附件引用。
+ *   把 base64 视频写进 SQLite 会让库膨胀到几百兆,而那条库是每次启动都要打开的。
+ *
+ * ★ 外键指向 sessions:会话删了,它的任务行也跟着走(与 attachments 同规)。
+ *   但**云端任务不会被这行删除自动取消** —— 那件事由 manager 尽力而为,
+ *   且不能宣称"删了就等于退款"。
+ */
+const V28_VIDEO_JOBS = `
+CREATE TABLE video_generation_jobs (
+  id                     TEXT PRIMARY KEY,
+  session_id             TEXT REFERENCES sessions (id) ON DELETE CASCADE,
+  workspace_id           TEXT NOT NULL,
+  config_profile         TEXT NOT NULL,
+  cloud                  TEXT NOT NULL,
+  retrieval              TEXT NOT NULL,
+  credential_fingerprint TEXT,
+  upstream_id            TEXT,
+  created_at             INTEGER NOT NULL,
+  updated_at             INTEGER NOT NULL,
+  revision               INTEGER NOT NULL,
+  json                   TEXT NOT NULL
+);
+CREATE INDEX video_jobs_by_session ON video_generation_jobs (session_id, created_at DESC);
+CREATE INDEX video_jobs_by_recovery ON video_generation_jobs (cloud, retrieval, updated_at);
+`
+
+
+/**
+ * 第 32 条:控制端持久化基础 —— 控制端 UI 状态与推送**订阅登记**。
+ *
+ * ## 隔离键:为什么有 `controller_id`,没有 `client_session_id` / `binding_epoch`
+ *
+ * 两张表都用 `(device_id, data_epoch, config_scope, controller_id)`,这是刻意的:
+ *
+ * - ★ **有 `controller_id`**:同设备上多个控制端不能互相覆盖对方的草稿,
+ *   也不能互相改对方的订阅。网络入参里**没有** controllerId 这个字段 ——
+ *   它只由已认证连接的绑定得出(`DeviceRequestContext.binding`)。
+ * - ★ **没有 `client_session_id` / `binding_epoch`**:两者都是"这一次连接"的
+ *   控制端本地概念,重连就会变。放进键里的话,同一个控制端每重连一次就读不回
+ *   自己刚写的草稿、也要重新登记一次订阅 —— 而这两个功能的存在理由正是"重连后还在"。
+ * - `data_epoch` / `config_scope` 仍然在键里:换账号或数据恢复之后,旧作用域的行
+ *   不能被新作用域读到(`scopeEpoch` 已由 `data_epoch` 覆盖,见 `controller-state.ts` 头)。
+ *
+ * ## `device_notification_subscriptions.registration_ref` 是不透明引用
+ *
+ * ★ 它**不是** APNs / FCM 的 device token,也**不允许**是 URL 或任意收件地址:
+ *   写入口用 `registrationRefSchema` 约束形状(1..128 个 `[A-Za-z0-9_.-]`,首字符字母数字),
+ *   所以 `https://…` / `mailto:…` / `data:abc` 这类值进不了库。它只是将来安全存储 /
+ *   推送网关按引用取真 token 的句柄 —— 那张表因此没法被当成"往任意地址发消息"的地址簿。
+ *   形状合规只是"进得来",不是授权,更不是凭证。
+ *
+ * ★ 删除是**软删除**:`deleted` 列(第 33 条迁移追加)为 1 的行是墓碑,
+ *   读路径当它不存在,但 `revision` 继续 +1 —— 见 `V33_DEVICE_NOTIFICATION_TOMBSTONES`。
+ *
+ * ## 列的类型不通约
+ *
+ * - `device_controller_state.value` 是 `BLOB NOT NULL`,存的是 msgpack 编码的
+ *   `DeviceValue`(`shared/device/codec.ts`)—— 与 `device_events.data` 同一个约定。
+ *   空值存成 1 字节的 `nil`,**不会**退化成 SQL NULL,所以"清空"与"没有这一行"
+ *   在结构上就分得开。
+ * - `enabled` 是 `INTEGER`:0/1 的来自控制端的布尔位,不是三态。
+ * - 两张表的 `revision` 都是"控制端 CAS 用的版本",从 1 起,每次成功写入 +1
+ *   (`expectedRevision` 首次要求 0)—— 版本管理在访问器里,不在 SQL 里。
+ *
+ * ## 为什么没有外键
+ *
+ * 这两张表属于**设备账号作用域**,不是某条会话/某个 provider 的从属行;
+ * 仓里也没有一张"设备"表可以引用(设备身份来自传输层认证,不是本地行)。
+ * 级联删除因此不存在 —— 清账号作用域要靠 `data_epoch` / `config_scope` 换键,
+ * 这正是把它们放进主键的原因。
+ */
+const V32_DEVICE_CONTROLLER_STATE = `
+CREATE TABLE device_controller_state (
+  device_id     TEXT NOT NULL,
+  data_epoch    TEXT NOT NULL,
+  config_scope  TEXT NOT NULL,
+  controller_id TEXT NOT NULL,
+  -- 控制端自己编的稳定视图键(renderer 草稿布局等),名字复用 deviceIdSchema 的形状约束
+  view_key      TEXT NOT NULL,
+  revision      INTEGER NOT NULL,
+  -- msgpack 编码的 DeviceValue;空值是一个字节的 nil,不是 NULL
+  value         BLOB NOT NULL,
+  updated_at    INTEGER,
+  PRIMARY KEY (device_id, data_epoch, config_scope, controller_id, view_key)
+);
+
+-- 一个控制端只有一条推送订阅登记,所以 controller_id 之后没有第二个维度。
+-- registration_ref 是不透明引用(见文件头),platform 是投递侧的稳定枚举。
+CREATE TABLE device_notification_subscriptions (
+  device_id        TEXT NOT NULL,
+  data_epoch       TEXT NOT NULL,
+  config_scope     TEXT NOT NULL,
+  controller_id    TEXT NOT NULL,
+  registration_ref TEXT NOT NULL,
+  platform         TEXT NOT NULL CHECK(platform IN ('ios','android')),
+  enabled          INTEGER,
+  revision         INTEGER,
+  updated_at       INTEGER,
+  PRIMARY KEY (device_id, data_epoch, config_scope, controller_id)
+);
+`
+
+/**
+ * 第 33 条:推送订阅的**墓碑**。
+ *
+ * ## 需求:删除再创建不能把版本打回 1
+ *
+ * 第 32 条里删除是真删行。于是同一个控制端"建 → 删 → 再建"会拿到一条
+ * `revision` 又从 1 开始的新行 —— 这正是 ABA:控制端以为自己在建版本 1,
+ * 而**旧的版本 1 指令可能还在路上**,迟到之后它照样能改这条新行。
+ *
+ * ## 做法:软删除,版本只增不减
+ *
+ * `deleted=1` 的行是墓碑,读路径一律当它不存在(`getNotificationSubscription` → `null`),
+ * 但**行还在**,`revision` 跟着墓碑一起继续 +1。重新登记时必须 `expectedRevision === 0`,
+ * 却沿用墓碑的 `revision + 1`(不回到 1)—— 于是"旧 active 版本"的迟到更新 / 删除
+ * 在新行上必然是 `conflict`。
+ *
+ * ★ 软删除时 `registration_ref` 置空串:墓碑不是"往哪台设备推"的句柄,留着等于把
+ *   已注销的登记引用继续留在库里。`enabled` 也归 0。
+ *
+ * ★ `deleted` 加 `CHECK(deleted IN (0,1))`:0 / 1 两位,不是三态。
+ *
+ * ★ **不重写第 32 条**:那条迁移已经发布过,改它会让升过级的库和新装出来的库长得
+ *   不一样。默认值 0 也是既有行的正确回填 —— 加这列之前不可能有墓碑。
+ */
+const V33_DEVICE_NOTIFICATION_TOMBSTONES = `
+ALTER TABLE device_notification_subscriptions ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1));
+`
+
+/**
+ * 第 34 条:已提交的用户输入**回执**。
+ *
+ * ## 记的是什么
+ *
+ * 一条 user 消息一落进 `messages`,它就已经被**消费**过了 —— 定时的任务队列、
+ * 插话队列、重试路径都可能再看见同一份输入,而它们该看的判据只有这一个:
+ * 「这条消息有没有已经提交过」。所以这里一行 = 一次已提交的输入,
+ * 主键 `(session_id, message_id)` 让重复提交天然幂等。
+ *
+ * ## 为什么**不**引用 `messages(id)`
+ *
+ * ★★ 这是这条迁移唯一需要想清楚的地方。加 `REFERENCES messages(id) ON DELETE CASCADE`
+ * 看起来更严,而它**恰好会把这条回执的意义消掉**:转录压缩、编辑历史、删除某几条
+ * 消息都会把 `messages` 行带走,级联一到,回执跟着消失 —— 于是那条输入重新变成
+ * 「没提交过」,在重启或下一轮队列清理之后被**再执行一次**。
+ * 用户看到的是「同一句话发了两遍,模型答了两遍」,而库里没有任何痕迹指向这里。
+ *
+ * 所以 `message_id` 是一个**裸 id**,不是外键。孤儿行是这个设计的一部分:
+ * 消费这件事发生过,就不因为正文后来被删掉而没发生过。
+ *
+ * 真正需要级联的只有**会话整体被删**(用户删对话、按时长清理)—— 那时这行回执
+ * 也只是垃圾,所以 `session_id` 保留对 `sessions(id)` 的外键 + `ON DELETE CASCADE`。
+ *
+ * ## 为什么回填旧消息
+ *
+ * 升级之前已经提交过的 user 消息同样是已消费的输入。不回填的话,升级后第一次
+ * 重启就会把它们当成「还没提交」再执行一遍 —— 而这个 bug 只在升级路径上出现,
+ * 新装的库一辈子都测不出来。
+ */
+const V34_SESSION_INPUT_RECEIPTS = `
+CREATE TABLE session_input_receipts (
+  -- 有外键:会话整体被删时这些回执也只是垃圾,跟着走
+  session_id   TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  -- ★ 裸 id,**没有**外键 —— 见上面那段:转录压缩/删除不能抹掉消费事实
+  message_id   TEXT NOT NULL,
+  committed_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);
+
+-- 回填:第 34 条之前提交过的 user 消息全都是已消费的输入。
+-- 这里能安全地 SELECT messages —— 迁移跑的这一刻它们还在。
+INSERT OR IGNORE INTO session_input_receipts (session_id, message_id, committed_at)
+  SELECT session_id, id, created_at FROM messages WHERE role = 'user';
+`
+
+/**
+ * 设备信任记录:已配对的控制端与一次性邀请。
+ *
+ * ★ 邀请只存 sha256(token),**不存明文** —— 库文件被拷走也换不出可用邀请。
+ * ★ 控制端被撤销后保留行(`revoked_at`),不是删除:指纹列 UNIQUE,所以同一把
+ *   密钥不能悄悄重新配对,撤销之后必须换新密钥。
+ */
+const V35_DEVICE_TRUST = `
+CREATE TABLE device_controllers (
+  controller_id      TEXT PRIMARY KEY,
+  fingerprint_sha256 TEXT NOT NULL UNIQUE CHECK (length(fingerprint_sha256) = 64),
+  label              TEXT NOT NULL,
+  paired_at          INTEGER NOT NULL,
+  revoked_at         INTEGER
+);
+
+CREATE TABLE device_enrollments (
+  token_hash  TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  consumed_at INTEGER,
+  consumed_by TEXT
+);
+CREATE INDEX idx_device_enrollments_expiry ON device_enrollments (expires_at);
+`
+
+/**
+ * 服务接管标记:这份数据根已经被独立设备服务接管(原地,不复制)。
+ *
+ * 单行表(`id = 1`)。只**追加**:不改动任何旧表。它同时是「旧桌面共用迁移后数据不受支持」
+ * 的依据 —— 新版本据此拒绝在没有明确确认的情况下回退到旧布局。
+ */
+const V36_SERVICE_OWNERSHIP = `
+CREATE TABLE service_ownership (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  device_id      TEXT NOT NULL,
+  journal_id     TEXT NOT NULL,
+  backup_ref     TEXT NOT NULL,
+  taken_over_at  INTEGER NOT NULL
+);
+`
+
+/**
+ * FTS 行的 rowid 映射。为什么需要它,见 `message-text.ts` 里「FTS 行一律按 rowid 增删改」。
+ *
+ * 从现有 FTS 行补齐映射,不重新分词:重建 21 万条消息要把近 1 GB 正文重新解析一遍,
+ * 而这里只需读一遍 FTS 内容表。
+ *
+ * - 同一 message_id 有多行时(旧写法下理论上不会,但不信任它)保留 rowid 最大的那行,
+ *   也就是最近写入的那行;其余行没有映射,由最后一条 DELETE 收掉。
+ * - 消息已经不在 `messages` 里的幽灵行一并清掉。
+ */
+const V37_MESSAGE_FTS_ROWID = `
+CREATE TABLE messages_fts_rowid (
+  fts_rowid   INTEGER PRIMARY KEY,
+  message_id  TEXT NOT NULL UNIQUE,
+  session_id  TEXT NOT NULL
+);
+INSERT OR IGNORE INTO messages_fts_rowid (fts_rowid, message_id, session_id)
+  SELECT rowid, message_id, session_id FROM messages_fts ORDER BY rowid DESC;
+DELETE FROM messages_fts_rowid WHERE message_id NOT IN (SELECT id FROM messages);
+DELETE FROM messages_fts WHERE rowid NOT IN (SELECT fts_rowid FROM messages_fts_rowid);
+CREATE INDEX messages_fts_rowid_by_session ON messages_fts_rowid (session_id);
+`
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'core', sql: V1_CORE },
   { version: 2, name: 'connections', sql: V2_CONNECTIONS },
@@ -999,4 +1418,69 @@ export const MIGRATIONS: readonly Migration[] = [
   ,{ version: 21, name: 'import-scan-cache', sql: V21_IMPORT_SCAN_CACHE }
   ,{ version: 22, name: 'config-profiles', sql: V22_CONFIG_PROFILES }
   ,{ version: 23, name: 'file-changes', sql: V23_FILE_CHANGES }
+  ,{ version: 24, name: 'provider-accounts', sql: V24_PROVIDER_ACCOUNTS }
+  ,{ version: 25, name: 'context-compaction-detail', sql: V25_CONTEXT_COMPACTION_DETAIL }
+  ,{ version: 26, name: 'drop-context-checkpoints', sql: V26_DROP_CONTEXT_CHECKPOINTS }
+  ,{ version: 27, name: 'usage-remote', sql: V27_USAGE_REMOTE }
+  ,{ version: 28, name: 'video-jobs', sql: V28_VIDEO_JOBS }
+  // 正文提取在 index.ts 中与正常写入共用，迁移与重建在同一事务内。
+  ,{ version: 29, name: 'rebuild-message-search', sql: 'DELETE FROM messages_fts;' }
+  ,{ version: 30, name: 'device-command-receipts', sql: `
+CREATE TABLE device_commands (
+  device_id TEXT NOT NULL,
+  data_epoch TEXT NOT NULL,
+  config_scope TEXT NOT NULL,
+  controller_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  method TEXT NOT NULL,
+  params_digest TEXT NOT NULL,
+  operation_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK(status IN ('accepting','accepted','running','succeeded','failed','unknown','interrupted')),
+  result BLOB,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (device_id, data_epoch, config_scope, controller_id, idempotency_key)
+);
+CREATE TABLE device_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT NOT NULL,
+  data_epoch TEXT NOT NULL,
+  config_scope TEXT NOT NULL,
+  controller_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  data BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX device_events_by_scope ON device_events(device_id, data_epoch, config_scope, controller_id, seq);
+` }
+  ,{ version: 31, name: 'device-interactions', sql: `
+CREATE TABLE device_interactions (
+  device_id TEXT NOT NULL,
+  data_epoch TEXT NOT NULL,
+  config_scope TEXT NOT NULL,
+  id TEXT NOT NULL,
+  scope_epoch TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('permission','question','plan','plugin','goal')),
+  payload BLOB NOT NULL,
+  payload_digest TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','resolved','cancelled')),
+  answer BLOB,
+  resolved_by TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  PRIMARY KEY (device_id, data_epoch, config_scope, id)
+);
+-- 待决列表按状态扫描,再按时间排;账号代际和 run 各留一条,便于恢复时局部收敛。
+CREATE INDEX device_interactions_by_status ON device_interactions(device_id, data_epoch, config_scope, status, created_at);
+CREATE INDEX device_interactions_by_account ON device_interactions(device_id, data_epoch, config_scope, scope_epoch, created_at);
+CREATE INDEX device_interactions_by_run ON device_interactions(device_id, data_epoch, config_scope, run_id, created_at);
+` }
+  ,{ version: 32, name: 'device-controller-state', sql: V32_DEVICE_CONTROLLER_STATE }
+  ,{ version: 33, name: 'device-notification-tombstones', sql: V33_DEVICE_NOTIFICATION_TOMBSTONES }
+  ,{ version: 34, name: 'session-input-receipts', sql: V34_SESSION_INPUT_RECEIPTS }
+  ,{ version: 35, name: 'device-trust', sql: V35_DEVICE_TRUST }
+  ,{ version: 36, name: 'service-ownership', sql: V36_SERVICE_OWNERSHIP }
+  ,{ version: 37, name: 'message-fts-rowid', sql: V37_MESSAGE_FTS_ROWID }
 ]

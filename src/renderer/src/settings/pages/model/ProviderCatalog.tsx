@@ -21,11 +21,11 @@ import {
 } from "../../../../../shared/domain/provider";
 import type { ImportSourceKind } from "../../../../../shared/domain/import";
 import type { ImportableProvider } from "../../../../../shared/domain/provider-import";
-import { Button } from "../../../components/ui/Button";
-import { EmptyState } from "../../../components/ui/EmptyState";
-import { Segmented } from "../../../components/ui/Segmented";
+import { Button } from "../../../components/arc/button/button";
+import { EmptyState } from "../../../components/arc/empty-state/empty-state";
+import SegmentedControl from "../../../components/arc/segmented-control/segmented-control";
 import { TextInput } from "../../../components/ui/TextInput";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { cn } from "../../../lib/cn";
 import { openExternal } from "../../../services/app";
 import { upsertProvider, setProviderAliases, listImportableProviders } from "../../../services/provider";
@@ -133,7 +133,7 @@ export function ProviderCatalog({
             onClick={() => setView("catalog")}
             className={cn(
               "app-no-drag flex size-6 shrink-0 items-center justify-center",
-              "rounded-[7px] text-icon transition-colors hover:bg-tint hover:text-fg",
+              "rounded-[8px] text-icon transition-colors hover:bg-tint hover:text-fg",
             )}
           >
             <ArrowLeft size={14} />
@@ -152,7 +152,7 @@ export function ProviderCatalog({
           onClick={onClose}
           className={cn(
             "app-no-drag flex size-6 shrink-0 items-center justify-center",
-            "rounded-[7px] text-icon transition-colors hover:bg-tint hover:text-fg",
+            "rounded-[8px] text-icon transition-colors hover:bg-tint hover:text-fg",
           )}
         >
           <X size={14} />
@@ -170,12 +170,11 @@ export function ProviderCatalog({
           </p>
 
           <div className="flex items-center gap-3 pb-3">
-            <Segmented
-              size="sm"
+            <SegmentedControl
               label={t("models.providerCategory")}
               value={tab}
-              onChange={(v) => {
-                setTab(v);
+              onValueChange={(v) => {
+                setTab(v as CatalogTab);
                 setQuery("");
               }}
               options={CATALOG_TABS.map((t) => ({
@@ -205,7 +204,7 @@ export function ProviderCatalog({
             <EmptyState
               icon={<Search size={20} />}
               title={t("models.noProviderMatch")}
-              hint={t("models.providerSearchHint")}
+              description={t("models.providerSearchHint")}
               className="py-10"
             />
           ) : (
@@ -249,7 +248,7 @@ function CustomProviderCard({ onOpen }: { onOpen: () => void }): ReactNode {
       type="button"
       onClick={onOpen}
       className={cn(
-        "app-no-drag min-w-0 rounded-[9px] border border-border bg-canvas px-2.5 py-2 text-left",
+        "app-no-drag min-w-0 rounded-[8px] border border-border bg-canvas px-2.5 py-2 text-left",
         "transition-colors hover:bg-tint/60",
       )}
     >
@@ -292,7 +291,7 @@ function ImportFromAppsCard({ onOpen }: { onOpen: () => void }): ReactNode {
       type="button"
       onClick={onOpen}
       className={cn(
-        "app-no-drag min-w-0 rounded-[9px] border border-border bg-canvas px-2.5 py-2 text-left",
+        "app-no-drag min-w-0 rounded-[8px] border border-border bg-canvas px-2.5 py-2 text-left",
         "transition-colors hover:bg-tint/60",
       )}
     >
@@ -421,11 +420,10 @@ function ImportProvidersForm({
         {t("models.importProvidersHint")}
       </p>
 
-      <Segmented
-        size="sm"
+      <SegmentedControl
         label={t("import.fromOtherApps")}
         value={sourceKind}
-        onChange={(v) => setSourceKind(v)}
+        onValueChange={(v) => setSourceKind(v as ImportSourceKind)}
         options={IMPORT_SOURCES.map((s) => ({ value: s.kind, label: t(s.labelKey) }))}
       />
 
@@ -444,14 +442,14 @@ function ImportProvidersForm({
         <EmptyState
           icon={<PackageOpen size={20} />}
           title={t("models.importSourceNotFound")}
-          hint={t("models.importSourceNotFoundHint")}
+          description={t("models.importSourceNotFoundHint")}
           className="py-10"
         />
       ) : (items ?? []).length === 0 ? (
         <EmptyState
           icon={<PackageOpen size={20} />}
           title={t("models.importNoProviders")}
-          hint={t("models.importNoProvidersHint")}
+          description={t("models.importNoProvidersHint")}
           className="py-10"
         />
       ) : (
@@ -466,7 +464,7 @@ function ImportProvidersForm({
                 disabled={!selectable}
                 onClick={() => toggle(p.sourceKey)}
                 className={cn(
-                  "app-no-drag flex w-full min-w-0 items-start gap-2.5 rounded-[9px] border px-2.5 py-2 text-left transition-colors",
+                  "app-no-drag flex w-full min-w-0 items-start gap-2.5 rounded-[8px] border px-2.5 py-2 text-left transition-colors",
                   selectable ? "border-border hover:bg-tint/60" : "border-hairline opacity-60",
                   active && selectable && "border-accent bg-accent/5",
                 )}
@@ -507,13 +505,13 @@ function ImportProvidersForm({
       )}
 
       <div className="flex items-center justify-end gap-2 border-t border-hairline pt-3">
-        <Button
-          size="sm"
-          variant="accent"
+        <Button size="sm"
+          type="button"
+          variant="primary"
           disabled={busy || loading || chosen.length === 0}
-          icon={busy ? <Spinner size="sm" /> : undefined}
           onClick={runImport}
         >
+          {busy ? <Spinner size="sm" /> : undefined}
           {t("models.importSelected", { count: chosen.length })}
         </Button>
       </div>
@@ -632,17 +630,17 @@ function CustomProviderForm({
       </Field>
 
       <Field label={t("provider.apiFormat")}>
-        <Segmented
-          size="sm"
-          label={t("provider.apiFormat")}
-          value={family}
-          onChange={setFamily}
-          disabled={busy}
-          options={[
-            { value: "openai", label: t("provider.openaiFormat") },
-            { value: "anthropic", label: t("provider.anthropicFormat") },
-          ]}
-        />
+        <fieldset disabled={busy} className="contents">
+          <SegmentedControl
+            label={t("provider.apiFormat")}
+            value={family}
+            onValueChange={(v) => setFamily(v as ProtocolFamily)}
+            options={[
+              { value: "openai", label: t("provider.openaiFormat") },
+              { value: "anthropic", label: t("provider.anthropicFormat") },
+            ]}
+          />
+        </fieldset>
         {/* ★ Responses 只在 OpenAI 族下出现,状态**留着** —— 用户切回来希望它还是原样
             (`joinProtocol` 在 anthropic 下会忽略它,那是正常交互的中间态,不是非法值) */}
         {family === "openai" && (
@@ -650,10 +648,10 @@ function CustomProviderForm({
             <span className="min-w-0 text-[12.5px] text-fg-muted">
               {t("provider.responsesApi")}
             </span>
-            <Toggle
+            <Switch
               checked={responses}
-              onChange={setResponses}
-              label={t("provider.responsesApi")}
+              onCheckedChange={setResponses}
+              aria-label={t("provider.responsesApi")}
               disabled={busy}
             />
           </label>
@@ -668,13 +666,13 @@ function CustomProviderForm({
         <p className="min-w-0 flex-1 text-[11.5px] leading-[1.6] text-fg-faint">
           {t("models.customProviderKeyHint")}
         </p>
-        <Button
-          size="sm"
-          variant="accent"
+        <Button size="sm"
+          type="button"
+          variant="primary"
           disabled={busy}
-          icon={busy ? <Spinner size="xs" /> : <Plus size={12} />}
           onClick={submit}
         >
+          {busy ? <Spinner size="xs" /> : <Plus size={12} />}
           {t("common.add")}
         </Button>
       </div>
@@ -747,7 +745,7 @@ function PresetCard({
   return (
     <div
       title={detailTooltip(p, rows)}
-      className="min-w-0 rounded-[9px] border border-border bg-canvas px-2.5 py-2"
+      className="min-w-0 rounded-[8px] border border-border bg-canvas px-2.5 py-2"
     >
       <div className="flex items-center gap-1.5">
         <ProviderAvatar name={p.name} id={p.id} size="sm" />

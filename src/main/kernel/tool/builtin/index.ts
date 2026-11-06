@@ -25,6 +25,7 @@ import { editTool, lsTool, readTool, writeTool } from './fs'
 import { globTool, grepTool } from './search'
 import { skillTool } from './skill'
 import { taskTool } from './task'
+import { workflowTool } from './workflow'
 import { todoWriteTool } from './todo'
 import { webFetchTool } from './web'
 import { webSearchTool } from './web-search'
@@ -33,7 +34,11 @@ import { askUserTool } from './interaction'
 import { proposeGoalTool } from './goal'
 import { scheduledTaskTools } from './scheduled'
 import { enterPlanModeTool, exitPlanModeTool } from './plan-file'
-import { visualizeReadMeTool, visualizeShowWidgetTool } from './visualize'
+import { visualizeEditWidgetTool, visualizeReadMeTool, visualizeShowWidgetTool, visualizeUpdateWidgetTool } from './visualize'
+import { generateImageTool } from './image'
+import { saveImageTool } from './save-image'
+import { generateVideoTool } from './video'
+import { saveVideoTool } from './save-video'
 
 /**
  * 代码里写死的那一批。**只有这张表保证顺序**(见文件头 echo 那条),
@@ -66,13 +71,45 @@ function coreTools(): ToolRegistration[] {
     // 它们和 `EnterPlanMode` 一样属于"改变这一轮怎么表达"的工具,不是文件操作。
     visualizeReadMeTool,
     visualizeShowWidgetTool,
+    visualizeEditWidgetTool,
+    visualizeUpdateWidgetTool,
+    /*
+      对话内生图。跟在可视化那对后面:同属「这一轮产出一张给人看的东西」的工具,
+      不是文件操作。顺序上仍然只有 echo 那条约束(见文件头)。
+      ★ 它有自己的 `isEnabled`(没配生图模型就整体不下发),见 `image.ts` 文件头。
+    */
+    generateImageTool,
+    /*
+      把对话里的图(用户附件 / 生成图的 `ncw://` 地址)写进工作区。紧跟生图:
+      它是「画完之后存下来」那一步。顺序上仍然只有 echo 那条约束(见文件头)。
+      ★ 它也有自己的 `isEnabled`(宿主写不了二进制就不下发),见 `save-image.ts` 文件头。
+    */
+    saveImageTool,
+    /*
+      对话内生成视频。紧跟生图那一对:同属「这一轮产出一个给人看的东西」。
+      ★ 与生图不同的是它**异步** —— 提交返回的是任务回执,成品由后台 worker
+      落成本会话附件(见 kernel/video-gen.ts 与 video-generation/manager.ts)。
+      ★ 它有**自己**的 `isEnabled`(没配视频模型就不下发)。
+    */
+    generateVideoTool,
+    /*
+      把对话里的视频写进工作区。紧跟生成视频 —— 它是「生成完之后存下来」那一步。
+      ★ 它写的是**流**(几十到几百兆),所以要求宿主有 `writeStream`;
+      宿主没有时整体不下发。见 save-video.ts 文件头。
+    */
+    saveVideoTool,
     /*
       ★ `Task` 是唯一一个**每次现造**的内置工具:它的 description 里逐字带着
       当前可用的子代理清单(照搬 CC),而那份清单会随目录重扫而变。
       `runtime.ts` 在每次 run 之前会用新的清单再 `register()` 一次 ——
       注册表按 internalId 幂等替换且保住 externalName,所以历史转录不会失配。
     */
-    taskTool()
+    taskTool(),
+    /*
+      把多个子代理编排成依赖图并行执行。紧跟 `Task`:它就是「一次派好几个、还管先后」的那一个。
+      ★ 实验功能,有自己的 `isEnabled`(设置 › 实验 › Workflow,出厂关闭)。
+    */
+    workflowTool
   ]
 }
 
@@ -138,7 +175,11 @@ export { todoWriteTool } from './todo'
 export { webFetchTool } from './web'
 export { webSearchTool } from './web-search'
 export { browserTools } from './browser'
-export { visualizeReadMeTool, visualizeShowWidgetTool } from './visualize'
+export { visualizeEditWidgetTool, visualizeReadMeTool, visualizeShowWidgetTool, visualizeUpdateWidgetTool } from './visualize'
+export { generateImageTool } from './image'
+export { saveImageTool } from './save-image'
+export { generateVideoTool } from './video'
+export { saveVideoTool } from './save-video'
 export {
   AVAILABLE_MODULES as VISUALIZE_MODULES,
   getGuidelines as visualizeGuidelines,

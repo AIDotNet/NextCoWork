@@ -1,5 +1,5 @@
 import type { BuiltinModelRecord } from '../types'
-import { model, textCapabilities, visionCapabilities, toggleThinking, effortThinking, budgetThinking, efforts, source } from '../helpers'
+import { model, textCapabilities, visionCapabilities, toggleThinking, effortThinking, budgetThinking, efforts, source , videoCapabilities } from '../helpers'
 
 export const ZHIPU: readonly BuiltinModelRecord[] = [
   /*
@@ -168,5 +168,37 @@ export const ZHIPU: readonly BuiltinModelRecord[] = [
   model('zhipu', 'glm-z1-air', 'GLM-Z1-Air', {
     capabilities: textCapabilities({ thinking: true }),
     thinkingConfig: budgetThinking('thinking.budget_tokens', 16_384),
+  }),
+  /*
+   * 需求:视频档案表按目录型号查绑定。CogVideoX 走 `/api/paas/v4/videos/generations`
+   * (异步),Vidu 系是智谱**托管**的第三方型号,参数与 CogVideoX 完全不同 ——
+   * 所以是两条 profile。
+   * ★ 视频走**按量 API**,Coding Plan 的额度不包含它;目录里可见不代表订阅能用。
+   */
+  model('zhipu', 'cogvideox-3', 'CogVideoX-3', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+    source: { url: 'https://docs.bigmodel.cn/cn/guide/models/video-generation/cogvideox-3', fetchedAt: '2026-10-05' },
+    verificationStatus: 'official-api',
+  }),
+  model('zhipu', 'cogvideox-2', 'CogVideoX-2', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+  }),
+  model('zhipu', 'cogvideox-flash', 'CogVideoX-Flash', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+  }),
+  model('zhipu', 'viduq1-text', 'Vidu Q1 文生视频', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+  }),
+  model('zhipu', 'viduq1-image', 'Vidu Q1 图生视频', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
+  }),
+  model('zhipu', 'viduq1-start-end', 'Vidu Q1 首尾帧', {
+    modality: 'video',
+    capabilities: videoCapabilities(),
   }),
 ]

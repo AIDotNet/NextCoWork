@@ -29,6 +29,30 @@ function deny(reason: string): { ok: false; reason: string } {
 export const MAX_PLUGIN_FILE_BYTES = 8 * 1024 * 1024
 
 /**
+ * 一次 `net.fetch` 能读回的**字节**上限。
+ *
+ * ★ 与 `MAX_PLUGIN_FILE_BYTES` 同量级,但**不是同一件事**:那个是插件一次读写
+ * 的预算,这个是「宿主替它收一条响应」的预算。定成一个数是因为两者都对着同一个
+ * 失败形态 —— 主进程替第三方把一整个响应读进内存。
+ *
+ * ★ 计数单位是**字节**,不是字符。旧实现拿 `text.length` 截,一个多字节字符算
+ * 一个,于是「8MB 上限」在中文页面上实际能放进 24MB 内存。
+ */
+export const MAX_NET_RESPONSE_BYTES = 8 * 1024 * 1024
+
+/**
+ * 一次 `net.fetch` 最多跟几跳重定向。
+ *
+ * ★ 有了上限,「跳到哪里去」才是一个有限集合,每一次跳转也才有机会各过一道
+ * `narrowFetchUrl`。没有上限的话,一个重定向环就能把主进程挂在那里反复请求。
+ */
+export const MAX_NET_REDIRECTS = 5
+
+/** 响应头的条数与单条长度上限 —— 同 `sanitizeHeaders` 的立场:头也是不可信输入。 */
+export const MAX_NET_HEADER_COUNT = 64
+export const MAX_NET_HEADER_VALUE_BYTES = 4096
+
+/**
  * 工作区内的相对路径 → 绝对路径。
  *
  * ★ 入参**只接受相对路径**。接受绝对路径意味着每一次调用都要判断
@@ -103,6 +127,32 @@ export function narrowCommand(
   return { ok: true, value: { command: stem, args: [...args] } }
 }
 
+/**
+ * `tabs.openTerminal` 的 env 门。**只做形状与体量**,不做语义:
+ * 插件往子进程环境里写什么(`ANTHROPIC_BASE_URL` 之类)是它自己的事,
+ * 这一层拦的是「借环境变量夹带」—— 上百个键、几 MB 的值,或者拿环境变量
+ * 当一条隐蔽的 IPC 通道用。
+ *
+ * ★ 键名必须长得像环境变量名:宿主要把它们合进 pty 子进程的 env
+ * (`{ ...process.env, ...env }`),带 `=`、空格或空串的键在 POSIX 上不可设,
+ * 在 Windows 的进程块里则是未定义行为。
+ */
+export function narrowLaunchEnv(env: unknown): NarrowResult<Record<string, string>> {
+  if (env === undefined) return { ok: true, value: {} }
+  if (env === null || typeof env !== 'object' || Array.isArray(env)) return deny('env must be an object')
+  const entries = Object.entries(env as Record<string, unknown>)
+  if (entries.length > 16) return deny('too many env entries (max 16)')
+  const out: Record<string, string> = {}
+  for (const [key, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return deny(`env key "${key.slice(0, 64)}" is not a valid name`)
+    if (typeof value !== 'string') return deny(`env value for "${key}" must be a string`)
+    if (value.length > 4096) return deny(`env value for "${key}" is too long (max 4096)`)
+    if (value.includes('\0')) return deny(`env value for "${key}" contains a NUL byte`)
+    out[key] = value
+  }
+  return { ok: true, value: out }
+}
+
 /** `net.fetch` 的 URL 门。**在主进程做**,不信 CSP。 */
 export function narrowFetchUrl(
   hostPermissions: readonly string[],
@@ -126,12 +176,25 @@ export function narrowFetchUrl(
  * 内网/环回地址一律挡掉 —— 和 `kernel/tool/builtin/ssrf.ts` 同一个理由:
  * `hostPermissions` 是作者写的,而作者可以写 `https://169.254.169.254/*`
  * 然后在审核那里以「我要访问我自己的元数据服务」蒙混过去。
+ *
+ * ★ **IPv6 的唯一本地判定必须带冒号。** 这里原本写的是
+ * `host.startsWith('fc') || host.startsWith('fd')`,而主机名可以是任意字符串:
+ * 「fc2.com」「fdroid.org」这类正常域名全部以 fc/fd 开头,于是它们被当成唯一
+ * 本地地址(fc00::/7)**静默拒绝** —— 插件拿到的是一句「内网地址被挡」,
+ * 而那个域名根本不在内网,错误信息指向的原因和实际原因毫无关系。
+ *
+ * ★ **只挡字面量。** 域名解析到内网(或 DNS rebinding)这一层在这里判不了:
+ * 预查询 DNS 再连接是两次不同的解析,拦不住重绑定。要闭合这一项得让实际建立的
+ * 连接绑定到已校验的那个地址 —— 见 `rpc.ts` 里 `net.fetch` 的说明,那里写着
+ * 这一项**仍是未解决**。
  */
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
-  if (host === '::1' || host === '0.0.0.0') return true
-  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) return true
+  if (host === '::1' || host === '::' || host === '0.0.0.0') return true
+  // ★ 冒号是判据:唯一本地地址 fc00::/7 与链路本地 fe80::/10 只出现在 IPv6 字面量里。
+  //   按前缀字符串判会把 fc2.com 一起带走,那正是上面注释里那个 bug。
+  if (host.includes(':') && (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab]/i.test(host))) return true
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
   if (v4 === null) return false
   const [a, b] = [Number(v4[1]), Number(v4[2])]
@@ -140,6 +203,22 @@ function isPrivateHost(hostname: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true
   if (a === 192 && b === 168) return true
   return false
+}
+
+/**
+ * 逐跳重定向能不能跟 —— 每一跳都重过一遍**完整**的 URL 门(https + 无凭证 +
+ * 非内网字面量 + 命中 `hostPermissions`)。
+ *
+ * ★ **跨 host 跳转在这里被拒掉,而不是跟着走。** 一个只声明了
+ * `https://api.example.com/*` 的插件,响应若把它跳到 `https://attacker.example`,
+ * 跟着走等于让**远端**替它把 `hostPermissions` 改写成任意域名 —— 用户在安装
+ * 界面上批准过的域名就不再是「它能访问的那些」。要跨 host,插件自己再发一次。
+ *
+ * ★ 相对地址由调用方按**当前这一跳**解析成绝对地址再传进来 —— 这一层只做
+ * 与首跳完全相同的那道判定,所以两条路不会分叉。
+ */
+export function narrowRedirectUrl(hostPermissions: readonly string[], location: string): NarrowResult<string> {
+  return narrowFetchUrl(hostPermissions, location)
 }
 
 /** kv 的 key。强制前缀在调用点加,这里只管形状与长度。 */

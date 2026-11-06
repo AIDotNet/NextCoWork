@@ -25,10 +25,11 @@ import {
   modelSelectionKey,
   parseModelSelectionKey
 } from '../../../../../shared/domain/model-selection'
-import { Button } from '../../../components/ui/Button'
+import { INHERIT_THINKING, SUBAGENT_THINKING_CHOICES } from '../../../../../shared/domain/subagent-thinking'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Segmented } from '../../../components/ui/Segmented'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { Select } from '../../../components/ui/Select'
 import { TextArea } from '../../../components/ui/TextArea'
 import { TextInput } from '../../../components/ui/TextInput'
@@ -223,14 +224,15 @@ export function AgentEditor({
       onClose={() => setAsking(false)}
       footer={
         <>
-          <Button size="sm" onClick={() => setAsking(false)}>{t('common.cancel')}</Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setAsking(false)}>{t('common.cancel')}</Button>
           <Button
+            type="button"
+            variant="primary"
             size="sm"
-            variant="accent"
-            icon={<Sparkles size={13} />}
             onClick={generate}
             disabled={generating}
           >
+            <Sparkles size={13} />
             {generating ? t('ext.agents.generating') : t('ext.agents.generateAction')}
           </Button>
         </>
@@ -271,7 +273,7 @@ export function AgentEditor({
           error={error}
           fields={
             <div className="flex flex-col gap-2">
-              <Button size="sm" onClick={toForm} className="self-start">{t('ext.agents.formMode')}</Button>
+              <Button type="button" variant="secondary" size="sm" onClick={toForm} className="self-start">{t('ext.agents.formMode')}</Button>
               <SourceFields fm={source.fm} set={(fm) => setSource((s) => ({ ...s, fm }))} />
             </div>
           }
@@ -290,16 +292,18 @@ export function AgentEditor({
         <span className="truncate text-[13px] text-fg">{isNew ? t('ext.agents.newTitle') : file.name}</span>
         <span className="truncate text-[11px] text-fg-faint">{file.path}</span>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" icon={<Sparkles size={13} />} onClick={askToGenerate} disabled={generating}>
+          <Button type="button" variant="secondary" size="sm" onClick={askToGenerate} disabled={generating}>
+            <Sparkles size={13} />
             {generating ? t('ext.agents.generating') : t('ext.agents.generate')}
           </Button>
-          <Button size="sm" onClick={toSource}>{t('ext.agents.sourceMode')}</Button>
+          <Button type="button" variant="secondary" size="sm" onClick={toSource}>{t('ext.agents.sourceMode')}</Button>
           {!isNew && (
-            <Button size="sm" variant="danger" icon={<Trash2 size={13} />} onClick={() => setConfirmDelete(true)}>
+            <Button type="button" variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+              <Trash2 size={13} />
               {t('ext.delete')}
             </Button>
           )}
-          <Button size="sm" variant="accent" onClick={save} disabled={saving || hardBlocked}>
+          <Button type="button" variant="primary" size="sm" onClick={save} disabled={saving || hardBlocked}>
             {t('ext.save')}
           </Button>
         </div>
@@ -323,10 +327,9 @@ export function AgentEditor({
                 placeholder={t('ext.field.nameHint')}
                 ariaLabel={t('ext.field.name')}
               />
-              <Segmented<MarkdownResourceScope>
-                size="sm"
+              <SegmentedControl
                 value={scope}
-                onChange={setScope}
+                onValueChange={(value) => setScope(value as MarkdownResourceScope)}
                 label={t('ext.scopeFilter')}
                 options={[
                   { value: 'global', label: t('ext.scope.global') },
@@ -384,6 +387,19 @@ export function AgentEditor({
             />
           </Row>
 
+          <Row label={t('ext.field.thinking')}>
+            <Select
+              value={form.thinking === '' ? INHERIT_THINKING : form.thinking}
+              options={SUBAGENT_THINKING_CHOICES.map((value) => ({
+                value,
+                label: value === INHERIT_THINKING ? t('ext.field.inheritDefault') : t(`chat.thinkingLevel.${value}`)
+              }))}
+              onValueChange={(v) => setForm({ ...form, thinking: v === INHERIT_THINKING ? '' : v })}
+              ariaLabel={t('ext.field.thinking')}
+              className="max-w-[320px]"
+            />
+          </Row>
+
           <Row label={t('ext.field.description')} required>
             <TextArea
               value={form.description}
@@ -396,10 +412,9 @@ export function AgentEditor({
 
           <Row label={t('ext.field.tools')}>
             <div className="flex flex-col gap-2">
-              <Segmented<'all' | 'custom'>
-                size="sm"
+              <SegmentedControl
                 value={form.toolsMode}
-                onChange={(v) => setForm({ ...form, toolsMode: v })}
+                onValueChange={(value) => setForm({ ...form, toolsMode: value as 'all' | 'custom' })}
                 label={t('ext.field.tools')}
                 className="self-start"
                 options={[
@@ -455,8 +470,8 @@ export function AgentEditor({
         onClose={() => setConfirmDelete(false)}
         footer={
           <>
-            <Button size="sm" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="danger" onClick={() => { setConfirmDelete(false); onDelete() }}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => { setConfirmDelete(false); onDelete() }}>
               {t('ext.delete')}
             </Button>
           </>

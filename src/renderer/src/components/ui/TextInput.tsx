@@ -1,3 +1,5 @@
+import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react'
+import { useEffect, useId, useRef } from 'react'
 import { cn } from '../../lib/cn'
 
 /**
@@ -13,6 +15,14 @@ import { cn } from '../../lib/cn'
  * `bg-surface-field` 而不是 `bg-tint-hover`:深色下两者同值,浅色下不是 ——
  * 理由见 theme.css 里那个 token 的注释。
  * `.selectable` 是必须的:全局 `user-select: none`,输入框要自己 opt-in。
+ *
+ * 外观与动效借自 beUI 的 Input(https://beui.dev/components/motion/input,MIT):
+ * 聚焦时一圈柔和的 ring、出错时整框左右抖一下并描红、可选的成功对勾(描线出现)、
+ * 错误文案带模糊浮现。★ 只借外观,**没有换成它的实现** —— 它的 `onChange` 签名、
+ * 回车/Esc/输入法组词处理都和这里的调用点不兼容(见上面 Enter 那段与
+ * `text-input-ime.test.ts`),所以行为层原样保留。
+ * ★ 没有传 `error` 文案时返回的就是单个输入框(和以前同一棵 DOM),
+ * 调用点传进来的 `className`(宽度/外边距)因此不受影响。
  */
 export function TextInput({
   value,
@@ -23,6 +33,8 @@ export function TextInput({
   placeholder,
   icon,
   invalid = false,
+  error,
+  success = false,
   disabled = false,
   ariaLabel,
   size = 'md',
@@ -44,6 +56,10 @@ export function TextInput({
   icon?: React.ReactNode
   /** 端口越界这类:描红环,但**不阻止继续输入** */
   invalid?: boolean
+  /** 带一句错误文案:等价于 `invalid`,并在输入框下方浮现这句话。 */
+  error?: string
+  /** 校验通过:右侧画一个描线对勾。 */
+  success?: boolean
   disabled?: boolean
   ariaLabel: string
   size?: 'sm' | 'md'
@@ -52,13 +68,28 @@ export function TextInput({
   className?: string
   inputRef?: React.Ref<HTMLInputElement>
 }): React.ReactNode {
-  return (
+  const reduce = useReducedMotion() ?? false
+  const fieldRef = useRef<HTMLDivElement>(null)
+  const hasError = invalid || (error !== undefined && error !== '')
+  const errorId = useId()
+
+  // 出错的那一刻抖一下(beUI Input 的做法);减少动效时不抖
+  useEffect(() => {
+    if (fieldRef.current === null || reduce || !hasError) return
+    animate(fieldRef.current, { x: [0, -5, 5, -3, 3, -1, 0] }, { duration: 0.4 })
+  }, [hasError, reduce])
+
+  const field = (
     <div
+      ref={fieldRef}
+      data-state={hasError ? 'error' : success ? 'success' : 'idle'}
       className={cn(
-        'app-no-drag flex items-center gap-2 rounded-[8px] border transition-colors',
+        'apple-field app-no-drag flex items-center gap-2',
         'bg-surface-field',
         size === 'sm' ? 'h-7 px-2' : 'h-8 px-2.5',
-        invalid ? 'border-danger' : 'border-border focus-within:border-accent',
+        hasError
+          ? 'border-danger ring-2 ring-danger/20'
+          : 'border-border focus-within:border-fg-faint focus-within:ring-2 focus-within:ring-fg-faint/15',
         disabled && 'opacity-40',
         className
       )}
@@ -70,7 +101,8 @@ export function TextInput({
         value={value}
         disabled={disabled}
         aria-label={ariaLabel}
-        aria-invalid={invalid || undefined}
+        aria-invalid={hasError || undefined}
+        aria-describedby={error !== undefined && error !== '' ? errorId : undefined}
         placeholder={placeholder}
         inputMode={inputMode}
         onChange={(e) => onChange(e.target.value)}
@@ -105,6 +137,42 @@ export function TextInput({
           'placeholder:text-fg-faint'
         )}
       />
+      {success && !hasError && (
+        <motion.svg viewBox="0 0 24 24" fill="none" aria-hidden className="size-4 shrink-0 text-accent">
+          <motion.path
+            d="M5 12.5l4.5 4.5L19 7.5"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            initial={reduce ? { pathLength: 1 } : { pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          />
+        </motion.svg>
+      )}
+    </div>
+  )
+
+  if (error === undefined) return field
+  return (
+    <div className="flex flex-col gap-1">
+      {field}
+      <AnimatePresence initial={false}>
+        {error !== '' && (
+          <motion.p
+            id={errorId}
+            role="alert"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: 'blur(4px)' }}
+            transition={{ duration: 0.2 }}
+            className="px-1 text-[11.5px] text-danger"
+          >
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

@@ -39,7 +39,7 @@
 import type { OAuthCredential } from '../../../../shared/domain/credential'
 import { OAuthFailedError } from '../errors'
 import type { TransportContext, UpstreamTransport } from '../../upstream/transport'
-import { sessionUuid } from '../../upstream/transport'
+import { sessionUuid } from '../../upstream/ids'
 import type { OAuthExchangeContext, OAuthIdentity, OAuthProviderSpec } from '../registry'
 import { decodeJwtPayload, record, str } from './shared'
 

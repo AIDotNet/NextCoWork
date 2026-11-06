@@ -28,6 +28,18 @@ class FakeWebContents {
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
   }
+
+  /**
+   * WindowRegistry 判「帧还活不活」靠的是这里,不是 send 抛不抛 ——
+   * 真实的 `webFrameMain.send` 自己把异常吞了(见 window/registry.ts)。
+   */
+  get mainFrame(): { isDestroyed: () => boolean; detached: boolean; send: (channel: string, payload: unknown) => void } {
+    return {
+      isDestroyed: () => this.isDestroyed(),
+      detached: false,
+      send: (channel, payload) => this.send(channel, payload)
+    }
+  }
   /** 只取权威集合广播,按到达顺序 */
   broadcasts(): ActiveRunEntry[][] {
     return this.sent
@@ -90,7 +102,7 @@ describe('agent:activeRuns', () => {
     const off = wire()
     const wc = bystander()
     const parent = runs.create(req())
-    const child = runs.create(req({ runId: 'child-run', parentRunId: parent.runId, depth: 1 }))
+    const child = runs.create(req({ runId: 'child-run', sessionId: 'child-session', parentRunId: parent.runId, parentSessionId: parent.sessionId, depth: 1 }))
 
     // 子 run 既不进集合,也不该单独触发一次内容相同的广播。
     expect(wc.broadcasts()).toHaveLength(1)

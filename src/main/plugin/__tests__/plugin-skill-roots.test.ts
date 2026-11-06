@@ -98,6 +98,7 @@ async function startManager(): Promise<PluginManager> {
     clipboard: { readText: async () => '', writeText: async () => {} },
     scmFor: () => { throw new Error('scm adapter is not wired in this test') },
     openTab: () => {},
+    launchTerminal: () => ({ opened: true }),
     requestInteraction: async () => null,
     emitProgress: () => {},
     reserveName: (id: string) => id,

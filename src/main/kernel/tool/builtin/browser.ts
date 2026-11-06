@@ -9,6 +9,7 @@
  * Node tests must not initialize either graphical runtime.
  */
 import { z } from 'zod'
+import type { ToolOutputImage } from '../../../../shared/agent/message'
 import type { ToolResult } from '../../../../shared/agent/tool'
 import { toolFail, toolOk } from '../../../../shared/agent/tool'
 import type { BrowserTab } from '../../../../shared/domain/browser'
@@ -62,12 +63,17 @@ function ownedTab(tabId: string, ctx: ToolContext): BrowserTab {
 /*
   需求：工作区所有者要求浏览器工具能够打开本机/内网页面（2026-09-20，已确认过
   `ssrf.ts` 里 `SsrfRiskOptions` 记的那条风险后仍要求继续）。所以这里传
-  `allowPrivateAddresses: true`,只保留协议白名单(只认 http/https)和
+  `allowPrivateAddresses: true`,只保留协议白名单和
   `user:pass@` 凭证拦截 —— 这两条和「是不是内网」无关,不受这个开关影响。
+
+  需求：同一位所有者 2026-09-22 追加 —— 浏览器还要能打开 `file://` 本地页面
+  （本地生成的 HTML 报告进右侧工作台直接看），所以再传 `allowFileUrls: true`。
+  风险记在 `ssrf.ts` 的 `SsrfRiskOptions.allowFileUrls` 上，这里不重复；
+  `WebFetch` 不传，file:// 在那边仍指向 Read。
 */
 async function publicUrl(raw: string): Promise<URL> {
   const url = new URL(raw)
-  const risk = ssrfRisk(url, { allowPrivateAddresses: true })
+  const risk = ssrfRisk(url, { allowPrivateAddresses: true, allowFileUrls: true })
   if (risk !== null) throw new Error(risk)
   return url
 }
@@ -82,22 +88,41 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function screenshotResult(tabId: string, screenshot: {
+/**
+ * 截图 → 工具结果。
+ *
+ * ★ 图落成**本会话附件**(`ctx.sessionImages`,与生图同一条路),`output.images` 只存一个
+ * `ncw://` 地址,不再把整张 PNG 的 base64 塞进转录。不这样的话,每一次截图(上限 8MiB,
+ * base64 后约 10.7MB 字符)都要过一次结构化克隆推给渲染层、落进 SQLite、随会话常驻内存。
+ * 发往上游时 `prepareRequestImages` 会把本会话的 `ncw://` 换回 data URL —— 模型看到的
+ * 字节与原来完全一样,回执正文也一字不改。
+ *
+ * ★ 存不下来(没有装配仓、磁盘满、超限)就退回内联 data URL,截图本身不失败。
+ */
+async function screenshotResult(tabId: string, screenshot: {
   data: Uint8Array
   mimeType: 'image/png' | 'image/jpeg'
   width: number
   height: number
   viewport: { width: number; height: number }
-}): ToolResult {
-  const dataRef = `data:${screenshot.mimeType};base64,${Buffer.from(screenshot.data).toString('base64')}`
+}, ctx: ToolContext): Promise<ToolResult> {
+  const inline: ToolOutputImage = { mime: screenshot.mimeType, dataRef: `data:${screenshot.mimeType};base64,${Buffer.from(screenshot.data).toString('base64')}` }
+  let image = inline
+  if (ctx.sessionImages !== undefined) {
+    try {
+      image = await ctx.sessionImages.save(inline)
+    } catch {
+      image = inline
+    }
+  }
   return toolOk(
     `Captured browser tab ${tabId}: image ${String(screenshot.width)}x${String(screenshot.height)} pixels, CSS viewport ${String(screenshot.viewport.width)}x${String(screenshot.viewport.height)}. Coordinate actions use CSS viewport pixels; scale image coordinates when these sizes differ.`,
-    { images: [{ mime: screenshot.mimeType, dataRef }] }
+    { images: [image] }
   )
 }
 
 const BrowserOpenInput = z.object({
-  url: z.string().url().describe('A complete http or https URL'),
+  url: z.string().url().describe('A complete http, https, or file URL'),
   title: z.string().max(160).optional().describe('Optional label for the browser tab'),
   profileId: z.string().optional().describe('Optional browser Profile id; defaults to the built-in browser'),
   backend: z.enum(['iab', 'headless']).optional().describe('iab opens a visible workspace tab; headless runs managed Chromium without a visible tab')
@@ -106,8 +131,8 @@ const BrowserOpenInput = z.object({
 const browserOpenTool: ToolRegistration = defineTool({
   internalId: 'browser_open',
   description:
-    'Open a public web page in an isolated browser page owned by this Agent run. The default iab backend is visible in the workspace; headless uses managed Chromium. ' +
-    'After opening, call browser_snapshot before interacting.',
+    'Open a web page in an isolated browser page owned by this Agent run. The default iab backend is visible in the workspace; headless uses managed Chromium. ' +
+    'http, https and file:// URLs are supported. After opening, call browser_snapshot before interacting.',
   schema: BrowserOpenInput,
   readOnly: true,
   destructive: false,
@@ -310,7 +335,7 @@ const browserScreenshotTool: ToolRegistration = defineTool({
   async run(input, ctx) {
     const tab = ownedTab(input.tabId, ctx)
     const runtime = await readyRuntime(tab, ctx)
-    return screenshotResult(tab.id, await runtime.screenshot(tab.id))
+    return screenshotResult(tab.id, await runtime.screenshot(tab.id), ctx)
   }
 })
 

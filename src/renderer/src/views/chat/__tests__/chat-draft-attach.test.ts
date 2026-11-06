@@ -20,7 +20,7 @@ vi.mock('../../../services/app', async (importOriginal) => ({
   persistInnerTabs: vi.fn(),
   persistOuterTabs: vi.fn(),
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: vi.fn(),
+  persistSessionDraft: vi.fn(),
   updateWorkspace: vi.fn()
 }))
 vi.mock('../../../services/attachment', () => ({

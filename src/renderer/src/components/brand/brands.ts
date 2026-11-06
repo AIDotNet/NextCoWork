@@ -21,6 +21,7 @@ export const BRANDS = [
   'ai302',
   'aihubmix',
   'anthropic',
+  'atlascloud',
   'azure',
   'baichuan',
   'baiducloud',
@@ -58,6 +59,7 @@ export const BRANDS = [
   'vllm',
   'volcengine',
   'xai',
+  'xiaomimimo',
   'yi',
   'zai',
   'zhipu'
@@ -136,6 +138,10 @@ const RULES: readonly (readonly [RegExp, Brand | null])[] = [
   [/doubao|豆包/i, 'doubao'],
   [/volc|火山/i, 'volcengine'],
   [/hunyuan|混元/i, 'hunyuan'],
+  // 小米 MiMo。`\bmimo` 只挡左边界:模型 id(`xiaomi/mimo-v2.6-pro`)和显示名
+  // (「MiMo V2.6 Pro」)里 mimo 后面跟的都是 `-`/空格,而不设右边界是为了兜住
+  // 用户手打的 `mimo7b` 这类连写。排位不是顺序需要 —— 上面没有一条会命中它。
+  [/xiaomi|\bmimo|小米/i, 'xiaomimimo'],
   [/spark|讯飞|星火/i, 'spark'],
   // StepFun 的模型就叫 step-1 / step-2,光匹配 'stepfun' 会全漏
   [/\bstep-|stepfun|阶跃/i, 'stepfun'],
@@ -158,6 +164,7 @@ const RULES: readonly (readonly [RegExp, Brand | null])[] = [
   // 因为它就是一家聚合商。
   [/\broutin[\s_-]*ai\b|^routin(-plan)?$/i, 'routin'],
   [/aihubmix/i, 'aihubmix'],
+  [/atlas[\s_-]*cloud/i, 'atlascloud'],
   [/\b302\.?ai\b/i, 'ai302'],
   [/groq/i, 'groq'],
   [/together/i, 'together'],

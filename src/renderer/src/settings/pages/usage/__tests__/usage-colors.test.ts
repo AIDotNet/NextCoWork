@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { heatColor, seriesColor, seriesPalette } from '../charts/colors'
+import {
+  CHART_SLOTS,
+  OTHERS_COLOR,
+  chartColor,
+  colorOf,
+  heatColor,
+  modelColorMap
+} from '../charts/colors'
 
 /*
  * 这些断言看着琐碎,守的是一件具体的事:色值必须留成 `var(--color-*)` 表达式
@@ -32,41 +39,37 @@ describe('heatColor', () => {
   })
 })
 
-describe('seriesColor', () => {
-  it('单项时直接用 accent', () => {
-    expect(seriesColor(0, 1)).toBe('var(--color-accent)')
-  })
-
-  it('首项最浓、末项最淡', () => {
-    const mix = (i: number, n: number): number =>
-      Number(/accent\) (\d+)%/.exec(seriesColor(i, n))![1])
-    expect(mix(0, 5)).toBe(100)
-    expect(mix(4, 5)).toBe(24)
-    expect(mix(1, 5)).toBeGreaterThan(mix(3, 5))
-  })
-
-  // 再淡就和空槽分不开了
-  it('最淡的一档仍高于 24%', () => {
-    for (const n of [2, 5, 9, 20]) {
-      const mix = Number(/accent\) (\d+)%/.exec(seriesColor(n - 1, n))![1])
-      expect(mix).toBeGreaterThanOrEqual(24)
+describe('chartColor', () => {
+  it('引用分类色变量,不写死色值', () => {
+    for (let slot = 0; slot < CHART_SLOTS; slot++) {
+      expect(chartColor(slot)).toBe(`var(--color-chart-${slot + 1})`)
     }
   })
 
-  it('越界序号被夹住,不产生负百分比', () => {
-    expect(seriesColor(99, 5)).toBe(seriesColor(4, 5))
+  it('越界与负数回绕到已定义的槽,不产生不存在的变量名', () => {
+    expect(chartColor(CHART_SLOTS)).toBe(chartColor(0))
+    expect(chartColor(-1)).toBe(chartColor(CHART_SLOTS - 1))
   })
 })
 
-describe('seriesPalette', () => {
-  it('长度与请求一致且各不相同', () => {
-    const palette = seriesPalette(6)
-    expect(palette).toHaveLength(6)
-    expect(new Set(palette).size).toBe(6)
+describe('modelColorMap', () => {
+  it('前 8 个模型各占一个不同的分类色', () => {
+    const keys = Array.from({ length: CHART_SLOTS }, (_, i) => `p/m${i}`)
+    const map = modelColorMap(keys, '__others__')
+    expect(new Set(map.values()).size).toBe(CHART_SLOTS)
   })
 
-  it('0 与负数返回空数组而不是抛错', () => {
-    expect(seriesPalette(0)).toEqual([])
-    expect(seriesPalette(-3)).toEqual([])
+  it('「其他」固定中性灰,且不占分类色槽', () => {
+    const map = modelColorMap(['p/a', '__others__', 'p/b'], '__others__')
+    expect(map.get('__others__')).toBe(OTHERS_COLOR)
+    expect(map.get('p/a')).toBe(chartColor(0))
+    expect(map.get('p/b')).toBe(chartColor(1))
+  })
+
+  // 环形图和费用表排序口径不同,颜色必须只取决于 key
+  it('查不到的模型(被并进尾部)给「其他」的灰,而不是新挑一个分类色', () => {
+    const map = modelColorMap(['p/a'], '__others__')
+    expect(colorOf(map, 'p/a')).toBe(chartColor(0))
+    expect(colorOf(map, 'p/tail')).toBe(OTHERS_COLOR)
   })
 })

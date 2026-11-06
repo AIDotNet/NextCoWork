@@ -1,16 +1,26 @@
 import { z } from 'zod'
 
 export const CONFIG_SYNC_VERSION = 2 as const
-export const SYNC_CATEGORIES = ['providers', 'preferences', 'connections', 'extensions', 'workspaces', 'automation'] as const
+/**
+ * ★ 与服务端 `SyncCategories.All` 及库里 document/event 的 kind CHECK 约束必须一致:
+ * 客户端多一个,服务端对该类的 push/pull 一律 400 invalidData。
+ *
+ * `usage` 是「使用统计」的按日汇总(需求:多台设备的统计合并展示)。它不是配置 ——
+ * 快照里每台设备各占一片、只由自己改写,冲突由客户端自动合并,不走「保留本地 / 使用远端」,
+ * 见 `main/ipc/config-sync-usage.ts`。
+ */
+export const SYNC_CATEGORIES = ['providers', 'preferences', 'connections', 'extensions', 'workspaces', 'automation', 'usage'] as const
 export type SyncCategory = typeof SYNC_CATEGORIES[number]
 export type SyncSelection = Record<SyncCategory, boolean>
 export const DEFAULT_SYNC_SELECTION: SyncSelection = {
   providers: false, preferences: false, connections: false,
-  extensions: false, workspaces: false, automation: false
+  extensions: false, workspaces: false, automation: false, usage: false
 }
+/** 一次 push / 预览最多每个 category 一条(服务端 `MaxPushMutations` 同样由 category 数推出,原先两边都写死 6)。 */
+const SYNC_MAX_BATCH = SYNC_CATEGORIES.length
 export const SYNC_MAX_CIPHERTEXT_BYTES = 8 * 1024 * 1024
 export const SYNC_RESOURCE_CHUNK_BYTES = 256 * 1024
-export const SYNC_PASSWORD_MIN_LENGTH = 12
+export const SYNC_PASSWORD_MIN_LENGTH = 8
 
 export const SYNC_ERRORS = ['signedOut', 'locked', 'password', 'invalidData', 'unsupported', 'network', 'conflict', 'storage', 'accountChanged', 'deviceRevoked', 'migrationRequired', 'bindingRequired', 'busy'] as const
 export type SyncErrorCode = typeof SYNC_ERRORS[number]
@@ -49,12 +59,13 @@ export const syncEventSchema = syncEnvelopeSchema.extend({
 export type SyncEvent = z.infer<typeof syncEventSchema>
 export const syncPullSchema = z.object({ cursor: counter, hasMore: z.boolean(), events: z.array(syncEventSchema).max(100) }).strict()
 export const syncPushSchema = z.object({
-  accepted: z.array(z.object({ mutationId: z.uuid(), revision: counter.positive() }).strict()).max(6),
-  conflicts: z.array(z.object({ mutationId: z.uuid(), remote: syncEventSchema.nullable() }).strict()).max(6)
+  accepted: z.array(z.object({ mutationId: z.uuid(), revision: counter.positive() }).strict()).max(SYNC_MAX_BATCH),
+  conflicts: z.array(z.object({ mutationId: z.uuid(), remote: syncEventSchema.nullable() }).strict()).max(SYNC_MAX_BATCH)
 }).strict()
 export type SyncPushResult = z.infer<typeof syncPushSchema>
 export const syncSelectionSchema = z.object({
-  providers: z.boolean(), preferences: z.boolean(), connections: z.boolean(), extensions: z.boolean(), workspaces: z.boolean(), automation: z.boolean()
+  providers: z.boolean(), preferences: z.boolean(), connections: z.boolean(), extensions: z.boolean(), workspaces: z.boolean(), automation: z.boolean(),
+  usage: z.boolean()
 }).strict()
 export const syncDocumentSchema = z.object({
   version: z.literal(CONFIG_SYNC_VERSION), kind: z.enum(SYNC_CATEGORIES), data: z.unknown()
@@ -63,7 +74,7 @@ export type SyncDocument = z.infer<typeof syncDocumentSchema>
 export const syncDevicesSchema = z.object({ items: z.array(z.object({ deviceId: z.string().min(1).max(128), current: z.boolean(), revoked: z.boolean(), lastSeenAt: z.string().max(64) }).strict()).max(100) }).strict()
 export type SyncDevice = z.infer<typeof syncDevicesSchema>['items'][number]
 export const syncResourceResponseSchema = z.object({ keyVersion: counter.positive(), payload: syncCipherSchema }).strict()
-export const syncPreviewResponseSchema = z.object({ events: z.array(syncEventSchema).max(6) }).strict()
+export const syncPreviewResponseSchema = z.object({ events: z.array(syncEventSchema).max(SYNC_MAX_BATCH) }).strict()
 export const syncResourceFileSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{64}$/), size: counter.max(16 * 1024 * 1024),
   chunks: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(64)

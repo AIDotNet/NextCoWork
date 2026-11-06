@@ -11,9 +11,9 @@ import type {
   MarkdownResourceKind,
   MarkdownResourceScope
 } from '../../../../../shared/domain/markdown-resource'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
-import { Segmented } from '../../../components/ui/Segmented'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { TextInput } from '../../../components/ui/TextInput'
 import { useI18n } from '../../../i18n'
 import { deleteResource, getResource, saveResource } from '../../../services/resources'
@@ -184,8 +184,8 @@ export function ResourcePanel({
         onClose={() => setCreating(false)}
         footer={
           <>
-            <Button size="sm" onClick={() => setCreating(false)}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="accent" onClick={create} disabled={newName.trim() === ''}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setCreating(false)}>{t('common.cancel')}</Button>
+            <Button type="button" variant="primary" size="sm" onClick={create} disabled={newName.trim() === ''}>
               {t('ext.create')}
             </Button>
           </>
@@ -198,10 +198,9 @@ export function ResourcePanel({
             placeholder={t('ext.namePlaceholder')}
             ariaLabel={t('ext.namePlaceholder')}
           />
-          <Segmented<MarkdownResourceScope>
-            size="sm"
+          <SegmentedControl
             value={newScope}
-            onChange={setNewScope}
+            onValueChange={(value) => setNewScope(value as MarkdownResourceScope)}
             label={t('ext.scopeFilter')}
             options={[
               { value: 'global', label: t('ext.scope.global') },

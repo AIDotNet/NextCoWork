@@ -11,30 +11,42 @@
  * | §6 长任务无序号、不可重放 | **信封带 seq,可 attach(sinceSeq) 重放** |
  * | §2 每个 API 方法内部硬编码目标频道 | **由契约生成白名单**,preload 运行时校验 |
  */
+import type { WidgetActionPreflight, WidgetActionResult } from '../domain/widget'
 import type { AgentError } from '../agent/error'
 import type { ActiveRunEntry, AgentEvent, RunSnapshot } from '../agent/event'
 import type { AgentMessage, ContentPart } from '../agent/message'
-import type { ContextCheckpoint, ContextPreview } from '../agent/context-management'
+import type { ContextPreview } from '../agent/context-management'
 import type { InteractionResponse, PendingInteraction } from '../agent/interaction'
 import type { InterjectItem } from '../agent/interject'
-import type { RunRequest, SessionMode } from '../agent/run-request'
+import type { PermissionMode } from '../agent/permission'
+import type { RunRequest, SendOptions, SessionMode } from '../agent/run-request'
 import type { ToolInfo } from '../agent/tool'
 import type { Bootstrap } from '../domain/bootstrap'
+import type { DeviceInvitationPreview, DevicesState } from '../domain/device-connection'
 import type { DirListing, FileSuggestion } from '../domain/file-tree'
+import type { ComposerCompletionContext } from '../domain/composer-completion'
 import type { ReviewChangeSet, ReviewFileDiff, ReviewMutationResult } from '../domain/review'
 import type { McpSecretsInfo, McpServerConfig, McpServerStatus } from '../domain/mcp'
 import type { ProxyPasswordInfo } from '../domain/proxy'
 import type { PluginPermission } from '../plugin/permission'
 import type { PluginActivity, PluginCatalog } from '../plugin/state'
 import type { PluginInteractionRequest, PluginTabTarget } from '../plugin/ui-request'
-import type { PluginMarketItem, PluginUpdate, PluginUpdateResult } from '../plugin/market'
+import type { PluginMarketItem, PluginMarketPage, PluginUpdate, PluginUpdateResult } from '../plugin/market'
 import type {
   Attachment,
   AttachmentScope,
   AttachmentUploadRequest,
   PickedAttachment
 } from '../domain/attachment'
-import type { SessionInputState } from '../domain/queued-input'
+import type {
+  SessionInputPersistence,
+  SessionInputState,
+  SessionQueueOp,
+  SessionQueueResult,
+  SessionQueueSnapshot,
+  SubagentReportStatus
+} from '../domain/queued-input'
+import type { VideoJobView } from '../domain/video-generation'
 import type { SearchProviderId, SearchProviderStatus } from '../domain/search'
 import type {
   CredentialInfo,
@@ -46,11 +58,16 @@ import type {
   UpstreamProvider
 } from '../domain/provider'
 import type { ModelCatalogDefinition } from '../domain/model-catalog'
-import type { SearchHit, Session, SessionChange, SessionDetail, SessionListItem } from '../domain/session'
+import type { ModelPricing } from '../domain/pricing'
+import type { PricingSyncPreview } from '../domain/models-dev'
+import type { ModelCatalogSyncPreview } from '../domain/models-dev-catalog'
+import type { ProviderAccount } from '../domain/provider-account'
+import type { SearchHit, Session, SessionChange, SessionDetail, SessionListItem, SessionPage } from '../domain/session'
 import type { AppSettings, AppSettingsPatch, ResolvedTheme, StorageStats } from '../domain/settings'
 import type { InnerTabState, WindowKind, WindowTabState } from '../domain/tab'
 import type { ImageTheme, ThemeProfile } from '../domain/theme'
 import type { TerminalBuffer, TerminalCreateRequest, TerminalInfo, TerminalPreparation } from '../domain/terminal'
+import type { BackgroundShellInfo } from '../domain/shell'
 import type { SkillListItem, SkillMarketItem, SkillInstallScope } from '../domain/skill'
 import type { CommandDefinition } from '../domain/command'
 import type { AgentDraft } from '../domain/agent-def'
@@ -69,6 +86,8 @@ import type { Workspace, WorkspaceSettings } from '../domain/workspace'
 import type { ConnectionProfile, ConnectionProfileInput, ConnectionStatus, PreparedWorkspace, RemoteDirectory, SshAuthRequest, SshAuthResponse } from '../domain/environment'
 import type { UpdateCheckResult, UpdateState } from '../domain/update'
 import type { ClientAuthState, ClientAuthUser, ClientUsageEntry } from '../domain/client-auth'
+import type { ReferralState } from '../domain/referral'
+import type { RechargeCheckoutResult, RechargeOptionsState, RechargeOrderState } from '../domain/recharge'
 import type { MigrationState } from '../domain/data-migration'
 import type { SyncConflict, SyncPreview, SyncSetupRequest, SyncStatus } from '../domain/config-sync'
 import type {
@@ -79,8 +98,27 @@ import type {
   WorkspaceFileRequest,
   WorkspaceFileWriteRequest
 } from '../domain/workspace-file'
+import type { OpenTarget, WorkspacePathKind } from '../domain/open-target'
+import type {
+  DocumentViewChanged,
+  DocumentViewCommandRequest,
+  DocumentViewHeaders,
+  DocumentViewHeadersRequest,
+  DocumentViewInputRequest,
+  DocumentViewList,
+  DocumentViewListRequest,
+  DocumentViewInputResult,
+  DocumentViewLayout,
+  DocumentViewLayoutRequest,
+  DocumentViewOpenRequest,
+  DocumentViewOpened,
+  DocumentViewRenderRequest,
+  DocumentViewRenderResult,
+  DocumentViewState,
+  DocumentViewTokenRequest
+} from '../document-engine/view'
 import type { BrowserChange, BrowserCuaEvent, BrowserProfile, BrowserTab } from '../domain/browser'
-import type { GitBranchSummary, GitCommitSummary, GitDiff, GitOverview } from '../domain/git'
+import type { GitBranchSummary, GitCommitSummary, GitDiff, GitDiffSides, GitOverview } from '../domain/git'
 import type { ScheduledRun, ScheduledTask, ScheduledTaskInput } from '../domain/scheduled'
 import type {
   BackupStatus,
@@ -108,6 +146,7 @@ import type {
 import type { ImportableProviders } from '../domain/provider-import'
 import type {
   UsageActivityStats,
+  UsageAttemptRecord,
   UsageDailyBucket,
   UsageDimensionStat,
   UsageRequestLogsPage,
@@ -228,11 +267,55 @@ export interface IpcInvokeMap {
   'app:updateInstall': { req: void; res: void }
   'app:updateGetState': { req: void; res: UpdateState }
   'app:copyText': { req: { text: string }; res: void }
+  // ── 设备(控制端本地:设备清单与配对凭据只在这台电脑上) ──
+  /** 已配对设备清单 + 当前选择与连接状态。不含证书/私钥。 */
+  'device:getState': { req: void; res: DevicesState }
+  /** 只解码并校验邀请(不联网),返回要让用户核对的设备指纹。 */
+  'device:inspectInvitation': { req: { text: string }; res: DeviceInvitationPreview }
+  /** 配对。`confirmedFingerprint` 必须是用户核对过的那一个,与邀请不一致即拒绝。 */
+  'device:pair': { req: { text: string; label: string; confirmedFingerprint: string }; res: DevicesState }
+  /** 切换到某台已配对设备并记住选择;连不上时保持「离线」,不回退本机。 */
+  'device:select': { req: { id: string }; res: DevicesState }
+  /** 回到本机。 */
+  'device:useLocal': { req: void; res: DevicesState }
+  /** 移除本机保存的连接(含私钥)。**不会**撤销设备上的配对。 */
+  'device:remove': { req: { id: string }; res: DevicesState }
+  /** 设置/清除(`url: null`)这台设备的备用中转(wss://…,自签证书可附 `caPem`)。直连永远优先。 */
+  'device:setRelay': { req: { id: string; url: string | null; caPem?: string }; res: DevicesState }
+  /**
+   * 把一张图写进系统剪贴板。`base64` 是**原图字节**,不带 `data:` 前缀。
+   *
+   * ★ 需求:对话里生成的图此前没有任何出口(灯箱的「用别的程序打开」只对磁盘上的
+   * 绝对路径出现,而生成图是 `ncw://` 附件或内联 data URL)。用户要把一张图贴进
+   * 别的应用,唯一的做法是让 Agent 调 `SaveImage` 落盘再自己找 —— 而剪贴板是
+   * 这一步最短的路。
+   *
+   * ★ 和 `app:copyText` 分开,而不是给它加一个「这次是图」的开关:Electron 里
+   * `writeText` 与 `write(ClipboardItem)` 是两套 API,走错一条**不报错** ——
+   * 用户粘出来是一串 base64 文本。
+   *
+   * ★ 不带 mime:主进程按**字节的魔数**判格式(同 `imageMimeOfBytes` 在别处的用法),
+   * 不信渲染层自报 —— 一张自报成 png 的 jpeg 在粘贴板上会被当成 png 贴出去。
+   *
+   * ★ 不走渲染层的 `navigator.clipboard`(它也能写图):仓库里所有复制都经主进程
+   * (见 `services/app.ts` 的 `copyText` 与那条钉住它的测试),一处校验、一处失败面。
+   */
+  'app:copyImage': { req: { base64: string }; res: void }
   /**
    * 存一段文本到用户挑的位置。路径由主进程的 showSaveDialog 产出 ——
    * 渲染层只给**文件名建议**,永不指定任意路径(方案 §9)。取消时返回 null。
    */
   'app:saveTextFile': { req: { defaultName: string; text: string }; res: { path: string } | null }
+  /**
+   * 存一张图片（邀请海报 / 对话里生成的图）。`base64` 是原图字节去掉前缀的那一段。
+   *
+   * ★ 和 `app:saveTextFile` 分开，而不是给它加个「二进制」开关:两者的保存对话框
+   * 过滤器和写入编码都不同,合并之后每个调用点都要带一个「这次是文本还是二进制」
+   * 的参数 —— 传错一次就写出一个内容是 base64 文本的 .png,而且打开之前看不出来。
+   *
+   * ★ 也不带 mime:扩展名与过滤器由主进程按字节判(理由见上面那条)。
+   */
+  'app:saveImageFile': { req: { defaultName: string; base64: string }; res: { path: string } | null }
   'app:openSessionWindow': { req: { workspaceId: string; sessionId: string }; res: void }
 
   // ── NextCoWork 账户 ──
@@ -243,6 +326,25 @@ export interface IpcInvokeMap {
   'clientAuth:signOut': { req: void; res: ClientAuthState }
   'clientAuth:getUser': { req: void; res: ClientAuthUser | null }
   'clientAuth:getUsage': { req: { from?: string; to?: string }; res: ClientUsageEntry[] }
+  /**
+   * 奖励中心的一次性快照（邀请码 / 链接 / 活动配置 / 统计 / 两张记录表）。
+   *
+   * ★ **没有推送频道，只有拉取。** 邀请数据的变化由对方的注册和消费触发，
+   * 桌面端这边没有任何本地事件能预告它 —— 做成订阅只会是一条永远不发的频道。
+   * 面板打开时拉一次，用户按刷新再拉一次。
+   *
+   * 失败不抛：`res` 自带 `unavailable` 分支（未登录 / 平台没这条接口 / 网络），
+   * 三种空态的文案和用户下一步都不同，见 `shared/domain/referral.ts`。
+   */
+  'referral:get': { req: void; res: ReferralState }
+  /**
+   * 钱包充值（`/api/client/recharge/*`）。三条都**失败不抛**，原因分流见
+   * `shared/domain/recharge.ts`。`checkout` 成功时主进程已经把 Stripe 收银页交给系统
+   * 浏览器，渲染层只拿订单号去轮询 —— 收银地址不经过渲染层。
+   */
+  'recharge:getOptions': { req: void; res: RechargeOptionsState }
+  'recharge:checkout': { req: { amount: number }; res: RechargeCheckoutResult }
+  'recharge:getOrder': { req: { orderNo: string }; res: RechargeOrderState }
   'configSync:getStatus': { req: void; res: SyncStatus }
   /** 密码只用于本次创建/解锁 vault，不进入设置或事件广播。 */
   'configSync:setup': { req: SyncSetupRequest; res: SyncStatus }
@@ -250,6 +352,8 @@ export interface IpcInvokeMap {
   'configSync:getPreview': { req: void; res: SyncPreview }
   'configSync:confirmInitial': { req: void; res: void }
   'configSync:resolve': { req: { id: string; useRemote: boolean }; res: void }
+  /** 数据页「同步使用统计」开关;关掉会丢弃本机持有的其它设备统计。 */
+  'configSync:setUsage': { req: { enabled: boolean }; res: SyncStatus }
 
   // ── 设置 ──
   'settings:get': { req: void; res: AppSettings }
@@ -355,6 +459,32 @@ export interface IpcInvokeMap {
   'workspace:writeFile': { req: WorkspaceFileWriteRequest; res: WorkspaceFile }
   'workspace:mutateFile': { req: WorkspaceFileMutationRequest; res: WorkspaceFileMutationResult }
   'workspace:revealFile': { req: WorkspaceFileRequest; res: void | { remote: true; path: string; parent: string; name: string } }
+  /**
+   * 「打开方式」下拉里那几项:文件管理器 / 终端 / 这台机器上装了的 IDE。
+   *
+   * ★ **res 里没有路径**,只有 `{ id, label, icon }` —— 绝对路径不进渲染层
+   *   (`shared/domain/workspace-file.ts` 顶上那条约定)。菜单内容只取决于
+   *   这台机器装了什么,所以这条**不带 workspaceId**。
+   *
+   * ★ 不登记事件频道:装了新 IDE 不会发通知,菜单下次探测时自然看得见
+   *   (主进程侧缓存一次,失败不缓存)。
+   */
+  'workspace:listOpenTargets': { req: void; res: OpenTarget[] }
+  /**
+   * 用某个程序打开一个文件。`targetId` 只用来查主进程那张表 —— 渲染层指定不了
+   * 要跑什么命令,只能从 `workspace:listOpenTargets` 给过的那几个里挑。
+   */
+  'workspace:openWith': { req: { workspaceId: string; path: string; targetId: string }; res: void }
+  /**
+   * 把路径写进系统剪贴板。★ 返回**真正写进去的那一串**:工作区外的文件复制出来
+   * 的是绝对路径,界面据此如实说明,而不是一律说「已复制相对路径」。
+   */
+  'workspace:copyPath': { req: { workspaceId: string; path: string; kind: WorkspacePathKind }; res: string }
+  /**
+   * 文件树右键「另存为…」。落点由主进程的 showSaveDialog 产出(同 `app:saveTextFile`),
+   * 渲染层只给工作区相对路径。`false` = 用户取消。
+   */
+  'workspace:saveFileAs': { req: { workspaceId: string; path: string }; res: boolean }
   'workspace:listRecovery': { req: { workspaceId: string }; res: WorkspaceRecoveryListing }
 
   // ── 改动审查(回复底部审查卡 / 右侧 changes tab / 撤销·恢复,schema 第 23 条)──
@@ -392,6 +522,8 @@ export interface IpcInvokeMap {
   'git:listCommits': { req: { workspaceId: string; limit?: number }; res: GitCommitSummary[] }
   /** 单个文件的 diff。`staged` 选择看暂存区还是工作区。 */
   'git:getDiff': { req: { workspaceId: string; path: string; staged: boolean }; res: GitDiff }
+  /** 同一份 diff 两侧的完整文本(代码对比视图用)。`null` = 没法按全文对比,退回 unified 文本 */
+  'git:getDiffSides': { req: { workspaceId: string; path: string; staged: boolean }; res: GitDiffSides | null }
   'git:stage': { req: { workspaceId: string; paths: string[] }; res: void }
   'git:unstage': { req: { workspaceId: string; paths: string[] }; res: void }
   /** 提交暂存区。`message` 空白一律拒 —— 空提交信息没有任何意义。 */
@@ -409,6 +541,27 @@ export interface IpcInvokeMap {
    *   的措辞,不是用哪家模型。
    */
   'git:generateCommitMessage': { req: { workspaceId: string }; res: { message: string } }
+
+  // ── 输入框补全(docs/composer-autocomplete.md)──
+  /**
+   * 回合结束后建议下一步。`text` 为空 = 不出声(模型选择沉默、条件不满足、失败、被取消一律如此)。
+   * ★ `triggerKey` 是渲染层看到的那次 `runEndedAt`:主进程按 (sessionId, triggerKey) 合流,
+   *   两个窗口开着同一条会话只发一次请求。
+   * ★ `model` 是输入框此刻的生效模型;设置里点名了补全模型时主进程改用那一个。
+   */
+  'composer:suggestNext': {
+    req: { requestId: string; workspaceId: string; sessionId: string; triggerKey: number; model: string; modelProviderId?: string }
+    res: { requestId: string; text: string }
+  }
+  /** 本工作区发过的指令(新→旧、去重、≤500 条),给本地历史补全用 */
+  'composer:history': { req: { workspaceId: string }; res: { prompts: string[] } }
+  /** 打字中续写。默认关;模型只取设置里点名的那一个 */
+  'composer:complete': {
+    req: { requestId: string; workspaceId: string; sessionId: string | null; draft: string; context: ComposerCompletionContext }
+    res: { requestId: string; text: string }
+  }
+  /** 取消上面两类请求中的一个。已经结束的 id 静默忽略 */
+  'composer:cancel': { req: { requestId: string }; res: void }
 
   // ── 定时任务 ──
   'scheduled:listTasks': { req: { workspaceId?: string }; res: ScheduledTask[] }
@@ -431,6 +584,20 @@ export interface IpcInvokeMap {
    * 校验在主进程侧做,渲染层拿到的要么是可用的,要么是 null。
    */
   'session:getInput': { req: { sessionId: string }; res: SessionInputState | null }
+  /**
+   * 队列的写操作。★ **主进程是队列唯一的写入者**(`main/session-runtime.ts`):
+   * 续跑在那边决定,所以没有窗口在看这条会话时,排队的消息照样会被发出去。
+   * 回执即新的权威队列;同样的快照也经 `session:queueChanged` 广播给所有窗口。
+   */
+  'session:queue': { req: { sessionId: string; op: SessionQueueOp }; res: SessionQueueResult }
+  /**
+   * 用户在后台子代理卡片上点「处理」。`options` 是渲染层按工作区默认值拼的兜底档位 ——
+   * 本进程没见过这条会话发消息(重启之后)时,汇报靠它才发得出去。
+   */
+  'session:reportBackground': {
+    req: { sessionId: string; callId: string; options?: SendOptions }
+    res: { status: SubagentReportStatus }
+  }
 
   // ── 附件(上传走 invoke;读取走 ncw:// 协议,不经 IPC) ──
   /**
@@ -463,10 +630,31 @@ export interface IpcInvokeMap {
   'sessions:list': { req: { workspaceId: string; archived?: boolean }; res: SessionListItem[] }
   'sessions:get': { req: { sessionId: string }; res: SessionDetail }
   'sessions:replaceHistory': { req: { sessionId: string; messages: AgentMessage[] }; res: void }
+  /**
+   * 转录的一页(见 `SessionPage`)。渲染层打开会话、往上翻都走它 —— 不再一次读整段历史。
+   */
+  'sessions:getPage': { req: { sessionId: string; limit: number; beforeMessageId?: string }; res: SessionPage }
+  /** 会话元数据 + 消息条数,不读正文。只想知道模式 / 模型 / 标题的地方用它,别为此读整段转录 */
+  'sessions:getSummary': { req: { sessionId: string }; res: { session: Session; messageCount: number } }
+  /** 最后一条助手消息(后台子代理交差的正文),不读整段转录 */
+  'sessions:lastAssistant': { req: { sessionId: string }; res: AgentMessage | null }
+  /**
+   * 按消息 id 改写转录。★ 主进程在**完整历史**上改:渲染层手里只有一页,
+   * 拿那一页整段 `sessions:replaceHistory` 会把页外的历史当成「删掉了」。
+   */
+  'sessions:editMessage': { req: { sessionId: string; messageId: string; text: string; truncate: boolean }; res: void }
+  'sessions:deleteTurn': { req: { sessionId: string; userMessageId: string }; res: void }
+  'sessions:deleteReply': { req: { sessionId: string; fromId: string; toId: string }; res: void }
   'sessions:create': { req: { workspaceId: string; title?: string; sessionId?: string; mode?: SessionMode }; res: Session }
   'sessions:duplicate': { req: { sessionId: string; title: string }; res: Session }
   /** 从某一轮「分支」：只克隆到这一轮为止的转录，之后的内容不带过去。 */
   'sessions:branch': { req: { sessionId: string; uptoMessageId: string; title: string }; res: Session }
+  /**
+   * 从一条已有会话开一条「提炼 Skill」会话(`Session.skillSource` 指向源会话)。
+   * 模型 / 供应商 / 思考档位沿用源会话;`title` 由渲染层翻译好传入。
+   * 拒绝时带 `messageKey`(`skills.extraction.*`),渲染层直接翻成 toast。
+   */
+  'sessions:createSkillExtraction': { req: { sourceSessionId: string; title: string }; res: Session }
   'sessions:rename': { req: { sessionId: string; title: string }; res: void }
   'sessions:setMode': { req: { sessionId: string; mode: SessionMode }; res: void }
   /**
@@ -476,26 +664,27 @@ export interface IpcInvokeMap {
   'sessions:setModel': { req: { sessionId: string; model: string; modelProviderId?: string }; res: void }
   'sessions:setArchived': { req: { sessionId: string; archived: boolean }; res: void }
   'sessions:setFavorited': { req: { sessionId: string; favorited: boolean }; res: void }
-  'sessions:delete': { req: { sessionId: string }; res: void }
+  /**
+   * 删除会话(级联子代理转录)。待删子树里有真在跑的 Agent 时抛 `conflict`
+   * (messageKey `session.deleteRunningMessage`);`stopRunning: true` = 用户已确认
+   * 「停止并删除」:先中断(连同子代理)、等它收尾,卡住的强制清掉,再删。
+   */
+  'sessions:delete': { req: { sessionId: string; stopRunning?: boolean }; res: void }
   /** 全局入口,但结果可按工作区筛(同「定时任务」页那个筛选器) */
   'conversations:searchAll': {
     req: { q: string; workspaceId?: string; limit: number }
     res: SearchHit[]
   }
-  'context:list': { req: { sessionId: string }; res: ContextCheckpoint[] }
-  'context:updateCheckpoint': {
-    req: { checkpointId: string; note: string; revision: number }
-    res: ContextCheckpoint
-  }
   /**
-   * 手动压缩上下文 —— 让模型总结一遍旧历史,落一个新检查点。
+   * 手动压缩上下文(/compact)—— 让模型总结边界之后的对话,提交一条压缩边界消息。
+   * `instructions` 是 `/compact <文字>` 里用户要求重点保留的内容。
    *
-   * ★ 只在会话**空闲**时可用:跑着的那个 run 已经把自己的投影冻在内存里,
-   * 此时落检查点不会影响它,却会让界面上的读数和模型实际看到的对不上。
+   * ★ 只在会话**空闲**时可用:跑着的那个 run 已经把自己的上下文冻在内存里,
+   * 此时插一条边界会和它随后提交的消息交错。
    */
   'context:compact': {
-    req: { sessionId: string }
-    res: { checkpoint: ContextCheckpoint; inputTokens: number }
+    req: { sessionId: string; instructions?: string }
+    res: { message: AgentMessage; inputTokens: number }
   }
   /**
    * 还没发过请求时的占用归因 —— 装配一次但**不发出去**。
@@ -514,10 +703,26 @@ export interface IpcInvokeMap {
   }
 
   // ── Agent ──
-  /** ★ runId 由调用方传入,不由这里返回(方案 §3 规则 2) */
-  'agent:run': { req: RunRequest; res: void }
+  /**
+   * ★ runId 由调用方传入,不由这里返回(方案 §3 规则 2)。
+   * `started: false` = 这条会话其实已经在跑(排队消息刚续上、或另一个窗口先发了),
+   * 这句话被放进了队列;回执里是新的队列,调用方据此撤掉乐观消息。
+   */
+  'agent:run': { req: RunRequest; res: { started: true } | { started: false; queue: SessionQueueResult } }
   'agent:attach': { req: { runId: string; sinceSeq: number }; res: RunSnapshot }
+  /**
+   * 这个窗口不再看这个 run(及其子代理)的正文 —— 会话 Tab 关了 / 切走一段时间了。
+   * ★ 只摘**调用方自己**的订阅,不停 run、不影响别的窗口。再看时走 `agent:attach`。
+   */
+  'agent:unwatch': { req: { runId: string }; res: void }
   'agent:abort': { req: { runId: string; cascade: boolean }; res: void }
+  /**
+   * 把一个**前台**子代理转去后台:父代理那次 `Task` 调用不再等它、当场返回,
+   * 子代理继续跑,结论之后按后台子代理那条路送回主代理。
+   *
+   * 返回 `false` = 没转成(它已经跑完 / 本来就是后台 / 不在这个进程里)。不是错误。
+   */
+  'agent:backgroundSubagent': { req: { childRunId: string }; res: boolean }
   /**
    * 插话 —— 把这些条目排进正在跑的那个 run,由它在**下一个轮次边界**注入。
    *
@@ -529,9 +734,32 @@ export interface IpcInvokeMap {
    * ★ 空数组是合法且有意义的载荷:它就是「取消全部插话」。
    */
   'agent:interject': { req: { runId: string; items: InterjectItem[] }; res: void }
+  /**
+   * 权限档位药丸切到更宽松/更严格的一档时,立刻对**这个正在跑的 run**接下来的
+   * 工具调用生效,而不必等到下一条新消息——`RunRequest.permissionMode` 是
+   * run 开始时冻的快照(见其注释),这条频道改的是 `RunHandle` 上的活值
+   * (`run-registry.ts` 的 `livePermissionMode`)。
+   *
+   * ★ 不影响已经在等用户点的那个审批弹窗:那个弹窗可能是钩子/工作区规则
+   * 强制问人,不是纯档位决定的,放宽档位不该替用户把它自动点掉。
+   */
+  'agent:setPermissionMode': { req: { runId: string; mode: PermissionMode }; res: void }
   /** ★ 审批 / 反问 / 计划确认三种 kind 共用这一个(方案 §4.6) */
   'agent:respondInteraction': { req: InteractionResponse; res: void }
   'agent:listInteractions': { req: { runId?: string; sessionId?: string }; res: PendingInteraction[] }
+  /**
+   * 对话里 widget 的宿主能力(`main/ipc/widget.ts`)。iframe 碰不到 IPC,这几条都由
+   * 渲染层 `WidgetFrame` 在校验过 iframe 报文之后代发。
+   */
+  'widget:getState': { req: { sessionId: string; callId: string }; res: unknown }
+  'widget:setState': { req: { sessionId: string; callId: string; state: unknown }; res: void }
+  'widget:submit': { req: { callId: string; value: string | null }; res: void }
+  'widget:runAction': {
+    req: { sessionId: string; callId: string; actionId: string; params: Record<string, unknown>; confirmed: boolean }
+    res: WidgetActionPreflight | ({ kind: 'result' } & WidgetActionResult)
+  }
+  'widget:complete': { req: { sessionId: string; prompt: string; system?: string; maxTokens?: number }; res: string }
+  'widget:saveFile': { req: { name: string; data: string; encoding: 'utf8' | 'base64' }; res: { path: string } | null }
   'agent:listTools': { req: { workspaceId: string }; res: ToolInfo[] }
 
   // ── Agent 的 shell ──
@@ -547,6 +775,33 @@ export interface IpcInvokeMap {
    * 调用方不必提示 —— 用户要的结果已经达成。
    */
   'shell:stopToolCall': { req: { runId: string; callId: string }; res: boolean }
+  /**
+   * 把**这一条**正在跑的前台命令转去后台 —— 工具卡片上那颗「转后台」按钮。
+   *
+   * 命令不被杀,只是不再被等:这次工具调用当场返回(带上到目前为止的输出和一个
+   * shell id),命令作为后台 shell 继续跑,模型之后用 `BashOutput` / `KillShell` 管它。
+   *
+   * 返回 `false` = 没转成:已经跑完了、这个环境转不了(SSH),或后台 shell 名额已满。
+   * 与 `shell:stopToolCall` 同理不是错误。
+   */
+  'shell:backgroundToolCall': { req: { runId: string; callId: string }; res: boolean }
+  /**
+   * 这个工作区里 agent 开过的后台 shell(含已结束、还没被淘汰的)—— 右上角活动胶囊的
+   * 初始数据。之后的变化走 `shell:backgroundChanged`。
+   */
+  'shell:listBackground': { req: { workspaceId: string }; res: BackgroundShellInfo[] }
+  /**
+   * 看一眼某个后台 shell 的输出尾巴。★ **不消费**模型那份 `BashOutput` 缓冲 ——
+   * 界面看过一眼,模型下次照样读得到(见 `agent-shells.ts` 的 `tail`)。
+   * `null` = 它已经被淘汰了,不是错误。
+   */
+  'shell:peekBackground': { req: { id: string }; res: { info: BackgroundShellInfo; output: string } | null }
+  /**
+   * 用户在活动面板里停掉一个后台 shell。与模型调 `KillShell` 是同一件事,
+   * 状态记成 `killed`,模型下次 `BashOutput` 会读到「被停了」。
+   * `null` = 它已经被淘汰了。
+   */
+  'shell:killBackground': { req: { id: string }; res: BackgroundShellInfo | null }
 
   // ── 终端 ──
   'terminal:create': { req: TerminalCreateRequest; res: TerminalInfo }
@@ -653,7 +908,8 @@ export interface IpcInvokeMap {
   /** 活动日志(环形缓冲)。插件详情页的「活动」标签直接展示 */
   'plugins:activity': { req: { pluginId?: string }; res: PluginActivity[] }
   /** 执行一条插件命令 —— 菜单项、命令面板、快捷键三处共用 */
-  'plugins:runCommand': { req: { pluginId: string; commandId: string }; res: void }
+  /** args:调用点上下文(目前只有 `+` 菜单附带的 workspaceId),随 command.run 透传给插件 handler */
+  'plugins:runCommand': { req: { pluginId: string; commandId: string; args?: Record<string, unknown> }; res: void }
   /**
    * 打开插件自定义编辑器的 Tab 之前,请主进程按 `onCustomEditor:<viewType>`
    * 唤醒该插件。★ 不是权限检查:插件视图的静态文件只对「已被唤醒过」的
@@ -701,7 +957,7 @@ export interface IpcInvokeMap {
    */
   'plugins:confirmClose': { req: { path?: string }; res: { safe: boolean } }
   // ── 插件市场 ──
-  'plugins:marketList': { req: { q?: string; category?: string }; res: PluginMarketItem[] }
+  'plugins:marketList': { req: { q?: string; category?: string; page?: number }; res: PluginMarketPage }
   'plugins:marketCategories': { req: void; res: string[] }
   'plugins:marketDetail': { req: { slug: string }; res: PluginMarketItem & { versions?: { version: string; changelog?: string; permissionEscalated?: boolean }[] } }
   'plugins:installMarket': { req: { slug: string; version?: string }; res: PluginCatalog }
@@ -726,6 +982,22 @@ export interface IpcInvokeMap {
     req: { pluginId: string; key: string; value: boolean | string | number | null }
     res: Record<string, boolean | string | number>
   }
+
+  // ── 文档引擎编辑器画布(形状与不变式见 `shared/document-engine/view.ts`)──
+  /*
+    ★ `open` 的 workspace / path / plugin / viewType 由渲染层从 **Tab 绑定**取,不是插件视图报的;
+    之后只凭 token。token 在主进程侧绑定发起窗口,别的窗口拿着也用不了。
+  */
+  'documentEngine:open': { req: DocumentViewOpenRequest; res: DocumentViewOpened }
+  'documentEngine:render': { req: DocumentViewRenderRequest; res: DocumentViewRenderResult }
+  'documentEngine:input': { req: DocumentViewInputRequest; res: DocumentViewInputResult }
+  'documentEngine:command': { req: DocumentViewCommandRequest; res: DocumentViewInputResult }
+  'documentEngine:list': { req: DocumentViewListRequest; res: DocumentViewList }
+  'documentEngine:headers': { req: DocumentViewHeadersRequest; res: DocumentViewHeaders }
+  'documentEngine:layout': { req: DocumentViewLayoutRequest; res: DocumentViewLayout }
+  'documentEngine:state': { req: DocumentViewTokenRequest; res: DocumentViewState }
+  'documentEngine:save': { req: DocumentViewTokenRequest; res: DocumentViewState }
+  'documentEngine:close': { req: DocumentViewTokenRequest; res: void }
 
   // ── 斜杠命令(`/命令`)──
   /*
@@ -812,7 +1084,16 @@ export interface IpcInvokeMap {
   }
   'goal:clear': { req: { sessionId: string }; res: void }
 
+
+
   // ── 供应商 / 模型别名 ──
+  // ── 视频生成任务(见下面未实现清单上那段:它不走 agent:event)──
+  'video:listBySession': { req: { sessionId: string }; res: VideoJobView[] }
+  'video:get': { req: { id: string }; res: VideoJobView | undefined }
+  'video:cancel': { req: { id: string }; res: { ok: true; state: 'requested' | 'already-done' } | { ok: false; reason: string } }
+  'video:retryRetrieval': { req: { id: string }; res: { ok: boolean; reason?: string } }
+  'video:saveFile': { req: { id: string; defaultName?: string }; res: { path: string } | null }
+
   'provider:list': { req: void; res: UpstreamProvider[] }
   /** 解析本机 Claude Code / Codex / OpenCode 里配置的提供商供审核。★ 只回元数据,不回密钥值。 */
   'providers:listImportable': { req: { sourceKind: ImportSourceKind; pickedDir?: string }; res: ImportableProviders }
@@ -849,6 +1130,59 @@ export interface IpcInvokeMap {
   }
   /** 退出登录。★ 一定成功 —— 删除现有密文不需要主密钥,见 `signOut` 的注释 */
   'provider:signOut': { req: { providerId: string }; res: CredentialInfo }
+
+  // ── 供应商账号(OAuth 多账号,schema 第 24 条) ──
+  /**
+   * ★★ **每一条写频道都回整份账号列表,不回增量。**
+   *
+   * 渲染层于是永远不需要自己合并。回增量的话,「拖拽排序写成功了但列表还是旧顺序」
+   * 这类问题只在两次写挨得很近时出现 —— 而拖拽恰好是最容易连着写两次的操作。
+   *
+   * ★ 列表里**一个 token 字符都没有**(`ProviderAccount` 只有元数据 + 登录态摘要),
+   * 和 `CredentialInfo` 同一条规矩:明文只经 `provider:revealCredential` 单次返回。
+   */
+  'provider:listAccounts': { req: { providerId: string }; res: ProviderAccount[] }
+  /**
+   * 新增一个账号 = 走一遍完整登录。**和 `provider:startOAuth` 同属「长 invoke」**,
+   * 中间进度照样走 `provider:authProgress`。
+   *
+   * ★ 不复用 `startOAuth`:那条的语义是「把这家登录成(替换当前凭证)」,
+   * 老渲染层和导入路径都依赖它。多一个账号是另一件事,分开之后两边的契约
+   * 各自成立 —— 而合并的话,`startOAuth` 会在老界面上悄悄变成「每点一次多一个号」。
+   */
+  'provider:addAccount': { req: { providerId: string }; res: ProviderAccount[] }
+  /** 这条登录失效了,重新登录它(沿用同一条账号行与顺序) */
+  'provider:reauthAccount': { req: { providerId: string; accountId: string }; res: ProviderAccount[] }
+  /** ★ 连带删掉它的密文,见 `db/provider-accounts.ts` 的不变式 */
+  'provider:removeAccount': { req: { providerId: string; accountId: string }; res: ProviderAccount[] }
+  'provider:setAccountEnabled': {
+    req: { providerId: string; accountId: string; enabled: boolean }
+    res: ProviderAccount[]
+  }
+  /** 备注名。空串 = 清掉,显示回落到邮箱 / 上游 id */
+  'provider:setAccountLabel': {
+    req: { providerId: string; accountId: string; label: string }
+    res: ProviderAccount[]
+  }
+  /**
+   * 「设为当前账号」。★ 它决定的是**镜像回旧槽的是谁**和界面上那个标记,
+   * 不改变轮换顺序(轮换看 `order`,见 `selectAccount` 那条注释)。
+   */
+  'provider:setCurrentAccount': { req: { providerId: string; accountId: string }; res: ProviderAccount[] }
+  /** 拖拽排序:整批写。`accountIds` 的下标即新的 `order` */
+  'provider:reorderAccounts': { req: { providerId: string; accountIds: string[] }; res: ProviderAccount[] }
+  /** 「立即解除限流」。用户升级了套餐、或者我们判早了 —— 不该让他干等 */
+  'provider:clearAccountLimit': { req: { providerId: string; accountId: string }; res: ProviderAccount[] }
+  /**
+   * 主动拉一次这个账号的**订阅额度**(GLM Coding Plan,见
+   * `kernel/upstream/coding-plan-quota.ts` 的端点注释)。真发一次网络请求,
+   * 没有密钥 / 这家不是订阅制 / 上游拒绝都会抛。
+   *
+   * ★ 回整份账号列表 —— 快照写进了账号行的 `quota`,和其它账号写频道共用
+   * 「渲染层不需要自己合并」那条约定。设置页和圆环菜单因此读同一份数据。
+   */
+  'provider:fetchQuota': { req: { providerId: string; accountId: string }; res: ProviderAccount[] }
+
   'provider:listModels': { req: { providerId?: string }; res: ModelAlias[] }
   /**
    * ★★ **叫 `fetchModels` 而不是 `listModels`,因为那个名字已经被上面那条占了 ——
@@ -881,10 +1215,21 @@ export interface IpcInvokeMap {
   'modelCatalog:list': { req: void; res: ModelCatalogDefinition[] }
   'modelCatalog:upsert': { req: ModelCatalogDefinition; res: ModelCatalogDefinition }
   'modelCatalog:remove': { req: { id: string }; res: void }
+  /** models.dev 模型目录同步:只新增目录里没有的;apply 取主进程缓存的预览,界面传不来任意数据。 */
+  'modelCatalog:syncPreview': { req: void; res: ModelCatalogSyncPreview }
+  'modelCatalog:syncApply': { req: { ids: string[] }; res: { applied: number } }
+
+  /** models.dev 定价同步。预览不落盘;apply 只采用用户勾选的条目,价格取主进程缓存的那次预览。 */
+  'pricing:listSynced': { req: void; res: ModelPricing[] }
+  'pricing:syncPreview': { req: void; res: PricingSyncPreview }
+  'pricing:syncApply': { req: { modelIds: string[] }; res: { applied: number } }
+  'pricing:clearSynced': { req: void; res: void }
 
   // ── 使用统计 ──
   'usage:getSummary': { req: UsageWindow; res: UsageSummary }
   'usage:getRequestLogs': { req: UsageRequestLogsQuery; res: UsageRequestLogsPage }
+  /** 当前会话的逐次账目；不能用搜索日志代替，搜索不是 session_id 精确匹配。 */
+  'usage:getSessionAttempts': { req: { sessionId: string }; res: UsageAttemptRecord[] }
   'usage:getProviderStats': { req: UsageWindow; res: UsageDimensionStat[] }
   'usage:getModelStats': { req: UsageWindow; res: UsageDimensionStat[] }
   /**
@@ -921,13 +1266,13 @@ export interface IpcInvokeMap {
 
   // ── 启动迁移闸门(见 shared/domain/data-migration.ts) ──
   /*
-    ★ 这四条是**全应用唯一能在数据库打开之前调用的 IPC**。
+    ★ 这五条是**数据库打开之前唯一能调用的业务 IPC**（无状态窗口控制除外）。
 
     它们必须能通,因为闸门存在的那段时间里数据库还没打开 —— 渲染层这时候只有
     一个窗口、一屏进度,别的什么都调不了(这也是「阻止用户使用」的实现方式:
     不是禁用控件,而是后端根本没起来)。
 
-    ★ 所以这四条的实现里**一个字节的库读写都不能有**。谁哪天顺手往
+    ★ 所以这五条的实现里**一个字节的库读写都不能有**。谁哪天顺手往
     `dataMigration:getState` 里加一句 `store.getSettings()`,表现就是迁移期间
     主进程先开了一个内存兜底库,随后 `openDatabase()` 直接抛错、启动失败。
   */
@@ -1043,18 +1388,16 @@ export interface IpcSendMap {
   'tabs:persistInner': { workspaceId: string; state: InnerTabState }
 
   /**
-   * 未发出的输入落盘。★ **`immediate` 分两档,这是与 Tab 布局唯一的不同**:
+   * 草稿落盘。主进程侧防抖 500ms(`immediate` 跳过防抖,用于草稿 Tab 绑定会话、撤回到输入框这类
+   * 离散动作)。
    *
-   * - 草稿每次按键都变 → `false`,走同一个 500ms 防抖,丢失窗口 ≤500ms,代价是半个词。
-   * - 入队/插话/编辑/删除是离散低频动作 → `true`,立即写。丢一整条排队消息的代价
-   *   远高于丢半个词,而这类操作的频率低到根本不值得防抖。
-   *
-   * 强杀(kill -9)拦不住任何一档 —— 这正是队列走立即写、只让草稿承担
-   * 那 500ms 风险窗口的原因。
+   * ★ **只有草稿,不带队列。** 队列由主进程独占(见 `session:queue`);渲染层整份覆盖的话,
+   * 一次迟到的草稿防抖会把主进程刚刚消费掉的排队消息写回去,同一句话被续跑两次。
+   * 强杀(kill -9)仍拦不住那 500ms 的草稿窗口 —— 代价是半个词。
    */
-  'session:persistInput': {
+  'session:persistDraft': {
     sessionId: string
-    state: SessionInputState
+    draft: string
     immediate: boolean
   }
 }
@@ -1090,6 +1433,23 @@ export interface IpcEventMap {
    *   **能在丢过消息之后自己收敛**。
    */
   'agent:activeRuns': { runs: ActiveRunEntry[] }
+  /**
+   * 某条会话的排队消息变了(入队、插话、续跑消费、送达回执)。**全量 + 全局广播**:
+   * 队列是「这条会话还欠着什么」的事实,与谁在看哪个 run 无关,且条数有上限(20 条)。
+   * `rev` 单调递增,渲染层只收比手上更新的那份 —— 它与 `session:queue` 的回执可能乱序到达。
+   */
+  'session:queueChanged': SessionQueueSnapshot
+  /** 后台子代理的结果交回主代理到了哪一步。卡片上的「待汇报 / 已汇报」读它 */
+  'session:subagentReport': { sessionId: string; callId: string; status: SubagentReportStatus }
+  /**
+   * 某条会话的输入(草稿 + 队列)这一次落盘成没成。**全量 + 全局广播**:
+   * 「这条会话的话还没保住」是应用级事实,与谁在看哪个 run 无关。
+   *
+   * ★ 载荷里**没有异常**:见 `SessionInputPersistence` 的注释。
+   * ★ 生产端是 `session-runtime` 的 `onPersistenceChange`(经 `services/agent.ts`
+   *   的投递端口转发),渲染层据此弹 / 撤一条持久错误 toast。
+   */
+  'session:inputPersistence': SessionInputPersistence
   'terminal:data': { id: string; seq: number; chunk: string }
   'terminal:exit': { id: string; code: number }
   /**
@@ -1098,13 +1458,59 @@ export interface IpcEventMap {
    * (`shell/WindowControls.tsx`)据此在「□」和「双叠框」之间换字形。
    */
   'window:maximized': { maximized: boolean }
+  /**
+   * 这个窗口被最小化 / 隐藏(`false`)或者又露出来了(`true`)。**每窗口一份**,定向推。
+   *
+   * ★ `false` 发出之前主进程已经摘掉了它对所有 run 正文的订阅 —— 藏着的窗口
+   * 不再接收、也不再累积任何正文。`true` 时渲染层按快照 + 历史重建它正在看的会话。
+   * 失焦不算:副屏上还开着的窗口仍然要看见新内容。
+   */
+  'window:visibility': { visible: boolean }
   'gateway:status': GatewayStatus
   'gateway:failover': FailoverEvent
+  /**
+   * 视频任务状态变化。**全量广播**(谁在跑视频是应用级事实,不是"我这个窗口
+   * 在看的那一个"),带一个单调递增的 revision,渲染层据此做增量合并。
+   *
+   * ★ 与 `agent:activeRuns` 同一个理由:它必须能在丢过消息之后自己收敛 ——
+   * 而渲染层还可以用 `video:listBySession` 主动补齐。
+   */
+  'video:jobChanged': VideoJobView
+  /**
+   * 后台 shell 列表变了(新开、退出、被杀、被淘汰)。**全量 + 全局广播**,
+   * 理由同 `agent:activeRuns`:丢过一条之后下一条自己收敛。渲染层按 `workspaceId` 自己筛。
+   * ★ 输出增长不发 —— 刷日志的进程会把这条频道淹没,输出由面板展开时自己去 peek。
+   */
+  'shell:backgroundChanged': { shells: BackgroundShellInfo[] }
   'settings:changed': AppSettings
   'theme:changed': { resolved: ResolvedTheme }
   'theme:libraryChanged': { profiles: ThemeProfile[]; images: ImageTheme[] }
   'workspace:changed': { workspaces: Workspace[] }
   'skills:changed': void
+  /**
+   * 装一条 Skill 走到哪一步了。形状与 `plugins:installProgress` 严格一致 ——
+   * 两边的渲染层共用同一个 `installLabel` / `installRatio`,字段一分叉,
+   * 共用的那份就得改成两套。
+   *
+   * ★ 同样走全局广播:装 Skill 是全局副作用,B 窗口的市场页也该看到那颗
+   * 按钮在跑。代价一样 —— 渲染层基于 `key` 的渲染必须是纯查表。
+   */
+  'skills:installProgress': {
+    /** `market:<slug>` 或 `local:<路径>`,同插件那边的规矩 */
+    key: string
+    phase: 'preparing' | 'downloading' | 'installing' | 'done' | 'failed'
+    /** `downloading` 阶段的已收字节 */
+    received?: number
+    /** content-length 或版本表里的 fileSize;两个都没有 → 渲染层走 indeterminate */
+    total?: number
+    /**
+     * 只在 `failed` 上有值,而且是 **key 不是句子**。
+     *
+     * ★ 必须有:`emitToAll` 把事件推给所有窗口,但只有发起那个窗口能 catch 到
+     * invoke 的 rejection。没有它,其他窗口看到的是进度条凭空消失。
+     */
+    messageKey?: string
+  }
   /** 插件装/卸/启/禁/激活状态变了。渲染层收到后重新 `plugins:list` */
   'plugins:changed': void
   /**
@@ -1186,10 +1592,18 @@ export interface IpcEventMap {
     messageKey?: string
     done?: boolean
   }
+  /**
+   * 编辑器画布打开的那个会话状态变了(Agent 改了、保存了、引擎崩了)。
+   * ★ **定向**推给打开这个视图的窗口(`TargetedEventChannel`),不广播:别的窗口不该知道
+   * 这边开着哪些文档。视图收到后拉取失效区域重画。
+   */
+  'documentEngine:changed': DocumentViewChanged
   'commands:changed': void
   'agents:changed': void
   'modes:changed': void
   'hooks:changed': void
+  /** 已配对设备清单或连接状态变了(配对、切换、掉线、移除)。 */
+  'device:changed': DevicesState
   /** 某条会话的目标变了（设立 / 轮数推进 / 清除）。`goal` 缺席 = 现在没有目标。 */
   'goal:changed': GoalChange
   'mcp:changed': { servers: McpServerStatus[] }
@@ -1204,6 +1618,8 @@ export interface IpcEventMap {
   'scheduled:focusRun': { runId: string }
   /** The persisted user catalogue changed. Built-in rows are bundled code. */
   'modelCatalog:changed': { custom: ModelCatalogDefinition[] }
+  /** 同步价目变了(采用 / 清除)。带全量,渲染层直接替换。 */
+  'pricing:changed': { synced: ModelPricing[] }
   /**
    * 上游供应商或别名变了。**两张表一起带**,因为设置页左列的每一行都是
    * 「供应商 + 它的主别名」—— 只推 providers 的话,改完供应商名字副标题还是旧的,
@@ -1252,6 +1668,16 @@ export interface IpcEventMap {
    * 混进去会让每一次登录都触发一遍全应用的模型列表重算。
    */
   'provider:authChanged': { providerId: string; info: CredentialInfo }
+  /**
+   * 某家的**账号列表**变了:登录/删号/排序/停用,以及**限流落闸与解除**、额度快照更新。
+   *
+   * ★★ 限流那一半是这条事件存在的主要理由:落闸发生在一次请求失败的瞬间,
+   * 而用户此刻多半正盯着聊天页。不推的话,他要关掉再打开设置页才知道
+   * 「为什么换号了」—— 而那时闸门可能已经自己到期,他什么都看不到。
+   *
+   * ★ 整份列表下发,不发增量(和那几条写频道的返回值同一个形状、同一条理由)。
+   */
+  'provider:accountsChanged': { providerId: string; accounts: ProviderAccount[] }
   'clientAuth:changed': ClientAuthState
   'configSync:changed': SyncStatus
   'app:updateChanged': UpdateState
@@ -1304,7 +1730,16 @@ export const INVOKE_CHANNELS = {
   'app:updateInstall': 1,
   'app:updateGetState': 1,
   'app:copyText': 1,
+  'device:getState': 1,
+  'device:inspectInvitation': 1,
+  'device:pair': 1,
+  'device:select': 1,
+  'device:useLocal': 1,
+  'device:remove': 1,
+  'device:setRelay': 1,
+  'app:copyImage': 1,
   'app:saveTextFile': 1,
+  'app:saveImageFile': 1,
   'app:openSessionWindow': 1,
   'clientAuth:getState': 1,
   'clientAuth:startLogin': 1,
@@ -1313,12 +1748,17 @@ export const INVOKE_CHANNELS = {
   'clientAuth:signOut': 1,
   'clientAuth:getUser': 1,
   'clientAuth:getUsage': 1,
+  'referral:get': 1,
+  'recharge:getOptions': 1,
+  'recharge:checkout': 1,
+  'recharge:getOrder': 1,
   'configSync:getStatus': 1,
   'configSync:setup': 1,
   'configSync:getConflicts': 1,
   'configSync:getPreview': 1,
   'configSync:confirmInitial': 1,
   'configSync:resolve': 1,
+  'configSync:setUsage': 1,
   'settings:get': 1,
   'settings:update': 1,
   'theme:importImage': 1,
@@ -1355,6 +1795,10 @@ export const INVOKE_CHANNELS = {
   'workspace:writeFile': 1,
   'workspace:mutateFile': 1,
   'workspace:revealFile': 1,
+  'workspace:listOpenTargets': 1,
+  'workspace:openWith': 1,
+  'workspace:copyPath': 1,
+  'workspace:saveFileAs': 1,
   'workspace:listRecovery': 1,
   'review:getChangeSet': 1,
   'review:getFileDiff': 1,
@@ -1376,6 +1820,7 @@ export const INVOKE_CHANNELS = {
   'git:listBranches': 1,
   'git:listCommits': 1,
   'git:getDiff': 1,
+  'git:getDiffSides': 1,
   'git:stage': 1,
   'git:unstage': 1,
   'git:commit': 1,
@@ -1384,8 +1829,14 @@ export const INVOKE_CHANNELS = {
   'git:pull': 1,
   'git:push': 1,
   'git:generateCommitMessage': 1,
+  'composer:suggestNext': 1,
+  'composer:history': 1,
+  'composer:complete': 1,
+  'composer:cancel': 1,
   'tabs:getInner': 1,
   'session:getInput': 1,
+  'session:queue': 1,
+  'session:reportBackground': 1,
   'attachment:upload': 1,
   'attachment:pick': 1,
   'attachment:remove': 1,
@@ -1396,9 +1847,16 @@ export const INVOKE_CHANNELS = {
   'sessions:list': 1,
   'sessions:get': 1,
   'sessions:replaceHistory': 1,
+  'sessions:getPage': 1,
+  'sessions:getSummary': 1,
+  'sessions:lastAssistant': 1,
+  'sessions:editMessage': 1,
+  'sessions:deleteTurn': 1,
+  'sessions:deleteReply': 1,
   'sessions:create': 1,
   'sessions:duplicate': 1,
   'sessions:branch': 1,
+  'sessions:createSkillExtraction': 1,
   'sessions:rename': 1,
   'sessions:setMode': 1,
   'sessions:setModel': 1,
@@ -1408,12 +1866,25 @@ export const INVOKE_CHANNELS = {
   'conversations:searchAll': 1,
   'agent:run': 1,
   'agent:attach': 1,
+  'agent:unwatch': 1,
   'agent:abort': 1,
+  'agent:backgroundSubagent': 1,
   'agent:interject': 1,
+  'agent:setPermissionMode': 1,
   'agent:respondInteraction': 1,
   'agent:listInteractions': 1,
+  'widget:getState': 1,
+  'widget:setState': 1,
+  'widget:submit': 1,
+  'widget:runAction': 1,
+  'widget:complete': 1,
+  'widget:saveFile': 1,
   'agent:listTools': 1,
   'shell:stopToolCall': 1,
+  'shell:backgroundToolCall': 1,
+  'shell:listBackground': 1,
+  'shell:peekBackground': 1,
+  'shell:killBackground': 1,
   'terminal:create': 1,
   'terminal:prepare': 1,
   'terminal:approve': 1,
@@ -1458,6 +1929,16 @@ export const INVOKE_CHANNELS = {
   'plugins:checkUpdates': 1,
   'plugins:updateAll': 1,
   'plugins:getConfiguration': 1,
+  'documentEngine:open': 1,
+  'documentEngine:render': 1,
+  'documentEngine:input': 1,
+  'documentEngine:command': 1,
+  'documentEngine:list': 1,
+  'documentEngine:headers': 1,
+  'documentEngine:layout': 1,
+  'documentEngine:state': 1,
+  'documentEngine:save': 1,
+  'documentEngine:close': 1,
   'plugins:setConfiguration': 1,
   'skills:list': 1,
   'skills:pickZip': 1,
@@ -1491,6 +1972,11 @@ export const INVOKE_CHANNELS = {
   'goal:get': 1,
   'goal:set': 1,
   'goal:clear': 1,
+  'video:listBySession': 1,
+  'video:get': 1,
+  'video:cancel': 1,
+  'video:retryRetrieval': 1,
+  'video:saveFile': 1,
   'provider:list': 1,
   'providers:listImportable': 1,
   'provider:upsert': 1,
@@ -1504,6 +1990,16 @@ export const INVOKE_CHANNELS = {
   'provider:cancelOAuth': 1,
   'provider:submitOAuthCode': 1,
   'provider:signOut': 1,
+  'provider:listAccounts': 1,
+  'provider:addAccount': 1,
+  'provider:reauthAccount': 1,
+  'provider:removeAccount': 1,
+  'provider:setAccountEnabled': 1,
+  'provider:setAccountLabel': 1,
+  'provider:setCurrentAccount': 1,
+  'provider:reorderAccounts': 1,
+  'provider:clearAccountLimit': 1,
+  'provider:fetchQuota': 1,
   'provider:listModels': 1,
   'provider:fetchModels': 1,
   'provider:setAliases': 1,
@@ -1514,8 +2010,15 @@ export const INVOKE_CHANNELS = {
   'modelCatalog:list': 1,
   'modelCatalog:upsert': 1,
   'modelCatalog:remove': 1,
+  'modelCatalog:syncPreview': 1,
+  'modelCatalog:syncApply': 1,
+  'pricing:listSynced': 1,
+  'pricing:syncPreview': 1,
+  'pricing:syncApply': 1,
+  'pricing:clearSynced': 1,
   'usage:getSummary': 1,
   'usage:getRequestLogs': 1,
+  'usage:getSessionAttempts': 1,
   'usage:getProviderStats': 1,
   'usage:getModelStats': 1,
   'usage:getDailySeries': 1,
@@ -1558,8 +2061,6 @@ export const INVOKE_CHANNELS = {
   , 'dataMigration:skip': 1
   , 'dataMigration:undoMerge': 1
   , 'dataMigration:openDataDirectory': 1
-  , 'context:list': 1
-  , 'context:updateCheckpoint': 1
   , 'context:compact': 1
   , 'context:preview': 1
   , 'scheduled:listTasks': 1
@@ -1582,7 +2083,7 @@ export const SEND_CHANNELS = {
   'app:quitConfirmed': 1,
   'tabs:persistOuter': 1,
   'tabs:persistInner': 1,
-  'session:persistInput': 1
+  'session:persistDraft': 1
 } as const satisfies Record<keyof IpcSendMap, 1>
 
 export const EVENT_CHANNELS = {
@@ -1591,9 +2092,13 @@ export const EVENT_CHANNELS = {
   'connection:auth': 1,
   'agent:event': 1,
   'agent:activeRuns': 1,
+  'session:queueChanged': 1,
+  'session:subagentReport': 1,
+  'session:inputPersistence': 1,
   'terminal:data': 1,
   'terminal:exit': 1,
   'window:maximized': 1,
+  'window:visibility': 1,
   'gateway:status': 1,
   'gateway:failover': 1,
   'settings:changed': 1,
@@ -1601,6 +2106,7 @@ export const EVENT_CHANNELS = {
   'theme:libraryChanged': 1,
   'workspace:changed': 1,
   'skills:changed': 1,
+  'skills:installProgress': 1,
   'plugins:changed': 1,
   'plugins:installProgress': 1,
   'plugins:message': 1,
@@ -1608,15 +2114,18 @@ export const EVENT_CHANNELS = {
   'plugins:openTab': 1,
   'plugins:interaction': 1,
   'plugins:progress': 1,
+  'documentEngine:changed': 1,
   'commands:changed': 1,
   'agents:changed': 1,
   'modes:changed': 1,
   'hooks:changed': 1,
+  'device:changed': 1,
   'goal:changed': 1,
   'mcp:changed': 1,
   'provider:changed': 1,
   'provider:authProgress': 1,
   'provider:authChanged': 1,
+  'provider:accountsChanged': 1,
   'websearch:changed': 1,
   'sessions:changed': 1,
   'review:changed': 1,
@@ -1624,6 +2133,7 @@ export const EVENT_CHANNELS = {
   'browser:cua': 1,
   'browser:profilesChanged': 1,
   'modelCatalog:changed': 1,
+  'pricing:changed': 1,
   'clientAuth:changed': 1
   ,'configSync:changed': 1
   ,'app:updateChanged': 1
@@ -1631,6 +2141,9 @@ export const EVENT_CHANNELS = {
   ,'scheduled:changed': 1
   ,'scheduled:focusRun': 1
   ,'dataMigration:progress': 1
+  // 视频任务状态变化(revision 单调递增,渲染层据此做增量合并)。
+  ,'video:jobChanged': 1
+  ,'shell:backgroundChanged': 1
 } as const satisfies Record<keyof IpcEventMap, 1>
 
 // ═══════════════════════════════════════════════════════════════

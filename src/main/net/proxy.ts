@@ -39,10 +39,27 @@
  * `setProxy` 管不到它),所以换的是另一条路 —— 让子进程侧**来问**「连这台主机
  * 该走哪个代理」,答案仍由同一个 `defaultSession` 给出。这样手动代理、系统代理、
  * PAC 脚本、直连白名单四件事只有一份实现,不会出现「设置页改了,ssh 那边还是老的」。
+ *
+ * ## Agent 的 shell 命令走 `shellProxyEnv`
+ *
+ * 需求:Agent 通过 Bash 工具 / 后台 shell / 本地钩子起的命令(`npm install`、
+ * `curl`、`git clone`…)默认也要走同一份代理。CLI 只认 `HTTP_PROXY` 一类环境变量,
+ * 而 Electron 从 Finder/Dock 启动时 `process.env` 里没有它们 —— 所以由这里把
+ * 「当前该走哪个代理」翻成那撮环境变量(`shellProxyEnv`),经 `KernelHost.childEnv`
+ * 注入子进程。答案仍从 `defaultSession` 来,四件事仍然只有一份实现。
  */
 import { app, session } from 'electron'
 import type { ProxyDialTarget, ProxyPasswordInfo, ProxySettings } from '../../shared/domain/proxy'
-import { composeProxyUrl, isLocalNetworkHost, parseResolvedProxy, proxyConfigFor } from '../../shared/domain/proxy'
+import {
+  childProxyEnv,
+  composeProxyUrl,
+  DIRECT_BYPASS,
+  isLocalNetworkHost,
+  LOCAL_ONLY_BYPASS,
+  normalizeBypassList,
+  parseResolvedProxy,
+  proxyConfigFor
+} from '../../shared/domain/proxy'
 import { removeCredential } from '../db/repo'
 import { getHost } from '../runtime'
 
@@ -65,6 +82,18 @@ let current: ProxySettings | null = null
  */
 let triedKey: string | null = null
 
+/**
+ * 子进程代理环境变量的缓存(见 `shellProxyEnv`)。★ 存的是 **Promise 本身**,不是
+ * 结果:并发的前台 + 后台命令同时冷启动时不会各自去 `resolveProxy` 一遍(PAC 脚本下
+ * 那次调用不便宜),而且第一个调用方拿到什么,后面的调用方拿到的就是什么,不会出现
+ * 两条命令走着不同代理的窗口。`applyProxy` 换配置时置空。
+ *
+ * ★ 已知的洞:**跟随系统**时,系统代理在应用运行中被改掉不会经过 `applyProxy`,
+ *   缓存要等到下次改设置或重启才刷新。这是这条路的代价,不是疏忽 —— Electron
+ *   没有系统代理变化的事件可听,不肯为它加轮询。
+ */
+let childEnvCache: Promise<Record<string, string>> | null = null
+
 function credentialKey(p: ProxySettings): string {
   return `${composeProxyUrl(p)}|${p.authUser}`
 }
@@ -78,6 +107,8 @@ export async function applyProxy(p: ProxySettings): Promise<void> {
   current = p
   // 换了一套配置 = 换了一套凭证,上面那个「只试一次」的闸重新开一次
   triedKey = null
+  // 子进程那撮代理变量跟着作废 —— 不清的话,改完设置之后新起的命令还走老路
+  childEnvCache = null
 
   const cfg = proxyConfigFor(p)
   await session.defaultSession.setProxy(cfg)
@@ -122,6 +153,48 @@ export async function resolveProxyForHost(hostname: string, port: number): Promi
   if (p.host !== endpoint.host || (p.port !== 0 && p.port !== endpoint.port)) return endpoint
   const password = await getHost().secrets.get(PROXY_PASSWORD_REF).catch(() => null)
   return { ...endpoint, username: p.authUser, password: password ?? '' }
+}
+
+/**
+ * 探针 URL。`example.com` 是 IANA 保留的示例域名,永远在外网、永远不该命中任何
+ * 直连名单。环境变量表达不了 PAC 那种按目标分流的规则,所以只能探这一次。
+ */
+const SHELL_PROXY_PROBE_URL = 'https://example.com/'
+
+/**
+ * Agent 子进程要继承的代理环境变量(`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` /
+ * `NO_PROXY`,凭据除外 —— 见 `childProxyEnv` 文件内那条 ★★)。
+ *
+ * ★ 仍然问 `defaultSession`,不自己读 `current`:手动代理、系统设置、PAC 脚本三种
+ *   情况下「该不该走代理、走哪台」只有它有完整答案 —— 与 `resolveProxyForHost`
+ *   同一条理由。PAC 只对特定域名放行的配置会探得 DIRECT、于是什么也不注入;
+ *   那是环境变量这种载体力所能及的边界,不是这里能修的。
+ *
+ * ★ **失败绝不抛。** 这条函数站在每一次 Bash 调用的必经之路上,抛了等于 session
+ *   抽风一次、Agent 的 shell 工具整个死掉。降级成「按继承环境跑」,日志里留一句。
+ */
+export function shellProxyEnv(): Promise<Record<string, string>> {
+  childEnvCache ??= resolveShellProxyEnv()
+  return childEnvCache
+}
+
+async function resolveShellProxyEnv(): Promise<Record<string, string>> {
+  try {
+    const endpoint = parseResolvedProxy(await session.defaultSession.resolveProxy(SHELL_PROXY_PROBE_URL))
+    if (endpoint === null) return {}
+    // 手动代理:白名单沿用设置页那份(用户填的在前、内置表在后,与 proxyBypassRules 同序);
+    // 跟随系统:系统的排除列表读不到,只保回环 —— 理由在 LOCAL_ONLY_BYPASS 上
+    const p = current
+    return childProxyEnv(endpoint, process.env, {
+      bypass: p !== null && p.enabled && p.mode === 'manual'
+        ? [...normalizeBypassList(p.bypass), ...DIRECT_BYPASS]
+        : LOCAL_ONLY_BYPASS,
+      lowercase: process.platform !== 'win32'
+    })
+  } catch (error) {
+    getHost().logger.warn('[proxy] 解析子进程代理变量失败,本次按继承环境执行', error)
+    return {}
+  }
 }
 
 /**

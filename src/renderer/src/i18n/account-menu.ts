@@ -17,7 +17,7 @@ type Params = Record<string, string | number>
 export const accountMenuZh = {
   /** 触发按钮的可访问名。按钮上的可见文字是用户名，不能说清「点它会发生什么」 */
   'accountMenu.label': '账户菜单',
-  'accountMenu.balance': '积分余额',
+  'accountMenu.balance': '余额',
   'accountMenu.balanceRefresh': '刷新余额',
   'accountMenu.balanceRefreshFailed': ({ message }: Params) => `刷新余额失败：${message}`,
   'accountMenu.invite': '邀请好友',

@@ -132,7 +132,33 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        # ★★ 这里必须重试:v2.2.11 的 macOS Intel job 就死在这一步,报
+        #    `ConnectTimeoutError: www.electronjs.org:443 (timeout: 10000ms)` ——
+        #    而 Publish 因此被跳过、Release 永远停在草稿,另外三台同样的步骤却过了。
+        #
+        #    这一步的 postinstall 会让 electron-builder 用 node-gyp 为 Electron
+        #    重编译 node-pty,headers 只能取自 `www.electronjs.org/headers`,而那个
+        #    地址**改不掉**:@electron/rebuild 把它作为**命令行参数** --dist-url 传给
+        #    node-gyp(rebuild.js 里的默认值),electron-builder 调的是它的 API、不传
+        #    headerURL;electron-builder 自己的镜像配置(getGypEnv 读
+        #    npm_config_electron_mirror)只作用于它那条 legacy 路径。所以 .npmrc 里的
+        #    electron_mirror 在这一步用不上 —— 它照旧管着 electron 二进制的下载,
+        #    npm 11 那句 `Unknown project config` 只是警告,不是失效。
+        #
+        #    把 node-gyp 顶到 npmmirror 也走不通:实测那边 v44.1.1 的 SHASUMS256.txt
+        #    里没有 `node-v44.1.1-headers.tar.gz`,node-gyp 会以
+        #    `local checksum … not match remote undefined` 回滚(headers 只发在
+        #    electronjs.org/headers)。于是这条链路就是「外部依赖 + 10 秒连接超时」,
+        #    唯一可靠的办法是重试:瞬时失败不再废掉整轮发布,而确定性的编译错误
+        #    三次都失败、照样红。
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci --no-audit --no-fund; then exit 0; fi
+            echo "::warning::npm ci 第 ${attempt} 次失败（多为 electron headers 下载超时），重试"
+            sleep $((attempt * 20))
+          done
+          exit 1
 
       - name: Check macOS signing credentials
         # 需求：在打包前把缺失的 secret 一次性点名。
@@ -206,10 +232,89 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # 独立设备服务包(无 Electron,Node >= 24):随桌面版本同一个 Release 发布,**手动下载安装**,
+  # 没有自动更新通道(桌面更新器只认 exe/AppImage/dmg/zip,见 scripts/upload-client-release.mjs)。
+  # 包里没有任何机密;依赖由 `npm install --omit=dev` 在目标机上安装。
+  device-service:
+    name: Device service package
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: npm
+          # 只为发布那一步:setup-node 会往项目 .npmrc 写 //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN},
+          # 凭据在下面那一步的 env 里给(与 publish-packages.yml 同一条路数)。
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        # 只需要 vite/tsc 构建 bundle;跳过 postinstall,避免为 Electron 重编译原生模块
+        # (那一步要下载 electronjs.org headers,见 build 任务里的说明)。
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      - name: Build, package and verify outside the repository
+        run: npm run build:agent && npm run package:agent -- --verify
+
+      # 包名是 npm 上的 @aidotnet/nextcowork-device-service,`npm pack` 出来的文件名把作用域拍平
+      # (`@scope/name` → `scope-name`),所以这里的通配符要跟着走,否则 Release 会传空资产而静默失败。
+      - name: Write checksum
+        run: cd out && sha256sum aidotnet-nextcowork-device-service-*.tgz > aidotnet-nextcowork-device-service.sha256
+
+      - name: Upload to Release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG_NAME" out/aidotnet-nextcowork-device-service-*.tgz out/aidotnet-nextcowork-device-service.sha256 --clobber
+
+      # 顺手把同一份产物发到 npm(`npm i -g @aidotnet/nextcowork-device-service`),用户不必从
+      # Release 下 tgz 再自己装依赖。只跟着真正的发版跑:build-only 的 workflow_dispatch 不碰 npm。
+      # 名字与版本读的是打包时生成的那份清单,不在这里重写一遍。
+      - name: Publish to npm
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          manifest=out/agent-package/package.json
+          name=$(node -p "JSON.parse(require('node:fs').readFileSync('$manifest','utf8')).name")
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('$manifest','utf8')).version")
+          # npm 不允许覆盖已发布的版本号。与上面 gh release upload 的 --clobber 对齐:同一个 tag
+          # 重跑应当是幂等的;真要换内容只能升版本号,这是 npm 的规矩。
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; nothing to publish"
+          else
+            # ★ 文件名前面必须有 `./`。npm 把**路径**与 GitHub 简写(owner/repo)一起解析,而
+            #   `out/aidotnet-nextcowork-device-service-2.7.2.tgz` 正好长得像后者 —— 不带 `./` 时
+            #   npm 去 `ssh://git@github.com/out/…tgz.git` 取包,报的是「Permission denied (publickey)」,
+            #   看起来像凭据问题,其实是路径被当成了仓库名。只传 Tarball 文件名也**不行**:同样落进
+            #   GitHub 简写,这里必须带目录前缀。
+            npm publish ./out/aidotnet-nextcowork-device-service-*.tgz --access public
+          fi
+
+      - name: Upload build-only artifact
+        if: needs.prepare.outputs.publish != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidotnet-nextcowork-device-service
+          path: |
+            out/aidotnet-nextcowork-device-service-*.tgz
+            out/aidotnet-nextcowork-device-service.sha256
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Publish GitHub Release
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, build]
+    needs: [prepare, build, device-service]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

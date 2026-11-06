@@ -4,7 +4,7 @@
  */
 import { dirname, join } from 'node:path'
 import { copyFileSync, cpSync, existsSync, mkdirSync, statSync } from 'node:fs'
-import { app, shell, BrowserWindow, nativeImage, powerMonitor } from 'electron'
+import { app, shell, BrowserWindow, dialog, nativeImage, powerMonitor } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import appIconPath from '../../resources/icon.png?asset'
 import {
@@ -17,7 +17,10 @@ import {
   peekThemePreference
 } from './db'
 import { probeSqlite, type SqliteProbeResult } from './db/probe'
-import { electronHost, migrateLegacyCredentials } from './host'
+import { electronHost, migrateLegacyCredentials, migrateProvidersToFile } from './host'
+import { PROVIDER_FILE_NAME, ProviderFileStore } from './db/provider-file'
+import { useProviderFileStore } from './db/repo'
+import { onProviderFileChanged } from './ipc/provider'
 import { installProductionBrowserBindings, type BrowserBindings } from './browser/bindings'
 import {
   flushPendingPersists,
@@ -25,20 +28,33 @@ import {
   reconcileMigratedWorkspacesForStoredAccount,
   registerIpc,
   registerMigrationIpc,
+  setWindowContentVisible,
   shutdownClientAuth,
   shutdownRuns,
   shutdownTerminals
 } from './ipc'
 import { sweepPendingDelete } from './ipc/pending-delete'
+import { closeDeviceManager } from './ipc/device'
 import { shutdownImports } from './imports/service'
 import { resumeImportSync, startImportSync, stopImportSync } from './imports/sync'
 import { resumeUsageRollup, startUsageRollup, stopUsageRollup } from './usage/rollup-task'
 import { installAttachmentProtocol, registerAttachmentScheme } from './net/attachment-protocol'
+import { installWindowBackend } from './window/registry'
+import { installExternalOpener } from './services/external-opener'
+import { installClientAuthPort } from './services/client-auth-port'
+import { getClientAccessToken, getClientAuthState } from './ipc/client-auth'
+
+// 窗口注册表本身不导入 Electron(无头服务要复用);桌面在这里把真实的 BrowserWindow 接进去。
+installWindowBackend(BrowserWindow)
+// 登录流程要打开系统浏览器:同样由桌面入口注入,服务里没有这个能力时会明确失败。
+installExternalOpener((url) => shell.openExternal(url))
+// 技能市场安装要平台访问令牌:登录服务由桌面注入,无头服务不装 = 未登录。
+installClientAuthPort({ authenticated: () => getClientAuthState().mode === 'authenticated', accessToken: getClientAccessToken })
 import { installWidgetProtocol, registerWidgetScheme } from './net/widget-protocol'
 import { installPluginProtocol, registerPluginScheme, setPluginAppearanceResolver } from './plugin/protocol'
-import { shutdownPlugins, startPlugins } from './ipc/plugins'
+import { shutdownPlugins, startPlugins, acquireDocumentGuard } from './ipc/plugins'
 import { applyProxy, installProxyAuth } from './net/proxy'
-import { initRuntime, shutdownMcp, shutdownSessionTitles, shutdownEnvironments } from './runtime'
+import { initRuntime, seedProviderAccounts, shutdownMcp, shutdownSessionTitles, shutdownEnvironments } from './runtime'
 import { GLOBAL_SETTINGS_FILENAME } from './kernel/local-settings'
 import { PROFILE_DIRECTORY_SEGMENT } from './db/config-profile'
 import { migrateFlatLayout, rewriteMigratedPaths } from './db/flat-layout'
@@ -46,6 +62,7 @@ import { createMigrationGate, type MigrationGate } from './db/startup-migration'
 import {
   announceIpcReady,
   announceMigrationState,
+  announceStartupFailure,
   installMigrationGate,
   setMigrationDataChangedListener
 } from './ipc/data-migration'
@@ -54,15 +71,19 @@ import { installUserAgent } from './kernel/user-agent'
 import { installBundledSkills } from './kernel/skill/bundled'
 import { SKILLS_DIR } from './kernel/skill/load'
 import { store } from './state/store'
+import { isAccountSwitchInFlight, setAccountGatewayReconciler } from './account-switch'
 import { initTray, destroyTray } from './tray'
 import { windows } from './window/registry'
 import { QuitFlow } from './quit-flow'
+import { armQuitWatchdog } from './quit-watchdog'
+import { DocumentQuitGuard } from './document-engine/quit-guard'
+import { documentEngineMessage } from '../shared/i18n/document-engine'
 import { titleBarOptions, watchMaximized } from './window/title-bar'
 import { applyThemePreference, resolveTheme, setQuitRequester, setSessionWindowOpener } from './ipc/app'
 import { updateService } from './update/update-service'
 import { reconcileScheduler, startScheduler, stopScheduler } from './scheduled/scheduler'
 import { reconcileGateway, shutdownGateway } from './ipc/gateway'
-import { setAccountGatewayReconciler } from './account-switch'
+import type { WindowKind } from '../shared/domain/tab'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 单实例锁 —— 必须在 whenReady 之前。方案 §9:两个实例开同一个 SQLite 文件,
@@ -87,6 +108,30 @@ installUserAgent(app.getVersion())
 */
 let quitFlow: QuitFlow | null = null
 let browserBindings: BrowserBindings | null = null
+
+/**
+ * 退出前的**文档闸门**(见 `ipc/plugins.ts` 的 `acquireDocumentGuard`)。
+ *
+ * ★ acquired 为 true 有三个含义,每个都有对应的收口:
+ *   1. 已经排空并且确认没有未保存的文档会话 —— 所以 `before-quit` 里那次关窗
+ *      **可以**开始了(关窗之后渲染层的 `beforeunload` 顶不住也没关系);
+ *   2. 它**没有**被任何 `Promise.allSettled` 吞掉:拿没拿到就是这一处的事实;
+ *   3. 收尾 (`drainAsync`) 必须按 `guarded = true` 调 `shutdownPlugins`,否则那一次
+ *      会重新去拿闸门并抛,插件与 helper 一个都收不掉。
+ *
+ * 退出被作废(渲染层顶住 unload)时必须 `releaseDocumentGuard()` —— 应用要回到完全可用。
+ */
+const documentQuitGuard = new DocumentQuitGuard({
+  isQuitting: () => quitFlow === null || quitFlow.done || quitFlow.inProgress,
+  acquire: acquireDocumentGuard,
+  begin: () => { quitFlow?.begin() },
+  confirmDiscard: async (error) => {
+    // 需求：账户切换占用闸门不是 dirty，不能把它误报为文档未保存、更不能丢弃旧账户。
+    if (isAccountSwitchInFlight()) return false
+    console.warn('[quit] 文档预检未通过:', error)
+    return explainQuitBlocked()
+  }
+})
 
 /**
  * 命令行显式给过 `--user-data-dir` 吗?
@@ -211,31 +256,44 @@ function logStartupProbe(): void {
   })
 }
 
-function isSafeBrowserUrl(raw: string): boolean {
+/**
+ * webview 地址的协议闸：可信协议返回它的协议名，凭证不干净或地址解析不了返回 null。
+ *
+ * http/https 一直都可以；`file://` 自 2026-09-22 起也可以 —— 需求是「本地生成的
+ * HTML 报告用 file:// 打开、在右侧工作台里直接看」（风险与决策记在
+ * `kernel/tool/builtin/ssrf.ts` 的 `SsrfRiskOptions.allowFileUrls`，这里不重复）。
+ *
+ * ★ 这个函数只回答「协议是否可信」，**不等于放行**：远程页面跳到 file:// 的那条路
+ * 还要过 `guardNavigation` 的「当前页已经是 file://」那一关（见调用处注释）。
+ * `javascript:`、`data:`、`ncw://` 等一律 null —— webview 永远不加载它们。
+ */
+function browserUrlProtocol(raw: string): string | null {
   try {
     const parsed = new URL(raw)
-    return (
-      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-      parsed.username === '' &&
-      parsed.password === ''
-    )
+    if (parsed.username !== '' || parsed.password !== '') return null
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:') return null
+    return parsed.protocol
   } catch {
-    return false
+    return null
   }
 }
 
-function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: string }): BrowserWindow {
+function createMainWindow(
+  sessionRoute?: { workspaceId: string; sessionId: string },
+  windowKind: WindowKind = 'main'
+): BrowserWindow {
+  const quickWindow = windowKind === 'quick'
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 900,
-    minHeight: 600,
+    width: quickWindow ? 1120 : 1280,
+    height: quickWindow ? 760 : 820,
+    minWidth: quickWindow ? 860 : 900,
+    minHeight: quickWindow ? 560 : 600,
     show: false,
     autoHideMenuBar: true,
     /*
       ★ **跟着用户的主题偏好走,不能写死。** 这个色是窗口在渲染层画出第一帧之前
       露出来的底色 —— 写死深色的话,浅色用户看到的是「深色空块 → 界面出来 → 啪一下
-      变浅」。两个值取自 theme.css 里的 `--color-app`(深 #2a2d2b / 浅 #f2eee6),
+      变浅」。两个值取自 theme.css 里的 `--color-app`(深 #252527 / 浅 #ececf0),
       改那边记得同步这里。
 
       ★ **不能用 `store.getSettings()`。** 建窗现在排在启动迁移闸门之前,而闸门
@@ -243,7 +301,16 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
       随后真正的 `openDatabase()` 直接抛错,启动死在那里。
       `peekThemePreference()` 自己开一个只读连接,不碰那个句柄。
     */
-    backgroundColor: resolveTheme(peekThemePreference(join(resolveDataRoot(), DB_FILENAME))) === 'light' ? '#f2eee6' : '#2a2d2b',
+    backgroundColor: resolveTheme(peekThemePreference(join(resolveDataRoot(), DB_FILENAME))) === 'light' ? '#ececf0' : '#252527',
+    /*
+      ★ 苹果风格(Liquid Glass):macOS 上窗口本身是毛玻璃,桌面壁纸透过来 ——
+      渲染层在 `data-vibrancy` 下把窗口底和两块主面板改成半透明(见 theme.css 末尾)。
+      vibrancy 只有在背景色全透明时才看得见,所以这里把上面那个底色覆盖掉;
+      首帧不会闪,因为系统材质本身就跟随深浅外观。Windows/Linux 保持实色。
+    */
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+      : {}),
     // Windows/Linux 的任务栏与窗口图标(macOS 忽略,那边走下面的 app.dock.setIcon)
     icon: nativeImage.createFromPath(appIconPath),
     // macOS:红绿灯嵌进侧边栏(方案 §8)。Windows/Linux:只去掉系统标题栏,
@@ -264,6 +331,18 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
   })
 
   win.on('ready-to-show', () => win.show())
+
+  /*
+    需求:藏起来的窗口(最小化、点关闭按钮隐藏到托盘)不再接收、也不再累积任何 run 正文 ——
+    Agent 照常在主进程跑,窗口回来时按快照 + 历史重建它在看的会话。
+    ★ 失焦**不算**:副屏上还开着的窗口仍然要看见新内容。
+  */
+  const contentHidden = (): void => setWindowContentVisible(win.webContents, false)
+  const contentShown = (): void => setWindowContentVisible(win.webContents, true)
+  win.on('minimize', contentHidden)
+  win.on('hide', contentHidden)
+  win.on('restore', contentShown)
+  win.on('show', contentShown)
 
   /*
     关闭按钮只隐藏,不销毁窗口 —— 保留页面状态(当前会话/滚动位置/未保存的输入),
@@ -291,18 +370,35 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
   */
   win.webContents.on('will-prevent-unload', () => {
     quitFlow?.veto()
+    updateService.installCancelled()
+    /*
+      需求:整次退出作废 = 应用必须**完全可用**,文档也要照常打得开。
+      `veto()` 只管退出状态机,文档闸门在别处(主进程的 `acquireDocumentGuard()`,
+      见 `main/index.ts` 的 `before-quit`);不在这里放开的话,用户选完「取消」之后
+      界面看起来一切正常,而任何文档都打不开(每次调用都被拒),直到重启。
+    */
+    releaseDocumentGuard()
   })
 
   // 任何 window.open / target=_blank 一律不在应用内开新窗口,交给系统浏览器。
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     // Renderer-controlled session links open another app window, while all
     // other external targets continue to use the system browser policy.
     const appUrl = win.webContents.getURL().split('#')[0]
     const devUrl = process.env['ELECTRON_RENDERER_URL']
-    if ((typeof appUrl === 'string' && appUrl !== '' && url.startsWith(appUrl)) || (typeof devUrl === 'string' && url.startsWith(devUrl))) {
+    /*
+      ★ 两条分支**互斥,且本应用的地址先判**。原来外链那一句排在最前面、判完不返回,
+      于是 dev 下(appUrl 与 `ELECTRON_RENDERER_URL` 都是 http://localhost:5173)
+      一个指向开发服务器的 `window.open` 会**同时**走系统浏览器和 `action: 'allow'`,
+      凭空多出一扇 Electron 窗口 —— 而它多半停在空白上。
+
+      `devUrl !== ''` 不是防御性判断:空串的 `startsWith('')` 恒为 true,少了它,
+      环境变量被设成空串的那一次运行会把**任意外链**都当成本应用的地址放进新窗口。
+    */
+    if ((typeof appUrl === 'string' && appUrl !== '' && url.startsWith(appUrl)) || (typeof devUrl === 'string' && devUrl !== '' && url.startsWith(devUrl))) {
       return { action: 'allow' }
     }
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
@@ -317,16 +413,39 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
     webPreferences.disableDialogs = true
     webPreferences.webSecurity = true
     webPreferences.allowRunningInsecureContent = false
-    if (typeof params.src === 'string' && params.src !== '' && !isSafeBrowserUrl(params.src)) event.preventDefault()
+    if (typeof params.src === 'string' && params.src !== '' && browserUrlProtocol(params.src) === null) event.preventDefault()
   })
 
   win.webContents.on('did-attach-webview', (_event, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
-      if (isSafeBrowserUrl(url)) void shell.openExternal(url)
+      /*
+        页面 window.open 出去的一律交给系统浏览器，且**只交 http(s)**：
+        `shell.openExternal('file://…')` 在桌面 OS 上等于「用默认应用打开任意
+        本地路径」—— 本地 HTML 里一句 window.open('file:///…command') 就能借
+        这里点火。file:// 的放行范围只到 webview 内部导航为止。
+      */
+      const protocol = browserUrlProtocol(url)
+      if (protocol === 'http:' || protocol === 'https:') void shell.openExternal(url)
       return { action: 'deny' }
     })
     const guardNavigation = (event: Electron.Event, url: string): void => {
-      if (!isSafeBrowserUrl(url)) event.preventDefault()
+      const protocol = browserUrlProtocol(url)
+      if (protocol === 'http:' || protocol === 'https:') return
+      if (protocol === 'file:') {
+        /*
+          ★ file:// 只对「本来就在本地」的页面放行。需求见 `ssrf.ts` 的
+          `allowFileUrls`：本地 HTML 报告要在 webview 里点链接互相跳。
+          不能无条件放行 —— 那等于把「远程页面 → file:///…」写进白名单；
+          Chromium 自己也挡 http→file 的渲染进程发起导航，但两道一起才算数。
+          症状对照：本地报告点了链接没反应 = 这里拦过头；远程页竟能导航到
+          本地文件并被 snapshot 读走 = 这里放太开。
+          current 为空/about:blank 是首次挂载，对应的初始 src 已在
+          will-attach-webview 验过协议，放行。
+        */
+        const current = contents.getURL()
+        if (current === '' || current === 'about:blank' || current.startsWith('file://')) return
+      }
+      event.preventDefault()
     }
     contents.on('will-navigate', guardNavigation)
     contents.on('will-redirect', guardNavigation)
@@ -343,7 +462,7 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
 
   // 先登记再加载:渲染层的 window:ready 一到就要能查到 kind。
   // 登记晚了,markReady 会走 of() 的兜底分支,kind 判断不准。
-  windows.register(win.webContents, 'main')
+  windows.register(win.webContents, windowKind)
 
   // 自绘的最大化/还原按钮要跟着窗口的**真实**状态走 —— 用户也可能拖窗口边缘、
   // 双击 Tab 条、按 Win+↑。挂在 register 之后:push 走的就是 registry。
@@ -358,10 +477,13 @@ function createMainWindow(sessionRoute?: { workspaceId: string; sessionId: strin
   const route = sessionRoute === undefined
     ? undefined
     : `/${encodeURIComponent(sessionRoute.workspaceId)}/${encodeURIComponent(sessionRoute.sessionId)}`
+  const windowQuery = windowKind === 'quick' ? '?window=quick' : ''
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}${route === undefined ? '' : `#${route}`}`)
+    void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}${windowQuery}${route === undefined ? '' : `#${route}`}`)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'), route === undefined ? undefined : { hash: route })
+    void win.loadFile(join(__dirname, '../renderer/index.html'), route === undefined
+      ? (windowQuery === '' ? undefined : { search: windowQuery })
+      : { search: windowQuery, hash: route })
   }
 
   return win
@@ -528,6 +650,21 @@ function legacyMigrationSources(targetDir: string): Array<{ root: string; databa
 void app
   .whenReady()
   .then(async () => {
+  /*
+    ★ **抢锁失败的那个进程必须在这里止步。** 文件顶部那句 `app.quit()` 不中断模块
+    求值 —— 它只是排了一次退出,而 `ready` 通常先于退出真正落地,于是这个将死的
+    进程会照样往下建窗、开库。
+
+    症状:应用已经在跑时再点一次图标(Dock / 访达,`electron-vite dev --watch`
+    热更新重拉进程也算),第一实例被 `second-instance` 唤到前面的**同时,多弹出
+    一扇空白窗**。那扇窗不是坏了,它等的是本进程永远不会发出的
+    `announceIpcReady()`(见下面 `registerIpc()` 后面那段),几百毫秒后随进程一起消失。
+
+    判据放在回调里而不是把整段启动缩进进 `if`:退出流程、`second-instance` 这些
+    模块级装配对两种进程都无害,真正不能跑第二遍的是**建窗和开库**,而它们全在这里面。
+  */
+  if (!gotTheLock) return
+
   electronApp.setAppUserModelId('com.nextcowork.app')
 
   // ★ dev 与未打包运行时的 dock 图标。打包后的 .app 由 electron-builder 从
@@ -546,10 +683,10 @@ void app
   logStartupProbe()
 
   /*
-    ★ **在闸门之前、建窗之前先登记闸门那几条频道。** 窗口加载完就会立刻
-    invoke `dataMigration:getState`,而那一刻闸门正在跑、数据库还没打开。
-    完整的 `registerIpc()` 要等闸门放行才能调(它会拉起导入服务、扫孤儿文件,
-    全都要库),所以这几条必须单独先登记。
+    ★ **在闸门之前、建窗之前先登记闸门频道与窗口控制。** 窗口加载完就会立刻
+    invoke `dataMigration:getState`,而那一刻闸门正在跑、数据库还没打开；Windows/Linux
+    又没有原生标题栏。完整的 `registerIpc()` 要等闸门放行才能调(它会拉起导入服务、
+    扫孤儿文件,全都要库),所以这些无数据库依赖的频道必须单独先登记。
 
     ★ 顺序反了的症状是:窗口起来了、迁移屏永远是空白(那一次 invoke 拿到
     「未登记的频道」),而用户看到的是一个「什么都没发生」的启动。
@@ -559,7 +696,7 @@ void app
 
   /*
     ★ **建窗在闸门之前。** 迁移可能跑好几分钟,用户必须能看见它在跑;而这一屏
-    自己需要的四条 IPC(`dataMigration:*`)是唯一在闸门期间可用的频道。
+    只使用提前登记的 `dataMigration:*` 与无状态窗口控制，不会碰尚未打开的数据库。
 
     这个窗口此刻是**被冻结**的:App 的握手 effect 要等 `MigrationGateHost`
     放行才会跑(见 renderer/main.tsx),所以它不会去碰还没打开的数据库。
@@ -655,6 +792,33 @@ void app
       `[credentials] 旧密文迁移完成:成功 ${credentialMigration.migrated},保留 ${credentialMigration.failed}`
     )
   }
+  /*
+    ★ 用户添加的供应商 / 别名 / 密钥放进 `~/.next-cowork/providers.json`(见 `db/provider-file.ts`)。
+    必须在 `initRuntime` 之前装上 —— `seed()` 要靠它判断「文件模式下不种内置上游」。
+    迁移失败(整库快照做不了、文件损坏…)**不装文件模式**,继续按库运行:
+    宁可这次启动用旧路径,也不能让库里的供应商在界面上凭空消失。
+  */
+  const providerFile = new ProviderFileStore(join(resolveProfileRoot(), PROVIDER_FILE_NAME))
+  try {
+    const migration = migrateProvidersToFile(providerFile)
+    useProviderFileStore(providerFile)
+    providerFile.onExternalChange(() => onProviderFileChanged())
+    providerFile.startWatching()
+    if (migration.status === 'migrated') {
+      host.logger.info(
+        `[providers] 已迁移到 ${PROVIDER_FILE_NAME}:供应商 ${migration.providers},` +
+          `丢弃未配置的内置预设 ${migration.skippedBuiltin},密钥解不开 ${migration.keysFailed}`
+      )
+    }
+    for (const problem of providerFile.problems) {
+      host.logger.warn(`[providers] ${PROVIDER_FILE_NAME}${problem.providerId === undefined ? '' : ` / ${problem.providerId}`}: ${problem.message}`)
+    }
+    if (providerFile.error !== undefined) host.logger.warn(`[providers] ${providerFile.error}`)
+  } catch (error) {
+    host.logger.error(
+      `[providers] 迁移到 ${PROVIDER_FILE_NAME} 失败,本次启动仍使用数据库:${error instanceof Error ? error.message : String(error)}`
+    )
+  }
   const bundledSkillsRoot = app.isPackaged
     ? join(process.resourcesPath, SKILLS_DIR)
     : join(app.getAppPath(), 'resources', SKILLS_DIR)
@@ -662,6 +826,12 @@ void app
     host.logger.warn(`[skill:bundled] ${diagnostic.path}: ${diagnostic.message}`)
   }
   initRuntime(host)
+  /*
+    ★ 已登录账号迁入账号表(schema 第 24 条)。**不 await**:它要解密一次凭证,
+    而首屏不依赖账号列表 —— 设置页拉账号时走的是同一张表,那时必然已经迁完。
+    自己吞掉全部异常(见 `seedProviderAccounts`),一次迁移失败不该挡住启动。
+  */
+  void seedProviderAccounts()
   // Browser IPC handlers are registered below, so their Electron/Playwright bridge must already exist.
   browserBindings = installProductionBrowserBindings(host.logger)
   /*
@@ -705,14 +875,22 @@ void app
     之后 —— 下面登记的那群 handler 全都要库。
   */
   setSessionWindowOpener((workspaceId, sessionId) => {
-    const child = createMainWindow({ workspaceId, sessionId })
+    const child = createMainWindow({ workspaceId, sessionId }, 'quick')
     child.once('ready-to-show', () => child.focus())
   })
-  // 渲染层确认过的重新退出(见 contract 的 app:quitConfirmed)。
-  setQuitRequester(() => {
-    if (quitFlow === null) return
-    quitFlow.begin()
-    app.quit()
+  /*
+    渲染层确认过的重新退出(见 contract 的 `app:quitConfirmed`)。
+
+    ★ 走**同一个** `requestQuit()`:这条路紧跟在渲染层的「保存 / 丢弃」之后,但主进程
+    并不知道用户刚刚答的是什么 —— 文档会话那一半仍然要再过一次预检。直接
+    `begin()` 的话,一次「用户刚点了取消」的重新退出会把会话在脏的状态下关掉,
+    或者在闸门举着的情况下抛在收尾里被吞掉。
+  */
+  setQuitRequester(() => { requestQuit() })
+  // 「重启更新」也走同一条退出流程;安装本身在收尾最后一步(见 QuitFlow 的 `quit`)。
+  updateService.setQuitRequester(async () => {
+    await documentQuitGuard.request().catch((error: unknown) => { console.error('[quit] 退出前的文档预检失败:', error) })
+    return quitFlow?.inProgress === true || quitFlow?.done === true
   })
   registerIpc()
   /*
@@ -748,13 +926,13 @@ void app
   .catch((err: unknown) => {
     /*
       ★ 走到这里意味着 `announceIpcReady()` 大概率没跑到 —— 而窗口此刻已经建出来了
-      (建窗在闸门之前),于是它会**一直停在空白首屏**:闸门不放行,它对任何 invoke
-      也答不上来,连一句错误都递不出去。所以这一行 console.error 是这种情况下的
-      唯一线索:排查「启动后一片空白、界面无提示」时先看它,不要先怀疑渲染层。
+      (建窗在闸门之前)。原先这里只写 console,闸门会永远等着,表现为整窗白屏且用户
+      看不到任何错误；现在必须先把同一异常推给闸门错误页，再保留 console 供终端诊断。
 
-      需求:这条路径以前能看到的是渲染层的「首屏握手失败: No handler registered」,
-      那个错误指向频道注册,而真正的病因是主进程启动崩了,两者几乎没关系。
+      需求:不能放行 App 去制造「首屏握手失败: No handler registered」的假病因；
+      真正的启动异常必须原样显示，并允许用户打开数据目录排查。
     */
+    announceStartupFailure(err)
     console.error('[app] 启动流程失败:', err)
   })
 
@@ -828,7 +1006,17 @@ function showMainWindow(): void {
   */
   if (quitFlow?.done === true) return
 
-  const [win] = BrowserWindow.getAllWindows()
+  /*
+    ★ **取窗口用注册表,不用 `BrowserWindow.getAllWindows()`** —— 和下面退出流程
+    那一处同一个理由:`getAllWindows()` 里还有**每个插件一扇**的隐藏宿主窗
+    (`plugin/host-window.ts`,`show:false`,页面只是空壳 `__host.html`)。
+
+    需求:唤回的必须是应用自己的窗口。主窗此刻已经销毁的那几个时刻(退出第一段
+    刚把它关掉而另一扇还在跑 `beforeunload`、`forceClose()` 之后)取「第一扇窗」
+    拿到的就是插件宿主窗,于是这一下点击把一扇**纯白空窗**推到用户面前,
+    而真正要唤回的界面没有出现。注册表里只有主窗与 ⌥Space 快捷窗。
+  */
+  const [win] = windows.listWindows('main')
   if (win) {
     if (win.isMinimized()) win.restore()
     win.show()
@@ -876,19 +1064,34 @@ quitFlow = new QuitFlow({
     shutdownRuns()
     shutdownSessionTitles()
     shutdownTerminals()
+    closeDeviceManager()
   },
   drainAsync: () =>
     Promise.allSettled([
       shutdownMcp(),
-      shutdownPlugins(),
+      /*
+        ★ 闸门是**关窗之前**拿的(见 `requestQuit()`),这里必须把这件事告诉插件系统。
+
+        不告诉的话它会照着自己的默认值再拿一次 —— 而那一刻闸门已经举着,`shutdown()`
+        直接抛 `CapabilityError`,那一声被 `allSettled` 吞掉之后**插件与 helper 一个都
+        收不掉**,表现是「退出之后还有 helper 进程留在机器上」,而日志里什么都没有。
+
+        `documentQuitGuard.acquired === false` 只有一种情况:没有插件系统可闸(启动没过、或插件系统
+        已经关掉),那时 `shutdownPlugins(false)` 只是把接线摘干净。
+      */
+      shutdownPlugins(documentQuitGuard.acquired),
       shutdownEnvironments(),
       browserBindings?.shutdown() ?? Promise.resolve()
     ]),
   destroyTray,
   sealDatabase: () => closeDatabase({ final: true }),
-  quit: () => app.quit(),
+  // 窗口已销毁、库已封:有待装的更新就在这里交给安装器,否则普通退出。
+  quit: () => { if (!updateService.quitAndInstallIfPending()) app.quit() },
   exit: (code) => app.exit(code)
 })
+
+// 需求：只有窗口与收尾均已放行才启动独立兜底；取消退出时不能留下延迟强杀。
+app.once('will-quit', armQuitWatchdog)
 
 app.on('window-all-closed', () => {
   /*
@@ -909,9 +1112,71 @@ app.on('window-all-closed', () => {
   `preventDefault()` 在这里的作用不是「拦住退出」,而是**把退出推迟到窗口关完
   之后**:关窗要走渲染层的 `beforeunload`,那是异步的。真正放行的是收尾之后
   那一次 `app.quit()`,那时 `quitFlow.done` 已经是 true,这个处理器直接让路。
+
+  ★ 推迟之后**先做文档安全预检再关窗**(`requestQuit()`),这也是 `preventDefault()`
+  第一次承担「这一刻能不能退」这个判断:关窗是整条路上最不可逆的一步。
 */
 app.on('before-quit', (event) => {
+  /*
+    抢锁失败的进程直接放行:它没有建过窗、没有开过库(上面 `whenReady` 第一行就
+    返回了),退出流程对它没有任何意义 —— 拦这一下只会让一个本该立刻消失的进程
+    多活到收尾跑完。
+  */
+  if (!gotTheLock) return
   if (quitFlow?.done === true) return
   event.preventDefault()
-  quitFlow?.begin()
+  requestQuit()
 })
+
+/**
+ * 退出请求的统一入口 —— `before-quit`(上面)与渲染层确认过的那次重新请求都用它。
+ *
+ * ## 为什么不是一行 `quitFlow.begin()`
+ *
+ * `begin()` 会开始关窗，渲染层的 `beforeunload` 可以否决，但不能替主进程判断文档会话。
+ * **文档会话是主进程知道、渲染层不知道的东西**(办公插件打开的
+ * 文件走 `documents.*`,不经过 `stores/documents.ts` 那张表),所以「现在有没有未保存
+ * 的文档」只有主进程答得上来 —— 必须在关窗**之前**问,答不上来时整次退出作废。
+ *
+ * 原先在这里分别记闸门和在途 Promise；现在由可单测的 DocumentQuitGuard 统一拥有：
+ * 退出已在进行时不关第二次窗，预检还在排队时不重拿闸门，窗口否决时释放文档调用。
+ * 原来的理由仍然成立：否则重复点退出会误弹「未保存」，或者取消退出后文档永久不可用。
+ */
+function requestQuit(): void {
+  /*
+    ★ `catch` 不是装饰:预检自己抛(比如读设置拿文案时库已经不在了)时,这是个没人 await
+    的 promise —— 一个未捕获拒绝在 Electron 主进程里只留一行警告,而退出会静默地
+    停在「什么都没发生」上。这里至少留下一条指名道姓的日志。
+  */
+  // 需求：预检错误不能交给收尾的 allSettled 吞掉。begin 自己负责关窗，此处不再 app.quit 重入。
+  void documentQuitGuard.request().catch((error: unknown) => { console.error('[quit] 退出前的文档预检失败:', error) })
+}
+
+/** 退出作废时把闸门放开。幂等 —— 没有举着的时候什么都不做。 */
+function releaseDocumentGuard(): void {
+  documentQuitGuard.veto()
+}
+
+/**
+ * 「还有未保存的文档,这次退出取消了」。
+ *
+ * ★ 为什么是系统对话框:这一刻**不能**把错误交给渲染层 —— 它能显示的东西全都来自
+ * `stores/documents.ts` 那张表,而挡住这次退出的文档在**主进程**(办公插件打开的
+ * 文件)。要么主进程自己说一句,要么用户看到的是「点了退出什么都没有发生」。
+ *
+ * ★ 原先因主进程没有 i18n store 而在这里分支中英文；现在文案在 shared/i18n 的纯表里。
+ * 不引 renderer 的理由保留：预检早于关窗，不应要求一个可用的 React 窗口才能报告失败。
+ */
+async function explainQuitBlocked(): Promise<boolean> {
+  const locale = store.getSettings().locale
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: [documentEngineMessage(locale, 'documents.quit.cancel'), documentEngineMessage(locale, 'documents.quit.discard')],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message: documentEngineMessage(locale, 'documents.quit.blocked'),
+    detail: documentEngineMessage(locale, 'documents.quit.detail')
+  })
+  return response === 1
+}

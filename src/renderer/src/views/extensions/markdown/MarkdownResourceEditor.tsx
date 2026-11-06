@@ -4,13 +4,13 @@
  * ★ 复用 `views/files/CodeEditor`：它已经接好了主题、语言高亮和 Mod-S 保存。
  *   正文上限 64KB，在 textarea 里编辑那么长的东西是折磨。
  */
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type {
   MarkdownResourceFile,
   MarkdownResourceKind
 } from '../../../../../shared/domain/markdown-resource'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { IconButton } from '../../../components/ui/IconButton'
 import { useI18n } from '../../../i18n'
@@ -68,10 +68,10 @@ export function MarkdownResourceEditor({
         <span className="truncate text-[13px] text-fg">{file.name}</span>
         <span className="truncate text-[11px] text-fg-faint">{file.path}</span>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="danger" icon={<Trash2 size={13} />} onClick={() => setConfirmDelete(true)}>
+          <Button type="button" variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             {t('ext.delete')}
           </Button>
-          <Button size="sm" variant="accent" onClick={save} disabled={invalid !== null || saving}>
+          <Button type="button" variant="primary" size="sm" onClick={save} disabled={invalid !== null || saving}>
             {t('ext.save')}
           </Button>
         </div>
@@ -102,8 +102,8 @@ export function MarkdownResourceEditor({
         onClose={() => setConfirmDelete(false)}
         footer={
           <>
-            <Button size="sm" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="danger" onClick={() => { setConfirmDelete(false); onDelete() }}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => { setConfirmDelete(false); onDelete() }}>
               {t('ext.delete')}
             </Button>
           </>

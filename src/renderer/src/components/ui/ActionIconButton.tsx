@@ -4,6 +4,10 @@
  * ★ 抽出来是因为复制、导出这类操作**没有任何持久后果可看** —— 反馈全靠按钮
  * 自己变一下,而「变多久」必须处处一致,否则同一个复制动作在回合操作条和
  * 计划预览头部看起来会像两件不同的事。
+ *
+ * ★ **这一颗刻意没有换成 Arc 的 Button。** 它挂在每一回合的操作条上,长对话里有几百颗;
+ *   Arc Button 每个实例都带 Motion 的按压动画、标签变形和一个 ResizeObserver。实测
+ *   `thread-isolation.test.ts`(200 回合)从 5.5s 涨到 7.3s,全量测试在负载下直接超时。
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'

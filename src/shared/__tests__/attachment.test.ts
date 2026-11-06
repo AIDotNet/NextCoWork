@@ -15,9 +15,30 @@ import {
   isImageMime,
   isSafeFileName,
   mimeOfExt,
+  ncwPreviewUrl,
   normalizeImageMime,
   parseNcwUrl
 } from '../domain/attachment'
+
+describe('ncwPreviewUrl', () => {
+  it('会话附件里的 png/jpeg 换成缩略档,解析回去仍是同一个文件', () => {
+    const url = 'ncw://attachments/sessions/S1/01J.png'
+    expect(ncwPreviewUrl(url)).toBe(`${url}?preview=thumb`)
+    expect(parseNcwUrl(ncwPreviewUrl(url))).toEqual(parseNcwUrl(url))
+    expect(ncwPreviewUrl('ncw://attachments/sessions/S1/01J.jpg')).toBe('ncw://attachments/sessions/S1/01J.jpg?preview=thumb')
+  })
+
+  it('其余一律原样:内联图、gif/webp、主题图、已带查询参数的', () => {
+    for (const ref of [
+      'data:image/png;base64,AAAA',
+      'ncw://attachments/sessions/S1/01J.gif',
+      'ncw://attachments/sessions/S1/01J.webp',
+      'ncw://attachments/themes/t.png',
+      'ncw://attachments/sessions/S1/01J.png?preview=thumb',
+      '/abs/path.png'
+    ]) expect(ncwPreviewUrl(ref)).toBe(ref)
+  })
+})
 
 describe('attachmentRelPath', () => {
   it('session 需要 ownerId', () => {

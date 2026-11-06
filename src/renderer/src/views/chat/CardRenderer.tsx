@@ -20,12 +20,13 @@ import { invoke } from '../../services/ipc'
 import { cn } from '../../lib/cn'
 import { useI18n, type TranslationKey } from '../../i18n'
 import { ProgressBar } from '../../components/ui/ProgressBar'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { AgentMarkdown } from '../../components/markdown'
 import { PluginCardFrame } from '../../shell/PluginCardFrame'
 import { frameCardTarget, pluginIdForTool, usePluginsStore } from '../../stores/plugins'
 import { WidgetFrame } from './WidgetFrame'
+import { inferWidgetFormat } from '../../../../shared/domain/widget'
 
 /** 卡片按钮动作的回传句柄。工具已结束 / 反查不到插件时为 undefined —— 按钮渲染成禁用。 */
 type CardActionSink = ((actionId: string, value?: unknown) => void) | undefined
@@ -275,8 +276,26 @@ export function CardRenderer({
       生成期那一段走的是 `WidgetDetail`(shape 分支),那里的 `final` 是 false ——
       见 `WidgetDetail.tsx` 文件头那张分工表。
     */
-    return <WidgetFrame code={card.code} final title={card.title} />
+    const format = card.format ?? inferWidgetFormat(card.code)
+    return (
+      <WidgetFrame
+        code={format === 'tsx' ? card.compiled ?? '' : card.code}
+        final
+        title={card.title}
+        format={format}
+        source={card.code}
+        {...(callId === undefined ? {} : { callId })}
+        {...(card.interactive === true ? { interactive: true } : {})}
+        {...(card.submitted === undefined ? {} : { submitted: true })}
+        {...(card.actions === undefined ? {} : { actions: card.actions })}
+      />
+    )
   }
+  /*
+    `visualize_update_widget` 推的数据不单独画:它由同名的那张 widget 自己读
+    (`WidgetFrame` 的 `data`)。这里画出来只会是一块与图重复的 JSON。
+  */
+  if (card.kind === 'widget_data') return null
   return (
     <div className="flex flex-col gap-2">
       {card.blocks.map((block, i) => (
@@ -292,8 +311,9 @@ export function CardRenderer({
         onClose={() => setPending(null)}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setPending(null)}>{t('pluginAsk.cancel')}</Button>
+            <Button type="button" variant="secondary" onClick={() => setPending(null)}>{t('pluginAsk.cancel')}</Button>
             <Button
+              type="button"
               variant="danger"
               onClick={() => {
                 pending?.proceed()

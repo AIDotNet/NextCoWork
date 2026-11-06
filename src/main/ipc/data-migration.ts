@@ -3,7 +3,7 @@
  *
  * ## 这个文件为什么不能 import 别的 ipc 模块
  *
- * ★ 它是**全应用唯一在数据库打开之前就能被调用的 handler 组**。`ipc/storage.ts`
+ * ★ 除无状态的窗口控制外，它是**唯一在数据库打开前可调用的业务 handler 组**。`ipc/storage.ts`
  * 里那条 `storage:openDataDirectory` 看上去是同一件事,但它 import 了
  * `db/repo`,而 `repo` 的任何一个查询都会去摸库 —— 库还没打开时 `db/index.ts`
  * 会先开一个**内存兜底库**,随后真正的 `openDatabase()` 直接抛错。表现是
@@ -18,11 +18,12 @@
  * 要用同一个实例。放在模块级变量里是这两者之间最短的一条线 —— 而它**不需要**
  * 生命周期管理:进程内只有一个闸门,它自己就是单例。
  *
- * ## 它还兼着「主进程能不能应答 IPC」这一位
+ * ## 它还兼着主进程启动状态
  *
  * 闸门的放行判据除了「没有要迁移的东西」,还有「`registerIpc()` 跑完了」——
  * 后者的唯一真源在这里(`announceIpcReady()`),因为它的消费者只有渲染层,
- * 而渲染层在首屏之前能问到的只有这一个频道。见 `MigrationState.ipcReady`。
+ * 而渲染层在首屏之前能问到的只有这一个频道。启动流程抛出的异常也从这里
+ * 推给首屏，避免窗口永远停在等待状态。见 `MigrationState.ipcReady`。
  */
 import { shell } from 'electron'
 import type { MigrationState } from '../../shared/domain/data-migration'
@@ -49,14 +50,24 @@ let dataChangedListener: (() => void) | null = null
 let ipcReady = false
 
 /**
- * 播给渲染层的那一份:闸门的状态 + 主进程能不能应答。
+ * 启动编排失败的原始诊断。
+ *
+ * 需求：`app.whenReady()` 的异步链在建窗之后仍可能抛错；把错误留在 console 会让
+ * 渲染层永远只看到 `ipcReady: false`，表现为整窗白屏。模块级保存让晚加载的窗口
+ * 也能通过 `dataMigration:getState` 拿到同一份失败，而不是依赖一次可能错过的推送。
+ */
+let startupFailure: string | null = null
+
+/**
+ * 播给渲染层的那一份:闸门状态 + 主进程能不能应答 + 启动失败诊断。
  *
  * ★ **每一个**流出去的状态都要过这里。漏一处,渲染层拿到的就是闸门那份
- * `ipcReady: false`,表现是「闸门没有要迁移的东西,但界面一直空白」——
- * 比握手失败更难查,因为它一个错都不报。
+ * `ipcReady: false` / `startupFailure: null`,表现是启动停在骨架屏且没有诊断。
  */
 function outward(state: MigrationState): MigrationState {
-  return state.ipcReady === ipcReady ? state : { ...state, ipcReady }
+  return state.ipcReady === ipcReady && state.startupFailure === startupFailure
+    ? state
+    : { ...state, ipcReady, startupFailure }
 }
 
 /**
@@ -71,11 +82,30 @@ function outward(state: MigrationState): MigrationState {
  */
 export function announceIpcReady(): void {
   ipcReady = true
+  // 就绪与失败互斥；保留旧诊断会让渲染层盖住已经可用的 App。
+  startupFailure = null
   /*
     再推一份完整快照:闸门自己那几次 publish 全都发生在这一位还是 false 的时候,
     所以渲染层手里那份必须被这份覆盖掉(它在 `failed` 那一屏上时尤其如此 ——
     只翻标志而不重推,用户点「继续」会一直没反应)。
   */
+  windows.emitToAll('dataMigration:progress', getMigrationState())
+}
+
+/**
+ * 把建窗后的启动异常变成首屏可以展示的状态。
+ *
+ * 需求：数据库损坏、权限错误或初始化模块抛错时，主进程仍存活但永远不会宣布 IPC
+ * 就绪；只写 console 的症状就是 Windows 窗口永久白屏。这里既保存又广播，覆盖
+ * 「窗口已经订阅」和「窗口稍后才加载」两种时序。
+ */
+export function announceStartupFailure(error: unknown): void {
+  // 完整 IPC 已可用时，尾部后台服务的失败不能反过来卸载一个正常工作的 App。
+  if (ipcReady) return
+  const detail = error instanceof Error
+    ? (error.stack ?? `${error.name}: ${error.message}`)
+    : String(error)
+  startupFailure = detail === '' ? 'UNKNOWN_STARTUP_FAILURE' : detail
   windows.emitToAll('dataMigration:progress', getMigrationState())
 }
 
@@ -131,6 +161,7 @@ const NO_GATE: MigrationState = {
   failure: null,
   merged: null,
   undoAvailable: false,
+  startupFailure: null,
   /*
     ★ `ipcReady: false` 不是笔误:闸门没装只说明「没有要迁移的东西」,不说明
     「可以放行」—— 能不能放行由上面那一位说了算,这里照旧交给 `outward()` 盖章。

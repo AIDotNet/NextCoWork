@@ -20,8 +20,11 @@ const electron = vi.hoisted(() => ({
   quit: vi.fn()
 }))
 
-const secretState = vi.hoisted(() => ({ values: new Map<string, string>() }))
-const runState = vi.hoisted(() => ({ ids: [] as string[] }))
+const secretState = vi.hoisted(() => ({
+  values: new Map<string, string>(),
+  setHook: undefined as ((ref: string, value: string) => Promise<void>) | undefined
+}))
+const runState = vi.hoisted(() => ({ ids: [] as string[], sessionOperation: false }))
 
 vi.mock('electron', () => ({
   app: {
@@ -40,7 +43,7 @@ vi.mock('../../window/registry', () => ({
 }))
 
 vi.mock('../../kernel/run-registry', () => ({
-  runs: { activeRunIds: (): string[] => [...runState.ids] }
+  runs: { activeRunIds: (): string[] => [...runState.ids], hasSessionOperations: (): boolean => runState.sessionOperation }
 }))
 
 vi.mock('../../runtime', () => ({
@@ -50,6 +53,7 @@ vi.mock('../../runtime', () => ({
       get: async (ref: string): Promise<string | null> => secretState.values.get(ref) ?? null,
       set: async (ref: string, value: string): Promise<void> => {
         secretState.values.set(ref, value)
+        await secretState.setHook?.(ref, value)
       },
       remove: async (ref: string): Promise<void> => {
         secretState.values.delete(ref)
@@ -63,9 +67,12 @@ import {
   DB_FILENAME,
   closeDatabase,
   databaseFilePath,
-  openDatabase
+  openDatabase,
+  txAsync
 } from '../../db'
 import * as repo from '../../db/repo'
+import { switchConfigProfile } from '../../db/config-profile'
+import { DEFAULT_WORKSPACE_SETTINGS } from '../../../shared/domain/workspace'
 import { store } from '../../state/store'
 import {
   CREDENTIAL_KEY_FILENAME,
@@ -74,12 +81,16 @@ import {
 } from '../../secrets/credential-crypto'
 import {
   chooseBackupDirectory,
+  cleanupAttachments,
+  cleanupByAge,
   cleanupPreview,
+  clearHistory,
   clearLocalData,
   createBackup,
   exportData,
   getBackupStatus,
   getStats,
+  getStatsAsync,
   importApply,
   importPreview,
   restoreBackup
@@ -102,7 +113,9 @@ beforeEach(() => {
   electron.openPath.mockReset()
   electron.quit.mockReset()
   secretState.values.clear()
+  secretState.setHook = undefined
   runState.ids = []
+  runState.sessionOperation = false
 })
 
 afterEach(() => {
@@ -153,7 +166,7 @@ describe('备份目录路径边界', () => {
 })
 
 describe('统计与清理不越过符号链接和外部引用', () => {
-  it('附件统计只读取链接本身，不读取外部目标文件大小', () => {
+  it('附件统计只读取链接本身，不读取外部目标文件大小', async () => {
     const sessions = join(dataRoot, 'attachments', 'sessions')
     mkdirSync(sessions, { recursive: true })
     const target = join(outside, 'large.bin')
@@ -163,6 +176,7 @@ describe('统计与清理不越过符号链接和外部引用', () => {
     const stats = getStats()
     expect(stats.attachmentBytes).toBeGreaterThan(0)
     expect(stats.attachmentBytes).toBeLessThan(lstatSync(target).size)
+    await expect(getStatsAsync()).resolves.toEqual(stats)
   })
 
   it('历史清理预览不把外部附件或已经丢失的记录冒充为可释放空间', () => {
@@ -241,6 +255,35 @@ describe('恢复保留本机专属备份状态', () => {
     expect((await restoreBackup({ confirm: false }, 21))?.preview?.sessionCount).toBe(2)
   })
 
+  it('备份计数和密文标记覆盖全部账户，而不是当前可见的会话', async () => {
+    const key = randomBytes(32)
+    writeFileSync(join(dataRoot, CREDENTIAL_KEY_FILENAME), key, { mode: 0o600 })
+    for (const [scope, count] of [['account-a', 2], ['account-b', 1]] as const) {
+      switchConfigProfile(scope)
+      const workspaceId = `workspace-${scope}`
+      store.putWorkspace({
+        id: workspaceId, name: scope, rootPath: outside,
+        settings: { ...DEFAULT_WORKSPACE_SETTINGS }, createdAt: 1, lastOpenedAt: 1
+      })
+      const sessionId = `session-${scope}`
+      repo.ensureSession({ id: sessionId, workspaceId, title: scope })
+      for (let index = 0; index < count; index++) {
+        repo.commitMessage(sessionId, {
+          id: `${sessionId}-${String(index)}`, role: 'user',
+          parts: [{ type: 'text', text: scope }], createdAt: index + 1, schemaVersion: 1
+        })
+      }
+      if (scope === 'account-a') repo.putCredential('provider:account-a', encryptCredentialValue(key, 'scoped-secret'))
+    }
+    expect(repo.getCredential('provider:account-a')).toBeUndefined()
+    expect(repo.listAllSessionDetails()).toHaveLength(1)
+    const archive = await makeBackup(outside)
+    select(archive)
+    expect((await restoreBackup({ confirm: false }, 24))?.preview).toMatchObject({
+      sessionCount: 2, messageCount: 3, manifest: { encryptedCredentials: true }
+    })
+  })
+
   it('当前目录为 null 时，不接受归档中的另一台设备路径', async () => {
     const sourceDirectory = join(outside, 'source-backups')
     mkdirSync(sourceDirectory)
@@ -305,6 +348,16 @@ describe('恢复保留本机专属备份状态', () => {
     await expect(restoreBackup({ confirm: true }, 23)).rejects.toThrow(/运行中的 Agent/)
     runState.ids = []
     await expect(restoreBackup({ confirm: true }, 23)).resolves.toMatchObject({ restored: true })
+  })
+
+  it('没有运行中的 Agent 时，压缩或 run 收尾也阻止恢复', async () => {
+    const archive = await makeBackup(outside)
+    select(archive)
+    await restoreBackup({ confirm: false }, 25)
+    runState.sessionOperation = true
+    await expect(restoreBackup({ confirm: true }, 25)).rejects.toThrow(/历史操作/)
+    runState.sessionOperation = false
+    await expect(restoreBackup({ confirm: true }, 25)).resolves.toMatchObject({ restored: true })
   })
 
   it('预览后文件损坏时不改当前目录和备份状态', async () => {
@@ -441,6 +494,47 @@ describe('加密凭证导入跟随冲突合并结果', () => {
     expect(secretState.values.has('source:same')).toBe(false)
   })
 
+  it('凭证写入失败时回滚自己的配置和宿主凭证，不覆盖排队事务', async () => {
+    for (const id of ['rollback-first', 'rollback-second']) {
+      store.putProvider({ id, name: id, protocol: 'anthropic', baseUrl: 'https://source.invalid', credentialRef: `provider:${id}`, priority: 0, enabled: true })
+      secretState.values.set(`provider:${id}`, `source-${id}`)
+    }
+    const exported = join(outside, 'failed-import.json')
+    electron.saveDialog.mockResolvedValueOnce({ canceled: false, filePath: exported })
+    await exportData({ includeEncryptedKeys: true, password: 'password-123' })
+    store.removeProvider('rollback-first')
+    store.removeProvider('rollback-second')
+    secretState.values.clear()
+    const before = structuredClone(store.getSettings())
+    select(exported)
+    await importPreview(45)
+    let reached: () => void = () => {}
+    let release: () => void = () => {}
+    const started = new Promise<void>((resolve) => { reached = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    secretState.setHook = async (ref) => {
+      if (ref === 'provider:rollback-second') {
+        reached()
+        await gate
+        throw new Error('credential-write-failed')
+      }
+    }
+    const imported = importApply({ password: 'password-123' }, 45)
+    const failed = imported.catch((error: unknown) => error)
+    await started
+    let queuedStarted = false
+    const queued = txAsync(() => { queuedStarted = true; repo.setKv('unrelated-after-import', 'keep') })
+    await Promise.resolve()
+    expect(queuedStarted).toBe(false)
+    release()
+    expect(await failed).toMatchObject({ message: 'credential-write-failed' })
+    await queued
+    expect(repo.getKv('unrelated-after-import', null)).toBe('keep')
+    expect(store.listProviders().some((provider) => provider.id.startsWith('rollback-'))).toBe(false)
+    expect(secretState.values.size).toBe(0)
+    expect(store.getSettings()).toEqual(before)
+  })
+
   it('密码错误时不修改任何配置或密钥', async () => {
     store.putProvider({
       id: 'protected',
@@ -527,6 +621,22 @@ describe('原生对话框与文件格式失败路径', () => {
   it('保存目标不可写成文件时导出失败且不伪装成功', async () => {
     electron.saveDialog.mockResolvedValueOnce({ canceled: false, filePath: outside })
     await expect(exportData({})).rejects.toThrow()
+  })
+})
+
+describe('历史操作的全库删除保护', () => {
+  it.each([
+    ['附件清理', () => cleanupAttachments()],
+    ['按年龄清理', () => cleanupByAge({ age: '15d' })],
+    ['清空历史', () => clearHistory()],
+    ['删除全部数据', () => clearLocalData({ confirm: true })]
+  ])('%s 不绕过压缩或运行收尾的互斥', (_name, action) => {
+    repo.ensureSession({ id: 'protected-session', workspaceId: 'w' })
+    runState.sessionOperation = true
+    expect(action).toThrow(/历史操作/)
+    expect(repo.getSession('protected-session')).toBeDefined()
+    expect(existsSync(join(dataRoot, DB_FILENAME))).toBe(true)
+    expect(electron.quit).not.toHaveBeenCalled()
   })
 })
 

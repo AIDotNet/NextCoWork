@@ -23,13 +23,13 @@ export interface ChoiceOption {
  */
 
 /** 行的外框。**它不是按钮** —— 可点区是里面那层,理由见 `OptionRow`。 */
-const ROW_FRAME = 'app-no-drag rounded-[8px] border transition-[background-color,border-color] duration-150 motion-reduce:transition-none'
+const ROW_FRAME = 'app-no-drag rounded-[10px] border transition-[background-color,border-color] duration-150 motion-reduce:transition-none'
 
 /**
  * 需求：审批选项要像一列紧凑的 agent 决策项，而不是一摞彼此争抢注意力的表单卡。
  * 选中态仍保留整行槽色，确保键盘高亮与真实选择都能一眼看见。
  */
-const ROW_ON = 'border-accent bg-tint'
+const ROW_ON = 'border-accent/50 bg-accent/10'
 const ROW_OFF = 'border-transparent bg-transparent hover:border-hairline hover:bg-tint-hover/55'
 
 /** 可点区的类名。外框不可点,所以这层必须自己撑满、自己接焦点环。 */

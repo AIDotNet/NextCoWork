@@ -1,4 +1,5 @@
 import type { InteractionResponse, PendingInteraction } from '../../shared/agent/interaction'
+import { WIDGET_LIMITS } from '../../shared/domain/widget'
 import { ulid } from '../../shared/util/id'
 import type { RunHandle } from './run-registry'
 
@@ -44,6 +45,14 @@ function validResponse(pending: PendingInteraction, response: InteractionRespons
     }
     case 'goal_proposal':
       return typeof response.approved === 'boolean'
+    case 'workflow_approval':
+      if (pending.kind !== 'workflow_approval') return false
+      return (response.action === 'run' || response.action === 'revise' || response.action === 'cancel')
+        && (response.feedback === undefined || typeof response.feedback === 'string')
+        && (response.action !== 'revise' || (response.feedback !== undefined && response.feedback.trim() !== ''))
+    case 'widget_submit':
+      return response.value === null
+        || (typeof response.value === 'string' && response.value.length <= WIDGET_LIMITS.submit)
     case 'plan_approval':
       if (pending.kind !== 'plan_approval') return false
       return typeof response.action === 'string'
@@ -123,6 +132,14 @@ export class InteractionGate {
     }
     if (!validResponse(entry.interaction, response)) throw new Error('Invalid interaction response')
     entry.answer(structuredClone(response))
+  }
+
+  /** 某次工具调用此刻挂着的 widget 提交。`ipc/widget.ts` 按 callId 认领,不信渲染层给的 id */
+  widgetSubmitFor(callId: string): PendingInteraction | undefined {
+    for (const { interaction } of this.pending.values()) {
+      if (interaction.kind === 'widget_submit' && interaction.callId === callId) return structuredClone(interaction)
+    }
+    return undefined
   }
 
   hasGoalProposal(sessionId: string): boolean {

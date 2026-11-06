@@ -1,0 +1,5 @@
+{
+  "writer.displayName": "Writer",
+  "writer.description": "Word document editor that edits the same live document as the Agent",
+  "writer.editorName": "Word document"
+}

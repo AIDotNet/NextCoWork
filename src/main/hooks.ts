@@ -6,14 +6,21 @@
  *
  * ★ 两种钩子在这一层汇合成同一个 `HookRunReport`：调用方只看 `decision` /
  *   `outcome` / `reason`，不必知道这一条是 fork 了一个进程还是发了一次模型请求。
+ *
+ * ★★ **本文件零 runtime import。** 上游、宿主时钟、转录回看全部走
+ * `HookHostPorts` 这个注入的窄口，由 `runtime.ts`(安装器)在装配时装上。
+ * 反过来的话会成环:`goal/runtime.ts` 与 `runtime.ts` 都依赖本文件,而本文件
+ * 若再 import runtime,就是 `hooks → runtime → hooks` / `runtime → goal →
+ * hooks → runtime` 两条值依赖环(见 `runtime.ts` 里 `installHookHostPorts`)。
  */
 import type { AgentMessage } from '../shared/agent/message'
 import type { HookDefinition, HookDiagnostic, HookEvent, HookListItem, HookScope } from '../shared/domain/hook'
 import { MAX_HOOKS_PER_EVENT, TOOL_SCOPED_HOOK_EVENTS } from '../shared/domain/hook'
 import { matchesPermissionRule } from '../shared/agent/permission-rule'
 import type { WorkspaceEnvironment } from './environment/contract'
+import type { KernelHost } from './kernel/host'
 import { runtimeHooksFor } from './hook-registry'
-import { evaluateGoal } from './goal/evaluate'
+import { evaluateGoal, type GoalEvaluatorPort } from './goal/evaluate'
 import { hookListFrom } from './kernel/hook/load'
 import {
   runHook,
@@ -24,9 +31,35 @@ import {
 } from './kernel/hook/run'
 import { shellFor, shellVerbatimArguments } from './environment/shell'
 import { globalSettingsPath, localSettingsPath, readGlobalSettings, readLocalSettings } from './kernel/local-settings'
-import { getHost, getRouter } from './runtime'
-import { store } from './state/store'
-import type { GoalEvaluatorPort } from './goal/evaluate'
+
+/**
+ * 钩子执行需要、但住在 runtime 那一侧的能力。**窄口 + 注入。**
+ *
+ * ★ 访问器是**现取**的(函数而不是快照值):换宿主之后同一批钩子该走新的上游
+ *   与新的时钟。安装点只有一处:`runtime.ts` 的 `installHookHostPorts`。
+ */
+export interface HookHostPorts {
+  /** 当前内核宿主(`getHost()`);`hooksFor` 用它读两层钩子文件与记日志。 */
+  host(): KernelHost
+  /** 判定模型用的上游。生产是 `getRouter()`(它满足 `GoalEvaluatorPort`)。 */
+  upstream(): GoalEvaluatorPort
+  /** committed 转录回看。`runPromptHook` 在调用方没给 messages 时用它。 */
+  history(sessionId: string): readonly AgentMessage[]
+  /** 会话元数据 —— 判定模型没配时的回落来源。 */
+  session(sessionId: string): { model: string; modelProviderId?: string } | undefined
+}
+
+let ports: HookHostPorts | undefined
+
+/** 由 `runtime.ts` 在装配时装上。未装时 `runPromptHook` 会返回 `skipped`。 */
+export function installHookHostPorts(next: HookHostPorts): void {
+  ports = next
+}
+
+/** 测试专用:清掉注入的宿主口，免得跨用例泄漏。 */
+export function resetHookHostPortsForTest(): void {
+  ports = undefined
+}
 
 /**
  * 最近的失败，给 `hooks:diagnostics` 用。
@@ -63,7 +96,7 @@ function recordFailure(hook: HookDefinition, report: HookRunReport, sourcePath: 
     messageParams: { hook: hookLabel(hook), seconds: hook.timeoutMs / 1000, code: String(report.exitCode), detail: report.stderr }
   })
   if (recentFailures.length > MAX_FAILURES) recentFailures.length = MAX_FAILURES
-  getHost().logger.warn(`[hook] ${hookLabel(hook)}: ${detail}`)
+  ports?.host().logger.warn(`[hook] ${hookLabel(hook)}: ${detail}`)
   diagnosticsChanged?.()
 }
 
@@ -88,18 +121,26 @@ async function hooksFor(
   tool?: { internalId: string; input: unknown },
   runtimeHooks?: readonly HookDefinition[]
 ): Promise<HookListItem[]> {
-  const host = getHost()
-  const userData = host.paths.userData()
+  const host = ports?.host()
   const root = environment.rootPath
+  const userData = host?.paths.userData()
+  if (host === undefined) {
+    /*
+      ★ 宿主口还没装,但**运行期钩子不读文件、不 fork 进程**,照常列出。
+      早退成空表的话,一个还没走 `installHost` 的测试会因为「没有文件钩子」而
+      连带丢掉它自己注册的运行期钩子 —— 而那是它唯一能拿到的钩子。
+    */
+    return (runtimeHooks ?? runtimeHooksFor(sessionId)).map((hook) => ({ ...hook, scope: 'global' as HookScope, sourcePath: '' }))
+  }
 
   const [globalSettings, projectSettings] = await Promise.all([
-    readGlobalSettings(host.fs, userData, host.logger).catch(() => null),
+    readGlobalSettings(host.fs, userData!, host.logger).catch(() => null),
     root === '' ? Promise.resolve(null) : readLocalSettings(host.fs, root, host.logger).catch(() => null)
   ])
 
   const runtime = runtimeHooks ?? runtimeHooksFor(sessionId)
   const all: HookListItem[] = [
-    ...(globalSettings ? hookListFrom(globalSettings.hooks, 'global', globalSettingsPath(userData)) : []),
+    ...(globalSettings ? hookListFrom(globalSettings.hooks, 'global', globalSettingsPath(userData!)) : []),
     ...(projectSettings ? hookListFrom(projectSettings.hooks, 'project', localSettingsPath(root)) : []),
     // 运行期钩子没有来源文件。`sourcePath` 留空串 —— 诊断行里它也确实不指向任何文件。
     ...runtime.map((hook) => ({ ...hook, scope: 'global' as HookScope, sourcePath: '' }))
@@ -225,6 +266,10 @@ export async function runHookEvent(context: HookEventContext): Promise<HookRunRe
  *
  * ★ **不阻断**是 `skipped` 的取向，和命令钩子的 fail-open 一致：判定器挂了就
  *   当这一轮没判，而不是把一次网络抖动变成「你的条件没达成」。
+ *
+ * ★ 上游 / 转录 / 会话元数据 / 时钟全部走注入的 `ports`（见 `HookHostPorts`）。
+ *   没装（比如 `runtime.ts` 尚未装配、或纯内核测试）时返回 `skipped` —— 一条
+ *   判定钩子不该因为宿主口没装就把一次 run 拦下来。
  */
 async function runPromptHook(
   hook: Extract<HookDefinition, { type: 'prompt' }>,
@@ -232,10 +277,19 @@ async function runPromptHook(
   payload: HookPayload,
   context: HookEventContext
 ): Promise<HookRunReport> {
-  const started = getHost().clock.now()
   const base = { hookId: hook.id, scope, stdout: '', stderr: '' }
-  const history = context.messages ?? store.getHistory(context.sessionId)
-  const session = context.fallbackModel === undefined ? store.getSession(context.sessionId) : undefined
+  /*
+    ★ 判定器(clone 自调用方注入的 `context.upstream`,或者宿主口的上游)是这条
+    钩子唯一**必须**的外部能力。两者都没有(宿主口没装、调用方也没注入)时,
+    这条钩子没法判 —— 记成 `skipped`,而不是把它当成功。
+  */
+  const upstream = context.upstream ?? ports?.upstream()
+  if (upstream === undefined) {
+    return { ...base, exitCode: 1, durationMs: 0, outcome: 'ok', stderr: 'evaluator unavailable', promptVerdict: 'skipped' }
+  }
+  const started = ports?.host().clock.now() ?? Date.now()
+  const history = context.messages ?? ports?.history(context.sessionId) ?? []
+  const session = context.fallbackModel === undefined ? ports?.session(context.sessionId) : undefined
   const eventData = safeJson(payload)
   const messages = context.event === 'Stop' ? history : [...history, {
     id: `${context.runId}:hook-input`, role: 'user' as const, schemaVersion: 1 as const,
@@ -245,7 +299,7 @@ async function runPromptHook(
     ? hook.prompt
     : `${hook.prompt.replaceAll('$ARGUMENTS', () => eventData)}\n\nHook input:\n${eventData}`
   const verdict = await evaluateGoal({
-    upstream: context.upstream ?? getRouter(),
+    upstream,
     model: hook.model ?? '',
     ...(hook.modelProviderId === undefined ? {} : { modelProviderId: hook.modelProviderId }),
     fallbackModel: context.fallbackModel ?? session?.model ?? '',
@@ -259,9 +313,10 @@ async function runPromptHook(
     },
     signal: context.signal ?? new AbortController().signal,
     timeoutMs: hook.timeoutMs,
-    now: () => getHost().clock.now()
+    // ★ 全程读同一个 `ports` 引用:判定期间被 `resetHookHostPortsForTest()` 清掉也不炸。
+    now: () => (ports?.host().clock.now() ?? Date.now())
   })
-  const durationMs = getHost().clock.now() - started
+  const durationMs = (ports?.host().clock.now() ?? Date.now()) - started
   switch (verdict.kind) {
     case 'met':
       return {

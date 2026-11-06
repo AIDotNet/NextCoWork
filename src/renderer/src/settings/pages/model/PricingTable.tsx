@@ -1,13 +1,14 @@
 import { ExternalLink, Search } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import type { Currency, ModelPricing } from '../../../../../shared/domain/pricing'
-import { PRICING_SEED } from '../../../../../shared/domain/pricing-seed'
 import { findPreset } from '../../../../../shared/domain/presets'
-import { EmptyState } from '../../../components/ui/EmptyState'
+import { Button } from '../../../components/arc/button/button'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { TextInput } from '../../../components/ui/TextInput'
 import { cn } from '../../../lib/cn'
 import { openExternal } from '../../../services/app'
-import { SettingGroup, TodoRow } from '../../Row'
+import { clearSyncedPricing, usePricingTable, useSyncedPricing } from '../../../services/pricing'
+import { SettingGroup, SettingRow, TodoRow } from '../../Row'
 import {
   describeEffectiveParts,
   describeWindowParts,
@@ -17,6 +18,7 @@ import {
   tierLabel
 } from './pricing-table'
 import { useI18n } from '../../../i18n'
+import { PricingSyncDialog } from './PricingSyncDialog'
 
 /**
  * 「模型定价」表 —— 方案 §4 的种子表在界面上的样子。
@@ -36,7 +38,10 @@ import { useI18n } from '../../../i18n'
 export function PricingTable(): ReactNode {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
-  const groups = useMemo(() => groupPricing(matchPricing(PRICING_SEED, query)), [query])
+  const table = usePricingTable()
+  const synced = useSyncedPricing()
+  const [syncOpen, setSyncOpen] = useState(false)
+  const groups = useMemo(() => groupPricing(matchPricing(table, query)), [table, query])
 
   return (
     <>
@@ -45,7 +50,7 @@ export function PricingTable(): ReactNode {
           <div className="min-w-0 flex-1">
             <p className="text-[13px] text-fg">{t('models.pricingBuiltIn')}</p>
             <p className="mt-1 text-[12px] leading-[1.5] text-fg-muted">
-              {t('models.pricingSummary', { count: PRICING_SEED.length })}，{fetchedLabel(t)}。{t('models.pricingSnapshotHint')}
+              {t('models.pricingSummary', { count: table.length })}，{fetchedLabel(t, table)}。{t('models.pricingSnapshotHint')}
               <span className="text-fg">{t('models.pricingFinalBilling')}</span>。{t('models.pricingCurrencyHint')}
             </p>
           </div>
@@ -59,6 +64,25 @@ export function PricingTable(): ReactNode {
             />
           </div>
         </div>
+        <SettingRow
+          title={t('models.pricingSyncTitle')}
+          description={
+            synced.length === 0
+              ? t('models.pricingSyncHint')
+              : `${t('models.pricingSyncHint')} ${t('models.pricingSyncedCount', { count: new Set(synced.map((p) => p.modelId)).size })}`
+          }
+        >
+          <div className="flex gap-2">
+            {synced.length > 0 && (
+              <Button size="sm" type="button" variant="secondary" onClick={() => void clearSyncedPricing()}>
+                {t('models.pricingSyncClear')}
+              </Button>
+            )}
+            <Button size="sm" type="button" variant="secondary" onClick={() => setSyncOpen(true)}>
+              {t('models.pricingSyncButton')}
+            </Button>
+          </div>
+        </SettingRow>
         <TodoRow
           title={t('models.pricingManualTitle')}
           description={t('models.pricingManualHint')}
@@ -71,13 +95,14 @@ export function PricingTable(): ReactNode {
           last
         />
       </SettingGroup>
+      <PricingSyncDialog open={syncOpen} onClose={() => setSyncOpen(false)} />
 
       {groups.length === 0 ? (
         <EmptyState
           className="py-10"
           icon={<Search size={22} />}
           title={t('models.pricingNoMatch')}
-          hint={t('models.pricingNoMatchHint', { query: query.trim(), count: PRICING_SEED.length })}
+          description={t('models.pricingNoMatchHint', { query: query.trim(), count: table.length })}
         />
       ) : (
         groups.map((g) => (
@@ -98,9 +123,9 @@ export function PricingTable(): ReactNode {
   )
 }
 
-/** 全表的采集日期。种子表的测试保证它一致,不一致时**说出来**而不是挑一个显示 */
-function fetchedLabel(t: ReturnType<typeof useI18n>['t']): string {
-  const dates = [...new Set(PRICING_SEED.map((p) => p.fetchedAt))]
+/** 按行保留采集日期;存在多个快照日期时说出来,不挑一个冒充全表日期。 */
+function fetchedLabel(t: ReturnType<typeof useI18n>['t'], table: readonly ModelPricing[]): string {
+  const dates = [...new Set(table.map((p) => p.fetchedAt))]
   return dates.length === 1
     ? t('models.pricingFetchedAt', { date: dates[0]! })
     : t('models.pricingFetchedInconsistent', { count: dates.length })

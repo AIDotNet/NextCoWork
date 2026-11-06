@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { installBundledSkills } from '../bundled'
-import { scanSkills } from '../load'
+import { SKILL_DESCRIPTION_MAX, scanSkills } from '../load'
+import { fmString, parseFrontmatter } from '../../frontmatter'
 import { nodeHost } from '../../host'
+import { SKILL_BODY_MAX } from '../../../../shared/domain/skill'
 
 const roots: string[] = []
 afterEach(() => {
@@ -35,6 +37,44 @@ describe('installBundledSkills', () => {
         source: expect.objectContaining({ path: expect.stringContaining('/skills/skills-creator/SKILL.md') })
       })
     ]))
+  })
+
+  it('ships repo-init as a single-file Skill within the catalog limits', async () => {
+    const { target } = fixture()
+    const source = join(import.meta.dirname, '../../../../../resources/skills')
+
+    // ★ 只许有 SKILL.md:全局 Skill 目录里多一个文件,SSH 会话就会把它标成 client-assets 拒掉,
+    //   而 /init 整个靠它(见 command/builtin.ts)。
+    expect(readdirSync(join(source, 'repo-init'))).toEqual(['SKILL.md'])
+
+    // ★ 量的是原文:加载器会把超长的 description / 正文静默截断,截完再量永远合格。
+    const raw = parseFrontmatter(readFileSync(join(source, 'repo-init', 'SKILL.md'), 'utf8'))
+    const description = fmString(raw, 'description')
+    expect(description).toBeDefined()
+    expect(description?.length ?? 0).toBeLessThanOrEqual(SKILL_DESCRIPTION_MAX)
+    expect(raw.body.length).toBeLessThanOrEqual(SKILL_BODY_MAX)
+
+    expect(installBundledSkills(source, target)).toEqual([])
+    const result = await scanSkills({ fs: nodeHost().fs, globalRoot: target, projectRoot: '' })
+    expect(result.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'repo-init', scope: 'global' })
+    ]))
+  })
+
+  it('keeps single-file bundled Skills available in remote workspaces', async () => {
+    const { target } = fixture()
+    const source = join(import.meta.dirname, '../../../../../resources/skills')
+    expect(installBundledSkills(source, target)).toEqual([])
+
+    // 传了 projectFs = 这是一次远端(SSH)扫描,全局 Skill 的资产留在客户端
+    const fs = nodeHost().fs
+    const result = await scanSkills({ fs, projectFs: fs, globalRoot: target, projectRoot: '' })
+    const byName = new Map(result.skills.map((s) => [s.name, s]))
+
+    expect(byName.get('repo-init')?.unavailableReason).toBeUndefined()
+    expect(byName.get('skills-creator')?.unavailableReason).toBeUndefined()
+    // 带 references/ 的那条照旧被挡:资产真的只在客户端
+    expect(byName.get('plugin-builder')?.unavailableReason).toBe('client-assets')
   })
 
   it('copies a complete package and its resources', () => {

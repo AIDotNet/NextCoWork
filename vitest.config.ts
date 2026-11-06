@@ -12,6 +12,9 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts']
+    include: ['src/**/*.test.ts'],
+    // Windows CI 的真实 SQLite FULL 落盘、迁移和 TLS 初始化可超过默认的 5/10 秒。
+    testTimeout: process.platform === 'win32' ? 30_000 : 5_000,
+    hookTimeout: process.platform === 'win32' ? 30_000 : 10_000
   }
 })

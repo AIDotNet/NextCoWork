@@ -13,7 +13,8 @@ export default tseslint.config(
     不挡的话 `npm run lint` 会因为它多出一千多条 `'document' is not defined`——
     而那些「报错」指的是一份本来就只在浏览器里跑的产物。
   */
-  { ignores: ['out/**', 'dist/**', 'examples/*/dist/**', 'node_modules/**', 'packages/*/template/**', 'resources/plugin-runtime/**'] },
+  // `plugins/*/dist/` 与 examples 的 dist 同理:第一方插件(办公编辑器)的构建产物
+  { ignores: ['out/**', 'dist/**', '.tscache/device-components/**', 'examples/*/dist/**', 'plugins/*/dist/**', 'node_modules/**', 'packages/*/template/**', 'resources/plugin-runtime/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -45,7 +46,7 @@ export default tseslint.config(
      *
      * 不引 `globals` 包:这里要的就这几个,列出来比多一个依赖清楚。
      */
-    files: ['scripts/**/*.mjs', 'packages/**/*.mjs', 'examples/**/*.mjs', '*.config.js', '*.config.mjs'],
+    files: ['scripts/**/*.mjs', 'packages/**/*.mjs', 'examples/**/*.mjs', 'plugins/**/*.mjs', '*.config.js', '*.config.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',

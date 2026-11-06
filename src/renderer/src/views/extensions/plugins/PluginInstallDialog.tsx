@@ -23,14 +23,14 @@
 import { Download, ShieldCheck } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { PluginMarketItem } from '../../../../../shared/plugin/market'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { ProgressBar } from '../../../components/ui/ProgressBar'
 import { useI18n, type TranslationKey } from '../../../i18n'
 import { cn } from '../../../lib/cn'
 import { usePluginsStore } from '../../../stores/plugins'
 import { PluginIcon } from './PluginIcon'
-import { installLabel, installRatio } from './install-progress'
+import { installLabel, installRatio } from '../../../lib/install-progress'
 
 export function PluginInstallDialog({
   item,
@@ -79,11 +79,11 @@ export function PluginInstallDialog({
       width={520}
       footer={
         <>
-          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
           <Button
-            variant="accent"
+            type="button"
+            variant="primary"
             disabled={installed || busy}
-            icon={<Download size={13} />}
             onClick={() => {
               /*
                 ★ 成功才 `onClose()`,失败**留在原地**:错误文案就在这一屏上,
@@ -94,6 +94,7 @@ export function PluginInstallDialog({
               void installFromMarket(shown.slug).then(onClose, () => undefined)
             }}
           >
+            <Download size={13} />
             {installed ? t('plugins.installed') : t('plugins.install')}
           </Button>
         </>

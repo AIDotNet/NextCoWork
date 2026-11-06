@@ -19,7 +19,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type { WebContents } from 'electron'
 import type { AgentEvent } from '../../../shared/agent/event'
@@ -34,8 +34,9 @@ import { hasSeqGap, type AgentEventEnvelope } from '../../../shared/ipc/contract
 import { abortableSleep } from '../../kernel/abort'
 import type { KernelHost } from '../../kernel/host'
 import { nodeHost } from '../../kernel/host'
-import { runs } from '../../kernel/run-registry'
+import { FINISHED_RUN_TTL_MS, runs } from '../../kernel/run-registry'
 import { defineTool } from '../../kernel/tool/define'
+import type { ToolRegistration } from '../../kernel/tool/registry'
 import {
   DEMO_ALIAS,
   DEMO_ALIASES,
@@ -49,11 +50,20 @@ import {
   BUILTIN_PROVIDER_ID,
   findPreset
 } from '../../../shared/domain/presets'
+import { pluginToolId } from '../../plugin/tools'
+import { MODEL_DEFAULTS_SEEDED_KEY } from '../../db/config-profile'
 import { DEFAULT_WORKSPACE_SETTINGS } from '../../../shared/domain/workspace'
-import { getRouter, getTools, installHost, resetRuntimeForTest } from '../../runtime'
+import {
+  getRouter,
+  getTools,
+  installHost,
+  installPluginToolPreparation,
+  installPluginToolProvider,
+  resetRuntimeForTest
+} from '../../runtime'
 import { store } from '../../state/store'
 import type { WindowContext } from '../../window/registry'
-import { abortRun, startRun } from '../agent'
+import { abortRun, attachRun, reapFinishedRuns, startRun } from '../agent'
 
 class FakeWebContents {
   readonly sent: Array<{ channel: string; payload: unknown }> = []
@@ -64,6 +74,18 @@ class FakeWebContents {
   }
   send(channel: string, payload: unknown): void {
     this.sent.push({ channel, payload })
+  }
+
+  /**
+   * WindowRegistry 判「帧还活不活」靠的是这里,不是 send 抛不抛 ——
+   * 真实的 `webFrameMain.send` 自己把异常吞了(见 window/registry.ts)。
+   */
+  get mainFrame(): { isDestroyed: () => boolean; detached: boolean; send: (channel: string, payload: unknown) => void } {
+    return {
+      isDestroyed: () => this.isDestroyed(),
+      detached: false,
+      send: (channel, payload) => this.send(channel, payload)
+    }
   }
   envelopes(): AgentEventEnvelope[] {
     return this.sent
@@ -204,6 +226,28 @@ describe('agent:run 走默认驱动 · 真 session + 内置演示上游', () => 
     expect(runs.get(r.runId)?.status).toBe('done')
   })
 
+  /*
+    需求:已结束的 run 不能在主进程里线性常驻。TTL 内还能 attach 到终态快照;过了 TTL 被回收,
+    再 attach 得到明确的「run 不存在」(渲染层据此退回库里的历史),而转录一条不少。
+  */
+  it('★ 已结束的 run:TTL 内留着,过了 TTL 回收,转录仍在库里', async () => {
+    const { ctx } = fakeWindow()
+    const r = req()
+    startRun(r, ctx)
+    await waitForEnd(r.runId)
+    await vi.waitFor(() => expect(runs.isSessionBusy('s1')).toBe(false))
+    const endedAt = runs.get(r.runId)!.endedAt!
+
+    expect(reapFinishedRuns(endedAt + 1000)).toBe(0)
+    expect(attachRun({ runId: r.runId, sinceSeq: 0 }, ctx).status).toBe('done')
+
+    expect(reapFinishedRuns(endedAt + FINISHED_RUN_TTL_MS)).toBe(1)
+    expect(runs.get(r.runId)).toBeUndefined()
+    expect(() => attachRun({ runId: r.runId, sinceSeq: 0 }, ctx)).toThrow(/run 不存在/)
+    const page = store.getSessionPage('s1', 50)
+    expect(page?.messages.flatMap((m) => m.parts).map((p) => p.type)).toEqual(['text', 'text', 'tool_call', 'tool_result', 'text'])
+  })
+
   it('★ 别名被翻译成上游模型名:请求写 alias,回来的是 upstreamModel', async () => {
     const { wc, ctx } = fakeWindow()
     const r = req()
@@ -308,10 +352,9 @@ describe('agent:run 走默认驱动 · 真 session + 内置演示上游', () => 
     expect(parts.some((p) => p.type === 'thinking')).toBe(true)
   })
 
-  it('两个 run 并行不串台:各自的事件只推给各自的订阅者', async () => {
+  it('两个会话的 run 并行不串台:各自的事件只推给各自的订阅者', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
-    // 需求：跨入口启动后，同一会话不允许并行；此用例验证不同会话的订阅隔离。
     const ra = req({ sessionId: 'parallel-a' })
     const rb = req({ sessionId: 'parallel-b' })
 
@@ -598,8 +641,33 @@ describe('运行时自播种', () => {
 
     expect(store.getSettings().defaultModel).toBe('用户自己选的')
 
-    // 还原成全新安装的样子 —— store 是模块级单例,不还原会影响后面的用例
+    // 还原成全新安装的样子 —— store 是模块级单例,不还原会影响后面的用例。
+    // 种子现在按一次性标记判(见 runtime.ts `seed()`),所以标记也要一起撤掉
     store.updateSettings({ defaultModel: '' })
+    store.setKv(MODEL_DEFAULTS_SEEDED_KEY, false)
+  })
+
+  it('★ 选了「跟随对话」(空串)之后重启不再被顶回内置模型 —— 否则表现为保存了、重启又变回 deepseek', async () => {
+    const { store } = await import('../../state/store')
+    getRouter() // 第一次启动:种下内置默认
+    expect(store.getSettings().defaultModel).toBe('deepseek-v4-pro')
+
+    store.updateSettings({
+      defaultModel: '',
+      defaultModelProviderId: undefined,
+      subagent: { model: '', modelProviderId: undefined }
+    })
+
+    // 模拟重启:进程内的 `seeded` 清掉,库还是那个库
+    resetRuntimeForTest()
+    installHost(withDemo(nodeHost(), { chunkDelayMs: 0 }))
+    getRouter()
+
+    expect(store.getSettings().defaultModel, '重启把「跟随对话」顶回去了').toBe('')
+    expect(store.getSettings().subagent.model, '重启把子代理的「跟随对话」顶回去了').toBe('')
+
+    // 还原成全新安装的样子(同上一条)
+    store.setKv(MODEL_DEFAULTS_SEEDED_KEY, false)
   })
 
   it('★ 换宿主之后路由器必须重建,否则新装的宿主完全不起作用', async () => {
@@ -841,5 +909,89 @@ describe('AGENTS.md 与运行时状态注入', () => {
     startRun(rb, b.ctx)
     await waitForEnd(rb.runId)
     expect(firstUsed(wc)).toBe(firstUsed(b.wc))
+  })
+})
+
+/**
+ * ★ 插件工具进 Agent 工具表的**接线**验收。
+ *
+ * 上面那些 describe 量的是内核自己的线,这一段量的是**插件那条线**。它有三个环节,
+ * 少任何一个,症状都是同一句话 ——「插件明明白白列在『已启用插件提供的 Agent 工具』
+ * 里,模型却说没有这个工具」,而且全程零报错:
+ *
+ * 1. `prepareContributedTools()`:只声明 `onTool:` 的插件在这一步之前一个工具都报不上来;
+ * 2. `syncPluginTools()`:把上一步报上来的工具并进 `getTools()` 单例;
+ * 3. 之后才 `snapshotRunTools()` 截本轮快照。
+ *
+ * 摆位按**线上真实的先后**:先把单例建出来,再挂 provider。反过来的话,provider 会被
+ * 首次装配读到,这段用例就整段空绿 —— 接不接线都过。
+ */
+describe('插件工具 · 单例建好之后才注册的插件也要进本轮工具表', () => {
+  /** `installPluginToolProvider` 的注销函数;不注销的话它会跨用例留着 */
+  let disposeProvider: (() => void) | undefined
+
+  afterEach(() => {
+    disposeProvider?.()
+    disposeProvider = undefined
+  })
+
+  it('★ 声明 onTool 的插件:本轮请求的 tools 里要有它的工具', async () => {
+    // 线上顺序的第一步:单例先建出来(`initRuntime()` 里 `getMcp()` 那一跳就把
+    // `getTools()` 建好了,而 `startPlugins()` 在它**之后**)。
+    getTools()
+
+    const internalId = pluginToolId('acme.wechat-exports', 'list_exports')
+    /** 插件在 `activate()` 里才 `registerTool` —— 被唤醒之前它报不上来任何工具 */
+    let activated = false
+    const contribute = (): ToolRegistration[] => activated
+      ? [{
+          internalId,
+          description: 'list exported WeChat archives',
+          inputSchema: { type: 'object' },
+          readOnly: true,
+          destructive: false,
+          needsNetwork: false,
+          source: { kind: 'plugin', pluginId: 'acme.wechat-exports' },
+          execute: async () => toolOk('ok')
+        }]
+      : []
+    disposeProvider = installPluginToolProvider(contribute)
+    installPluginToolPreparation(async () => {
+      activated = true
+    })
+
+    /*
+      断言打在**真的发出去的请求体**上,不是内存里那张表:表里有而下发没有,
+      用户看到的症状一模一样,而后者正是「快照取早了」这一类 bug 的样子。
+    */
+    const bodies: string[] = []
+    const host = withDemo(nodeHost(), { chunkDelayMs: 0 })
+    installHost({
+      ...host,
+      fetch: (input, init) => {
+        bodies.push(String(init?.body ?? ''))
+        return host.fetch(input, init)
+      }
+    })
+
+    const { ctx } = fakeWindow()
+    const r = req({ sessionId: 'sess-plugin-tool' })
+    startRun(r, ctx)
+    await waitForEnd(r.runId)
+
+    expect(runs.get(r.runId)?.status).toBe('done')
+    expect(bodies.length).toBeGreaterThan(0)
+    const advertised = bodies.flatMap((body) => {
+      try {
+        const parsed = JSON.parse(body) as { tools?: Array<{ name?: string }> }
+        return (parsed.tools ?? []).map((tool) => tool.name)
+      } catch {
+        // 不是 JSON 的请求不参与断言,不该让它变成一次解析崩溃
+        return []
+      }
+    })
+    // 没撞名时 externalName 就等于 internalId(`ToolNamer` 只在撞名时加后缀),
+    // 而这里要钉的正是**上游真正看到的名字**。
+    expect(advertised).toContain(internalId)
   })
 })

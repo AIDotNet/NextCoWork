@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '../../../shared/agent/event'
 import { assistantMessage } from '../../../shared/agent/message'
 import type { RunRequest } from '../../../shared/agent/run-request'
-import { RunRegistry, RunHandle, collect } from '../run-registry'
+import { RUN_LOG_MAX_BYTES, RunRegistry, RunHandle, approxEventBytes, collect } from '../run-registry'
 
 /**
  * RunRegistry 是方案 §10「看着可砍但不能砍」清单里的一条。
@@ -13,7 +13,7 @@ import { RunRegistry, RunHandle, collect } from '../run-registry'
 
 const req = (over: Partial<RunRequest> = {}): RunRequest => ({
   runId: 'r1',
-  sessionId: 's1',
+  sessionId: over.sessionId ?? `session-${over.runId ?? 'r1'}`,
   workspaceId: 'w1',
   depth: 0,
   input: [],
@@ -262,6 +262,41 @@ describe('RunRegistry · 嵌套与中断', () => {
     expect(() => reg.create(req())).toThrow(/已存在/)
   })
 
+  it('同一会话不能并行创建两个不同 run，其他会话不受影响', () => {
+    const registry = new RunRegistry()
+    const first = registry.create(req({ runId: 'first', sessionId: 'shared' }))
+    expect(() => registry.create(req({ runId: 'second', sessionId: 'shared' }))).toThrow(/会话/)
+    expect(() => registry.create(req({ runId: 'other', sessionId: 'other' }))).not.toThrow()
+    first.finish('done')
+    expect(() => registry.create(req({ runId: 'next', sessionId: 'shared' }))).not.toThrow()
+  })
+
+  it('驱动收尾释放前，run_end 不放开会话，且 reap 不回收该 handle', () => {
+    const registry = new RunRegistry()
+    const first = registry.create(req({ sessionId: 'shared' }))
+    const release = registry.retainSessionForRun(first)
+    first.finish('done')
+    expect(registry.reap()).toBe(0)
+    expect(() => registry.create(req({ runId: 'next', sessionId: 'shared' }))).toThrow(/会话/)
+    release()
+    release()
+    expect(registry.reap()).toBe(1)
+    expect(() => registry.create(req({ runId: 'next', sessionId: 'shared' }))).not.toThrow()
+  })
+
+  it('历史操作与运行互斥，旧释放函数不会清掉重新获取的锁', () => {
+    const registry = new RunRegistry()
+    const release = registry.acquireSessionOperation('shared')
+    expect(() => registry.acquireSessionOperation('shared')).toThrow(/会话/)
+    expect(() => registry.create(req({ sessionId: 'shared' }))).toThrow(/会话/)
+    registry.clearForTest()
+    const currentRelease = registry.acquireSessionOperation('shared')
+    release()
+    expect(registry.isSessionBusy('shared')).toBe(true)
+    currentRelease()
+    expect(registry.isSessionBusy('shared')).toBe(false)
+  })
+
   it('子 run 登记到父的 children', () => {
     const reg = new RunRegistry()
     reg.create(req({ runId: 'parent' }))
@@ -329,5 +364,141 @@ describe('RunRegistry · 嵌套与中断', () => {
     expect(reg.get('done')).toBeUndefined()
     expect(reg.get('running')).toBeDefined()
     expect(reg.get('watched')).toBeDefined()
+  })
+})
+
+/*
+  需求:后台任务越跑越多时,已结束的 run 和它们的事件日志不能线性常驻主进程内存。
+  回收只动「回放用的副本」:转录在库里,模型上下文在 AgentSession 里,都不受影响。
+*/
+describe('RunHandle · 日志预算', () => {
+  const toolStart = (callId: string): AgentEvent => ({ type: 'tool_start', callId, toolName: 'image', input: {} })
+  const progress = (callId: string, text: string): AgentEvent => ({ type: 'tool_progress', callId, progress: { callId, message: text } })
+  const toolEnd = (callId: string): AgentEvent => ({ type: 'tool_end', callId, output: { content: 'ok' }, isError: false })
+
+  it('★ tool_end 之后,同一次调用的 tool_progress 从日志里清掉(reducer 在 tool_end 处本来就丢弃它们)', () => {
+    const h = new RunHandle(req())
+    h.emit(toolStart('a'))
+    h.emit(toolStart('b'))
+    h.emit(progress('a', 'x'.repeat(1000)))
+    h.emit(progress('b', 'still running'))
+    h.emit(progress('a', 'y'.repeat(1000)))
+    h.emit(toolEnd('a'))
+
+    expect(h.since(0).map((e) => e.type)).toEqual(['tool_start', 'tool_start', 'tool_progress', 'tool_end'])
+    expect(h.since(0)[2]).toEqual(progress('b', 'still running'))
+    expect(h.snapshot(0).logTrimmed).toBeUndefined()
+  })
+
+  it('★ 超过字节预算时从头截,快照明确标记 logTrimmed,seq 照常递增', () => {
+    const h = new RunHandle(req())
+    const big = 'z'.repeat(RUN_LOG_MAX_BYTES / 4)
+    for (let i = 0; i < 6; i++) h.emit(commit(`m${String(i)}`, big))
+
+    expect(h.seq).toBe(6)
+    expect(h.retainedLogBytes).toBeLessThanOrEqual(RUN_LOG_MAX_BYTES)
+    const snap = h.snapshot(0)
+    expect(snap.logTrimmed).toBe(true)
+    // 留下的是最新的那几条
+    expect(snap.events.at(-1)).toEqual(commit('m5', big))
+    expect(snap.events.length).toBeLessThan(6)
+  })
+
+  it('估算的字节数覆盖嵌套结构里的字符串', () => {
+    expect(approxEventBytes({ a: 'x'.repeat(100), b: [{ c: 'y'.repeat(50) }] })).toBeGreaterThanOrEqual(150)
+  })
+})
+
+describe('RunRegistry · 回收已结束的 run', () => {
+  it('★ TTL 内留着,过了 TTL 才收', () => {
+    const reg = new RunRegistry()
+    const h = reg.create(req({ runId: 'a' }))
+    h.finish('done')
+    const ended = h.endedAt!
+
+    expect(reg.reap({ now: ended + 1000, ttlMs: 60_000 })).toBe(0)
+    expect(reg.get('a')).toBeDefined()
+    expect(reg.reap({ now: ended + 60_000, ttlMs: 60_000 })).toBe(1)
+    expect(reg.get('a')).toBeUndefined()
+  })
+
+  it('超出已结束 run 的总预算时,不等 TTL,从最早结束的收起', () => {
+    const reg = new RunRegistry()
+    const older = reg.create(req({ runId: 'older' }))
+    older.emit(commit('m1', 'x'.repeat(1000)))
+    older.finish('done')
+    const newer = reg.create(req({ runId: 'newer' }))
+    newer.emit(commit('m2', 'x'.repeat(1000)))
+    newer.finish('done')
+    // newer 晚结束
+    Object.assign(older, { endedAt: 1 })
+    Object.assign(newer, { endedAt: 2 })
+
+    expect(reg.reap({ now: 3, ttlMs: 60_000, budgetBytes: 1500 })).toBe(1)
+    expect(reg.get('older')).toBeUndefined()
+    expect(reg.get('newer')).toBeDefined()
+  })
+
+  it('子孙里还有在跑的、或被钉住(还有待决交互)的,一律不收', () => {
+    const reg = new RunRegistry()
+    const root = reg.create(req({ runId: 'root', sessionId: 'root-s' }))
+    const mid = reg.create(req({ runId: 'mid', sessionId: 'mid-s', parentRunId: 'root', depth: 1 }))
+    reg.create(req({ runId: 'leaf', sessionId: 'leaf-s', parentRunId: 'mid', depth: 2 }))
+    mid.finish('done')
+    root.finish('done')
+    const pinned = reg.create(req({ runId: 'pinned', sessionId: 'pinned-s' }))
+    pinned.finish('done')
+
+    // leaf 还在跑:mid、root 都不能收(后台子代理收尾要沿 parentRunId 爬到根)
+    expect(reg.reap({ pinned: (h) => h.runId === 'pinned' })).toBe(0)
+    expect(reg.get('root')).toBeDefined()
+    expect(reg.get('mid')).toBeDefined()
+    expect(reg.get('pinned')).toBeDefined()
+
+    reg.get('leaf')!.finish('done')
+    expect(reg.reap({ pinned: (h) => h.runId === 'pinned' })).toBe(3)
+    expect(reg.get('pinned')).toBeDefined()
+  })
+})
+
+describe('RunRegistry · 删除会话前的活体检查', () => {
+  it('按真实状态分类:在跑 / 已中断未收尾 / 收尾中 / 历史操作', () => {
+    const reg = new RunRegistry()
+    const live = reg.create(req({ runId: 'live', sessionId: 's-live' }))
+    const stopping = reg.create(req({ runId: 'stopping', sessionId: 's-stopping' }))
+    stopping.abort({ by: 'user' })
+    const ended = reg.create(req({ runId: 'ended', sessionId: 's-ended' }))
+    reg.retainSessionForRun(ended)
+    ended.finish('done')
+    reg.acquireSessionOperation('s-compact')
+
+    const activity = reg.sessionActivity(['s-live', 's-stopping', 's-ended', 's-compact', 'other'])
+    expect(activity.live).toEqual([live])
+    expect(activity.stopping).toEqual([stopping])
+    expect(activity.finalizing).toEqual(['s-ended'])
+    expect(activity.operations).toEqual(['s-compact'])
+  })
+
+  it('只看传进来的会话,别的会话在跑不算', () => {
+    const reg = new RunRegistry()
+    reg.create(req({ runId: 'elsewhere', sessionId: 's-other' }))
+    expect(reg.sessionActivity(['s-target'])).toEqual({ live: [], stopping: [], finalizing: [], operations: [] })
+  })
+
+  it('★ 强制收尾:卡死的 run 判 aborted、残留互斥放掉,会话不再 busy', () => {
+    const reg = new RunRegistry()
+    const stuck = reg.create(req({ runId: 'stuck', sessionId: 's1' }))
+    const release = reg.retainSessionForRun(stuck)
+    stuck.abort({ by: 'user' }) // abort() 不改 status —— 驱动卡住时它就永远停在 running
+    expect(reg.isSessionBusy('s1')).toBe(true)
+
+    expect(reg.forceSettleSessions(['s1'])).toBe(2)
+    expect(stuck.status).toBe('aborted')
+    expect(reg.isSessionBusy('s1')).toBe(false)
+    // 卡住的驱动后来醒了:它的 release 不能误伤之后的新互斥
+    const next = reg.create(req({ runId: 'next', sessionId: 's1' }))
+    reg.retainSessionForRun(next)
+    release()
+    expect(reg.isSessionBusy('s1')).toBe(true)
   })
 })

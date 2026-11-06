@@ -5,7 +5,7 @@
  * 两层折叠叠加,一次展开只往下走一级 —— 直接展平会让「展开工作区」这个动作的
  * 结果不可预测:可能是 3 行,也可能是 40 行。用户不敢点的折叠等于没有折叠。
  */
-import { ChevronRight, LayoutGrid } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -24,6 +24,7 @@ import { useI18n } from "../../i18n";
 import { Surface, SurfaceReveal } from "../../components/ui/Surface";
 import { ToolTimeline } from "./ToolTimeline";
 import { ShapeStrip } from "./ToolIcon";
+import { ROW_CLASS, RowChevron } from "./row";
 
 /** 标题行最多画几个形态图标,超出显示 `+n` */
 const MAX_SHAPE_ICONS = 4;
@@ -113,39 +114,32 @@ export function WorkspaceBlock({
       ref={ref}
       data-testid="workspace-block"
       data-open={open}
-      tone={danger !== undefined ? "danger" : "default"}
     >
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-tint-hover/40"
+        className={cn(ROW_CLASS, "text-[13px]")}
       >
-        <ChevronRight
-          size={13}
-          className={cn(
-            "shrink-0 text-fg-faint transition-transform",
-            open && "rotate-90",
-          )}
-        />
         <LayoutGrid size={13} className="shrink-0 text-accent-soft" />
-        <span className="shrink-0 text-fg">{t("chat.workspace")}</span>
+        <span className="shrink-0">{t("chat.workspace")}</span>
         <ShapeStrip shapes={shownShapes} />
         {extraShapes > 0 && (
-          <span className="shrink-0 text-[11px] text-fg-faint">
+          <span className="shrink-0 text-[12px] text-fg-faint">
             +{extraShapes}
           </span>
         )}
 
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-fg-faint">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-faint">
           {normal.join(" · ")}
         </span>
         {danger !== undefined && (
-          <span className="shrink-0 text-[11.5px] text-danger">{danger}</span>
+          <span className="shrink-0 text-[12.5px] text-danger">{danger}</span>
         )}
+        <RowChevron open={open} />
       </button>
 
-      <SurfaceReveal open={open} className="px-2.5">
+      <SurfaceReveal open={open}>
         {/*
           ★ `running={false}` 是关键:工作区只在 run 结束后出现,
           此时 L2 不该再按「最近 3 项」的窗口规则坍缩 —— 那个规则解决的是

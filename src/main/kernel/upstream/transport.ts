@@ -24,16 +24,29 @@
  * (那家只用 API Key),但它和 oauth 分支从此互斥 —— 而互斥**不会报错**,只会在
  * 它们第一次同时成立的那天,静默地把其中一件事改没。
  */
-import { createHash } from 'node:crypto'
 import type { ProviderCredential } from '../../../shared/domain/credential'
 import { CLIENT_PROVIDER_ID, OPENCODE_GO_PROVIDER_ID } from '../../../shared/domain/presets'
 import type { UpstreamProvider, UpstreamProtocol } from '../../../shared/domain/provider'
 import { oauthSpecOf } from '../oauth/registry'
+import { sessionUuid } from './ids'
 
 export interface TransportContext {
   /** `UpstreamRequestContext.sessionId` 可缺 —— `sessionUuid` 自己兜底 */
   sessionId?: string
 }
+
+/*
+  ★★ `sessionUuid` / `uuidFromSeed` 已经搬到 `./ids.ts`,这里**原样再导出**。
+
+  为什么要搬:它们本来长在这里,而三家 issuer(chatgpt / grok / kimi)要从这儿取 ——
+  于是 `oauth/registry → issuers/* → transport → oauth/registry` 成了一个静态值环。
+  搬到叶子模块后,issuer 对 transport 只剩类型依赖(编译后擦除),环就断了。
+
+  为什么还要在这里再导出:**对外兼容**。`sessionUuid` / `uuidFromSeed` 是
+  transport 既有的公开出口(测试、`issuers/*` 之外的调用点都按这个路径 import),
+  搬走实现不该改任何一处调用点。
+*/
+export { sessionUuid, uuidFromSeed } from './ids'
 
 export interface UpstreamTransport {
   /** 与 `enc.headers` 合并,同名覆盖 */
@@ -179,6 +192,16 @@ function baseTransport(
   ctx: TransportContext
 ): UpstreamTransport {
   if (cred.kind === 'oauth') return oauthSpecOf(cred.issuer).transport(cred, ctx)
+  /*
+    ★ 签名凭证(腾讯 TC3 / AWS SigV4)走**另一条路**(视频适配器里的
+    `upstream/video/sign.ts` 现算签名),不能被当成一把可粘贴的 key 塞进
+    platform 登录态那一支 —— 那支会把"key"当 JWT 处理。
+    ★ 这里返回 IDENTITY 而不是抛错:它只是"聊天请求的基础 transport",而
+    这条凭证永远不会出现在聊天 provider 上(视频连接是独立的 provider 记录)。
+    真发出去的话,上游会给一个 401/403 —— 比在 transport 层抛一个与调用点
+    无关的异常更好查。
+  */
+  if (cred.kind === 'signature') return IDENTITY
   const platform = platformLoginAuth(provider.id, cred.apiKey)
   return platform === null ? IDENTITY : { ...platform, body: (b) => b }
 }
@@ -227,44 +250,4 @@ export function authHeader(protocol: UpstreamProtocol, bearer: string): Record<s
   return protocol === 'anthropic'
     ? { 'x-api-key': bearer }
     : { authorization: `Bearer ${bearer}` }
-}
-
-/**
- * 把我们的 sessionId 折成一个 UUID 形状的串。
- *
- * ★ 起因很具体:ChatGPT 那条通道的 `session_id` 头要 UUID,而我们的 sessionId 是 **ULID**。
- *
- * ★ 第二个调用点是 OpenCode Go 的 `x-opencode-session`(见 `opencodeSession`),
- * 它**不要求 UUID 格式** —— 上游只说「每个对话稳定」。仍然折一道的理由写在那边。
- *
- * ★★ **必须是确定性纯函数,不能挂一个 `Map<sessionId, uuid>` 缓存。**
- * 缓存会在多窗口、进程重启、以及 gateway 与内核各持一份的情况下,给**同一个会话
- * 两个不同的 id** —— 而上游那边很可能拿它做会话级的关联,结果是同一段对话在
- * 上游被拆成两截。sha256 折一下,任何进程任何时刻都算出同一个值。
- *
- * sessionId 缺失时用一个固定种子:也是一个合法 UUID,且始终同一个,
- * 比每次现摇一个更符合「同一会话同一个 id」这个语义。
- */
-export function sessionUuid(sessionId: string | undefined): string {
-  const seed = sessionId === undefined || sessionId === '' ? 'nextcowork:no-session' : sessionId
-  return uuidFromSeed(seed)
-}
-
-/**
- * 任意字符串 → 一个合法的 v4 形状 UUID。**确定性纯函数。**
- *
- * ★ 从 `sessionUuid` 里抽出来,是因为出现了第二个调用点:Kimi 那家的
- * `X-Msh-Device-Id` 要一个**跨重启稳定**的设备 id(见 `issuers/kimi.ts`)。
- * 两处各写一遍 RFC 4122 那两行位运算的代价不是「重复」,是**其中一处写漏**——
- * 漏了之后那个值只是「长得像 UUID」,而按规范校验的一方会拒,
- * 且错误信息不会提到这个字段。
- */
-export function uuidFromSeed(seed: string): string {
-  const h = createHash('sha256').update(seed).digest()
-  const b = Buffer.from(h.subarray(0, 16))
-  // RFC 4122:version 置 4、variant 置 10xx
-  b[6] = ((b[6] as number) & 0x0f) | 0x40
-  b[8] = ((b[8] as number) & 0x3f) | 0x80
-  const hex = b.toString('hex')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

@@ -140,7 +140,7 @@ describe('activitySnapshotOf 的场景维度', () => {
     expect(activitySnapshotOf(tight, false).context).toBe('tight')
     const compacting = transcript({
       contextUsage: { used: 9, window: 10, shouldCompact: true },
-      contextStatus: { phase: 'preparing', windowIndex: 0 }
+      contextStatus: { phase: 'compacting', trigger: 'auto' }
     })
     expect(activitySnapshotOf(compacting, false).context).toBe('compacting')
   })

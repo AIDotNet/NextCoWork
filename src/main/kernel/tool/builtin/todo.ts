@@ -13,15 +13,17 @@
  *
  * 所以这里只做两件事:**校验**(把会让清单失去意义的形状挡回去),
  * 和**回显**(让模型确认它写下的东西被收到了)。
+ *
+ * ★ 清单的**形状**(`TodoItem`)、渲染标记(`MARK`)与从转录反推清单的纯函数
+ * (`narrowTodos` / `latestTodosFrom` / `todoPlan`)住在 `shared/agent/todo.ts` ——
+ * 渲染层也要用它们(消息里那张卡片要标出这次更新改了什么),而渲染层 import
+ * `src/main/**` 是禁止的(AGENTS.md §1)。本文件只剩工具自己的入参 schema 与文案。
  */
 import { z } from 'zod'
-import type { AgentMessage } from '../../../../shared/agent/message'
 import { toolFail, toolOk } from '../../../../shared/agent/tool'
+import { MARK, MAX_TODOS, latestTodosFrom, narrowTodos, todoPlan } from '../../../../shared/agent/todo'
 import { defineTool } from '../define'
 import type { ToolRegistration } from '../registry'
-
-/** 再多就不是「计划」而是「清单癖」了 —— 而且每一轮都要重发一遍 */
-const MAX_TODOS = 40
 
 const TodoItemSchema = z.object({
   content: z.string().min(1).max(500).describe('The task, in imperative form, e.g. "Run the tests"'),
@@ -39,22 +41,6 @@ const TodoWriteInput = z.object({
     .max(MAX_TODOS)
     .describe('The complete task list. ALWAYS send the WHOLE list, never a delta')
 })
-
-/**
- * 一条待办。★ **导出**是因为 `context-assembler.ts` 要把当前清单渲染进
- * `<system-reminder>`,而「这个形状长什么样」不该有两份答案(见 `text.ts` 文件头)。
- */
-export type TodoItem = z.infer<typeof TodoItemSchema>
-
-/**
- * 清单的渲染标记。★ 同样导出:reminder 里那份快照和工具自己的回显必须长得一样,
- * 否则模型会以为那是两份不同的清单。
- */
-export const MARK: Record<TodoItem['status'], string> = {
-  completed: '[x]',
-  in_progress: '[~]',
-  pending: '[ ]'
-}
 
 export const todoWriteTool: ToolRegistration = defineTool({
   internalId: 'TodoWrite',
@@ -115,8 +101,12 @@ export const todoWriteTool: ToolRegistration = defineTool({
   readOnly: true,
   destructive: false,
   needsNetwork: false,
-  // 契约要求返回 Promise;这个工具本身没有任何异步的事要做
-  async run(input) {
+  /*
+    契约要求返回 Promise —— `async` 只是为了满足它,这个工具本身没有任何异步的事要做。
+    ★ 本 run 的转录从 `ctx.messages` 来,给不出时(纯内核测试、还没有转录)
+    `latestTodosFrom` 返回 undefined,回执就只说计数、不编造差异。
+  */
+  async run(input, ctx) {
     const { todos } = input
 
     if (todos.length === 0) {
@@ -145,17 +135,45 @@ export const todoWriteTool: ToolRegistration = defineTool({
     const body = todos.map((t) => `${MARK[t.status]} ${t.content}`).join('\n')
 
     /*
+      需求:回执要**顺便告诉模型这次更新动了什么**。
+
+      模型每轮发的是完整清单,它看不见自己改了什么 —— 尤其是**丢掉一项**:
+      前后两份各自都自洽,用户看到的却是任务凭空消失。这里把它自己造成的差异
+      回显一次,是它在收尾前核对清单的依据。
+      ★ 上一份从**本 run 的转录**里取(`ctx.messages`),不新存一份状态:
+      `todo.ts` 文件头那条「完全无状态」不动。取不到(第一次写、历史被压缩)
+      就只说计数,不编造差异。
+    */
+    const previous = latestTodosFrom(ctx.messages ?? [], ctx.todoToolName ?? '')
+    const plan = todoPlan(narrowTodos({ todos }) ?? [], previous)
+    const changes: string[] = []
+    if (plan.newlyCompleted > 0) changes.push(`${String(plan.newlyCompleted)} completed`)
+    if (plan.newlyStarted > 0) changes.push(`${String(plan.newlyStarted)} started`)
+    if (plan.added.length > 0) changes.push(`${String(plan.added.length)} added`)
+    if (plan.removed.length > 0) changes.push(`${String(plan.removed.length)} dropped`)
+    const header =
+      `Todo list updated (${String(done)}/${String(todos.length)} completed` +
+      `${changes.length === 0 ? '' : ` · ${changes.join(' · ')}`}):`
+
+    /*
       需求:清单全绿和「还有没做完的」必须给出两条不同的下一步 —— 一份已经全绿的清单上
       再催「做完一项就标掉」没有对象可指,只会把模型推回循环:它反复重发同一份清单,
       而用户看着界面一直亮着「正在……」。
-
-      不满足会怎样:收尾那一轮无限续命,每一轮重发都在烧一遍上下文,而且模型会以为
-      自己还没干完。反过来,没做完时**不能**默认放行 —— 所以下面那条照旧逐项提醒,
-      只额外要求它收尾前核对一遍,并不强迫全绿(受阻项本来就该留在清单上)。
+      反过来,没做完时**不能**默认放行 —— 所以下面那条照旧逐项提醒,只额外要求它
+      收尾前核对一遍,并不强迫全绿(受阻项本来就该留在清单上)。
+      ★ 这三句逐项提醒**不能**因为「description 里已经写过」就删掉:它们钉在
+      `todo.test.ts` 里,而回执是模型真正读到最后一次的地方 —— 描述可能在长对话里
+      被压缩掉,回执不会。
     */
+    const dropped = plan.removed.length === 0
+      ? ''
+      : `\nYou dropped ${String(plan.removed.length)} item(s) that were on the previous list: ` +
+        `${plan.removed.map((t) => `"${t.content}"`).join(', ')}. ` +
+        `If that was not deliberate, put them back or say why they are gone.`
+
     if (done === todos.length) {
       return toolOk(
-        `Todo list updated (${String(done)}/${String(todos.length)} completed):\n${body}\n\n` +
+        `${header}\n${body}${dropped}\n\n` +
           `All listed tasks are complete. If the user's request is now fully addressed, give the final ` +
           `answer and stop — do not keep calling this tool on a finished list. If it is not, keep the ` +
           `list honest by adding what is left.`
@@ -163,7 +181,7 @@ export const todoWriteTool: ToolRegistration = defineTool({
     }
 
     return toolOk(
-      `Todo list updated (${String(done)}/${String(todos.length)} completed):\n${body}\n\n` +
+      `${header}\n${body}${dropped}\n\n` +
         `Keep working through this list. As soon as an item is done, call this tool again to mark it — ` +
         `do NOT wait and mark them all at the end. Before your final answer, check it against what ` +
         `actually happened and send a complete update if needed; an unchanged, accurate list needs no ` +
@@ -174,74 +192,3 @@ export const todoWriteTool: ToolRegistration = defineTool({
 })
 
 export const TODO_LIMITS = { MAX_TODOS } as const
-
-// ─────────────────────────── 从转录反推当前清单 ───────────────────────────
-
-/**
- * 把「当前的待办清单」从转录里读回来。
- *
- * ★ 这**不违反**文件头那条无状态设计,反而是它的直接推论:当前清单已经在
- * 转录里了 —— 就是最近一次成功的 `TodoWrite` 调用的入参。所以这仍然是一个
- * **对转录的纯函数**,唯一真相源没有变,分叉不可能发生。
- *
- * 调用方(`context-assembler.ts`)拿它做的事,只是把已经存在的事实
- * **搬到离生成点更近的地方** —— 二十轮之前的那条 `tool_call`,模型翻不动了。
- *
- * ## 三处会踩空的地方
- *
- * 1. ★ **必须确认那次调用真的成功了。** `agent-session.ts` 是**先** commit
- *    `tool_call`、**后**在 `executeAll` → `defineTool` → `safeParse` 里校验的,
- *    所以被工具明确拒绝过的清单(两个 in_progress、空数组、坏 JSON)也原样
- *    躺在转录里。盲取最近一条 = 把工具拒绝过的东西当成当前进度渲染出去。
- *    判据是配对的 `tool_result` 存在**且** `isError === false`。
- * 2. ★ **`toolName` 是 `externalName`,要从注册表查**(`byInternalId('TodoWrite')`),
- *    不能写字面量、也不能从本轮的 `advertised` 快照里取。转录里存的是
- *    `ToolNamer` 分配的外部名,撞名时会带 8 位哈希后缀;而 `advertised`
- *    被 `readOnlyOnly` / `allowList` / `network` 过滤过,一个 `tools:` 写得窄的
- *    子代理会因此看不见**它自己刚写的**清单。两种错都是**静默**的。
- * 3. ★ **入参是 `unknown`,来源是模型** —— 这里做结构化窄化,不 throw、不引 zod。
- *
- * 压缩吃不掉它:`compactPart()` 只动 `tool_result` / `thinking` / `image`,
- * `tool_call` 走 `default: return p` 原样保留。
- */
-export function latestTodosFrom(
-  messages: readonly AgentMessage[],
-  toolName: string
-): readonly TodoItem[] | undefined {
-  // 先把 callId → 成功与否收成一张表,省得对每个候选再正向扫一遍
-  const ok = new Map<string, boolean>()
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (p.type === 'tool_result') ok.set(p.callId, !p.isError)
-    }
-  }
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const parts = messages[i]?.parts ?? []
-    for (let j = parts.length - 1; j >= 0; j--) {
-      const p = parts[j]
-      if (p === undefined || p.type !== 'tool_call' || p.name !== toolName) continue
-      // 还没跑完的那次不算(没有配对结果),被拒绝的那次也不算
-      if (ok.get(p.callId) !== true) continue
-      const todos = narrowTodos(p.input)
-      if (todos !== undefined) return todos
-    }
-  }
-  return undefined
-}
-
-function narrowTodos(input: unknown): readonly TodoItem[] | undefined {
-  if (typeof input !== 'object' || input === null) return undefined
-  const raw: unknown = (input as { todos?: unknown }).todos
-  if (!Array.isArray(raw)) return undefined
-
-  const out: TodoItem[] = []
-  for (const item of raw.slice(0, MAX_TODOS)) {
-    if (typeof item !== 'object' || item === null) continue
-    const { content, status, activeForm } = item as Record<string, unknown>
-    if (typeof content !== 'string' || typeof activeForm !== 'string') continue
-    if (status !== 'pending' && status !== 'in_progress' && status !== 'completed') continue
-    out.push({ content, status, activeForm })
-  }
-  return out.length > 0 ? out : undefined
-}

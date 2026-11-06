@@ -14,10 +14,10 @@
  * (`ipc/workspace.ts` 的 `updateWorkspace` / `listDir`)都是展开取值,不改返回对象。
  */
 import type { AgentMessage, ContentPart } from '../../shared/agent/message'
+import { isTurnStart } from '../../shared/agent/history-edit'
 import type { RunUsage } from '../../shared/agent/transcript'
-import type { RunCost } from '../../shared/domain/pricing'
-import type { ContextCheckpoint, ContextSearchHit, ContextCheckpointSource } from '../../shared/agent/context-management'
-import { orphanedCheckpoints } from '../../shared/agent/context-management'
+import type { ModelPricing, RunCost } from '../../shared/domain/pricing'
+import type { ContextSearchHit } from '../../shared/agent/context-management'
 import { parseNcwUrl } from '../../shared/domain/attachment'
 import type { McpServerConfig } from '../../shared/domain/mcp'
 import { mcpSecretRef } from '../../shared/domain/mcp'
@@ -51,6 +51,16 @@ import type {
   UsageWindow
 } from '../../shared/domain/usage'
 import { fileStats, stmt, tx } from './index'
+import { MANAGED_PROVIDER_ID, type ProviderFileStore } from './provider-file'
+import {
+  clearMessageFts,
+  deleteOrphanSessionFts,
+  deleteSessionFts,
+  renameSessionFts,
+  searchableMessageText,
+  writeMessageFts
+} from './message-text'
+export { searchableMessageText } from './message-text'
 import {
   ConfigProfileError,
   credentialScopePrefix,
@@ -62,6 +72,7 @@ import {
 } from './config-profile'
 
 import { ulid } from '../../shared/util/id'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -69,7 +80,7 @@ import type { SyncCategory, SyncConfigKind, SyncConflict, SyncMutation } from '.
 
 const SYNC_ACCOUNT_KEY = 'config-sync.account'
 const SYNC_DEVICE_KEY = 'config-sync.device'
-let syncApplying = false
+const syncApplying = new AsyncLocalStorage<boolean>()
 
 export { tx } from './index'
 
@@ -83,6 +94,15 @@ function syncAccount(): { accountId: string; deviceId: string; enabled: boolean 
   const value = raw as Record<string, unknown>
   return typeof value.accountId === 'string' && typeof value.deviceId === 'string'
     ? { accountId: value.accountId, deviceId: value.deviceId, enabled: value.enabled === true } : undefined
+}
+
+/**
+ * 当前启用同步的账户;未登录或未启用时为 null。
+ * 需求:使用统计只合并**这个账户**同步来的其它设备数据(`usage_daily_remote` 按账户隔离)。
+ */
+export function getActiveSyncAccountId(): string | null {
+  const account = syncAccount()
+  return account !== undefined && account.enabled ? account.accountId : null
 }
 
 export function ensureSyncDeviceId(): string {
@@ -203,16 +223,14 @@ export function getConfigCategoryDirty(
  * `listPendingSyncMutations` / `ack*` 因此原样留着。
  */
 export function enqueueSyncMutation(_kind: SyncConfigKind, _entityId: string, _payload: unknown, _operation: SyncMutation['operation'] = 'upsert', _workspaceId?: string): void {
-  if (syncApplying) return
+  if (syncApplying.getStore() === true) return
   const account = syncAccount()
   if (account === undefined || !account.enabled) return
   setConfigCategoryDirty(categoryForSyncKind(_kind), account.accountId)
 }
 
 export function withSyncApply<T>(fn: () => T): T {
-  const previous = syncApplying
-  syncApplying = true
-  try { return fn() } finally { syncApplying = previous }
+  return syncApplying.run(true, fn)
 }
 
 /**
@@ -220,9 +238,7 @@ export function withSyncApply<T>(fn: () => T): T {
  * 立刻撤掉围栏,后半段写入被当成本地改动再次上传,两台设备从此互相回声。
  */
 export async function withSyncApplyAsync<T>(fn: () => Promise<T>): Promise<T> {
-  const previous = syncApplying
-  syncApplying = true
-  try { return await fn() } finally { syncApplying = previous }
+  return await syncApplying.run(true, fn)
 }
 
 export function saveSyncConflict(conflict: Omit<SyncConflict, 'status'>): void {
@@ -436,6 +452,8 @@ export interface SessionCreateInput {
   thinking?: ThinkingLevel
   rootPathAtCreation?: string
   createdAt?: number
+  /** 提炼会话的源会话。见 `Session.skillSource`。 */
+  skillSource?: { sessionId: string }
 }
 
 function sessionFromRow(row: Record<string, unknown>): Session {
@@ -468,6 +486,9 @@ function sessionFromRow(row: Record<string, unknown>): Session {
       正说明了这种不一致要用硬规则去压。
     */
     ...(typeof parsed.modelProviderId === 'string' ? { modelProviderId: parsed.modelProviderId } : {}),
+    // 同上,只活在 json 里。严格收窄:json 是可以被导入/手改的,形状不对就当没有。
+    ...(typeof parsed.skillSource === 'object' && parsed.skillSource !== null && typeof parsed.skillSource.sessionId === 'string'
+      ? { skillSource: { sessionId: parsed.skillSource.sessionId } } : {}),
     mode: normalizeModeId(row['mode'] ?? parsed.mode),
     thinking: (row['thinking'] ?? parsed.thinking ?? 'auto') as ThinkingLevel,
     rootPathAtCreation: String(row['root_path_at_creation'] ?? parsed.rootPathAtCreation ?? ''),
@@ -499,6 +520,7 @@ export function createSession(input: SessionCreateInput): Session {
     mode: normalizeModeId(input.mode),
     thinking: input.thinking ?? 'auto',
     rootPathAtCreation: input.rootPathAtCreation ?? '',
+    ...(input.skillSource === undefined ? {} : { skillSource: { sessionId: input.skillSource.sessionId } }),
     status: 'idle',
     archived: false,
     favorited: false,
@@ -603,7 +625,7 @@ export function putSession(session: Session): Session {
   // by conversation title do not continue returning the old title until the
   // next message is committed.
   if (previous !== undefined && previous['title'] !== normalized.title) {
-    stmt('UPDATE messages_fts SET title = ? WHERE session_id = ?').run(normalized.title, normalized.id)
+    renameSessionFts(stmt, normalized.id, normalized.title)
   }
   return normalized
 }
@@ -624,13 +646,15 @@ export function listSessions(workspaceId: string, archived?: boolean): SessionLi
   return rows.map((row) => {
     const r = row as Record<string, unknown>
     const id = String(r['id'])
+    const full = getSession(id)
     return {
       id,
       title: String(r['title']),
       updatedAt: Number(r['updated_at']),
       archived: Number(r['archived']) !== 0,
-      favorited: Boolean(Number((getSession(id) as Session | undefined)?.favorited ?? 0)),
-      running: false
+      favorited: Boolean(Number(full?.favorited ?? 0)),
+      running: false,
+      ...(full?.skillSource === undefined ? {} : { skillExtraction: true as const })
     }
   }).filter((item) => getSession(item.id)?.origin !== 'scheduled')
 }
@@ -641,7 +665,6 @@ export function getSessionDetail(id: string): SessionDetail | undefined {
   return {
     session,
     messages: getHistory(id) as AgentMessage[],
-    contextCheckpoints: listContextCheckpoints(id),
     messageRuns: messageRunsOf(id),
     runUsage: runUsageOf(id),
     runModel: runModelOf(id)
@@ -653,9 +676,16 @@ export function getSessionDetail(id: string): SessionDetail | undefined {
  * (而不是给一个占位 id ——「不知道」和「属于某个 run」在界面上是两件事:
  * 前者不显示用量,后者会去查一个查不到的 run 然后显示 0 token)。
  */
-export function messageRunsOf(sessionId: string): Record<string, string> {
+export function messageRunsOf(sessionId: string, messageIds?: readonly string[]): Record<string, string> {
   const runs: Record<string, string> = {}
-  for (const row of stmt('SELECT id, run_id FROM messages WHERE session_id = ? AND run_id IS NOT NULL').all(sessionId)) {
+  // CROSS JOIN keeps the page IDs first, so SQLite probes the primary key instead of scanning the session index.
+  const rows = messageIds === undefined
+    ? stmt('SELECT id, run_id FROM messages WHERE session_id = ? AND run_id IS NOT NULL').all(sessionId)
+    : stmt(`SELECT m.id, m.run_id FROM json_each(?) AS page
+            CROSS JOIN messages AS m ON m.id = page.value
+            WHERE m.session_id = ? AND m.run_id IS NOT NULL`)
+      .all(JSON.stringify(messageIds), sessionId)
+  for (const row of rows) {
     const r = row as Record<string, unknown>
     runs[String(r['id'])] = String(r['run_id'])
   }
@@ -796,89 +826,9 @@ function sessionDetailsOf(rows: readonly unknown[]): ExportSession[] {
     // 在这条路径上是按会话数乘出去的。
     return session === undefined ? [] : [{
       session,
-      messages: [...getHistory(id)],
-      contextCheckpoints: [...listContextCheckpoints(id)]
+      messages: [...getHistory(id)]
     }]
   })
-}
-
-function parseContextCheckpoint(row: Record<string, unknown>): ContextCheckpoint {
-  let searchHits: ContextSearchHit[] | undefined
-  try {
-    const parsed: unknown = row['search_hits'] === null || row['search_hits'] === undefined
-      ? undefined
-      : JSON.parse(String(row['search_hits']))
-    if (Array.isArray(parsed)) searchHits = parsed as ContextSearchHit[]
-  } catch {
-    searchHits = undefined
-  }
-  return {
-    id: String(row['id']),
-    sessionId: String(row['session_id']),
-    windowIndex: Number(row['window_index']),
-    note: String(row['note'] ?? ''),
-    source: String(row['source']) as ContextCheckpointSource,
-    ...(row['covered_from_message_id'] == null ? {} : { coveredFromMessageId: String(row['covered_from_message_id']) }),
-    ...(row['covered_through_message_id'] == null ? {} : { coveredThroughMessageId: String(row['covered_through_message_id']) }),
-    ...(row['input_tokens_before'] == null ? {} : { inputTokensBefore: Number(row['input_tokens_before']) }),
-    ...(row['input_tokens_after'] == null ? {} : { inputTokensAfter: Number(row['input_tokens_after']) }),
-    ...(searchHits === undefined ? {} : { searchHits }),
-    createdAt: Number(row['created_at']),
-    updatedAt: Number(row['updated_at']),
-    revision: Number(row['revision'] ?? 1)
-  }
-}
-
-export function listContextCheckpoints(sessionId: string): ContextCheckpoint[] {
-  return stmt('SELECT * FROM context_checkpoints WHERE session_id = ? ORDER BY window_index, id')
-    .all(sessionId)
-    .map((row) => parseContextCheckpoint(row as Record<string, unknown>))
-}
-
-export function getContextCheckpoint(id: string): ContextCheckpoint | undefined {
-  const row = stmt('SELECT * FROM context_checkpoints WHERE id = ?').get(id)
-  return row === undefined ? undefined : parseContextCheckpoint(row as Record<string, unknown>)
-}
-
-export function upsertContextCheckpoint(checkpoint: ContextCheckpoint): ContextCheckpoint {
-  tx(() => {
-    stmt(
-      `INSERT INTO context_checkpoints
-       (id, session_id, window_index, note, source, covered_from_message_id, covered_through_message_id,
-        input_tokens_before, input_tokens_after, search_hits, created_at, updated_at, revision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET note = excluded.note, source = excluded.source,
-         covered_from_message_id = excluded.covered_from_message_id,
-         covered_through_message_id = excluded.covered_through_message_id,
-         input_tokens_before = excluded.input_tokens_before,
-         input_tokens_after = excluded.input_tokens_after,
-         search_hits = excluded.search_hits, updated_at = excluded.updated_at,
-         revision = excluded.revision`
-    ).run(
-      checkpoint.id,
-      checkpoint.sessionId,
-      checkpoint.windowIndex,
-      checkpoint.note,
-      checkpoint.source,
-      checkpoint.coveredFromMessageId ?? null,
-      checkpoint.coveredThroughMessageId ?? null,
-      checkpoint.inputTokensBefore ?? null,
-      checkpoint.inputTokensAfter ?? null,
-      checkpoint.searchHits === undefined ? null : JSON.stringify(checkpoint.searchHits),
-      checkpoint.createdAt,
-      checkpoint.updatedAt,
-      checkpoint.revision
-    )
-  })
-  return checkpoint
-}
-
-export function updateContextCheckpoint(id: string, note: string, revision: number, now: number): ContextCheckpoint {
-  const current = getContextCheckpoint(id)
-  if (current === undefined) throw new Error(`上下文检查点不存在: ${id}`)
-  if (current.revision !== revision) throw new Error('上下文检查点已被其它窗口更新，请重新加载后再保存')
-  const next = { ...current, note, updatedAt: now, revision: revision + 1 }
-  return upsertContextCheckpoint(next)
 }
 
 export function renameSession(id: string, title: string): void {
@@ -899,26 +849,8 @@ export function setSessionFavorited(id: string, favorited: boolean): void {
   putSession({ ...current, favorited, updatedAt: Date.now() })
 }
 
-function textForParts(parts: readonly ContentPart[]): string {
-  const chunks: string[] = []
-  for (const part of parts) {
-    if (part.type === 'text' || part.type === 'thinking') chunks.push(part.text)
-    else if (part.type === 'tool_call') chunks.push(part.name, JSON.stringify(part.input))
-    else if (part.type === 'tool_result') chunks.push(part.output.content)
-    else if (part.type === 'subagent' && part.summary) chunks.push(part.summary)
-    else if (part.type === 'error') chunks.push(part.error.message)
-  }
-  return chunks.filter(Boolean).join('\n')
-}
-
 function upsertFts(session: Session, message: AgentMessage): void {
-  stmt('DELETE FROM messages_fts WHERE message_id = ?').run(message.id)
-  stmt('INSERT INTO messages_fts (message_id, session_id, title, content) VALUES (?, ?, ?, ?)').run(
-    message.id,
-    session.id,
-    session.title,
-    textForParts(message.parts)
-  )
+  writeMessageFts(stmt, message.id, session.id, session.title, searchableMessageText(message.parts))
 }
 
 /**
@@ -1039,16 +971,38 @@ function commitManagedAttachment(
 
 function recordMessageAttachments(session: Session, message: AgentMessage): void {
   const imageParts = message.parts.filter((p): p is Extract<ContentPart, { type: 'image' }> => p.type === 'image')
+  /*
+    需求:`generate_image` 的产出落成本会话的 draft 附件,地址存在 tool_result 的
+    `output.images` 里。它们必须和用户附件一样在这里转 committed —— 否则 7 天后
+    被当成过期草稿回收,转录里的 `ncw://` 地址从此是一张裂图、模型点名也解析不到。
+    ★ 只收 `ncw://`:截图等内联 data URL 不是文件,绝不能掉进下面「外部路径」那一支。
+    ★ 序号接在 image part 之后:`managed:<index>` 与外部 `<messageId>:<index>` 的既有 id
+    因此一个都不变,重放旧消息仍然幂等。
+  */
+  const toolImageRefs = message.parts.flatMap((p) =>
+    p.type === 'tool_result' ? (p.output.images ?? []).map((image) => image.dataRef).filter((ref) => parseNcwUrl(ref) !== null) : []
+  )
+  /*
+    ★★ 视频产物走**和图片完全同一条**生命周期。少了这一段,生成的视频会:
+      - 停在 draft,七天后的草稿回收把它删掉,转录里的 `ncw://` 从此播不了;
+      - 更糟的是下面那句"删除不在保留集合里的附件"会在**消息重放**时
+        把这一行删掉 —— 而视频已经下载过一次,再下要重新向上游要(多半已过期)。
+    所以这里必须收,而且序号接在图片之后(既有 id 一个都不变,重放仍幂等)。
+
+    ★ 与图片的唯一区别:视频**没有内联那一条路**(`url` 永远是 `ncw://`,
+    见 `ToolOutputVideo`),所以它不进 `external` 那一支 —— 那一支会把一个
+    `https://…` 当本机绝对路径去 `statSync`,而那是另一个 bug 的入口。
+  */
+  const toolVideoRefs = message.parts.flatMap((p) =>
+    p.type === 'tool_result' ? (p.output.videos ?? []).map((video) => video.url).filter((ref) => parseNcwUrl(ref) !== null) : []
+  )
 
   // 受管理的(ncw://)与外部的(绝对路径)分开处理
   const managed: ManagedAttachmentCandidate[] = []
   const external: Array<{ part: Extract<ContentPart, { type: 'image' }>; index: number }> = []
-  imageParts.forEach((part, index) => {
-    const loc = parseNcwUrl(part.dataRef)
-    if (loc === null) {
-      external.push({ part, index })
-      return
-    }
+  const addManaged = (dataRef: string, index: number): void => {
+    const loc = parseNcwUrl(dataRef)
+    if (loc === null) return
 
     // A renderer can construct an otherwise valid ncw:// URL for another
     // session. Never let that URL re-home an attachment into this message;
@@ -1071,7 +1025,17 @@ function recordMessageAttachments(session: Session, message: AgentMessage): void
     // diverged. Owner and basename are both required before claiming a row.
     const fallback = findAttachmentByOwnerAndFileName(session.id, loc.fileName)
     if (fallback !== undefined) managed.push({ row: fallback, index })
+  }
+  imageParts.forEach((part, index) => {
+    if (parseNcwUrl(part.dataRef) === null) {
+      external.push({ part, index })
+      return
+    }
+    addManaged(part.dataRef, index)
   })
+  toolImageRefs.forEach((ref, offset) => { addManaged(ref, imageParts.length + offset) })
+  // ★ 视频接在图片之后,序号连续 —— 既有条目的 id 因此一个都不变。
+  toolVideoRefs.forEach((ref, offset) => { addManaged(ref, imageParts.length + toolImageRefs.length + offset) })
 
   const currentRows = attachmentRowsForMessage(message.id)
   const usedIds = new Set<string>()
@@ -1153,6 +1117,34 @@ function writeMessage(session: Session, message: AgentMessage, ordinal: number, 
   recordMessageAttachments(session, message)
 }
 
+/**
+ * 只换一条消息的 parts —— **前提是它还是读出来时的那一份**(比较并替换)。
+ *
+ * 需求:旧转录里内联的 base64 图在被读到时转存成附件,消息里换成 `ncw://` 地址。
+ * 转存的那一小段时间里用户可能编辑、删除了这条消息,或者导入同步改写了它:
+ * 那时这次替换必须放弃,而不是拿一份旧快照盖回去。返回是否真的写了。
+ *
+ * ★ 走 `writeMessage`:附件登记(draft → committed、清掉不再引用的行)与全文索引
+ * 和正常提交完全同一条路。ordinal、run 归属、时间都不动。
+ */
+export function replaceMessagePartsIfUnchanged(
+  sessionId: string,
+  messageId: string,
+  expectedParts: string,
+  parts: ContentPart[]
+): boolean {
+  return tx(() => {
+    const session = getSession(sessionId)
+    if (session === undefined) return false
+    const row = stmt(
+      'SELECT id, role, parts, schema_version, created_at, internal, ordinal FROM messages WHERE id = ? AND session_id = ?'
+    ).get(messageId, sessionId) as Record<string, unknown> | undefined
+    if (row === undefined || String(row['parts']) !== expectedParts) return false
+    writeMessage(session, { ...messageOfRow(row), parts }, Number(row['ordinal']))
+    return true
+  })
+}
+
 export function commitMessage(sessionId: string, message: AgentMessage, runId?: string): void {
   tx(() => {
     const session = getSession(sessionId)
@@ -1165,8 +1157,44 @@ export function commitMessage(sessionId: string, message: AgentMessage, runId?: 
       ? Number((stmt('SELECT COALESCE(MAX(ordinal), -1) AS n FROM messages WHERE session_id = ?').get(sessionId) as Record<string, unknown>)['n'] ?? -1) + 1
       : Number(existing['ordinal'])
     writeMessage(session, message, ordinal, runId)
+    /*
+      ★ 用户消息一提交就留下**消费回执**,和消息在**同一个事务**里 —— 见 schema 第 34 条。
+
+      这是「这条输入已经执行过」的唯一持久事实,它必须和消息同生:分开两次写的话,
+      中间任何一次失败(或者进程被杀)都会留下一条已落盘却「没被消费过」的消息,
+      而队列清理、重启恢复都会据此再执行一遍。
+
+      assistant / tool 消息不记:它们不是「用户交进来、可能被重复投递」的输入。
+    */
+    if (message.role === 'user') {
+      stmt('INSERT OR IGNORE INTO session_input_receipts (session_id, message_id, committed_at) VALUES (?, ?, ?)')
+        .run(sessionId, message.id, message.createdAt)
+    }
     putSession({ ...session, updatedAt: Math.max(session.updatedAt, message.createdAt) })
   })
+}
+
+/**
+ * 给定的 messageId 里,**哪些已经有消费回执**。
+ *
+ * ★ 队列判定唯一的收口:插话队列、定时任务、重试路径问的都是同一个问题,
+ *   答案只可能来自这里。返回数组而不是 Set —— SQL 层不替调用方决定形状。
+ *
+ * ★ 只查**指定会话**的行。跨会话的同名 messageId 读不到:别的会话的回执
+ *   不构成「这次输入提交过」的证据,读串了就等于放行了一条本该被拒的输入。
+ *
+ * ★ 参数化 + `json_each`,不把 ids 拼进 SQL 字符串(那会给每一种长度在
+ *   `db/index.ts` 的 prepared 缓存里留一条永不失效的语句,见 `sessionSubtreeIds`)。
+ *   不解析任何正文。**不做静默截断** —— 实际队列最多 20 条,但给了多少就查多少,
+ *   少查就是少判,也就是可能再执行一次。
+ */
+export function committedInputIds(sessionId: string, ids: readonly string[]): string[] {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return []
+  return stmt(
+    `SELECT message_id AS id FROM session_input_receipts
+      WHERE session_id = ? AND message_id IN (SELECT value FROM json_each(?))`
+  ).all(sessionId, JSON.stringify(unique)).map((row) => String((row as Record<string, unknown>)['id']))
 }
 
 export function getHistory(sessionId: string): readonly AgentMessage[] {
@@ -1184,6 +1212,183 @@ export function getHistory(sessionId: string): readonly AgentMessage[] {
       ...(Number(r['internal'] ?? 0) !== 0 ? { internal: true } : {})
     }
   })
+}
+
+/**
+ * 一条会话里**最后一条助手消息**。子代理交差的正文就是它 ——
+ * 为了取这一条去 `getHistory` 解析整段子转录,在长子任务上是成百上千条消息的白读。
+ */
+export function lastAssistantMessage(sessionId: string): AgentMessage | undefined {
+  const row = stmt(
+    `SELECT id, role, parts, schema_version, created_at, internal FROM messages
+     WHERE session_id = ? AND role = 'assistant' ORDER BY ordinal DESC, id DESC LIMIT 1`
+  ).get(sessionId) as Record<string, unknown> | undefined
+  if (row === undefined) return undefined
+  const parts: ContentPart[] = (() => {
+    try { return parse<ContentPart[]>(row['parts']) } catch { return [] }
+  })()
+  return {
+    id: String(row['id']),
+    role: 'assistant',
+    parts,
+    createdAt: Number(row['created_at']),
+    schemaVersion: Number(row['schema_version'] ?? 1) as 1,
+    ...(Number(row['internal'] ?? 0) !== 0 ? { internal: true } : {})
+  }
+}
+
+/** 一条会话有几条消息 —— 元数据卡片要的就是这个数,不必为它把整段转录读出来 */
+export function countMessages(sessionId: string): number {
+  const row = stmt('SELECT COUNT(*) AS n FROM messages WHERE session_id = ?').get(sessionId) as Record<string, unknown> | undefined
+  return Number(row?.['n'] ?? 0)
+}
+
+/**
+ * 最后一条**带目标标记**(`goal_status` part)的助手消息 —— 目标重载恢复只看它。
+ *
+ * ★ 需求:打开一条长会话时,`restoreGoal` 原先要 `getHistory` 把整段转录(连同每次工具输出)
+ *   全部 `JSON.parse` 一遍,只为找最后一条标记;主进程同步卡在这里,首页历史就迟迟回不来。
+ *   这里先用 LIKE 在原文上筛(不解析),再逐条解析确认 —— `_` 是 LIKE 通配、文本里
+ *   也可能恰好出现这串字符,所以筛出来的只是候选,真有那个 part 才算。
+ * ★ 和 `restorableGoalCondition` 等价:它从后往前找最后一条助手消息里的最后一个标记,
+ *   而那条消息正是这里返回的这一条。
+ */
+export function lastGoalStatusMessage(sessionId: string): AgentMessage | undefined {
+  const rows = stmt(
+    `SELECT id, role, parts, schema_version, created_at, internal FROM messages
+     WHERE session_id = ? AND role = 'assistant' AND parts LIKE '%"type":"goal_status"%'
+     ORDER BY ordinal DESC, id DESC`
+  ).iterate(sessionId) as IterableIterator<Record<string, unknown>>
+  for (const row of rows) {
+    const message = messageOfRow(row)
+    if (message.parts.some((part) => part.type === 'goal_status')) return message
+  }
+  return undefined
+}
+
+function messageOfRow(r: Record<string, unknown>): AgentMessage {
+  const parts: ContentPart[] = (() => {
+    try { return parse<ContentPart[]>(r['parts']) } catch { return [] }
+  })()
+  return {
+    id: String(r['id']),
+    role: String(r['role']) as AgentMessage['role'],
+    parts,
+    createdAt: Number(r['created_at']),
+    schemaVersion: Number(r['schema_version'] ?? 1) as 1,
+    ...(Number(r['internal'] ?? 0) !== 0 ? { internal: true } : {})
+  }
+}
+
+/**
+ * 这条会话里用户**亲手发的**最近几条消息,新的在前。输入框「建议下一步」读的就是它。
+ *
+ * ★ 不复用 `getHistoryPage`:一轮里几百次工具调用会把前面几条提问整个挤出一页。
+ * ★ `role = 'user'` 不等于「用户说的话」—— 工具结果也以 user 角色落库;
+ *   SQL 先用 `json_each` 挑出带 text 部件的那些(便宜),再交给 `isTurnStart` 认定。
+ */
+export function recentSessionPrompts(sessionId: string, limit: number): AgentMessage[] {
+  const rows = stmt(
+    `SELECT id, role, parts, schema_version, created_at, internal FROM messages
+     WHERE session_id = ? AND role = 'user' AND internal = 0
+       AND EXISTS (SELECT 1 FROM json_each(messages.parts) WHERE json_extract(value, '$.type') = 'text')
+     ORDER BY ordinal DESC, id DESC LIMIT ?`
+  ).all(sessionId, limit) as Record<string, unknown>[]
+  return rows.map(messageOfRow).filter(isTurnStart)
+}
+
+/**
+ * 最后一条**非内部**的助手消息。`lastAssistantMessage` 不挑 internal,而那类消息
+ * (目标 kickoff 之类)不是给用户看的回复,拿它去猜用户下一句是在猜一段他没读过的话。
+ */
+export function lastVisibleAssistantMessage(sessionId: string): AgentMessage | undefined {
+  const row = stmt(
+    `SELECT id, role, parts, schema_version, created_at, internal FROM messages
+     WHERE session_id = ? AND role = 'assistant' AND internal = 0 ORDER BY ordinal DESC, id DESC LIMIT 1`
+  ).get(sessionId) as Record<string, unknown> | undefined
+  return row === undefined ? undefined : messageOfRow(row)
+}
+
+/**
+ * 这个工作区里用户发过的指令,新的在前、去重,给输入框的历史补全用。
+ *
+ * ★ 两道上限是给**主进程**的:node:sqlite 是同步的,一个攒了几年对话的工作区不能让
+ *   一次输入框挂载卡住整个应用。先限最近 `sessions` 个顶层会话(子代理会话不是用户打的),
+ *   再限 `scan` 行。
+ * ★ 斜杠命令在库里是**展开后**的整份模板(`applyCommand` 在发送时展开),所以超长、
+ *   多行的一律不要 —— 用户从没打过它们,补出来只会是一大段陌生文字。
+ */
+export function recentWorkspacePrompts(
+  workspaceId: string,
+  { sessions = 200, scan = 2000, limit = 500 }: { sessions?: number; scan?: number; limit?: number } = {}
+): string[] {
+  const rows = stmt(
+    `SELECT m.id, m.role, m.parts, m.schema_version, m.created_at, m.internal FROM messages m
+     WHERE m.session_id IN (
+         SELECT id FROM sessions WHERE workspace_id = ? AND parent_session_id IS NULL
+         ORDER BY updated_at DESC LIMIT ?)
+       AND m.role = 'user' AND m.internal = 0
+     ORDER BY m.created_at DESC, m.ordinal DESC LIMIT ?`
+  ).all(workspaceId, sessions, scan) as Record<string, unknown>[]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const row of rows) {
+    const message = messageOfRow(row)
+    if (!isTurnStart(message)) continue
+    const text = message.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('').trim()
+    if (text === '' || text.length > 500 || text.split('\n').length > 3 || seen.has(text)) continue
+    seen.add(text)
+    out.push(text)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** 页首往前补到一轮开头时,最多再多读这么多条 —— 一轮里几百次工具调用也不该让一页无界 */
+const PAGE_TURN_EXTENSION_MAX = 500
+
+/**
+ * 转录的一页:`beforeMessageId` 之前(缺省 = 最新)的 `limit` 条,**从一轮的开头切起**。
+ *
+ * ★ 页首必须是一条可见提问:从一轮中间切开的话,页首那条 tool_result 找不到它的 tool_call,
+ * 卡片画不出来。所以先按条数取,再往前补到最近的一轮开头(有上限)。
+ * ★ 只解析这一页的 parts —— 不为一页显示去解析整段会话。
+ */
+export function getHistoryPage(
+  sessionId: string,
+  limit: number,
+  beforeMessageId?: string
+): { messages: AgentMessage[]; hasMore: boolean } {
+  let upper = Number.MAX_SAFE_INTEGER
+  if (beforeMessageId !== undefined) {
+    const anchor = stmt('SELECT ordinal FROM messages WHERE id = ? AND session_id = ?').get(beforeMessageId, sessionId) as Record<string, unknown> | undefined
+    if (anchor === undefined) return { messages: [], hasMore: false }
+    upper = Number(anchor['ordinal'])
+  }
+  const rows = stmt(
+    `SELECT id, role, parts, schema_version, created_at, internal, ordinal FROM messages
+     WHERE session_id = ? AND ordinal < ? ORDER BY ordinal DESC, id DESC LIMIT ?`
+  ).all(sessionId, upper, Math.max(1, Math.floor(limit))) as Array<Record<string, unknown>>
+  // Keep newest-first until the boundary is found, avoiding hundreds of queries and array unshifts in a long turn.
+  const messages = rows.map(messageOfRow)
+  let first = rows.at(-1)
+  const oldest = messages.at(-1)
+  if (first !== undefined && oldest !== undefined && !isTurnStart(oldest)) {
+    const previousRows = stmt(
+      `SELECT id, role, parts, schema_version, created_at, internal, ordinal FROM messages
+       WHERE session_id = ? AND ordinal < ? ORDER BY ordinal DESC, id DESC LIMIT ?`
+    ).iterate(sessionId, Number(first['ordinal']), PAGE_TURN_EXTENSION_MAX) as IterableIterator<Record<string, unknown>>
+    for (const previous of previousRows) {
+      const message = messageOfRow(previous)
+      messages.push(message)
+      first = previous
+      if (isTurnStart(message)) break
+    }
+  }
+  const hasMore = first !== undefined && stmt(
+    'SELECT 1 FROM messages WHERE session_id = ? AND ordinal < ? LIMIT 1'
+  ).get(sessionId, Number(first['ordinal'])) !== undefined
+  return { messages: messages.reverse(), hasMore }
 }
 
 /** 权威历史对账；未变化的消息保留正文、索引、附件和 run 归属。 */
@@ -1226,17 +1431,7 @@ export function replaceHistory(sessionId: string, messages: readonly AgentMessag
     if (renumber) stmt('UPDATE messages SET ordinal = -ordinal - 1 WHERE session_id = ?').run(sessionId)
     for (const id of removed) stmt('DELETE FROM messages WHERE id = ?').run(id)
     if (removed.length > 0) {
-      stmt('DELETE FROM messages_fts WHERE session_id = ? AND message_id NOT IN (SELECT id FROM messages WHERE session_id = ?)').run(sessionId, sessionId)
-      /*
-        ★ **改写历史要连着清理检查点,而且必须在同一个事务里。**
-        判据见 `orphanedCheckpoints`。放在这里而不是各个调用点上,是因为
-        这个函数是「用户有意改写转录」的**唯一**入口(删一轮、编辑消息、
-        编辑后重跑都汇到这儿)—— 分散到调用点就总有一条路会忘。
-        没删过消息就不可能产生新孤儿,所以只在 `removed` 非空时走一趟。
-      */
-      for (const orphan of orphanedCheckpoints(ids, listContextCheckpoints(sessionId))) {
-        stmt('DELETE FROM context_checkpoints WHERE id = ?').run(orphan.id)
-      }
+      deleteOrphanSessionFts(stmt, sessionId)
     }
     for (const { message, ordinal, changed } of entries) {
       if (changed) writeMessage(session, message, ordinal)
@@ -1498,12 +1693,14 @@ export function deleteSession(id: string): string[] {
     // 先叶后根。sessions 之间没有真外键(理由见 schema.ts 第 10 条),
     // 顺序其实无所谓;保持和 CASCADE 同向,便于将来真加外键时不用重排。
     for (const sid of [...ids].reverse()) {
-      stmt('DELETE FROM messages_fts WHERE session_id = ?').run(sid)
+      deleteSessionFts(stmt, sid)
       stmt('DELETE FROM sessions WHERE id = ?').run(sid)
       // 草稿附件没有 session_id（外键要求上传时会话可以尚未创建），
       // 因此不能只依赖 CASCADE；owner_id 是它们的会话归属。
       stmt("DELETE FROM attachments WHERE scope = 'session' AND owner_id = ?").run(sid)
       removeKv(`session.input.${sid}`)
+      // 对话里 widget 的持久化状态(`ipc/widget.ts`)。同 session.input:kv 没有外键,得手删
+      removeKv(`session.widget.${sid}`)
       /*
         ★★ 导入来的会话留 tombstone,**不删映射行**。
 
@@ -1685,10 +1882,7 @@ export function mergeDataExport(data: DataExport): ImportApplyResult {
       if (decision === 'overwrite') overwritten++
       putSession(item.session)
       replaceHistory(item.session.id, item.messages)
-      // 检查点与会话历史一起导入；旧导出没有该字段时按空数组处理。
-      for (const checkpoint of item.contextCheckpoints ?? []) {
-        upsertContextCheckpoint(checkpoint)
-      }
+      // 旧导出里的 `contextCheckpoints` 刻意不导:压缩已改成转录里的边界消息,检查点表不再被读取。
       imported++
       sessionsImported++
       messagesImported += item.messages.length
@@ -2226,16 +2420,23 @@ export function searchSessionHistory(sessionId: string, q: string, limit = 5): C
 }
 
 function messageBytes(): { count: number; bytes: number } {
-  const rows = stmt('SELECT parts FROM messages').all()
-  let bytes = 0
-  for (const row of rows) bytes += Buffer.byteLength(String((row as Record<string, unknown>)['parts'] ?? ''), 'utf8')
-  return { count: rows.length, bytes }
+  /*
+    ★ 在 SQL 里求和,不把每一行的 `parts` 拉进 JS 再 `Buffer.byteLength`。
+    `cleanupPreview('history')` 和 `storage:getStats` 都走这里,而 `parts` 是
+    整条消息的 JSON —— 有历史的库把这个字符串搬到 V8 堆上,光这一次就要多占
+    与库同量级的内存,换来一个本来一行 SQL 就能给的数。
+
+    `LENGTH(CAST(parts AS BLOB))` 而不是 `LENGTH(parts)`:后者对 TEXT 数的是
+    字符数,中文消息会被算成 UTF-8 字节数的三分之一左右。
+  */
+  const row = stmt('SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(CAST(parts AS BLOB))), 0) AS bytes FROM messages').get() as Record<string, unknown>
+  return { count: Number(row['n'] ?? 0), bytes: Number(row['bytes'] ?? 0) }
 }
 
 export function deleteAllHistory(): CleanupResult {
   return tx(() => {
     const p = cleanupPreview('history')
-    stmt('DELETE FROM messages_fts').run()
+    clearMessageFts(stmt)
     stmt('DELETE FROM sessions').run()
     // committed 行随 sessions 级联；没有 session_id 的会话草稿按 scope
     // 显式删除。主题/导出附件不属于对话历史，必须保留。
@@ -2250,6 +2451,7 @@ export function deleteAllHistory(): CleanupResult {
     // unreachable rows as well; deleting only the relational tables leaves
     // stale text that can reappear when an id is reused.
     stmt("DELETE FROM kv WHERE key LIKE 'session.input.%'").run()
+    stmt("DELETE FROM kv WHERE key LIKE 'session.widget.%'").run()
     /*
       ★ 「清空对话历史」同样要留墓碑,而且必须整表一次改完 —— 这条路径**不**
       走 `deleteSession`(它是一次性 DELETE,没有逐条循环),所以上面那处墓碑
@@ -2267,7 +2469,7 @@ export function deleteAllHistory(): CleanupResult {
 /** 测试隔离：只清会话相关表，不触碰设置、供应商和工作区。 */
 export function clearSessionDataForTest(): void {
   tx(() => {
-    stmt('DELETE FROM messages_fts').run()
+    clearMessageFts(stmt)
     stmt('DELETE FROM runs').run()
     stmt('DELETE FROM file_snapshots').run()
     stmt('DELETE FROM file_change_sets').run()
@@ -2275,6 +2477,7 @@ export function clearSessionDataForTest(): void {
     stmt('DELETE FROM messages').run()
     stmt('DELETE FROM sessions').run()
     stmt("DELETE FROM kv WHERE key LIKE 'session.input.%'").run()
+    stmt("DELETE FROM kv WHERE key LIKE 'session.widget.%'").run()
   })
 }
 
@@ -2364,18 +2567,183 @@ export function storageStats(dataDirectory: string, attachmentDirectory: string,
   }
 }
 
+/**
+ * `getStats` 的**异步**版本,供 UI 的 `storage:getStats` IPC 用。
+ *
+ * ★ 和同步版的区别只有一件:附件目录的字节数走异步、有界的遍历
+ *   (`lstat`/`readdir` promise 版,不跟符号链接),而不是把整棵目录同步读
+ *   一遍。目录大的时候前者能让出事件循环,后者会在主进程上卡住。
+ *
+ * 数字口径与 `getStats` 完全一致:库/WAL 用 `fileStats`,会话/消息/字节直接
+ * 查库(见 `messageBytes`)。**不做缓存、不用 0 顶替** —— 「暂时读不出来」和
+ * 「真的是 0」在界面上是两件事,拿旧值或 0 冒充实时是另一种误导。
+ */
+export function getStatsAsync(
+  dataDirectory: string,
+  attachmentDirectory: string,
+  lastBackupAt: number | null
+): Promise<import('../../shared/domain/settings').StorageStats> {
+  const files = fileStats()
+  const c = messageBytes()
+  const s = stmt('SELECT COUNT(*) AS n FROM sessions WHERE parent_session_id IS NULL').get() as Record<string, unknown>
+  const a = stmt('SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS bytes FROM attachments').get() as Record<string, unknown>
+  return collectDirectoryBytesBounded(attachmentDirectory, ATTACHMENT_SCAN_MAX_ENTRIES).then((attachmentBytes) => ({
+    dbBytes: files.dbBytes,
+    walBytes: files.walBytes,
+    conversationBytes: Number(c.bytes ?? 0),
+    attachmentBytes,
+    conversationCount: Number(s.n ?? 0),
+    messageCount: Number(c.count ?? 0),
+    attachmentCount: Number(a.n ?? 0),
+    dataDirectory,
+    lastBackupAt
+  }))
+}
+
+/** 一次统计最多看多少个目录条目 —— 有界,不把大目录读成全盘扫描。 */
+const ATTACHMENT_SCAN_MAX_ENTRIES = 200_000
+
+class AttachmentScanBudgetError extends Error {
+  constructor() { super('附件目录条目超过统计预算，结果不完整，请稍后重试'); this.name = 'AttachmentScanBudgetError' }
+}
+
+/**
+ * 异步、有界、不跟符号链接地数一棵树的字节数。
+ *
+ * 符号链接(以及任何非目录条目)只按它自己的 `lstat().size` 计,绝不递归进
+ * 链接目标 —— 手动放进数据目录的一个链接不该让统计去读一个外部目录。
+ */
+async function collectDirectoryBytesBounded(root: string, budget: number): Promise<number> {
+  const { lstat, opendir } = await import('node:fs/promises')
+  let scanned = 0
+  const walk = async (dir: string): Promise<number> => {
+    let entryStat
+    try { entryStat = await lstat(dir) } catch { return 0 }
+    if (entryStat.isSymbolicLink() || !entryStat.isDirectory()) return entryStat.size
+    let total = 0
+    let entries
+    try { entries = await opendir(dir) } catch { return total }
+    // 增量读取，不把整个大目录的名字先分配进主线程堆；退出迭代时自动关闭目录句柄。
+    for await (const entry of entries) {
+      if (scanned >= budget) throw new AttachmentScanBudgetError()
+      scanned += 1
+      const child = join(dir, entry.name)
+      try {
+        const stat = await lstat(child)
+        if (stat.isDirectory() && !stat.isSymbolicLink()) total += await walk(child)
+        else total += stat.size
+      } catch (error) {
+        if (error instanceof AttachmentScanBudgetError) throw error
+        // 扫描期间消失的条目不计入，预算到期不能冒充精确结果或零字节。
+      }
+    }
+    return total
+  }
+  return walk(root)
+}
+
 // ── 上游供应商 / 模型别名 ────────────────────────────────────────────────────
+
+/**
+ * ★★ 用户自己添加的供应商 / 别名 / 密钥放在 `providers.json`(见 `provider-file.ts`),
+ * 只有托管的 `nextcowork` 仍在库里。**只有显式装上文件存储才切换**(`useProviderFileStore`,
+ * 由 `main/index.ts` 在开库之后做):没装(单元测试、旧调用方)时下面每个函数仍是
+ * 原来的纯库实现,行为一个字不变。
+ *
+ * 文件模式下库里残留的非托管行(旧版本留下的备份、从旧归档恢复出来的)一律**不读**,
+ * 否则同一个 id 会同时有两个来源。`model_aliases` 对 `providers` 有外键,所以文件里供应商的
+ * 别名也不可能放进库 —— 它们跟着供应商条目走。
+ */
+let providerFile: ProviderFileStore | null = null
+
+export function useProviderFileStore(store: ProviderFileStore | null): void {
+  providerFile = store
+}
+
+export function providerFileStore(): ProviderFileStore | null {
+  return providerFile
+}
+
+/** 文件模式下,这个 provider id 是否归文件管(托管供应商永远归库)。 */
+function fileOwns(providerId: string): boolean {
+  return providerFile !== null && providerId !== MANAGED_PROVIDER_ID
+}
+
+/**
+ * 逻辑凭证 ref(`provider:<id>`)对应的、由文件管理的供应商 id;不归文件管就是 null。
+ * `host.secrets` 靠它决定一把密钥走文件(明文)还是走库(NCK1 密文)。
+ */
+export function fileCredentialProviderId(ref: string): string | null {
+  if (providerFile === null || !ref.startsWith('provider:')) return null
+  const id = ref.slice('provider:'.length)
+  /*
+    ★★ 账号密文 `provider:<id>#<accountId>` 共用 `provider:` 前缀,但**不归文件管**,
+    一律走库(NCK1)。providers.json 一家只有一个凭证槽,放行的表现是:写入落进
+    `pendingCredentials` 再也不落盘,读回来恒为 null —— 设置页旧槽显示「已登录」,
+    账号行没有邮箱(「未命名账号」),一发消息就报「还没有配置密钥」。
+  */
+  if (id.includes('#')) return null
+  return id !== '' && id !== MANAGED_PROVIDER_ID ? id : null
+}
+
+/**
+ * 迁移专用:库里**原始**的非托管供应商 / 别名行,绕开文件模式的过滤。
+ * 业务代码不要用它 —— 文件模式下这些行不是权威来源。
+ */
+export function listLegacyDbProviders(): UpstreamProvider[] {
+  return stmt('SELECT json FROM providers ORDER BY priority, id')
+    .all()
+    .map((r) => normalizeUpstreamProvider(parse<UpstreamProvider>(r['json'])))
+    .filter((p) => p.id !== MANAGED_PROVIDER_ID)
+}
+
+export function listLegacyDbAliases(): ModelAlias[] {
+  return stmt('SELECT json FROM model_aliases ORDER BY provider_id, alias')
+    .all()
+    .map((r) => parse<ModelAlias>(r['json']))
+    .filter((a) => a.providerId !== MANAGED_PROVIDER_ID)
+}
+
+/**
+ * 迁移成功之后清掉库里的旧行(别名由外键级联)。`credentialRefs` 只清**迁移成功**的那几把
+ * (当前作用域),没能解密的密文原样留着,方便事后找回。
+ */
+export function purgeLegacyDbProviders(providerIds: readonly string[], credentialRefs: readonly string[]): void {
+  tx(() => {
+    for (const id of providerIds) {
+      if (id !== MANAGED_PROVIDER_ID) stmt('DELETE FROM providers WHERE id = ?').run(id)
+    }
+    for (const ref of credentialRefs) stmt('DELETE FROM credentials WHERE ref = ?').run(physicalCredentialRef(ref))
+  })
+}
+
+/**
+ * 把整个库一致地拷到另一个文件(`VACUUM INTO`,WAL 下也是完整快照)。
+ * 迁移会删旧行,这是回滚用的那份。目标已存在会抛错 —— 调用方先判断。
+ */
+export function backupDatabaseTo(path: string): void {
+  stmt('VACUUM INTO ?').run(path)
+}
 
 export function listProviders(): UpstreamProvider[] {
   // priority 相同时用 id 兜底,保证顺序是确定的 —— 故障切换按这个顺序挑候选,
   // 「今天先切到 A、明天先切到 B」比切错还难查
-  return stmt('SELECT json FROM providers ORDER BY priority, id')
+  const rows = stmt('SELECT json FROM providers ORDER BY priority, id')
     .all()
     .map((r) => normalizeUpstreamProvider(parse<UpstreamProvider>(r['json'])))
+  if (providerFile === null) return rows
+  return [...rows.filter((p) => p.id === MANAGED_PROVIDER_ID), ...providerFile.listProviders()]
+    .sort((a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
 export function putProvider(p: UpstreamProvider): UpstreamProvider {
   const normalized = normalizeUpstreamProvider(p)
+  if (fileOwns(normalized.id)) {
+    const saved = providerFile!.putProvider(normalized)
+    const { credentialRef: _credentialRef, ...cloud } = normalized
+    enqueueSyncMutation('provider', normalized.id, cloud)
+    return saved
+  }
   tx(() => { stmt(
     `INSERT INTO providers (id, priority, json) VALUES (?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET priority = excluded.priority, json = excluded.json`
@@ -2391,19 +2759,32 @@ export function putProvider(p: UpstreamProvider): UpstreamProvider {
 /**
  * 别名**不用**在这里手动删。`model_aliases.provider_id` 上的
  * `ON DELETE CASCADE` 接着(见 `schema.ts`),前提是连接开了 `foreign_keys`
- * —— `index.ts` 的 `openAt()` 用构造参数打开的。
+ * —— `index.ts` 的 `openAt()` 用构造参数打开的。文件里的供应商,别名本来就在它的条目里。
  */
 export function removeProvider(id: string): void {
+  if (fileOwns(id)) {
+    providerFile!.removeProvider(id)
+    enqueueSyncMutation('provider', id, { id }, 'delete')
+    return
+  }
   tx(() => { stmt('DELETE FROM providers WHERE id = ?').run(id); if (id !== 'nextcowork') enqueueSyncMutation('provider', id, { id }, 'delete') })
 }
 
 export function listAliases(): ModelAlias[] {
-  return stmt('SELECT json FROM model_aliases ORDER BY provider_id, alias')
+  const rows = stmt('SELECT json FROM model_aliases ORDER BY provider_id, alias')
     .all()
     .map((r) => parse<ModelAlias>(r['json']))
+  if (providerFile === null) return rows
+  return [...rows.filter((a) => a.providerId === MANAGED_PROVIDER_ID), ...providerFile.listAliases()]
+    .sort((a, b) => (a.providerId < b.providerId ? -1 : a.providerId > b.providerId ? 1 : a.alias < b.alias ? -1 : a.alias > b.alias ? 1 : 0))
 }
 
 export function putAlias(a: ModelAlias): ModelAlias {
+  if (fileOwns(a.providerId)) {
+    providerFile!.putAlias(a)
+    enqueueSyncMutation('modelAlias', `${a.providerId}/${a.alias}`, a)
+    return a
+  }
   tx(() => { stmt(
     `INSERT INTO model_aliases (provider_id, alias, json) VALUES (?, ?, ?)
      ON CONFLICT (provider_id, alias) DO UPDATE SET json = excluded.json`
@@ -2412,6 +2793,11 @@ export function putAlias(a: ModelAlias): ModelAlias {
 }
 
 export function removeAlias(providerId: string, alias: string): void {
+  if (fileOwns(providerId)) {
+    providerFile!.removeAlias(providerId, alias)
+    enqueueSyncMutation('modelAlias', `${providerId}/${alias}`, { providerId, alias }, 'delete')
+    return
+  }
   tx(() => { stmt('DELETE FROM model_aliases WHERE provider_id = ? AND alias = ?').run(providerId, alias); if (providerId !== 'nextcowork') enqueueSyncMutation('modelAlias', `${providerId}/${alias}`, { providerId, alias }, 'delete') })
 }
 
@@ -2550,6 +2936,64 @@ export function removeUserModelCatalog(id: string): void {
     if (next.length === rows.length) return
     setKv(USER_MODEL_CATALOG_KEY, next)
   })
+}
+
+// ── synced pricing (model_pricing, is_seed = 0) ───────────────────────────
+
+/**
+ * 同步写进来的价目行。`is_seed = 0` 是它们和仓库种子的分界 —— 种子不入库
+ * (升级才能纠正已有用户的价),这张表里**只有**用户确认过的同步价。
+ */
+export function listSyncedPricing(): ModelPricing[] {
+  return stmt(
+    `SELECT provider_id, model_id, display_name, currency, modality, tiers, windows,
+            effective_from, effective_until, source, fetched_at
+       FROM model_pricing WHERE is_seed = 0 ORDER BY model_id, COALESCE(effective_from, '')`
+  )
+    .all()
+    .map((row) => ({
+      providerId: asNullableString(row['provider_id']),
+      modelId: String(row['model_id']),
+      displayName: String(row['display_name']),
+      currency: String(row['currency']) as ModelPricing['currency'],
+      modality: String(row['modality']) as ModelPricing['modality'],
+      tiers: parse<ModelPricing['tiers']>(row['tiers']) ?? [],
+      ...(row['windows'] === null ? {} : { windows: parse<NonNullable<ModelPricing['windows']>>(row['windows']) ?? [] }),
+      ...(row['effective_from'] === null ? {} : { effectiveFrom: String(row['effective_from']) }),
+      ...(row['effective_until'] === null ? {} : { effectiveUntil: String(row['effective_until']) }),
+      source: String(row['source']),
+      fetchedAt: String(row['fetched_at'])
+    }))
+}
+
+/** 同一 `(provider, model)` 的旧同步行整组替换,保证「采用同步价」之后不留旧区间 */
+export function replaceSyncedPricing(rows: readonly ModelPricing[]): void {
+  tx(() => {
+    for (const r of rows) {
+      stmt('DELETE FROM model_pricing WHERE is_seed = 0 AND model_id = ? AND COALESCE(provider_id, \'\') = ?').run(r.modelId, r.providerId ?? '')
+      stmt(
+        `INSERT INTO model_pricing
+           (provider_id, model_id, display_name, currency, modality, tiers, windows, effective_from, effective_until, source, fetched_at, is_seed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+      ).run(
+        r.providerId,
+        r.modelId,
+        r.displayName,
+        r.currency,
+        r.modality,
+        JSON.stringify(r.tiers),
+        r.windows === undefined ? null : JSON.stringify(r.windows),
+        r.effectiveFrom ?? null,
+        r.effectiveUntil ?? null,
+        r.source,
+        r.fetchedAt
+      )
+    }
+  })
+}
+
+export function clearSyncedPricing(): void {
+  stmt('DELETE FROM model_pricing WHERE is_seed = 0').run()
 }
 
 // ── usage records ──────────────────────────────────────────────────────────
@@ -2788,6 +3232,13 @@ function usageLogWhere(query: UsageRequestLogsQuery): {
   if (query.status === 'success') clauses.push('ok = 1')
   else if (query.status === 'failed') clauses.push('ok = 0')
   return { sql: clauses.join(' AND '), params }
+}
+
+/** 需求：费用浮层逐模型核算整条会话；不分页，否则长会话会漏算旧请求。 */
+export function getSessionUsageAttempts(sessionId: string): UsageAttemptRecord[] {
+  return stmt('SELECT * FROM usage_records WHERE session_id = ? ORDER BY at, id')
+    .all(sessionId)
+    .map(usageRecordFromRow)
 }
 
 export function getUsageRequestLogs(query: UsageRequestLogsQuery): UsageRequestLogsPage {
@@ -3062,6 +3513,12 @@ export function putCredential(ref: string, blob: Uint8Array): void {
  * 所以「只删当前作用域」对它们而言恰好等于「删它们自己」。
  */
 export function removeCredential(ref: string): void {
+  const fileProviderId = fileCredentialProviderId(ref)
+  if (fileProviderId !== null) {
+    providerFile!.removeCredential(fileProviderId)
+    enqueueSyncMutation('provider', fileProviderId, {}, 'delete')
+    return
+  }
   tx(() => {
     stmt('DELETE FROM credentials WHERE ref = ?').run(physicalCredentialRef(ref))
     if (ref.startsWith('provider:')) enqueueSyncMutation('provider', ref.slice('provider:'.length), {}, 'delete')

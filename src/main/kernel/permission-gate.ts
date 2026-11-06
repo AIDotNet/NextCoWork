@@ -22,17 +22,19 @@ export type PermissionOutcome =
  * 换个入口,而且绕过了这道闸。最后一句直接堵掉那条路。
  */
 const NETWORK_OFF =
-  'This tool needs network access, but the "network" switch is turned off for this workspace, so the ' +
+  'This tool needs web access, but the "web search" switch is turned off for this workspace, so the ' +
   'call was denied. This is the user\'s setting, not a mistake in how you called it. Do NOT reach for ' +
   'curl or wget through Bash to do the same thing — that would route around a switch the user turned ' +
-  'off deliberately. Tell the user this step needs network access and that they can enable it in the ' +
-  'workspace settings.'
+  'off deliberately. Tell the user this step needs web access and that they can turn on the ' +
+  '"web search" switch in the composer.'
 
 /**
  * 那张表。**顺序即语义**,`permission-gate.test.ts` 按行逐条钉死。
  *
- * 1. `needsNetwork && !webSearch` → deny。★ 必须排在只读之前:一个**只读**的联网
- *    工具(`WebFetch` 就是)在开关关掉时仍然要拒。`full` 档也放宽不了它 ——
+ * 1. `needsNetwork && !webSearch` → deny。这里的 `needsNetwork` 由调用方按
+ *    `NETWORK_SWITCH_TOOLS` 名单给出(= 受「联网搜索」开关管的工具),不再是「这个工具
+ *    出不出网」。★ 必须排在只读之前:一个**只读**的联网工具(`WebFetch` 就是)在开关
+ *    关掉时仍然要拒。`full` 档也放宽不了它 ——
  *    `permission.ts` 里 `'full'` 的注释原文就是「**联网仍受开关控制**」。
  * 2. `readOnly` → allow。三档都放行读。每读一个文件弹一次窗,用户 30 秒内就学会
  *    无脑点「允许」—— 那比不弹更危险,因为后面真正该看的那次也会被点掉。
@@ -49,41 +51,30 @@ export function evaluate(q: PermissionQuery): PermissionOutcome {
 }
 
 /**
- * 需要联网的工具的 `internalId` —— 一张**下限表**。
+ * 受「联网搜索」开关管的工具的 `internalId` —— **精确名单**,不是下限表。
  *
- * 原来这里是唯一的判定依据,理由是「给 `ToolRegistration` 加 `needsNetwork` 字段的话,
- * MCP 工具的作者可以自己写成 `false`,用户的联网开关就被第三方描述关掉了」。
- * 那个顾虑是对的,但结论过头了:一张写死 internalId 的表**列不出 MCP 工具**
- * (它们的 id 是运行时才知道的 `mcp__<server>__<tool>`),于是步骤 10 一落地,
- * 所有 MCP 工具都会绕过这道闸 —— 恰好是同一个顾虑的更严重版本。
+ * 需求(用户决定,2026-09-27):输入框那颗「联网搜索」开关**只管网页搜索与网页抓取**
+ * 这两个工具;生图有自己的开关(`AppSettings.imageGenerationEnabled`),其余工具
+ * 不再受它控制。原因是标签和行为对不上:开关写着「联网搜索」,关掉后却连生图、
+ * 内置浏览器、可视化卡片一起消失,模型只会说「找不到工具」,用户查不到原因
+ * (实际事故:选好了生图模型,对话里 `generate_image` 始终不下发)。
  *
- * 现在的分工是:`ToolInfo.needsNetwork` 承担判定,但**它只能往严的方向说话** ——
- * 这张表里的名字无论字段怎么填都算联网(见 `runtime.ts` 里那个 `||`)。
- * 而那个字段本身也不采信任何不可信输入:MCP 工具的值由 `mcp/bridge.ts`
- * 按我们库里存的**传输方式**推出来,不读服务器自报的 annotations。判定权仍在我们这边。
+ * ★ 这张表原先是「出网工具的**下限表**」,与 `ToolInfo.needsNetwork` 取或,管着
+ * `WebFetch` / `web_search` / 9 个 `browser_*` / `generate_image` /
+ * `visualize_show_widget`,外加所有 `needsNetwork: true` 的 MCP(远程传输)与插件工具。
+ * 那套设计的理由是「字段可能被抄漏,表兜底」「MCP 服务器不能自报不联网」——
+ * 在「开关 = 关掉所有出网」的语义下成立。语义收窄之后,判定改成**只按这张名单**:
+ * - `needsNetwork` 字段留作「这个工具会出网」的**事实描述**,不再参与开关判定;
+ * - 所以浏览器、可视化卡片、生图、远程 MCP、插件工具关掉开关后**照常出网** ——
+ *   这是本次决定的直接后果,不是遗漏。要重新管住它们,往这张表里加名字即可。
+ *
+ * 两处消费者必须读同一张表:`ToolRegistry.snapshot({ network })`(不下发)和
+ * `runtime.ts` 的 `approveWith`(调用时拒)。分家的症状是「列表里没有,调用却放行」
+ * 或反过来「下发了,每次调用都被拒」。
  */
-export const TOOLS_NEEDING_NETWORK: ReadonlySet<string> = new Set([
+export const NETWORK_SWITCH_TOOLS: ReadonlySet<string> = new Set([
   'WebFetch',
-  'web_search',
-  'browser_open',
-  'browser_navigate',
-  'browser_click',
-  'browser_type',
-  'browser_press',
-  'browser_select',
-  'browser_cua_click',
-  'browser_cua_drag',
-  /*
-    `visualize_show_widget` 自己一个字节都不出网 —— 出网的是**它产出的那张卡片**:
-    widget 里的 `<script src="https://cdn…">` 是规范正文推荐的常规写法
-    (`visualize-guidelines/charts.ts` 让模型去拉 Chart.js)。
-
-    ★ 它本来就在 `visualize.ts` 里申报了 `needsNetwork: true`,这里再列一遍是
-    刻意的双保险:那张表管的是"字段说 false 也得算联网",于是谁哪天把那个
-    字段改回去、或者有人复制它去写一个新工具时抄漏了,这颗药丸还管得住。
-    把这条删掉不会有任何症状 —— 直到用户关掉联网、却仍然从这里出网。
-  */
-  'visualize_show_widget'
+  'web_search'
 ])
 
 /** 给测试和诊断用:把一次判定压成一行人话。 */
@@ -112,6 +103,11 @@ export function permissionFacts(mode: PermissionMode, webSearch: boolean): strin
     if (o.kind === 'ask') return 'wait for user approval before execution'
     return 'are denied'
   }
+  /*
+    ★ 只说「搜索与抓取」这两个:开关现在只管它们(`NETWORK_SWITCH_TOOLS`)。
+    原先这行写的是「需要联网的工具」,而语义收窄之后那句话会让模型以为浏览器/生图
+    也被拒 —— 正是本文件头说的「提示词与闸门漂移、模型提前放弃」那种坏法。
+  */
   const net = webSearch
     ? 'available'
     : 'denied — the network switch is off for this workspace, and Bash cannot be used to route around it'
@@ -122,6 +118,6 @@ export function permissionFacts(mode: PermissionMode, webSearch: boolean): strin
     `- Writing files and running commands: ${say(false, true)}\n` +
     `- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, ` +
     `and the rules above are what governs it\n` +
-    `- Tools that need the network: ${net}`
+    `- Web search and web fetch (${[...NETWORK_SWITCH_TOOLS].join(', ')}): ${net}`
   )
 }

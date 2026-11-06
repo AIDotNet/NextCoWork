@@ -3,6 +3,10 @@
   "include": [
     "electron.vite.config.ts",
     "src/main/**/*",
+    "src/controller-client/**/*",
+    "src/transport/**/*",
+    "src/agent/**/*",
+    "src/relay/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
     "test/**/*"

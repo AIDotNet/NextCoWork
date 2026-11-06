@@ -21,16 +21,29 @@ import { liveText } from '../../../../shared/agent/transcript'
 
 vi.mock('../../services/agent', () => ({
   startRun: vi.fn(), attachRun: vi.fn(), abortRun: vi.fn(),
-  // ★ 必须返回 Promise:`syncInterject` 直接 `.catch` 它,裸 `vi.fn()` 会抛 TypeError
   interjectRun: vi.fn(async () => {}),
   onAgentEvent: vi.fn(() => () => {}),
-  // 事件泵同时订阅「还有哪些 run 活着」那条广播,缺了它 `startAgentEventPump()` 当场抛
-  onActiveRuns: vi.fn(() => () => {})
+  // 事件泵同时订阅「还有哪些 run 活着」、队列与后台汇报的广播,缺了任一条 `startAgentEventPump()` 当场抛
+  onActiveRuns: vi.fn(() => () => {}),
+  onSessionQueueChanged: vi.fn(() => () => {}),
+  onSubagentReport: vi.fn(() => () => {}),
+  onWindowVisibility: vi.fn(() => () => {}),
+  unwatchRun: vi.fn(async () => {})
 }))
 vi.mock('../../services/app', () => ({
-  getSessionInput: vi.fn(async () => null), persistSessionInput: vi.fn()
+  getSessionInput: vi.fn(async () => null), persistSessionDraft: vi.fn()
 }))
-vi.mock('../../services/sessions', () => ({ getSession: vi.fn() }))
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn()
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...detail, hasMore: false }
+    }),
+  }
+})
 vi.mock('../../services/goal', () => ({ getGoal: vi.fn(async () => undefined), onGoalChanged: vi.fn(() => () => {}) }))
 
 import type { AgentEventEnvelope } from '../../../../shared/ipc/contract'

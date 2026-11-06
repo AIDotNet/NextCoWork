@@ -155,3 +155,14 @@ export function mount(node: ReactNode, options: { strict?: boolean; container?: 
   const container = options.container ?? document.getElementById('root') ?? document.body.appendChild(document.createElement('div'))
   createRoot(container).render(options.strict === false ? node : <StrictMode>{node}</StrictMode>)
 }
+
+/*
+  绑定了文档引擎的编辑器(Office / PDF)用的会话客户端与画布换算。
+  ★ 换算函数与宿主用的是**同一份**实现(`shared/document-engine/*`):视图自己写一份的话,
+  点击落点与引擎的光标会在某个缩放下差出一两个字,且只在那个缩放下复现。
+*/
+export { openEngineDocument, EngineDocumentError } from './engine-document'
+export type { EngineDocument, EngineDocumentOpened, EngineTile } from './engine-document'
+export { lokKeyOf } from '../../../shared/document-engine/keys'
+export { cssPxToTwips, twipsToCssPx, twipsRectToCss, tileRequest, tilesCovering, tilesInView } from '../../../shared/document-engine/viewport'
+export { DocumentCanvas } from './DocumentCanvas'

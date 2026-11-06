@@ -34,12 +34,34 @@ import {
   type ScheduledTaskSummary
 } from '../../shared/domain/scheduled'
 import { store } from '../state/store'
-import { windows } from '../window/registry'
-import { refreshScheduler } from './scheduler'
+import { refreshScheduledTasks } from './refresh'
+
+/**
+ * 任务表变化后的广播口。**由 `ipc/index.ts` 在 `registerIpc()` 里装上**
+ * (`windows.emitToAll('scheduled:changed', …)`)—— 同 `scheduled/refresh.ts`
+ * 那个重排插槽、以及 `runtime.ts` 里那排 `setXxxChangeListener` 一个套路:
+ * `window/registry` 拖着 electron,而 `bridge` 与 `refresh` 都是无头 Node 里
+ * 要能被直接 import 的叶子。没装(纯内核测试)时是一次 no-op。
+ */
+let scheduledChange: ((change: { kind: 'task'; taskId: string }) => void) | null = null
+
+/** 装上真正的广播实现。 */
+export function setScheduledChangeListener(listener?: (change: { kind: 'task'; taskId: string }) => void): void {
+  scheduledChange = listener ?? null
+}
 
 function announce(taskId: string): void {
-  refreshScheduler()
-  windows.emitToAll('scheduled:changed', { kind: 'task', taskId })
+  refreshScheduledTasks()
+  /*
+    ★ 广播抛错不能让这次写入变成失败:任务**已经落库**(上面那两行之后才轮到这里),
+    把它报成失败会让模型以为没建成,于是再建一遍。异常只留日志,界面靠下一次
+    `scheduled:changed`(重排后的 tick、或用户下一次操作)自然对齐。
+  */
+  try {
+    scheduledChange?.({ kind: 'task', taskId })
+  } catch (error) {
+    console.warn('[scheduled] 任务变化广播失败,已落库但不通知界面', error)
+  }
 }
 
 /**

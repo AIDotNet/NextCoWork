@@ -1,7 +1,7 @@
 import { AudioLines, Image, Mic, Video, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Modality } from "../../../../../shared/domain/pricing";
-import { EmptyState } from "../../../components/ui/EmptyState";
+import { EmptyState } from "../../../components/arc/empty-state/empty-state";
 import { useI18n } from "../../../i18n";
 
 /**
@@ -38,7 +38,7 @@ export function StubModalityPage({
       <EmptyState
         icon={<Icon size={26} />}
         title={t(`stub.${modality}.title` as "stub.image.title" | "stub.video.title" | "stub.speech.title" | "stub.transcription.title")}
-        hint={t(`stub.${modality}.hint` as "stub.image.hint" | "stub.video.hint" | "stub.speech.hint" | "stub.transcription.hint")}
+        description={t(`stub.${modality}.hint` as "stub.image.hint" | "stub.video.hint" | "stub.speech.hint" | "stub.transcription.hint")}
       />
     </div>
   );

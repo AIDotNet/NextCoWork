@@ -29,6 +29,8 @@ import {
   而扫描时被静默跳过 —— 作者看到的是「我声明了但它不在」。
 */
 import { SKILL_NAME_RE } from '../domain/skill'
+import { isDocumentFormat, type DocumentFormat } from '../document-engine/protocol'
+import { parseNativeComponents, type NativeComponent } from './native-component'
 
 /**
  * 插件包里放 skill 的那层目录。
@@ -86,6 +88,16 @@ export interface PluginCommandContribution {
   /** `%key%`,不是文案 */
   title: string
   icon?: string
+  /**
+   * 命令自己的品牌图标(包内相对路径,`.svg` / `.png`)。
+   *
+   * 需求:claude-code / codex 这类插件要求用**官方 logo** 出现在 `+` 菜单里,
+   * 而名字闭集(`MENU_ICON_NAMES`)里没有、也不该有品牌字形。`iconFile` 是
+   * 并行的第二条路:文件来自**用户已安装的这个包**、由主进程读出后转 data URL
+   * 随 catalog 下发(渲染层 CSP 的 `img-src` 已含 `data:`),只出现在带该插件
+   * 署名的菜单条目上。见 `renderer/shell/icons.tsx` 头注释里对这条放宽的完整说明。
+   */
+  iconFile?: string
 }
 
 export interface PluginMenuContribution {
@@ -100,6 +112,37 @@ export interface PluginCustomEditorContribution {
   displayName: string
   selector: { filenamePattern: string }[]
   priority?: 'default' | 'option'
+  /**
+   * 这个编辑器用 `contributes.views` 里哪一个视图(按 id)。
+   *
+   * 需求:办公插件一个包要为 Word/Excel/PPT 各配一个视图,而宿主原先固定取
+   * `views[0]`(见 `views/plugins/CustomEditorView.tsx`)。★ 可选且缺省时行为不变 ——
+   * 改成必填会让已经装着的编辑器插件当场打不开文件。
+   */
+  viewId?: string
+  /**
+   * 这个编辑器绑定哪个文档引擎。写本插件 `documentEngines[].id`,或者
+   * `<依赖插件 id>/<引擎 id>`(依赖必须在 `dependencies` 里)。
+   *
+   * 给了它,视图走会话通道(`document-engine/protocol.ts`),不再走一次性
+   * 搬运整份文件的 `ncw:doc:*`。缺省 = 老路,旧插件零改动。
+   */
+  documentEngine?: string
+}
+
+/**
+ * 插件提供的文档引擎 —— 由包内原生组件承载。
+ *
+ * 需求:办公插件族共用一个引擎插件(携带 LibreOffice),前端插件只声明
+ * 「我用哪个引擎」。引擎能打开哪些格式在这里**静态声明**,真正能做什么
+ * 由会话打开时的 capability 回答。
+ */
+export interface PluginDocumentEngineContribution {
+  /** 同 `PLUGIN_NAME_RE` 形状 */
+  id: string
+  /** 承载它的 `nativeComponents[].id`,必须是本插件自己声明的 */
+  component: string
+  formats: DocumentFormat[]
 }
 
 export interface PluginViewContribution {
@@ -281,6 +324,11 @@ export interface PluginContributes {
   themes: { path: string }[]
   configuration?: PluginConfigurationContribution
   /**
+   * 文档引擎。**可选字段**(不写就不出现),理由同 `views[].location`:
+   * 补一个空数组会让所有老清单的解析结果都变样,回归对比挂在无意义的差异上。
+   */
+  documentEngines?: PluginDocumentEngineContribution[]
+  /**
    * 认得字段名、但这一版**不实现**的贡献点原样留着。
    *
    * ★ 留着不是为了将来好改,是为了**现在能报诊断**:装载时按这份列表给出
@@ -346,6 +394,11 @@ export interface PluginManifest {
    * 这里声明过的插件(外加 `plugins` 能力)。同时决定激活顺序 —— 依赖先醒。
    */
   dependencies: Record<string, string>
+  /**
+   * 包内携带的原生组件(例如办公插件自带的 LibreOffice 引擎)。
+   * 可选:绝大多数插件没有原生代码,不写就不出现。见 `native-component.ts`。
+   */
+  nativeComponents?: NativeComponent[]
   contributes: PluginContributes
 }
 
@@ -486,6 +539,17 @@ export function parsePluginManifest(raw: unknown): ManifestParseResult {
     }
   }
 
+  /*
+    原生组件。需求见 `native-component.ts` 文件头:插件包里自带的引擎必须逐条声明
+    平台、入口与摘要。★ webapp 不能带 —— 零代码插件带原生可执行文件,等于把
+    「不跑代码」这件事变成一句假话。
+  */
+  const nativeComponents = parseNativeComponents(r.nativeComponents, errors, isSafeRelativePath)
+  if (kind === 'webapp' && r.nativeComponents !== undefined) {
+    errors.push({ field: 'nativeComponents', message: 'a "webapp" plugin runs no code; it cannot ship native components' })
+  }
+  checkDocumentEngineRefs(contributes, nativeComponents, dependencies, errors)
+
   if (errors.length > 0) return { ok: false, errors }
   return {
     ok: true,
@@ -511,7 +575,50 @@ export function parsePluginManifest(raw: unknown): ManifestParseResult {
       hostPermissions,
       allowedCommands,
       dependencies,
+      ...(r.nativeComponents === undefined ? {} : { nativeComponents }),
       contributes
+    }
+  }
+}
+
+/**
+ * 文档引擎的交叉引用 —— 只有 `nativeComponents` 与 `dependencies` 都解析完才能判。
+ *
+ * ★ 三条都是**装载期拒绝**,不是运行期报错:引用悬空的编辑器装上之后,用户第一次
+ * 打开 .docx 才看到「引擎不存在」,而那时他已经以为插件能用了。
+ */
+function checkDocumentEngineRefs(
+  contributes: PluginContributes,
+  nativeComponents: readonly NativeComponent[],
+  dependencies: Readonly<Record<string, string>>,
+  errors: ManifestError[]
+): void {
+  const engines = contributes.documentEngines ?? []
+  for (const engine of engines) {
+    if (!nativeComponents.some((component) => component.id === engine.component)) {
+      errors.push({ field: `contributes.documentEngines.${engine.id}.component`, message: `must reference a declared nativeComponents id: ${engine.component}` })
+    }
+  }
+  for (const editor of contributes.customEditors) {
+    const ref = editor.documentEngine
+    if (ref === undefined) continue
+    const slash = ref.indexOf('/')
+    if (slash === -1) {
+      if (!engines.some((engine) => engine.id === ref)) {
+        errors.push({ field: `contributes.customEditors.${editor.viewType}.documentEngine`, message: `no documentEngines entry with id ${ref}` })
+      }
+      continue
+    }
+    /*
+      ★ 跨插件引用必须在 `dependencies` 里:依赖声明是安装器「同次装上引擎插件」
+      和激活顺序的唯一依据。不在里面的话,前端插件能装上,引擎却从没被安装过。
+    */
+    const pluginId = ref.slice(0, slash)
+    const engineId = ref.slice(slash + 1)
+    if (!PLUGIN_ID_RE.test(pluginId) || !PLUGIN_NAME_RE.test(engineId)) {
+      errors.push({ field: `contributes.customEditors.${editor.viewType}.documentEngine`, message: `must be "<engineId>" or "<publisher.name>/<engineId>": ${ref}` })
+    } else if (dependencies[pluginId] === undefined) {
+      errors.push({ field: `contributes.customEditors.${editor.viewType}.documentEngine`, message: `${pluginId} must be listed in dependencies` })
     }
   }
 }
@@ -533,7 +640,8 @@ export const SUPPORTED_CONTRIBUTION_KEYS = [
   'agents',
   'modes',
   'themes',
-  'configuration'
+  'configuration',
+  'documentEngines'
 ] as const
 
 /**
@@ -608,7 +716,22 @@ function parseContributes(raw: unknown, errors: ManifestError[], kind: PluginKin
     const title = str(item.title)
     if (command === '') { errors.push({ field: 'contributes.commands', message: 'command id is required' }); continue }
     if (!L10N_REF_RE.test(title)) { errors.push({ field: `contributes.commands.${command}.title`, message: 'must be a %l10nKey% reference, not literal copy' }); continue }
-    out.commands.push({ command, title, ...(str(item.icon) === '' ? {} : { icon: str(item.icon) }) })
+    const iconFile = str(item.iconFile)
+    /*
+      ★ 形状在这里查(包内相对路径 + 扩展名),**存在**在安装器查
+      (`assertPackageFiles`,与 `icon` / `main` 同一分工)。扩展名收窄是因为
+      这个文件会被主进程读成 data URL 塞进 `<img>`:svg/png 之外的东西
+      (html 等)哪怕写进 img 不执行脚本,也没有任何正当用途。
+    */
+    if (iconFile !== '') {
+      if (!isSafeRelativePath(iconFile)) {
+        errors.push({ field: `contributes.commands.${command}.iconFile`, message: 'must be a relative path inside the package' }); continue
+      }
+      if (!/\.(svg|png)$/i.test(iconFile)) {
+        errors.push({ field: `contributes.commands.${command}.iconFile`, message: 'must be an .svg or .png file' }); continue
+      }
+    }
+    out.commands.push({ command, title, ...(str(item.icon) === '' ? {} : { icon: str(item.icon) }), ...(iconFile === '' ? {} : { iconFile }) })
   }
 
   const menus = r.menus
@@ -639,11 +762,16 @@ function parseContributes(raw: unknown, errors: ManifestError[], kind: PluginKin
       .map((filenamePattern) => ({ filenamePattern }))
     if (selector.length === 0) { errors.push({ field: `contributes.customEditors.${viewType}.selector`, message: 'needs at least one filenamePattern' }); continue }
     const priority = str(item.priority)
+    const viewId = str(item.viewId)
+    const documentEngine = str(item.documentEngine)
     out.customEditors.push({
       viewType,
       displayName,
       selector,
-      ...(priority === 'option' ? { priority: 'option' as const } : { priority: 'default' as const })
+      ...(priority === 'option' ? { priority: 'option' as const } : { priority: 'default' as const }),
+      // 不写就不落字段,理由同 views[].location:老清单解析结果一个字节都不变
+      ...(viewId === '' ? {} : { viewId }),
+      ...(documentEngine === '' ? {} : { documentEngine })
     })
   }
 
@@ -667,6 +795,45 @@ function parseContributes(raw: unknown, errors: ManifestError[], kind: PluginKin
       // 但落了之后老清单的解析结果就变了,回归对比会挂在一个无意义的差异上。
       ...(location === '' ? {} : { location: location as PluginViewLocation })
     })
+  }
+
+  /*
+    ★ `customEditors[].viewId` 在 views 解析**之后**才能判(两张表的解析顺序是
+    customEditors 在前)。指向不存在的视图时拒绝:不拒的话宿主只能退回
+    `views[0]`,于是 Excel 文件被 Word 的界面打开,而且零报错。
+  */
+  for (const editor of out.customEditors) {
+    if (editor.viewId === undefined) continue
+    const view = out.views.find((v) => v.id === editor.viewId)
+    if (view === undefined) {
+      errors.push({ field: `contributes.customEditors.${editor.viewType}.viewId`, message: `no contributes.views entry with id ${editor.viewId}` })
+    } else if ((view.location ?? 'editor') !== 'editor') {
+      errors.push({ field: `contributes.customEditors.${editor.viewType}.viewId`, message: `view ${editor.viewId} must have location "editor"` })
+    }
+  }
+
+  /*
+    文档引擎。需求见 `PluginDocumentEngineContribution`。格式必须在
+    `DOCUMENT_FORMATS` 白名单里 —— 声明一个宿主不承诺的格式,等于让文件选择器
+    把 .doc 交给一个从未被验收过的路径。
+  */
+  if (r.documentEngines !== undefined) {
+    const engines: PluginDocumentEngineContribution[] = []
+    for (const item of objList(r.documentEngines)) {
+      const id = str(item.id)
+      if (!PLUGIN_NAME_RE.test(id)) { errors.push({ field: 'contributes.documentEngines', message: `engine id must match ^[a-z0-9][a-z0-9-]{0,63}$: ${id}` }); continue }
+      if (engines.some((engine) => engine.id === id)) { errors.push({ field: `contributes.documentEngines.${id}`, message: 'duplicate engine id' }); continue }
+      const component = str(item.component)
+      if (component === '') { errors.push({ field: `contributes.documentEngines.${id}.component`, message: 'is required' }); continue }
+      const rawFormats = Array.isArray(item.formats) ? item.formats : []
+      const bad = rawFormats.find((format) => !isDocumentFormat(format))
+      if (rawFormats.length === 0 || bad !== undefined) {
+        errors.push({ field: `contributes.documentEngines.${id}.formats`, message: `must list supported formats (docx, docm, xlsx, xlsm, pptx, pptm, pdf)${bad === undefined ? '' : `; got ${String(bad)}`}` })
+        continue
+      }
+      engines.push({ id, component, formats: [...new Set(rawFormats as DocumentFormat[])] })
+    }
+    out.documentEngines = engines
   }
 
   /*

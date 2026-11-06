@@ -9,7 +9,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { GatewayStatus } from "../../../../../shared/domain/provider";
 import { Button } from "../../../components/ui/Button";
 import { NumberInput } from "../../../components/ui/NumberInput";
-import { Toggle } from "../../../components/ui/Toggle";
+import { Switch } from "../../../components/arc/switch/switch";
 import { useI18n } from "../../../i18n";
 import { SettingField, SettingGroup, SettingRow } from "../../Row";
 import { getGatewayAddresses, getGatewayKey, getGatewayStatus, onGatewayStatus, resetGatewayHealth } from "../../../services/gateway";
@@ -67,18 +67,18 @@ export function GatewayPane({ settings, patch }: SettingsPageProps): ReactNode {
         title={t("connection.gateway.enable")}
         description={t("gateway.enableHint")}
       >
-        <Toggle
-          label={t("connection.gateway.enable")}
+        <Switch
+          aria-label={t("connection.gateway.enable")}
           checked={g.enabled}
-          onChange={(enabled) => patch({ gateway: { enabled } })}
+          onCheckedChange={(enabled) => patch({ gateway: { enabled } })}
         />
       </SettingRow>
 
       <SettingRow title={t("gateway.remote")} description={t("gateway.remoteHint")}>
-        <Toggle
-          label={t("gateway.remote")}
+        <Switch
+          aria-label={t("gateway.remote")}
           checked={g.allowRemote === true}
-          onChange={(allowRemote) => patch({ gateway: { allowRemote } })}
+          onCheckedChange={(allowRemote) => patch({ gateway: { allowRemote } })}
         />
       </SettingRow>
 
@@ -100,11 +100,30 @@ export function GatewayPane({ settings, patch }: SettingsPageProps): ReactNode {
         title={t("connection.gateway.failover")}
         description={t("connection.gateway.failoverHint")}
       >
-        <Toggle
-          label={t("connection.gateway.failover")}
+        <Switch
+          aria-label={t("connection.gateway.failover")}
           checked={g.failover}
           disabled={!g.enabled}
-          onChange={(failover) => patch({ gateway: { failover } })}
+          onCheckedChange={(failover) => patch({ gateway: { failover } })}
+        />
+      </SettingRow>
+
+      {/*
+        ★★ **挨着故障切换,但刻意**不**受 `gateway.enabled` 管。**
+        上面那个管的是「这家挂了换**另一家**供应商」;这个管的是
+        「Codex 的 A 号被限流了换 Codex 的 B 号」——后者和网关、和跨供应商切换
+        都无关,钉死某一家供应商的用户**正需要**它继续工作。
+        跟着那个开关置灰的话,多账号这个功能会在绝大多数用户那里(网关默认关)
+        默默失效,而界面上那几个账号都显示"可用"。
+      */}
+      <SettingRow
+        title={t("providerAccount.rotation")}
+        description={t("providerAccount.rotationHint")}
+      >
+        <Switch
+          aria-label={t("providerAccount.rotation")}
+          checked={settings.providerAccountRotation}
+          onCheckedChange={(providerAccountRotation) => patch({ providerAccountRotation })}
         />
       </SettingRow>
 

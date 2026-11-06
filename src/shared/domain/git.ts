@@ -83,3 +83,17 @@ export interface GitDiff {
   truncated: boolean
   text: string
 }
+
+/**
+ * 一次 diff 两侧的**完整文本** —— 给代码对比视图(行内 / 并排、折叠未改动区域)用。
+ *
+ * 比较基准跟 `git diff` 一致:看工作区时是「暂存区 → 工作区」,看暂存区时是
+ * 「HEAD → 暂存区」。某一侧不存在(新文件、已删除、空仓库)就是空串。
+ *
+ * ★ `null` 不是错误,是「这一份没法按全文对比」:二进制、超过上限、冲突中、
+ *   子模块。界面那时退回 `GitDiff.text` 的 unified 文本。
+ */
+export interface GitDiffSides {
+  original: string
+  modified: string
+}

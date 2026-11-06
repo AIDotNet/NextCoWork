@@ -1,10 +1,10 @@
 import { Cable, FolderOpen, Pencil, Plus, Server, Trash2, Unplug } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ConnectionProfile, ConnectionProfileInput, SshAuthMethod } from '../../../../../shared/domain/environment'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Segmented } from '../../../components/ui/Segmented'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { Select } from '../../../components/ui/Select'
 import { TextInput } from '../../../components/ui/TextInput'
 import { useI18n } from '../../../i18n'
@@ -49,7 +49,7 @@ export function RemoteConnectionsPane(): ReactNode {
   return <section className="flex flex-col gap-4">
     <header className="flex items-center justify-between gap-3">
       <h3 className="text-[14px] font-medium text-fg">{t('ssh.title')}</h3>
-      <Button size="sm" icon={<Plus size={13} />} onClick={() => setEditing({ profile: null, hasPassword: false })}>{t('ssh.add')}</Button>
+      <Button type="button" variant="secondary" size="sm" onClick={() => setEditing({ profile: null, hasPassword: false })}><Plus size={13} />{t('ssh.add')}</Button>
     </header>
     {failure && <p role="alert" className="text-[12px] text-danger">{t(failure)}</p>}
     {failureDetail && <p className="break-all font-mono text-[11px] text-fg-faint">{failureDetail}</p>}
@@ -73,13 +73,13 @@ export function RemoteConnectionsPane(): ReactNode {
         <IconButton label={t('ssh.remove')} disabled={busy !== null} onClick={() => setDeleting(profile)}><Trash2 size={14} /></IconButton>
       </div>)}
     </div>
-    {busy && requestRef.current && <Button size="sm" onClick={() => { if (requestRef.current) void cancelConnectionRequest(requestRef.current) }}>{t('common.cancel')}</Button>}
+    {busy && requestRef.current && <Button type="button" variant="secondary" size="sm" onClick={() => { if (requestRef.current) void cancelConnectionRequest(requestRef.current) }}>{t('common.cancel')}</Button>}
     {editing !== undefined && <ServerEditor key={editing.profile?.id ?? 'new'} editing={editing.profile} hasPassword={editing.hasPassword} onClose={() => setEditing(undefined)} />}
     <Dialog open={confirmTest !== null} title={t('ssh.native.title')} onClose={() => setConfirmTest(null)} footer={<>
-      <Button size="sm" onClick={() => setConfirmTest(null)}>{t('common.cancel')}</Button><Button size="sm" variant="accent" onClick={test}>{t('ssh.native.allow')}</Button>
+      <Button type="button" variant="secondary" size="sm" onClick={() => setConfirmTest(null)}>{t('common.cancel')}</Button><Button type="button" size="sm" variant="primary" onClick={test}>{t('ssh.native.allow')}</Button>
     </>}><p className="mb-3 break-all text-[13px] text-fg">{confirmTest?.name} · {confirmTest?.target.host}</p><p className="text-[12px] leading-relaxed text-fg-muted">{t('ssh.native.risk')}</p></Dialog>
     <Dialog open={deleting !== null} title={t('ssh.remove')} onClose={() => setDeleting(null)} footer={<>
-      <Button size="sm" onClick={() => setDeleting(null)}>{t('common.cancel')}</Button><Button size="sm" variant="danger" onClick={() => {
+      <Button type="button" variant="secondary" size="sm" onClick={() => setDeleting(null)}>{t('common.cancel')}</Button><Button type="button" size="sm" variant="danger" onClick={() => {
         if (deleting) { const id = deleting.id; setDeleting(null); void run(id, () => removeConnection(id)) }
       }}>{t('common.delete')}</Button>
     </>}><p className="text-[13px] text-fg-muted">{t('ssh.removeConfirm', { name: deleting?.name ?? '' })}</p></Dialog>
@@ -138,16 +138,16 @@ export function ServerEditor({ editing, hasPassword, onClose }: { editing: Conne
     <div className="min-w-0">{child}</div>
   </div>
   return <Dialog open title={t(editing ? 'ssh.edit' : 'ssh.add')} onClose={() => { if (!busy) onClose() }} width={680} footer={<>
-    <Button size="sm" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
-    <Button size="sm" variant="accent" disabled={busy || !valid || (targetChange && !confirmed)} onClick={() => { void save() }} icon={busy ? <Spinner size="sm" /> : undefined}>{t('common.save')}</Button>
+    <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+    <Button type="button" size="sm" variant="primary" disabled={busy || !valid || (targetChange && !confirmed)} onClick={() => { void save() }}>{busy ? <Spinner size="sm" /> : undefined}{t('common.save')}</Button>
   </>}>
     <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4" onChangeCapture={() => setConfirmed(false)}>
       <section aria-label={t('ssh.basicInfo')} className="divide-y divide-border overflow-hidden rounded-[10px] border border-border">
         {field(t('ssh.name'), <TextInput value={name} onChange={setName} ariaLabel={t('ssh.name')} />)}
-        {field(t('ssh.mode'), <Segmented disabled={busy} label={t('ssh.mode')} size="sm" value={mode} options={[{ value: 'manual', label: t('ssh.manual') }, { value: 'config', label: t('ssh.nativeConfig') }]} onChange={(value) => { setMode(value); setConfirmed(false) }} />)}
+        {field(t('ssh.mode'), <fieldset disabled={busy} className="contents"><SegmentedControl label={t('ssh.mode')} value={mode} options={[{ value: 'manual', label: t('ssh.manual') }, { value: 'config', label: t('ssh.nativeConfig') }]} onValueChange={(value) => { setMode(value as 'manual' | 'config'); setConfirmed(false) }} /></fieldset>)}
         {field(t(mode === 'config' ? 'ssh.alias' : 'ssh.host'), <div className="flex min-w-0 gap-2">
           <div className="min-w-0 flex-1"><TextInput value={host} onChange={setHost} ariaLabel={t(mode === 'config' ? 'ssh.alias' : 'ssh.host')} /></div>
-          {mode === 'manual' && <input type="number" min={1} max={65535} value={port} aria-label={t('ssh.port')} aria-invalid={!validPort || undefined} onChange={(event) => setPort(event.target.value)} className="selectable h-8 w-[72px] shrink-0 rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-accent aria-invalid:border-danger" />}
+          {mode === 'manual' && <input type="number" min={1} max={65535} value={port} aria-label={t('ssh.port')} aria-invalid={!validPort || undefined} onChange={(event) => setPort(event.target.value)} className="apple-field selectable h-8 w-[72px] shrink-0 rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-fg-faint aria-invalid:border-danger" />}
         </div>, t(mode === 'config' ? 'ssh.configHint' : 'ssh.addressHint'))}
         {mode === 'config' && field(t('ssh.configFile'), filePicker(configFile, setConfigFile, t('ssh.configFile')))}
       </section>
@@ -166,8 +166,8 @@ export function ServerEditor({ editing, hasPassword, onClose }: { editing: Conne
               <input type="password" autoComplete="off" value={password} aria-label={t('ssh.password')} disabled={clearPassword}
                 placeholder={t(hasPassword && !clearPassword ? 'ssh.passwordSaved' : 'ssh.optional')}
                 onChange={(event) => setPassword(event.target.value)}
-                className="selectable h-8 min-w-0 flex-1 rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-accent disabled:opacity-40" />
-              {hasPassword && !clearPassword && <Button size="sm" onClick={() => { setPassword(''); setClearPassword(true) }}>{t('ssh.passwordClear')}</Button>}
+                className="apple-field selectable h-8 min-w-0 flex-1 rounded-[8px] border border-border bg-surface-field px-2.5 text-[13px] text-fg outline-none focus:border-fg-faint disabled:opacity-40" />
+              {hasPassword && !clearPassword && <Button type="button" variant="secondary" size="sm" onClick={() => { setPassword(''); setClearPassword(true) }}>{t('ssh.passwordClear')}</Button>}
             </div>
             <p className="text-[11px] leading-relaxed text-fg-faint">{t(clearPassword ? 'ssh.passwordCleared' : 'ssh.passwordHint')}</p>
         </div>)}

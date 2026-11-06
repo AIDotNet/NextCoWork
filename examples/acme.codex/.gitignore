@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.ncw-package/
+*.zip

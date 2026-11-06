@@ -99,6 +99,7 @@ async function ready(
       checkout: async () => {}
     }),
     openTab,
+    launchTerminal: () => ({ opened: true }),
     requestInteraction: async () => null,
     emitProgress: () => {},
     emitChanged: () => {},

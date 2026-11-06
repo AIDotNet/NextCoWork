@@ -18,9 +18,9 @@ import type { Workspace } from '../../../shared/domain/workspace'
 import { isLocalEnvironment } from '../../../shared/domain/environment'
 import { ulid } from '../../../shared/util/id'
 import { DEFAULT_SETTINGS_PAGE, type SettingsPageId } from '../settings/nav'
-import { persistOuterTabs } from '../services/app'
+import { persistInnerTabs, persistOuterTabs } from '../services/app'
 import { invoke } from '../services/ipc'
-import { useTabsStore } from './tabs'
+import { installShellWindowPort, shellTabs } from './shell-port'
 import { cancelConnectionRequest, commitWorkspaceActivation, connectionErrorKey, prepareWorkspace, releaseWorkspaceActivation } from '../services/connections'
 
 interface WindowState {
@@ -84,6 +84,18 @@ interface WindowState {
   settingsPage: SettingsPageId | null
 
   /**
+   * 奖励中心（邀请好友）那个全屏浮层开没开。
+   *
+   * ★ **不落盘**，和 `settingsPage` 同类：它是这个窗口此刻的呈现状态，
+   * 不是用户的偏好 —— 启动就自己弹出一个邀请页是 bug 不是恢复。
+   *
+   * 放在 store 而不是 `AppShell` 的 useState：发起它的是侧边栏最下面那颗账户菜单里
+   * 的一项（`AccountMenu`），而浮层挂在 AppShell 上。经 store 走省掉
+   * 「Sidebar 再加一个只为透传的 prop」这一层 —— 同 `settingsPage` 的先例。
+   */
+  rewardsOpen: boolean
+
+  /**
    * 窗口是不是最大化的 —— 自绘的中间那颗窗口按钮据此在「□」和「双叠框」之间换字形
    * (`shell/WindowControls.tsx`,仅 Windows/Linux)。
    *
@@ -95,6 +107,20 @@ interface WindowState {
    * macOS 上永远是 false(那边没有这条推送,也没有那三颗按钮)。
    */
   maximized: boolean
+
+  /**
+   * 应用版本号（`Bootstrap.versions.app`），给侧边栏品牌行下面那行小字用。
+   *
+   * ★ **放在这里是因为它是窗口外壳级的常量，不是因为要在 store 里算。**
+   * 权威值在主进程（`app.getVersion()`，经 bootstrap 的 `versions` 过来），
+   * 这里只是它在渲染层的投影，`hydrate` 时写入一次。
+   *
+   * 不给 `Sidebar` 加一个只为透传的 prop，也不让品牌行自己去读 store 的
+   * `versions` —— 理由同 `rewardsOpen`：视图从 store 取比「AppShell 加 prop、
+   * 再往主题预览那一路透传」少一层。主题预览里的 `Sidebar` 因此也自动带上
+   * 真版本号，不用为它编一个假值。
+   */
+  appVersion: string
 
   hydrate: (b: Bootstrap) => void
   activate: (outerId: string) => Promise<boolean>
@@ -114,6 +140,8 @@ interface WindowState {
   setBottomPanelHeight: (px: number) => void
   openSettings: (page?: SettingsPageId) => void
   closeSettings: () => void
+  openRewards: () => void
+  closeRewards: () => void
   setMaximized: (maximized: boolean) => void
 }
 
@@ -225,6 +253,8 @@ export const useWindowStore = create<WindowState>((set, get) => {
   /** 每次结构性变更都落盘。主进程侧防抖 500ms,这里不用自己攒。 */
   const persist = (outer: OuterTab[], activeOuterId: string | null): void => {
     const { windowKind, rightPanelWidth, bottomPanelHeight } = get()
+    // 专注会话窗口只承载一次打开的工作区，不把临时布局写回窗口级状态。
+    if (windowKind === 'quick') return
     persistOuterTabs(windowKind, {
       outer,
       activeOuterId,
@@ -255,7 +285,9 @@ export const useWindowStore = create<WindowState>((set, get) => {
     rightPanelWidth: RIGHT_PANEL.def,
     bottomPanelHeight: BOTTOM_PANEL.def,
     settingsPage: null,
+    rewardsOpen: false,
     maximized: false,
+    appVersion: '',
     scheduledUnread: false,
     clearScheduledUnread: () => set({ scheduledUnread: false }),
 
@@ -275,11 +307,14 @@ export const useWindowStore = create<WindowState>((set, get) => {
         好让这个已经退役的值还能写在这儿。
       */
       const NON_TAB_FEATURES: readonly string[] = ['settings', 'browser', 'extensions', 'scheduled', 'git', 'skills']
-      const persisted = b.tabState.outer.filter(
+      const quickWindow = b.windowKind === 'quick'
+      const persisted = quickWindow ? [] : b.tabState.outer.filter(
         (t) => !(t.kind === 'feature' && NON_TAB_FEATURES.includes(t.ref.feature))
       )
       const orderedPersisted = orderOuterTabs(persisted)
-      const outer = orderedPersisted.length > 0 ? orderedPersisted : initialTabs(b.workspaces)
+      const outer = quickWindow
+        ? []
+        : (orderedPersisted.length > 0 ? orderedPersisted : initialTabs(b.workspaces))
       const requestedActiveId = b.tabState.activeOuterId
       const desiredActiveId = outer.some((tab) => tab.id === requestedActiveId)
         ? requestedActiveId
@@ -288,9 +323,10 @@ export const useWindowStore = create<WindowState>((set, get) => {
       const waitForRemote = desiredTab?.kind === 'workspace' && needsPrepare(desiredTab.ref.workspaceId)
       const activeOuterId = waitForRemote
         ? outer.find((tab) => tab.kind === 'workspace' && !needsPrepare(tab.ref.workspaceId))?.id ?? null : desiredActiveId
-      const workspaceId = firstWorkspaceId(outer, activeOuterId)
+      const workspaceId = quickWindow ? null : firstWorkspaceId(outer, activeOuterId)
       set({
         windowKind: b.windowKind,
+        appVersion: b.versions.app,
         outer,
         activeOuterId,
         activeWorkspaceId: workspaceId && !needsPrepare(workspaceId) ? workspaceId : null,
@@ -334,6 +370,8 @@ export const useWindowStore = create<WindowState>((set, get) => {
     },
 
     async openWorkspace(workspaceId) {
+      const { windowKind, activeWorkspaceId } = get()
+      if (windowKind === 'quick' && activeWorkspaceId !== null && workspaceId !== activeWorkspaceId) return false
       const existing = get().outer.find((t) => t.kind === 'workspace' && t.ref.workspaceId === workspaceId)
       if (existing !== undefined) {
         return get().activate(existing.id)
@@ -363,6 +401,7 @@ export const useWindowStore = create<WindowState>((set, get) => {
     },
 
     openFeature(feature) {
+      if (get().windowKind === 'quick') return
       cancelPending()
       // 设置是模态浮层,不是 Tab —— 改道,不建 Tab、不落盘(见 hydrate 里的过滤)
       if (feature === 'settings') {
@@ -420,7 +459,7 @@ export const useWindowStore = create<WindowState>((set, get) => {
         还有没有别的 Tab 引用它。**正在跑的 run 不受影响** —— 它活在主进程,
         `releaseSession` 会拒绝放掉那些会话。
       */
-      if (closed?.kind === 'workspace') useTabsStore.getState().forget(closed.ref.workspaceId)
+      if (closed?.kind === 'workspace') shellTabs()?.forgetTabsForWorkspace(closed.ref.workspaceId)
       return true
       }
       if (nextWorkspaceId && needsPrepare(nextWorkspaceId) && (activeOuterId === outerId || nextWorkspaceId !== get().activeWorkspaceId)) {
@@ -531,12 +570,38 @@ export const useWindowStore = create<WindowState>((set, get) => {
       set({ settingsPage: null })
     },
 
+    openRewards() {
+      set({ rewardsOpen: true })
+    },
+
+    closeRewards() {
+      set({ rewardsOpen: false })
+    },
+
     setMaximized(maximized) {
       set({ maximized })
     }
   }
 })
 
+/*
+  ★ 这一半由本模块自己装到 port 上(见 `shell-port.ts`)。`tabs` store 那一半
+  在它自己的文件里装。两边都**不 import 对方**,`write` 的落盘与面板同步却仍然
+  照原样走到这里。
+
+  `persistInnerTabs` 在这里丢掉专注窗口那一路 —— 那个判断原先写死在
+  `tabs.ts` 的 `write` 里,而它读的正是本 store 的 `windowKind`,放到安装处
+  只有一份,不会再出现「两处各判一次、判据不一样」。
+*/
+installShellWindowPort({
+  windowKind: () => useWindowStore.getState().windowKind,
+  setRightPanelForWorkspace: (workspaceId, open) => useWindowStore.getState().setRightPanelForWorkspace(workspaceId, open),
+  setBottomPanelForWorkspace: (workspaceId, open) => useWindowStore.getState().setBottomPanelForWorkspace(workspaceId, open),
+  persistInnerTabs: (workspaceId, state) => {
+    if (useWindowStore.getState().windowKind === 'quick') return
+    persistInnerTabs(workspaceId, state)
+  }
+})
 /**
  * 把 `activeWorkspaceId` 上报给主进程。
  *

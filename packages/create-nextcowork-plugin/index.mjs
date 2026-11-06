@@ -43,7 +43,7 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
  * ★ 与 `PLUGIN_API_VERSION` 必须同步;`shared/plugin/__tests__/scaffold.test.ts`
  * 直接读这一行来钉住它,不再自己抄一份默认值。
  */
-const DEFAULT_ENGINES = '^0.3.0'
+const DEFAULT_ENGINES = '^0.3.3'
 
 async function main() {
   const args = process.argv.slice(2)

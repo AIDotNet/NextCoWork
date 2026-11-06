@@ -12,10 +12,10 @@ import type { ReviewChangeSet, ReviewFileDiff, ReviewFileEntry } from "../../../
 import { IconButton } from "../../components/ui/IconButton";
 import { Select } from "../../components/ui/Select";
 import { Spinner } from "../../components/ui/Spinner";
+import { CodeDiffViewer } from "../../components/diff/CodeDiffViewer";
 import { useI18n, type Translate } from "../../i18n";
 import { getReviewChangeSet, getReviewFileDiff } from "../../services/review";
 import { useTabsStore } from "../../stores/tabs";
-import { ReviewDiffBlock } from "./DiffView";
 
 type ChangesTab = Extract<InnerTab, { kind: "changes" }>;
 
@@ -177,7 +177,7 @@ export function ChangeReviewTab({ tab, workspace }: { tab: ChangesTab; workspace
         )}
       </div>
 
-      <div ref={diffScrollerRef} className="scroll-thin min-h-0 min-w-0 flex-1 overflow-auto">
+      <div ref={diffScrollerRef} className="scroll-thin flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
         {selectedFile === undefined ? (
           <div className="flex min-h-full items-center justify-center p-6 text-[12px] text-fg-faint">
             {t("chat.review.selectFile")}
@@ -195,8 +195,13 @@ export function ChangeReviewTab({ tab, workspace }: { tab: ChangesTab; workspace
           <div className="flex min-h-full items-center justify-center p-6 text-[12px] text-fg-faint">
             {t("chat.review.oversize")}
           </div>
+        ) : diff.before === diff.after ? (
+          <div className="flex min-h-full items-center justify-center p-6 text-[12px] text-fg-faint">
+            {t("chat.review.noTextChanges")}
+          </div>
         ) : (
-          <ReviewDiffBlock oldStr={diff.before} newStr={diff.after} />
+          /* 语法高亮的语言从路径推;对比视图自己滚动,切文件时它会回到顶部 */
+          <CodeDiffViewer original={diff.before} modified={diff.after} path={selectedFile.path} />
         )}
       </div>
     </div>

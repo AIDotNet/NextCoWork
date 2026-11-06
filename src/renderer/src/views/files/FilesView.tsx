@@ -10,6 +10,12 @@
  * 3. **懒加载**。目录默认收起(`>`),展开一层拉一层 —— `node_modules` 不会被整棵拉下来。
  * 4. **目录在前、文件在后**(见 shared 的 `sortEntries`),文件图标按类型上色。
  * 5. **行有三态**:普通 / 悬停(浅底 + 右端冒出 `…`)/ 选中(挖亮底,即当前打开的那个文件)。
+ * 6. **离开再回来,树还是原样**:展开的目录、列表、滚动位置存在 `stores/file-tree.ts`
+ *    (右侧工作台只挂激活的 Tab,点开文件时这棵树会整棵卸载 —— 理由全文在那个文件头)。
+ * 7. **动效与键盘照 beUI File Tree**:缩进参考线、悬停底色在行间滑动(`TreeHoverGlide`)、
+ *    展开时子项依次落下、↑↓←→ / Home End 导航(纯逻辑在 `tree-rows.ts`)。
+ * 8. **右键 = 行尾 `…`**:两者打开同一份 `FileRowMenu`(在 X 中打开 / 打开方式 › / 另存为 /
+ *    复制路径 / 添加到聊天 / 文件管理动作),菜单开着的那一行描一圈强调色边。
  *
  * 点一个文件 → 在**右侧工作台**新增一个 doc Tab,所以这个组件不自己渲染文件内容,
  * 它只发 `onOpenFile`。
@@ -17,7 +23,6 @@
 import {
   ArrowUpDown,
   ChevronRight,
-  Copy,
   Eye,
   EyeOff,
   FilePlus2,
@@ -25,34 +30,38 @@ import {
   FolderPlus,
   ListCollapse,
   MoreHorizontal,
-  MoveRight,
-  Pencil,
   Plus,
   RefreshCw,
   Search,
-  Trash2,
   Undo2,
   X
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { DirListing, FileEntry, SortBy } from '../../../../shared/domain/file-tree'
+import { isLocalEnvironment } from '../../../../shared/domain/environment'
 import { paneOf, type InnerTab } from '../../../../shared/domain/tab'
 import type { Workspace } from '../../../../shared/domain/workspace'
 import type { WorkspaceFileMutationRequest, WorkspaceRecoveryEntry } from '../../../../shared/domain/workspace-file'
 import type { DockNode } from '../../../../shared/domain/dock'
-import { Button } from '../../components/ui/Button'
-import { EmptyState } from '../../components/ui/EmptyState'
+import { Button } from '../../components/arc/button/button'
+import type { ContextMenuPosition } from '../../components/ui/ContextMenu'
+import { EmptyState } from '../../components/arc/empty-state/empty-state'
 import { IconButton } from '../../components/ui/IconButton'
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/Menu'
 import { cn } from '../../lib/cn'
 import { iconFor } from '../../lib/file-icon'
 import { listDir } from '../../services/app'
-import { listWorkspaceRecovery, mutateWorkspaceFile, isResultUnknown, revealWorkspaceFile, workspaceFileErrorKey, type WorkspaceFilesChanged } from '../../services/workspace-files'
+import { listWorkspaceRecovery, isResultUnknown, workspaceFileErrorKey, type WorkspaceFilesChanged } from '../../services/workspace-files'
+import { awaitDocumentSaves, mutateWorkspaceFile, revealWorkspaceFile } from '../../actions/workspace-files'
 import { confirmDocumentChanges } from '../../stores/documents'
+import { fileTreeViewKey, pruneListings, useFileTreeStore } from '../../stores/file-tree'
 import { useTabsStore } from '../../stores/tabs'
-import { flatten } from './flatten'
+import { flatten, type Row } from './flatten'
+import { enterDelays, treeKeyAction } from './tree-rows'
+import { TreeHoverGlide } from './TreeHoverGlide'
 import { useI18n, type TranslationKey } from '../../i18n'
 import { FileOperationDialog } from './FileOperationDialog'
+import { FILE_ROW_MENU_WIDTH, FileRowMenu } from './FileRowMenu'
 import { type FileOperationTarget } from './file-operations'
 import { Spinner } from '../../components/ui/Spinner'
 
@@ -68,6 +77,8 @@ const TOOLBAR_FULL_WIDTH = 400
 
 /** 一层缩进。12 是让第 3 层还看得出层级、又不至于把长文件名挤没的那个值。 */
 const INDENT = 12
+/** 参考线相对那一层起点的偏移:箭头槽 `size-3.5`(14px)的正中,于是线从箭头正下方垂下来 */
+const GUIDE_OFFSET = 7
 
 interface FilesViewProps {
   workspace: Workspace
@@ -97,8 +108,15 @@ function WorkspaceFilesView({
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [showHidden, setShowHidden] = useState(false)
   const [query, setQuery] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
-  const [listings, setListings] = useState<Readonly<Record<string, DirListing>>>({})
+  const viewKey = fileTreeViewKey(workspace.id, rootPath)
+  /*
+    需求:切走再切回来时展开状态还在(见 `stores/file-tree.ts` 文件头)。
+    ★ 只在**挂载那一刻**读一次(lazy initial state),不订阅:之后这棵树自己是权威,
+      store 只是它卸载时留下的快照。订阅的话,自己写回去的那一下又会触发自己重渲。
+  */
+  const [restored] = useState(() => useFileTreeStore.getState().views[viewKey])
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(restored?.expanded ?? []))
+  const [listings, setListings] = useState<Readonly<Record<string, DirListing>>>(() => restored?.listings ?? {})
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set())
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set())
   const [operation, setOperation] = useState<FileOperationTarget | null>(null)
@@ -115,6 +133,8 @@ function WorkspaceFilesView({
    */
   const [recoveryEntries, setRecoveryEntries] = useState<WorkspaceRecoveryEntry[]>([])
   const [recoveryKey, setRecoveryKey] = useState('')
+  /** 正开着菜单的那一行。整棵树只有一份菜单(见 `FileRowMenu` 文件头 ★) */
+  const [rowMenu, setRowMenu] = useState<{ entry: FileEntry; position: ContextMenuPosition } | null>(null)
   const generation = useRef(0)
   const requests = useRef(new Map<string, number>())
   const sequence = useRef(0)
@@ -123,6 +143,11 @@ function WorkspaceFilesView({
 
   const toolbar = useRef<HTMLDivElement>(null)
   const compact = useToolbarCompact(toolbar)
+  /*
+    本机工作区才出「打开方式」—— SSH 工作区里那些文件不在本机磁盘上,本机的
+    VS Code / 访达打开它们只会打开一个不存在的路径(与浏览器视图同一条判据)。
+  */
+  const local = isLocalEnvironment(workspace.environment)
 
   const refreshRecovery = useCallback(async (): Promise<void> => {
     try {
@@ -139,13 +164,18 @@ function WorkspaceFilesView({
   useEffect(() => { void refreshRecovery() }, [refreshRecovery])
 
   const load = useCallback(
-    (path: string): void => {
+    /**
+     * @param quiet 不进 `loading`(不转圈、不出「正在刷新」那一行)。只给「从快照恢复后的
+     *   后台重读」用:那时画面上已经是上次的内容,每切回来一次就让每个展开的目录闪一下转圈、
+     *   顶部再冒出一行提示把整棵树往下推 20px,恰恰是在提醒用户「树被重置过」。
+     */
+    (path: string, quiet = false): void => {
       const epoch = generation.current
       const request = ++sequence.current
       requests.current.set(path, request)
       const isCurrent = (): boolean =>
         alive.current && generation.current === epoch && requests.current.get(path) === request
-      setLoading((prev) => new Set(prev).add(path))
+      if (!quiet) setLoading((prev) => new Set(prev).add(path))
       void listDir(workspace.id, path)
         .then((l) => {
           if (!isCurrent()) return
@@ -165,7 +195,7 @@ function WorkspaceFilesView({
           setFailed((prev) => new Set(prev).add(path))
         })
         .finally(() => {
-          if (!isCurrent()) return
+          if (!isCurrent() || quiet) return
           setLoading((prev) => {
             const next = new Set(prev)
             next.delete(path)
@@ -176,20 +206,50 @@ function WorkspaceFilesView({
     [workspace.id]
   )
 
-  // 换工作区 / 换子树根:整棵重来。旧工作区的路径在新根下毫无意义,
-  // 留着会让第一帧画出上一个项目的文件名。
+  /*
+    挂载 = 读盘。换工作区 / 换子树根仍然是整棵重来:旧工作区的路径在新根下毫无意义,
+    留着会让第一帧画出上一个项目的文件名。
+    原先这里显式把 listings / expanded 清空;现在这件事由组件 key(`FilesView` 里的
+    `${workspace.id}:${rootPath}`)与快照 key(`fileTreeViewKey`)同粒度来保证 ——
+    换根就是一个新实例、读的是另一份快照(或没有快照),所以不再需要手动清。
+    有快照时:展开过的每个目录都静默重读一遍,离开期间磁盘上的变化在这一轮补上。
+  */
   useEffect(() => {
     alive.current = true
     generation.current += 1
-    setListings({})
-    setFailed(new Set())
-    setExpanded(new Set())
-    load(rootPath)
+    // 快照里真有根列表才静默:否则画面上什么都没有,「加载中」本来就该显示
+    const quiet = restored?.listings[rootPath] !== undefined
+    load(rootPath, quiet)
+    for (const path of restored?.expanded ?? []) if (path !== rootPath) load(path, quiet)
     return () => {
       alive.current = false
       generation.current += 1
     }
-  }, [load, rootPath])
+  }, [load, rootPath, restored])
+
+  /*
+    写回快照。展开状态与列表随变化写(一次 set,没有订阅者,很便宜);
+    滚动位置只在卸载时写 —— 每个 scroll 事件都 set 一次没有必要。
+    ★ 滚动位置从 onScroll 记进 ref,而不是卸载时去读 DOM:被动 effect 的清理函数跑的时候
+      节点已经摘下来了,那时 `scrollRef.current` 是 null,读到的永远是 0。
+  */
+  const scrollTop = useRef(restored?.scrollTop ?? 0)
+  const scroller = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    useFileTreeStore.getState().save(viewKey, {
+      expanded: [...expanded],
+      listings: pruneListings(listings, rootPath, expanded)
+    })
+  }, [expanded, listings, rootPath, viewKey])
+  useEffect(() => () => {
+    useFileTreeStore.getState().save(viewKey, { scrollTop: scrollTop.current })
+  }, [viewKey])
+  // 快照里有列表 → 第一帧就画得出行 → 在绘制前把滚动条放回原处,否则先闪一帧顶部
+  useLayoutEffect(() => {
+    if (restored !== undefined && restored.scrollTop > 0 && scroller.current !== null) {
+      scroller.current.scrollTop = restored.scrollTop
+    }
+  }, [restored])
 
   const toggleDir = (path: string): void => {
     const wasExpanded = expanded.has(path)
@@ -252,6 +312,12 @@ function WorkspaceFilesView({
     try {
       if (request.operation === 'rename' || request.operation === 'move' || request.operation === 'delete') {
         setConfirmingChanges(true)
+        // 破坏性操作前先等源/目标路径上还在飞的保存(闸门在 `mutateWorkspaceFile` 里,
+        // 这里提前一次是为了让挽留对话框在保存落定之后才弹)。
+        await awaitDocumentSaves(workspace.id, [
+          request.path,
+          ...(request.destination === undefined ? [] : [request.destination])
+        ])
         const confirmed = await confirmDocumentChanges(workspace.id, request.path)
         if (!alive.current) return
         setConfirmingChanges(false)
@@ -324,6 +390,60 @@ function WorkspaceFilesView({
     [listings, expanded, rootPath, sortBy, showHidden, query, selectedPath]
   )
 
+  /*
+    哪些行是这一次**新露出来的**(播入场动画)。用「渲染期对比上一次的 rows」这个 React 认可的
+    写法,而不是 effect:effect 晚一帧,新行会先以终态画出来再跳回起点重播。
+    初值就是首帧的 rows —— 从快照恢复的那棵树一行都不算新(见 `enterDelays`)。
+  */
+  const [shownRows, setShownRows] = useState(rows)
+  const [entering, setEntering] = useState<ReadonlyMap<string, number>>(() => new Map())
+  if (shownRows !== rows) {
+    setShownRows(rows)
+    setEntering(enterDelays(shownRows, rows))
+  }
+
+  /*
+    键盘焦点所在的那一行(roving tabindex:整棵树只有一行 tabIndex=0)。
+    原先每一行都是 tabIndex=0,于是 Tab 键要穿过树里的每一行才出得去。
+    焦点行不在当前行里(被收起 / 被过滤掉)时,退到选中行,再退到第一行。
+  */
+  const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const [tree, setTree] = useState<HTMLDivElement | null>(null)
+  const tabbablePath =
+    rows.find((row) => row.entry.path === focusedPath)?.entry.path ??
+    rows.find((row) => row.entry.path === selectedPath)?.entry.path ??
+    rows[0]?.entry.path ?? null
+
+  const activate = (row: Row): void => {
+    if (row.entry.kind === 'dir') toggleDir(row.entry.path)
+    else onOpenFile(row.entry.path, row.entry.name)
+  }
+
+  const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, index: number): void => {
+    // 行尾 `…` 按钮上的 Enter/空格归按钮自己
+    if (event.target !== event.currentTarget) return
+    const action = treeKeyAction(rows, index, event.key, expanded)
+    if (action === null) return
+    event.preventDefault()
+    const row = rows[index]
+    switch (action.kind) {
+      case 'focus': {
+        const target = rows[action.index]
+        if (target === undefined) return
+        setFocusedPath(target.entry.path)
+        tree?.querySelector<HTMLElement>(`[data-tree-index="${action.index}"]`)?.focus()
+        return
+      }
+      case 'expand':
+      case 'collapse':
+        toggleDir(action.path)
+        return
+      case 'activate':
+        if (row !== undefined) activate(row)
+        return
+    }
+  }
+
   const root = listings[rootPath]
 
   return (
@@ -354,7 +474,7 @@ function WorkspaceFilesView({
               <Search size={14} />
             </IconButton>
           ) : (
-            <div className="flex min-w-0 flex-1 items-center gap-1 rounded-[7px] bg-surface-input px-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1 rounded-[8px] bg-surface-input px-1.5">
               <Search size={12} className="shrink-0 text-fg-faint" />
               <input
                 autoFocus
@@ -514,7 +634,7 @@ function WorkspaceFilesView({
       )}
       {notice !== null && (
         <div role={notice.error ? 'alert' : 'status'} className={cn(
-          'mx-2 mb-1.5 flex items-start gap-1 rounded-[7px] bg-tint px-2 py-1.5 text-[12px]',
+          'mx-2 mb-1.5 flex items-start gap-1 rounded-[8px] bg-tint px-2 py-1.5 text-[12px]',
           notice.error ? 'text-danger' : 'text-fg-muted',
         )}>
           <span className="min-w-0 flex-1 break-words">{t(notice.key, { path: notice.path ?? '' })}</span>
@@ -529,44 +649,56 @@ function WorkspaceFilesView({
           {t('files.manage.refreshing')}
         </div>
       )}
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div
+        ref={scroller}
+        onScroll={(event) => { scrollTop.current = event.currentTarget.scrollTop }}
+        className="scroll-thin min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+      >
         {scope === 'conversation' ? (
-          <EmptyState title={t('files.noConversation')} hint={t('files.noConversationHint')} className="py-10" />
+          <EmptyState title={t('files.noConversation')} description={t('files.noConversationHint')} className="py-10" />
         ) : failed.has(rootPath) ? (
           <div className="flex flex-col items-center py-8">
-            <EmptyState title={t('files.unreadable')} hint={t('files.unreadableHint')} className="pb-4" />
-            <Button size="sm" onClick={() => load(rootPath)} disabled={loading.has(rootPath)}>
+            <EmptyState title={t('files.unreadable')} description={t('files.unreadableHint')} className="pb-4" />
+            <Button type="button" variant="secondary" size="sm" onClick={() => load(rootPath)} disabled={loading.has(rootPath)}>
               {t(loading.has(rootPath) ? 'common.loading' : 'common.retry')}
             </Button>
           </div>
         ) : root === undefined ? (
-          <EmptyState title={t('common.loading')} className="py-10" />
+          <EmptyState title={t('common.loading')} description="" className="py-10" />
         ) : rows.length === 0 ? (
           <EmptyState
             title={query !== null && query !== '' ? t('files.noMatch') : t('files.empty')}
+            description=""
             className="py-10"
           />
         ) : (
-          <div role="tree" aria-label={t('files.manage.tree')} aria-busy={loading.size > 0}>
-            {rows.map(({ entry, depth }) => (
+          <div ref={setTree} role="tree" aria-label={t('files.manage.tree')} aria-busy={loading.size > 0} className="relative">
+            {/* ★ 必须是第一个子元素,行按文档顺序画在它上面(见 `TreeHoverGlide` 文件头) */}
+            <TreeHoverGlide container={tree} />
+            {rows.map(({ entry, depth }, index) => (
               <TreeRow
                 key={entry.path}
+                index={index}
                 entry={entry}
                 depth={depth}
+                tabbable={entry.path === tabbablePath}
+                enterDelay={entering.get(entry.path)}
                 expanded={expanded.has(entry.path)}
                 failed={failed.has(entry.path)}
                 loading={loading.has(entry.path)}
                 selected={entry.path === selectedPath}
                 busy={busy}
-                onOperation={(operation) => beginOperation({ operation, path: entry.path, name: entry.name })}
-                onDelete={() => {
-                  setNotice(null)
-                  void submitOperation({ workspaceId: workspace.id, operation: 'delete', path: entry.path })
+                menuOpen={rowMenu?.entry.path === entry.path}
+                onMenu={(position, toggle) => {
+                  // 文件操作进行中不开菜单(与改版前 `Menu disabled={busy}` 一致)
+                  if (busy) return
+                  // `…` 再点一下是收起;右键永远是「在这里打开」
+                  setRowMenu((current) =>
+                    toggle && current?.entry.path === entry.path ? null : { entry, position })
                 }}
-                onReveal={() => void reveal(entry.path)}
-                onClick={() =>
-                  entry.kind === 'dir' ? toggleDir(entry.path) : onOpenFile(entry.path, entry.name)
-                }
+                onFocus={() => setFocusedPath(entry.path)}
+                onKeyDown={(event) => onRowKeyDown(event, index)}
+                onClick={() => activate({ entry, depth })}
               />
             ))}
             {root.truncated && (
@@ -577,6 +709,23 @@ function WorkspaceFilesView({
           </div>
         )}
       </div>
+      {rowMenu !== null && (
+        <FileRowMenu
+          // 换一行 = 换一份菜单:二次确认删除、子菜单这些临时状态不能串到另一行上
+          key={rowMenu.entry.path}
+          workspaceId={workspace.id}
+          entry={rowMenu.entry}
+          position={rowMenu.position}
+          local={local}
+          onOperation={(operation) => beginOperation({ operation, path: rowMenu.entry.path, name: rowMenu.entry.name })}
+          onDelete={() => {
+            setNotice(null)
+            void submitOperation({ workspaceId: workspace.id, operation: 'delete', path: rowMenu.entry.path })
+          }}
+          onReveal={() => void reveal(rowMenu.entry.path)}
+          onClose={() => setRowMenu(null)}
+        />
+      )}
       {operation !== null && operation.operation !== 'delete' && (
         <FileOperationDialog
           key={`${operation.operation}:${operation.path}`}
@@ -594,132 +743,135 @@ function WorkspaceFilesView({
 }
 
 function TreeRow({
+  index,
   entry,
   depth,
+  tabbable,
+  enterDelay,
   expanded,
   failed,
   loading,
   selected,
   busy,
-  onOperation,
-  onDelete,
-  onReveal,
+  menuOpen,
+  onMenu,
+  onFocus,
+  onKeyDown,
   onClick
 }: {
+  /** 在平铺行里的位置;键盘导航按它找下一行(`data-tree-index`) */
+  index: number
   entry: FileEntry
   depth: number
+  /** roving tabindex:整棵树只有这一行可以 Tab 进来 */
+  tabbable: boolean
+  /** 这一行是刚露出来的:入场动画的错开延迟(ms);undefined = 不播 */
+  enterDelay: number | undefined
   expanded: boolean
   failed: boolean
   loading: boolean
   selected: boolean
   busy: boolean
-  onOperation: (operation: FileOperationTarget['operation']) => void
-  onDelete: () => void
-  onReveal: () => void
+  /** 这一行的菜单正开着:描边,并让行尾 `…` 保持可见 */
+  menuOpen: boolean
+  /**
+   * 请求在某个视口坐标打开这一行的菜单。菜单本身由 `FilesView` 持有(整棵树一份),
+   * 行只负责报坐标。`toggle`:从 `…` 来的再点一下是收起,右键不是。
+   */
+  onMenu: (position: ContextMenuPosition, toggle: boolean) => void
+  onFocus: () => void
+  /** 方向键 / Home End / Enter 空格 —— 解释在 `tree-rows.ts`,这里只转发 */
+  onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
   onClick: () => void
 }): ReactNode {
   const { t } = useI18n()
   const { Icon, className } = iconFor(entry.name, entry.kind, expanded)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   return (
     <div
       role="treeitem"
-      tabIndex={0}
+      data-tree-index={index}
+      tabIndex={tabbable ? 0 : -1}
       aria-level={depth + 1}
       aria-label={failed ? t('files.manage.readFailed') : entry.name}
       aria-busy={loading}
       aria-expanded={entry.kind === 'dir' ? expanded : undefined}
       aria-selected={selected}
+      aria-haspopup="menu"
       title={entry.path}
       onClick={onClick}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onClick()
-        }
+      onContextMenu={(event) => {
+        event.preventDefault()
+        /*
+          键盘唤起(Shift+F10 / 菜单键)的 contextmenu 没有指针坐标(两个都是 0),
+          按原样用会把菜单甩到窗口左上角 —— 落到这一行的左下方。
+        */
+        const fromKeyboard = event.clientX === 0 && event.clientY === 0
+        const rect = event.currentTarget.getBoundingClientRect()
+        onMenu(fromKeyboard ? { x: rect.left + 24, y: rect.bottom } : { x: event.clientX, y: event.clientY }, false)
       }}
+      onFocus={(event) => { if (event.target === event.currentTarget) onFocus() }}
+      onKeyDown={onKeyDown}
       // 缩进走 padding 而不是嵌套 div:树是**平铺**渲染的(见 flatten),
       // 这样虚拟化和键盘上下移动将来都只面对一维数组
-      style={{ paddingLeft: 4 + depth * INDENT }}
+      style={{
+        paddingLeft: 4 + depth * INDENT,
+        ...(enterDelay === undefined ? {} : { animationDelay: `${enterDelay}ms` })
+      }}
       className={cn(
-        'group flex h-[26px] cursor-default items-center gap-1.5 rounded-[7px] pr-1 text-[12.5px]',
+        'group relative flex h-[26px] cursor-default items-center gap-1.5 rounded-[8px] pr-1 text-[12.5px]',
         'transition-colors select-none outline-none focus-visible:ring-1 focus-visible:ring-accent',
-        selected ? 'bg-surface-raised text-fg' : 'text-fg-muted hover:bg-tint-hover hover:text-fg'
+        // 悬停底色不在行上:由 `TreeHoverGlide` 那一块在行之间滑动,这里只换字色
+        selected ? 'bg-surface-raised text-fg' : 'text-fg-muted hover:text-fg',
+        enterDelay !== undefined && 'file-tree-row-enter',
+        // 参考截图:右键的那一行描一圈强调色,让人知道菜单是对谁的
+        menuOpen && 'text-fg ring-1 ring-inset ring-accent/70'
       )}
     >
+      {/*
+        缩进参考线(beUI File Tree 的 branch line):每一层祖先一条竖线,落在那一层箭头的正中。
+        行与行之间没有间隙,所以一列 1px 接起来就是一条连续的线,不需要额外的树形结构。
+      */}
+      {Array.from({ length: depth }, (_, level) => (
+        <span
+          key={level}
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 w-px bg-border"
+          style={{ left: 4 + level * INDENT + GUIDE_OFFSET }}
+        />
+      ))}
       {/* 占位一律画:没有它,文件名会比同级目录名左移 14px,一列名字就对不齐了 */}
       <span className="flex size-3.5 shrink-0 items-center justify-center text-fg-faint">
         {loading ? <Spinner size="xs" /> : entry.kind === 'dir' && (
-          <ChevronRight size={12} className={cn('transition-transform', expanded && 'rotate-90')} />
+          <ChevronRight
+            size={12}
+            className={cn('transition-transform duration-200 ease-panel motion-reduce:transition-none', expanded && 'rotate-90')}
+          />
         )}
       </span>
       <Icon size={14} className={cn('shrink-0', className)} />
       <span className={cn('min-w-0 flex-1 truncate', failed && 'text-danger')}>{entry.name}</span>
-      <div onClick={(e) => e.stopPropagation()}>
-        <Menu
-          label={t('files.manage.actions', { name: entry.name })}
-          trigger={<MoreHorizontal size={12} />}
-          disabled={busy}
-          onOpenChange={(open) => {
-            if (!open) setConfirmingDelete(false)
-          }}
-          align="end"
-          width={200}
-          triggerClassName={cn(
-            'flex size-[18px] shrink-0 items-center justify-center rounded-[5px]',
-            'text-fg-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-            'hover:bg-tint-strong hover:text-fg focus-visible:opacity-100 aria-expanded:opacity-100',
-          )}
-        >
-          {(close) => {
-            const act = (operation: Exclude<FileOperationTarget['operation'], 'delete'>): void => {
-              close()
-              onOperation(operation)
-            }
-            return <>
-              {entry.kind === 'dir' && <>
-                <MenuItem icon={<FilePlus2 size={14} />} onSelect={() => act('create-file')}>
-                  {t('files.manage.newFile')}
-                </MenuItem>
-                <MenuItem icon={<FolderPlus size={14} />} onSelect={() => act('create-directory')}>
-                  {t('files.manage.newDirectory')}
-                </MenuItem>
-                <MenuSeparator />
-              </>}
-              <MenuItem icon={<Pencil size={14} />} onSelect={() => act('rename')}>
-                {t('files.manage.rename')}
-              </MenuItem>
-              <MenuItem icon={<Copy size={14} />} onSelect={() => act('copy')}>
-                {t('files.manage.copy')}
-              </MenuItem>
-              <MenuItem icon={<MoveRight size={14} />} onSelect={() => act('move')}>
-                {t('files.manage.move')}
-              </MenuItem>
-              <MenuItem icon={<FolderOpen size={14} />} onSelect={() => { close(); onReveal() }}>
-                {t('files.manage.reveal')}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem
-                danger
-                icon={<Trash2 size={14} />}
-                onSelect={() => {
-                  if (confirmingDelete) {
-                    setConfirmingDelete(false)
-                    close()
-                    onDelete()
-                  } else {
-                    setConfirmingDelete(true)
-                  }
-                }}
-              >
-                {confirmingDelete ? t('common.confirmDelete') : t('files.manage.delete')}
-              </MenuItem>
-            </>
-          }}
-        </Menu>
-      </div>
+      <button
+        type="button"
+        aria-label={t('files.manage.actions', { name: entry.name })}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        disabled={busy}
+        onClick={(event) => {
+          // 不冒泡到行:那会顺手把文件打开 / 把目录折起来
+          event.stopPropagation()
+          const rect = event.currentTarget.getBoundingClientRect()
+          // 右缘对齐按钮右缘(改版前 `Menu align="end"` 的落点);越界由 ContextMenu 夹回视口
+          onMenu({ x: rect.right - FILE_ROW_MENU_WIDTH, y: rect.bottom + 4 }, true)
+        }}
+        className={cn(
+          'app-no-drag flex size-[18px] shrink-0 items-center justify-center rounded-[5px] disabled:opacity-40',
+          'text-fg-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          'hover:bg-tint-strong hover:text-fg focus-visible:opacity-100 aria-expanded:opacity-100',
+        )}
+      >
+        <MoreHorizontal size={12} />
+      </button>
     </div>
   )
 }

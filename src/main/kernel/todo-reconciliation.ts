@@ -4,7 +4,7 @@
  * 故意不把未完成项自动打勾，也不反复续跑逼模型清空阻塞项。
  */
 import type { TurnEndInput, TurnEndResult } from './agent-session'
-import { MARK, latestTodosFrom } from './tool/builtin/todo'
+import { MARK, latestTodosFrom } from '../../shared/agent/todo'
 import { clampWithEllipsis, stripControlChars } from './text'
 import { neutralizeReminderTags } from './untrusted'
 

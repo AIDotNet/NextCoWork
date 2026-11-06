@@ -24,18 +24,31 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '../../../../shared/agent/event'
-import { userMessage } from '../../../../shared/agent/message'
 import type { AgentEventEnvelope } from '../../../../shared/ipc/contract'
 
 vi.mock('../../services/agent', () => ({
   startRun: vi.fn(),
   attachRun: vi.fn(),
   abortRun: vi.fn(),
-  // ★ 必须返回 promise:store 里是 `void interjectRun(...).catch(...)`,
-  //   返回 undefined 的话每一次插话同步都会当场 TypeError。
   interjectRun: vi.fn(async () => {}),
+  // 队列的真源在主进程:这里替成一个回执工厂,由各用例自己摆出主进程的回答
+  queueSessionInput: vi.fn(),
   onAgentEvent: vi.fn(() => () => {})
 }))
+
+// 接上一个主进程那边已经在跑的 run 时会读一次历史;这里没有历史可读
+vi.mock('../../services/sessions', () => {
+  const getSession = vi.fn(async (_sessionId: string): Promise<unknown> => { throw new Error('会话不存在') })
+  return {
+    getSession,
+    // 转录按页读(`getSessionPage`):委托给各用例摆好的整段历史,一页就是全部
+    getSessionPage: vi.fn(async (sessionId: string) => {
+      const detail = await getSession(sessionId)
+      return detail == null ? detail : { ...(detail as object), hasMore: false }
+    }),
+    replaceHistory: vi.fn(async () => {})
+  }
+})
 
 vi.mock('../../services/app', () => ({
   getInnerTabs: vi.fn(async () => ({ tabs: [], activeTabId: null })),
@@ -46,17 +59,18 @@ vi.mock('../../services/app', () => ({
   //   `getSessionInput` 必须返回 null:返回存档会让 hydrate 往刚建好的 store 里
   //   回填内容,于是每个用例的初始状态都不再是空的。
   getSessionInput: vi.fn(async () => null),
-  persistSessionInput: vi.fn()
+  persistSessionDraft: vi.fn()
 }))
 
-import { abortRun, interjectRun, startRun } from '../../services/agent'
+import type { QueuedInput, SessionQueueOp, SessionQueueResult } from '../../../../shared/domain/queued-input'
+import { abortRun, attachRun, queueSessionInput, startRun } from '../../services/agent'
 import type { SendOptions } from '../session'
 import { adoptActiveRuns, releaseSession, resumeQueue, sessionStore, useRunIndex } from '../session'
 import { useTabsStore } from '../tabs'
 
 const mockStartRun = vi.mocked(startRun)
 const mockAbortRun = vi.mocked(abortRun)
-const mockInterjectRun = vi.mocked(interjectRun)
+const mockQueue = vi.mocked(queueSessionInput)
 
 /**
  * ★ **标注成 `SendOptions`,不要写 `as const`。** `as const` 会把 `skillIds`
@@ -104,8 +118,9 @@ function session(id: string): ReturnType<typeof sessionStore> {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockStartRun.mockResolvedValue(undefined)
+  mockStartRun.mockResolvedValue({ started: true })
   mockAbortRun.mockResolvedValue(undefined)
+  mockQueue.mockImplementation(async (sessionId) => receipt(sessionId, []))
 })
 
 afterEach(() => {
@@ -175,7 +190,7 @@ describe('run 的两份状态必须同起同落', () => {
 
   it('启动尚未完成时先显示用户消息,并让主进程复用它的消息 ID', async () => {
     let release!: () => void
-    mockStartRun.mockImplementation(() => new Promise<void>((resolve) => { release = resolve }))
+    mockStartRun.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ started: true }) }))
     const s = session('s-optimistic')
 
     const sending = s.getState().send('马上显示', OPTS)
@@ -251,365 +266,140 @@ describe('★ 试金石:run 属于主进程,不属于任何 Tab', () => {
   })
 })
 
-describe('排队续跑', () => {
-  it('生成中再发一条:进队列,不并发第二个 run', async () => {
+/** 主进程的一份队列回执。`rev` 全局递增,跟主进程一样 */
+let rev = 0
+function receipt(sessionId: string, queued: QueuedInput[], extra: Partial<SessionQueueResult> = {}): SessionQueueResult {
+  rev += 1
+  return { sessionId, queued, rev, accepted: true, ...extra }
+}
+
+function item(id: string, text: string, status: QueuedInput['status'] = 'pending'): QueuedInput {
+  return { id, text, attachments: [], status, options: OPTS, enqueuedAt: 1 }
+}
+
+/**
+ * ★ 队列的**真源在主进程**(`main/session-runtime.ts`,语义由那边的测试钉住)。
+ * 渲染层这一半只有三件事:把意图原样交过去、按 `rev` 收回执、**自己绝不续跑** ——
+ * 没有窗口在看这条会话时,续跑也得发生,所以它不能长在渲染层。
+ */
+describe('排队:渲染层只交意图,不自己续跑', () => {
+  it('生成中再发一条:交给主进程入队,带上附件与当时的档位,不并发第二个 run', async () => {
+    const IMG = 'ncw://attachments/sessions/s-queue/01J8A.png'
+    mockQueue.mockImplementationOnce(async (sessionId) => receipt(sessionId, [item('q1', '第二条')]))
     const s = session('s-queue')
     await s.getState().send('第一条', OPTS)
     const runId = s.getState().activeRunId
+    s.getState().setDraft('第二条')
 
-    await s.getState().send('第二条', OPTS)
+    await s.getState().send('第二条', { ...OPTS, model: 'sonnet' }, [
+      { type: 'text', text: '第二条' },
+      { type: 'image', mime: 'image/png', dataRef: IMG }
+    ])
 
     expect(mockStartRun).toHaveBeenCalledTimes(1)
+    expect(mockQueue).toHaveBeenCalledWith('s-queue', {
+      kind: 'enqueue',
+      text: '第二条',
+      options: { ...OPTS, model: 'sonnet' },
+      attachments: [{ kind: 'image', name: '01J8A.png', url: IMG }]
+    })
     expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['第二条'])
-    expect(s.getState().queuedInputs[0]?.status).toBe('pending')
+    expect(s.getState().draft).toBe('')
     expect(s.getState().activeRunId).toBe(runId)
     expect(indexed('s-queue')).toEqual([runId])
   })
 
-  it('★ run 结束后队列自动续跑:索引换成新 run 的条目,不是空的也不是两条', async () => {
-    const s = session('s-drain')
+  it('★ run 正常结束时渲染层不发下一条 —— 那是主进程的事', async () => {
+    mockQueue.mockImplementationOnce(async (sessionId) => receipt(sessionId, [item('q1', '第二条')]))
+    const s = session('s-no-drain')
     await s.getState().send('第一条', OPTS)
-    const first = s.getState().activeRunId
     await s.getState().send('第二条', OPTS)
 
     s.getState().applyEvents([runEnd])
-    await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
+    await Promise.resolve()
 
-    const second = s.getState().activeRunId
-    expect(second).not.toBeNull()
-    expect(second).not.toBe(first)
+    expect(mockStartRun).toHaveBeenCalledTimes(1)
+    expect(s.getState().activeRunId).toBeNull()
+  })
+
+  it('主进程那边已经排满:话还给输入框,不让它凭空消失', async () => {
+    mockQueue.mockImplementationOnce(async (sessionId) => receipt(sessionId, [], { accepted: false }))
+    const s = session('s-full')
+    await s.getState().send('第一条', OPTS)
+    s.getState().setDraft('第二条')
+
+    await s.getState().send('第二条', OPTS)
+
+    expect(s.getState().draft).toBe('第二条')
+  })
+
+  it('插话、编辑、删除、改档位、继续:原样交给主进程,并采用回执', async () => {
+    const s = session('s-ops')
+    s.setState({ queuedInputs: [item('a', '甲'), item('b', '乙')], queueRev: 0 })
+    const ops: SessionQueueOp[] = [
+      { kind: 'promote', id: 'b' },
+      { kind: 'edit', id: 'a', text: '改过的' },
+      { kind: 'drop', id: 'a' },
+      { kind: 'retagPermission', mode: 'full' },
+      { kind: 'retagMode', mode: 'code' },
+      { kind: 'resume' }
+    ]
+    mockQueue.mockImplementation(async (sessionId) => receipt(sessionId, [item('b', '乙', 'promoted')]))
+
+    s.getState().promoteInput('b')
+    s.getState().editInput('a', '改过的')
+    s.getState().dropInput('a')
+    s.getState().retagQueuedPermission('full')
+    s.getState().retagQueuedMode('code')
+    resumeQueue('s-ops')
+
+    await vi.waitFor(() => expect(mockQueue).toHaveBeenCalledTimes(ops.length))
+    expect(mockQueue.mock.calls.map((call) => call[1])).toEqual(ops)
+    await vi.waitFor(() => expect(s.getState().queuedInputs).toEqual([item('b', '乙', 'promoted')]))
+  })
+
+  it('撤回到输入框:主进程交回文本,接在草稿后面,不覆盖正在写的半句话', async () => {
+    const s = session('s-recall')
+    s.setState({ queuedInputs: [item('a', '排队的')], queueRev: 0 })
+    s.getState().setDraft('写了一半')
+    mockQueue.mockImplementationOnce(async (sessionId) => receipt(sessionId, [], { text: '排队的' }))
+
+    s.getState().moveInputToDraft('a')
+
+    await vi.waitFor(() => expect(s.getState().draft).toBe('写了一半\n\n排队的'))
     expect(s.getState().queuedInputs).toEqual([])
-    // 同一时刻只有一个 run —— 收旧的和起新的都发生了,而且只剩一条
-    expect(indexed('s-drain')).toEqual([second])
   })
 
-  /**
-   * ★ **断言值变了,而且是有意的。**
-   *
-   * 这条用例原来断言续跑用的是**第一条**的档位(`sonnet`/`full`),因为旧实现
-   * 读的是全队列共用的 `lastOptions` —— 那是「上一次发送用的档位」。
-   * 但用例名说的是「发送当时的档位」,而对第二条消息来说,它「发送当时」的档位
-   * 是入队那一刻的 `OPTS`,不是第一条的。旧断言编码的其实是实现的缺陷。
-   *
-   * 现在每个条目**各自冻结** `options`,所以续跑读的是第二条自己的快照。
-   * 用例的意图没变,变的是它终于测到了那个意图。
-   */
-  it('续跑复用该条目入队当时的档位,不读此刻的 UI 值,也不借用上一条的', async () => {
-    const s = session('s-opts')
-    await s.getState().send('第一条', { ...OPTS, model: 'sonnet', permissionMode: 'full' })
-    await s.getState().send('第二条', OPTS)
+  it('★ 回执与广播乱序:只收 rev 更新的那份', async () => {
+    const s = session('s-rev')
+    s.setState({ queuedInputs: [item('a', '甲')], queueRev: 5 })
+    mockQueue.mockImplementationOnce(async (sessionId) => ({ sessionId, queued: [], rev: 4, accepted: true }))
 
-    s.getState().applyEvents([runEnd])
-    await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
+    s.getState().dropInput('a')
+    await vi.waitFor(() => expect(mockQueue).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
 
-    expect(mockStartRun.mock.calls[1]?.[0]).toMatchObject({
-      input: [{ type: 'text', text: '第二条' }],
-      model: 'demo-model',
-      permissionMode: 'ask'
-    })
+    // 比手上旧的回执被丢掉,而不是把队列回滚到过去
+    expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['甲'])
   })
 
-  it('排队期间改档位不影响已入队条目 —— 快照在入队那一刻就冻住了', async () => {
-    const s = session('s-frozen')
-    await s.getState().send('第一条', OPTS)
-    // 用户在排队期间把模型换成 sonnet 再排一条
-    await s.getState().send('第二条', { ...OPTS, model: 'sonnet' })
-    // 又换回去,但这次没有再发 —— 已入队那条不该跟着变
-    await s.getState().send('第三条', { ...OPTS, model: 'haiku' })
-
-    expect(s.getState().queuedInputs.map((q) => q.options.model)).toEqual(['sonnet', 'haiku'])
-  })
-
-  describe('插话', () => {
-    it('promote 后优先于先入队的 pending,且不捎带它', async () => {
-      const s = session('s-promote')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队甲', OPTS)
-      await s.getState().send('排队乙', OPTS)
-
-      const 乙 = s.getState().queuedInputs[1]!
-      s.getState().promoteInput(乙.id)
-
-      s.getState().applyEvents([runEnd])
-      await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
-
-      expect(mockStartRun.mock.calls[1]?.[0]).toMatchObject({
-        input: [{ type: 'text', text: '排队乙' }]
-      })
-      // 甲还在队列里,没被顺带发出去
-      expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['排队甲'])
+  it('★ 主进程说这条会话其实在跑:撤掉乐观消息,接上真正在跑的那个 run', async () => {
+    const s = session('s-busy-main')
+    vi.mocked(attachRun).mockResolvedValue({
+      runId: 'r-main', sessionId: 's-busy-main', workspaceId: 'w1', depth: 0,
+      status: 'running', seq: 0, events: [], pendingInteractions: [], children: []
+    })
+    mockStartRun.mockImplementationOnce(async () => {
+      // 角标广播先到:本地还挂着乐观 runId,`adoptActiveRuns` 只登记索引、不接 store
+      adoptActiveRuns([{ runId: 'r-main', sessionId: 's-busy-main', workspaceId: 'w1' }])
+      return { started: false, queue: receipt('s-busy-main', [item('q1', '你好')]) }
     })
 
-    it('再点一次取消插话,并清掉 promotedAt —— 重新引入应排到队尾', async () => {
-      const s = session('s-toggle')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队甲', OPTS)
+    await s.getState().send('你好', OPTS)
 
-      const 甲 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(甲.id)
-      expect(s.getState().queuedInputs[0]?.status).toBe('promoted')
-
-      s.getState().promoteInput(甲.id)
-      expect(s.getState().queuedInputs[0]?.status).toBe('pending')
-      expect(s.getState().queuedInputs[0]?.promotedAt).toBeUndefined()
-    })
-
-    it('多条 promote 合并成一次输入,按插话顺序而非入队顺序', async () => {
-      const s = session('s-merge')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('甲', OPTS)
-      await s.getState().send('乙', OPTS)
-
-      const [甲, 乙] = s.getState().queuedInputs
-      s.getState().promoteInput(乙!.id) // 先插乙
-      s.getState().promoteInput(甲!.id) // 后插甲
-
-      s.getState().applyEvents([runEnd])
-      await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
-
-      expect(mockStartRun.mock.calls[1]?.[0]).toMatchObject({
-        input: [{ type: 'text', text: '乙\n\n甲' }]
-      })
-      expect(s.getState().queuedInputs).toEqual([])
-    })
-
-    /**
-     * ★★ 这一组钉的是截图里那个 bug:用户点了「插话」,按钮变成「已插话」,
-     * 然后**什么都没发生** —— 模型继续跑它的工具,那句话一个字都没进去。
-     *
-     * 原因是 promote 当时只是本地排序,真正发出去要等整个 run 跑完。
-     * 界面承诺了插入,实现做的是排队。
-     */
-    it('★ 运行中点插话:立刻推给主进程,而不是等 run 跑完', async () => {
-      const s = session('s-interject')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('插一句', OPTS)
-
-      const 条目 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(条目.id)
-
-      expect(mockInterjectRun).toHaveBeenCalledTimes(1)
-      const [runId, items] = mockInterjectRun.mock.calls[0]!
-      expect(runId).toBe(s.getState().activeRunId)
-      expect(items).toEqual([{ id: 条目.id, parts: [{ type: 'text', text: '插一句' }] }])
-      // 仍在队列里 —— 主进程确认注入之前不能移走(否则 run 半路挂了消息就没了)
-      expect(s.getState().queuedInputs).toHaveLength(1)
-    })
-
-    /** 取消引入 = 重发一份不含它的全集。全量替换语义就是靠这条兑现的 */
-    it('取消插话时重发空列表,把它从主进程信箱里撤回', async () => {
-      const s = session('s-interject-cancel')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('插一句', OPTS)
-
-      const 条目 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(条目.id)
-      s.getState().promoteInput(条目.id)
-
-      expect(mockInterjectRun).toHaveBeenCalledTimes(2)
-      expect(mockInterjectRun.mock.calls[1]?.[1]).toEqual([])
-    })
-
-    /** pending 不是插话。灌进去等于任何人排队都能打断当前执行,队列就没意义了 */
-    it('只推 promoted,pending 一条都不捎带', async () => {
-      const s = session('s-interject-pending')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('甲', OPTS)
-      await s.getState().send('乙', OPTS)
-
-      const 乙 = s.getState().queuedInputs[1]!
-      s.getState().promoteInput(乙.id)
-
-      expect(mockInterjectRun.mock.calls[0]?.[1]).toEqual([
-        { id: 乙.id, parts: [{ type: 'text', text: '乙' }] }
-      ])
-    })
-
-    /**
-     * ★ 「恰好一次」的渲染层那一半:主进程复用条目 id 当消息 id,
-     * 于是一条 `message_commit` 就是回执,不需要任何新事件类型。
-     */
-    it('收到同 id 的 message_commit 后把条目移出队列', async () => {
-      const s = session('s-interject-reap')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('插一句', OPTS)
-
-      const 条目 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(条目.id)
-
-      s.getState().applyEvents([
-        { type: 'message_commit', message: userMessage(条目.id, [{ type: 'text', text: '插一句' }], 1) }
-      ])
-
-      expect(s.getState().queuedInputs).toEqual([])
-      // ★ run 还在跑,不该被当成「结束了,发下一批」
-      expect(mockStartRun).toHaveBeenCalledTimes(1)
-    })
-
-    /**
-     * ★ 注入过的条目**绝不能**再被 `drainQueue` 发一遍。
-     * 收队列必须排在续跑之前,否则 commit 与 run_end 落在同一批事件里时,
-     * 同一句话会被发两次。
-     */
-    it('注入过的条目不会在 run 结束时被再发一次', async () => {
-      const s = session('s-interject-once')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('插一句', OPTS)
-
-      const 条目 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(条目.id)
-
-      s.getState().applyEvents([
-        { type: 'message_commit', message: userMessage(条目.id, [{ type: 'text', text: '插一句' }], 1) },
-        runEnd
-      ])
-
-      expect(mockStartRun).toHaveBeenCalledTimes(1)
-      expect(s.getState().queuedInputs).toEqual([])
-    })
-
-    /** 空闲时点插话仍然是「立即发送」,不该顺手往一个不存在的 run 里塞 */
-    it('空闲时不推插话,直接发出去', async () => {
-      const s = session('s-interject-idle')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队的', OPTS)
-      s.getState().applyEvents([{ type: 'run_end', status: 'aborted' }])
-
-      const 条目 = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(条目.id)
-
-      expect(mockInterjectRun).not.toHaveBeenCalled()
-      await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
-    })
-  })
-
-  describe('附件随队列走', () => {
-    /**
-     * ★ 这一组钉的是一个会静默丢数据的缺陷:入队分支原本只存 `text`,
-     * parts 里的附件被整个丢弃。表现是「生成期间拖图发送 → 排队 → 续跑时
-     * 只发出了文字」,图片消失而界面上没有任何提示。
-     */
-    const IMG = 'ncw://attachments/sessions/s-att/01J8A.png'
-
-    it('入队时保留 ncw:// 附件', async () => {
-      const s = session('s-att')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('带图的', OPTS, [
-        { type: 'text', text: '带图的' },
-        { type: 'image', mime: 'image/png', dataRef: IMG }
-      ])
-
-      expect(s.getState().queuedInputs[0]?.attachments).toEqual([
-        { kind: 'image', name: '01J8A.png', url: IMG }
-      ])
-    })
-
-    it('★ 续跑时图片重新出现在 input 里 —— 不是只剩文字', async () => {
-      const s = session('s-att2')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('带图的', OPTS, [
-        { type: 'text', text: '带图的' },
-        { type: 'image', mime: 'image/png', dataRef: IMG }
-      ])
-
-      s.getState().applyEvents([runEnd])
-      await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
-
-      expect(mockStartRun.mock.calls[1]?.[0]).toMatchObject({
-        input: [
-          { type: 'text', text: '带图的' },
-          { type: 'image', mime: 'image/png', dataRef: IMG }
-        ]
-      })
-    })
-
-    it('外部绝对路径的图不入队 —— 它会随存档漂到别的机器,且本来也显示不出来', async () => {
-      const s = session('s-att3')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('外部图', OPTS, [
-        { type: 'text', text: '外部图' },
-        { type: 'image', mime: 'image/png', dataRef: '/abs/plot.png' }
-      ])
-
-      expect(s.getState().queuedInputs[0]?.attachments).toEqual([])
-    })
-  })
-
-  describe('异常结束时队列不动', () => {
-    it('用户按停止后不自动续跑 —— 他要的是接管控制权', async () => {
-      const s = session('s-abort')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队的', OPTS)
-
-      s.getState().applyEvents([{ type: 'run_end', status: 'aborted' }])
-
-      expect(mockStartRun).toHaveBeenCalledTimes(1)
-      expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['排队的'])
-      expect(s.getState().activeRunId).toBeNull()
-    })
-
-    it('报错后不自动续跑 —— 否则连着错 N 次烧 N 轮 token', async () => {
-      const s = session('s-error')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队的', OPTS)
-
-      s.getState().applyEvents([{ type: 'run_end', status: 'error' }])
-
-      expect(mockStartRun).toHaveBeenCalledTimes(1)
-      expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['排队的'])
-    })
-
-    it('停下之后用户手动继续,走的是同一条续跑路径', async () => {
-      const s = session('s-resume')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队的', OPTS)
-      s.getState().applyEvents([{ type: 'run_end', status: 'aborted' }])
-
-      resumeQueue('s-resume')
-      await vi.waitFor(() => expect(mockStartRun).toHaveBeenCalledTimes(2))
-      expect(s.getState().queuedInputs).toEqual([])
-    })
-  })
-
-  describe('编辑与移除', () => {
-    it('编辑改文本但不动档位快照与插话顺序', async () => {
-      const s = session('s-edit')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('原文', { ...OPTS, model: 'sonnet' })
-
-      const item = s.getState().queuedInputs[0]!
-      s.getState().promoteInput(item.id)
-      const at = s.getState().queuedInputs[0]?.promotedAt
-      s.getState().editInput(item.id, '改过的')
-
-      const after = s.getState().queuedInputs[0]!
-      expect(after.text).toBe('改过的')
-      expect(after.options.model).toBe('sonnet')
-      expect(after.promotedAt).toBe(at)
-    })
-
-    it('撤回到输入框:出队并接在草稿后面,不覆盖正在写的半句话', async () => {
-      const s = session('s-recall')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('排队的', OPTS)
-      s.getState().setDraft('写了一半')
-
-      const item = s.getState().queuedInputs[0]!
-      s.getState().moveInputToDraft(item.id)
-
-      expect(s.getState().queuedInputs).toEqual([])
-      expect(s.getState().draft).toBe('写了一半\n\n排队的')
-    })
-
-    it('删除只影响目标条目', async () => {
-      const s = session('s-drop')
-      await s.getState().send('第一条', OPTS)
-      await s.getState().send('甲', OPTS)
-      await s.getState().send('乙', OPTS)
-
-      s.getState().dropInput(s.getState().queuedInputs[0]!.id)
-      expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['乙'])
-    })
+    expect(s.getState().transcript.messages).toEqual([])
+    expect(s.getState().queuedInputs.map((q) => q.text)).toEqual(['你好'])
+    expect(s.getState().activeRunId).toBe('r-main')
   })
 })
 

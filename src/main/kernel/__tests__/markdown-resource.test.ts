@@ -66,7 +66,8 @@ describe('readResourceFile', () => {
 
   it('读不懂的语法记进 skipped —— 值在 parse 阶段就没了，保存前必须当面说', async () => {
     const fs = memoryFs()
-    fs.files.set(FILE, '---\ndescription: x\nnested:\n  a: 1\n---\n正文')
+    // 一层嵌套现在读得回来了,所以这里用两层 —— 它仍然是「值没了」的那一类
+    fs.files.set(FILE, '---\ndescription: x\nnested:\n  a:\n    b: 1\n---\n正文')
     expect((await readResourceFile(fs, FILE))?.skipped.length).toBeGreaterThan(0)
   })
 })

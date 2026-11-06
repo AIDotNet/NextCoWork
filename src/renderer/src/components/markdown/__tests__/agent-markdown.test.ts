@@ -5,8 +5,8 @@ import { I18nProvider, type Locale } from '../../../i18n'
 import { AgentMarkdown, type AgentMarkdownProps } from '../AgentMarkdown'
 import { MarkdownProvider, type MarkdownEnvironment } from '../MarkdownProvider'
 import { resolveMarkdownTarget } from '../links'
-import { highlightCode } from '../highlight'
-import { reusableSpans } from '../CodeSource'
+import { highlightCode } from '../../code/highlight'
+import { reusableSpans } from '../../code/CodeSource'
 import { canRenderMermaid } from '../mermaid-policy'
 
 function render(content: string, props: Partial<AgentMarkdownProps> = {}, environment: MarkdownEnvironment = {}, locale: Locale = 'en-US'): string {
@@ -84,6 +84,13 @@ describe('Agent Markdown', () => {
     expect(html).toContain('<math')
     expect(html).not.toContain('href="javascript:')
     expect(html).not.toContain('<script')
+  })
+
+  it('renders LaTeX-style \\(…\\) and \\[…\\] delimiters but leaves code untouched', () => {
+    const html = render('Inline \\(3 \\times 4\\).\n\n\\[\n\\frac{1}{2}\n\\]\n\n`\\(x\\)`')
+    expect(html).toContain('class="katex"')
+    expect(html).toContain('class="katex-display"')
+    expect(html).toContain('\\(x\\)')
   })
 
   it('keeps heading and footnote IDs unique across messages and localizes footnotes', () => {

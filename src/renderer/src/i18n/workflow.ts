@@ -1,0 +1,81 @@
+/**
+ * 工作流(实验功能)对话里那张画布的文案。设置页那一行在 `experimental.ts`。
+ *
+ * 单独成文件的理由同 `widget.ts`:`i18n/index.tsx` 已经三千多行,新域一律搬出来。
+ *
+ * ★ 节点标题、工作流标题、子代理名都是**模型写的**领域值,不在这里翻译。
+ */
+
+export const workflowZh = {
+  'workflow.expand': '全屏查看',
+  'workflow.zoomIn': '放大',
+  'workflow.zoomOut': '缩小',
+  'workflow.fit': '适应画布',
+  'workflow.dialogTitle': '工作流',
+  'workflow.progress': '{done}/{total} 完成',
+  'workflow.running': '{count} 个运行中',
+  'workflow.failed': '{count} 个未完成',
+  'workflow.status.pending': '等待中',
+  'workflow.status.running': '运行中',
+  'workflow.status.done': '已完成',
+  'workflow.status.error': '失败',
+  'workflow.status.skipped': '已跳过',
+  'workflow.node.agent': '子代理',
+  'workflow.node.dependsOn': '依赖',
+  'workflow.node.model': '模型',
+  'workflow.node.attempts': '第 {count} 次尝试',
+  'workflow.node.allowPartial': '上游部分失败也会运行',
+  'workflow.tokens': '{count} tokens',
+  'workflow.node.noOutput': '还没有产出。',
+  'workflow.node.each': '逐项',
+  'workflow.node.mapOver': '逐项处理',
+  'workflow.node.items': '{done}/{total} 项完成',
+  'workflow.node.itemsFailed': '{count} 项失败',
+  'workflow.node.itemsDropped': '超出上限 {count} 项未处理',
+  'workflow.approval.title': '运行工作流「{title}」?',
+  'workflow.approval.body': '将派出 {count} 个子代理，同一步里的节点并行执行。',
+  'workflow.approval.step': '第 {n} 步',
+  'workflow.approval.run': '运行',
+  'workflow.approval.revise': '要求修改',
+  'workflow.approval.feedback': '告诉 Agent 要怎么改这张图',
+  'workflow.approval.cancel': '取消',
+  'workflow.hint': '点击节点查看产出',
+  'workflow.unavailable': '工作流结构无法显示。'
+}
+
+export const workflowEn: Record<keyof typeof workflowZh, string> = {
+  'workflow.expand': 'Full screen',
+  'workflow.zoomIn': 'Zoom in',
+  'workflow.zoomOut': 'Zoom out',
+  'workflow.fit': 'Fit to view',
+  'workflow.dialogTitle': 'Workflow',
+  'workflow.progress': '{done}/{total} done',
+  'workflow.running': '{count} running',
+  'workflow.failed': '{count} not finished',
+  'workflow.status.pending': 'Waiting',
+  'workflow.status.running': 'Running',
+  'workflow.status.done': 'Done',
+  'workflow.status.error': 'Failed',
+  'workflow.status.skipped': 'Skipped',
+  'workflow.node.agent': 'Subagent',
+  'workflow.node.dependsOn': 'Depends on',
+  'workflow.node.model': 'Model',
+  'workflow.node.attempts': 'Attempt {count}',
+  'workflow.node.allowPartial': 'runs even if some inputs fail',
+  'workflow.tokens': '{count} tokens',
+  'workflow.node.noOutput': 'No output yet.',
+  'workflow.node.each': 'per item',
+  'workflow.node.mapOver': 'For each item of',
+  'workflow.node.items': '{done}/{total} items done',
+  'workflow.node.itemsFailed': '{count} failed',
+  'workflow.node.itemsDropped': '{count} over the limit not processed',
+  'workflow.approval.title': 'Run workflow "{title}"?',
+  'workflow.approval.body': 'This starts {count} subagents. Nodes in the same step run in parallel.',
+  'workflow.approval.step': 'Step {n}',
+  'workflow.approval.run': 'Run',
+  'workflow.approval.revise': 'Ask for changes',
+  'workflow.approval.feedback': 'Tell the agent how to change the graph',
+  'workflow.approval.cancel': 'Cancel',
+  'workflow.hint': 'Click a node to see its output',
+  'workflow.unavailable': 'The workflow structure cannot be displayed.'
+}

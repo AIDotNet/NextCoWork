@@ -1,0 +1,34 @@
+/*
+  Arc 组件与本应用外壳之间的接缝。**故意不进任何层**:Arc 的 CSS Modules 是无层样式,
+  层里的规则压不住它们。这里只放「应用外壳的约束」,不改 Arc 组件的外观。
+*/
+
+/*
+  ★ z 轴。theme.css 末尾的约定:100 是模态(设置浮层、Dialog),150 是 portal 到 body、
+  必须压住模态的浮层。Arc 自带的是 50/51(弹窗)、60(toast)、90(提示)—— 原样用的话,
+  从设置浮层里打开的弹窗整块被压在浮层背后,提示也看不见。
+
+  Radix 的 Portal 是 asChild:遮罩和弹窗本体是 body 下紧挨着的两个兄弟节点,没有外包层。
+  弹窗本体带着 `.ncw-dialog`(见 components/ui/Dialog.tsx);遮罩没有可传的 className,
+  按「下一个兄弟是 `.ncw-dialog`」认出来。双写类名是为了特异性压过 CSS Modules 的单类选择器。
+*/
+.ncw-dialog.ncw-dialog,
+body > :has(+ .ncw-dialog) {
+  z-index: 100;
+}
+/* Radix 把提示、下拉的浮层包在这个节点里,并把内容的 z-index 抄成它的行内样式。 */
+[data-radix-popper-content-wrapper] {
+  z-index: 150 !important;
+}
+.ncw-toasts.ncw-toasts {
+  z-index: 150;
+}
+
+/*
+  ★ 标题栏是 `-webkit-app-region: drag`,OS 会吞掉那块区域里的全部指针事件。
+  旧的按钮组件每个都自带 `app-no-drag`;换成 Arc 之后由这里统一兜住,
+  免得每个调用点都要记得补。
+*/
+.app-drag :is(button, a, input, textarea, select, [role='button'], [role='switch'], [role='tab']) {
+  -webkit-app-region: no-drag;
+}

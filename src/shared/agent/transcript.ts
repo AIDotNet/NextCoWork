@@ -15,7 +15,7 @@ import type { AgentEvent, RunNotice, RunStatus, SubagentPhase } from './event'
 import { mergeGoalStatusMessage, visibleText, type AgentMessage, type ContentPart, type SubagentResult, type ToolOutput } from './message'
 import type { TokenUsage } from './stream'
 import type { RunCost } from '../domain/pricing'
-import type { ContextCheckpoint, ContextSegment, ContextStatus } from './context-management'
+import type { ContextSegment, ContextStatus } from './context-management'
 
 /**
  * 一张子代理卡片留几条「最近做了什么」。
@@ -35,6 +35,16 @@ export interface LiveBlock {
   text: string
   callId?: string
   name?: string
+  /**
+   * 只有 thinking 块写这两格:思考的起点与**最近一次思考增量**的墙钟毫秒。
+   *
+   * 需求:思考卡片实时显示「已思考 N 秒」,提交后换成落盘的 `durationMs` 时不能跳。
+   * 所以起点的口径必须和 `main/kernel/block-accumulator.ts` 逐条一致 ——
+   * 取「这块出现之前最后一条内容事件」(`lastStreamAt`)而不是这块的首个增量,
+   * 理由写在那边 `ThinkingBlock` 的注释里。改这里就得同时改那边。
+   */
+  startedAt?: number
+  endedAt?: number
 }
 
 export interface ToolCallState {
@@ -49,6 +59,18 @@ export interface ToolCallState {
    * 有它时渲染层自动展开工具卡并交给 `CardRenderer`。
    */
   card?: import('./tool-card').ToolCard
+  /**
+   * 生图工具运行中已经到手的那几张,键是请求里的格子序号(`ToolProgress.image.index`)。
+   * **易失,不进转录** —— 落盘的是 `output.images`,`tool_end` 时清掉。
+   *
+   * 需求:多图生成期逐张显示。用格子序号做键而不是数组:并发请求的完成顺序不定,
+   * 第 3 格先到时它必须出现在第 3 格,而不是挤到第 1 格让后面的占位整体错位。
+   */
+  partialImages?: Readonly<Record<number, import('./message').ToolOutputImage>>
+  /** 运行中能被转去后台(见 `ToolProgress.detachable`)。易失,`tool_end` 时清掉。 */
+  detachable?: boolean
+  /** `Workflow` 运行中的节点状态(见 `ToolProgress.workflow`)。易失,`tool_end` 时清掉。 */
+  workflow?: import('./workflow').WorkflowState
   output?: ToolOutput
   /**
    * `tool_start` 到达时的墙钟毫秒。
@@ -129,6 +151,11 @@ export interface TranscriptState {
   /** Wall-clock bounds for the currently displayed run. */
   runStartedAt?: number
   runEndedAt?: number
+  /**
+   * 最近一条**内容性**上游事件(`message_start` 与各类内容增量)的墙钟毫秒。
+   * 只给新出现的 thinking 块当起点用,见 `LiveBlock.startedAt`。
+   */
+  lastStreamAt?: number
   model?: string
   /**
    * 这次回复**实际由哪家给的**。★ 和 `RunRequest.modelProviderId`(用户选的那家)
@@ -179,7 +206,6 @@ export interface TranscriptState {
    * 拿它除以窗口很快就会超过 100%。上下文占用是个**瞬时量**,只能看最后一次。
    */
   lastInputTokens?: number
-  contextCheckpoints: ContextCheckpoint[]
   contextStatus?: ContextStatus
   /**
    * 重试 / 故障切换的**瞬时**提示,活到下一次 `message_start` 或 `error` 为止。
@@ -203,7 +229,7 @@ export interface TranscriptState {
 export type { RunNotice }
 
 export function emptyTranscript(): TranscriptState {
-  return { messages: [], live: [], tools: {}, subagents: {}, contextCheckpoints: [], status: 'running' }
+  return { messages: [], live: [], tools: {}, subagents: {}, status: 'running' }
 }
 
 /**
@@ -345,7 +371,8 @@ function writeSubagentResult(subagents: TranscriptState['subagents'], part: Extr
     ...(metadata.summary === undefined ? {} : { summary: metadata.summary }),
     ...(metadata.error === undefined ? {} : { error: metadata.error }),
     ...(metadata.reportStatus === undefined
-      ? (metadata.background === true && status === 'done' ? { reportStatus: 'pending' as const } : {})
+      ? (metadata.background === true && status === 'done' && previous?.reportStatus === undefined
+          ? { reportStatus: 'pending' as const } : {})
       : { reportStatus: metadata.reportStatus })
   }
 }
@@ -507,19 +534,25 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
             providerId: d.providerId,
             notice: undefined,
             error: undefined,
-            live: []
+            live: [],
+            lastStreamAt: e.at ?? Date.now()
           }
 
         case 'text_delta':
         case 'thinking_delta': {
           const kind = d.type === 'text_delta' ? 'text' : 'thinking'
+          const at = e.at ?? Date.now()
           return {
             ...s,
+            lastStreamAt: at,
             live: upsertBlock(
               s.live,
               d.index,
-              () => ({ index: d.index, kind, text: '' }),
-              (b) => ({ ...b, text: b.text + d.text })
+              // 起点口径见 `LiveBlock.startedAt`:与 block-accumulator 逐条一致
+              () => (kind === 'thinking'
+                ? { index: d.index, kind, text: '', startedAt: s.lastStreamAt ?? at }
+                : { index: d.index, kind, text: '' }),
+              (b) => (b.kind === 'thinking' ? { ...b, text: b.text + d.text, endedAt: at } : { ...b, text: b.text + d.text })
             )
           }
         }
@@ -527,6 +560,7 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
         case 'tool_call_start':
           return {
             ...s,
+            lastStreamAt: e.at ?? Date.now(),
             live: upsertBlock(
               s.live,
               d.index,
@@ -538,6 +572,7 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
         case 'tool_call_delta':
           return {
             ...s,
+            lastStreamAt: e.at ?? Date.now(),
             live: upsertBlock(
               s.live,
               d.index,
@@ -623,7 +658,15 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
             ...prev,
             progress: e.progress.message,
             // 实时卡片易失,但一旦推出就覆盖上一张;不推(card 缺省)则保留上一张。
-            ...(e.progress.card === undefined ? {} : { card: e.progress.card })
+            ...(e.progress.card === undefined ? {} : { card: e.progress.card }),
+            // 逐张到达的生图结果按格子序号**累加**(每条进度只带新到的那一张)
+            ...(e.progress.image === undefined
+              ? {}
+              : { partialImages: { ...prev.partialImages, [e.progress.image.index]: e.progress.image.image } }),
+            // 同 `card`:推了就以这一条为准,没推则保留上一条的说法
+            ...(e.progress.detachable === undefined ? {} : { detachable: e.progress.detachable }),
+            // 整份快照,推了就替换(见 shared/agent/workflow.ts 文件头)
+            ...(e.progress.workflow === undefined ? {} : { workflow: e.progress.workflow })
           }
         }
       }
@@ -649,6 +692,11 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
             // 实时卡片也随结束清掉 —— 让展示切到最终 output.card(结果快照);
             // 否则那张过程态的卡会一直盖在结果上。
             card: undefined,
+            // 过程态的逐张图同理:结束后以 output.images 为准,不留两份
+            partialImages: undefined,
+            detachable: undefined,
+            // 结束后以 output.workflow 为准
+            workflow: undefined,
             endedAt: e.at ?? Date.now()
           }
         }
@@ -670,18 +718,19 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
         }
       }
 
-    case 'context_status':
-      return { ...s, contextStatus: e.status }
-
-    case 'context_checkpoint': {
-      const existing = s.contextCheckpoints.findIndex((item) => item.id === e.checkpoint.id)
-      const checkpoints = existing < 0
-        ? [...s.contextCheckpoints, e.checkpoint]
-        : s.contextCheckpoints.map((item, index) => (index === existing ? e.checkpoint : item))
-      return { ...s, contextCheckpoints: checkpoints, contextStatus: { phase: 'ready', windowIndex: e.checkpoint.windowIndex } }
+    case 'context_status': {
+      if (e.status.phase !== 'compacted') return { ...s, contextStatus: e.status }
+      /*
+        需求:压完之后圆环必须立刻回落。`lastInputTokens` 是压缩**之前**那次请求的真值
+        (比如 624K),不清掉的话它要等到下一次上游回包才会被覆盖 —— 压缩成功了,
+        圆环却还写着「已超出」。清掉后界面退回 session 紧接着发的那条 `context_usage` 估算。
+      */
+      const { lastInputTokens: _stale, ...rest } = s
+      return { ...rest, contextStatus: e.status }
     }
 
-    case 'subagent_start':
+    case 'subagent_start': {
+      const previous = s.subagents[e.callId]
       return {
         ...s,
         subagents: {
@@ -700,10 +749,13 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
             toolCalls: 0,
             toolErrors: 0,
             lastEventAt: e.at ?? Date.now(),
-            ...(e.at === undefined ? {} : { startedAt: e.at })
+            ...(e.at === undefined ? {} : { startedAt: e.at }),
+            ...(previous?.childRunId === e.childRunId && previous.reportStatus !== undefined
+              ? { reportStatus: previous.reportStatus } : {})
           }
         }
       }
+    }
 
     case 'subagent_update': {
       const previous = s.subagents[e.callId]
@@ -771,7 +823,9 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
             ...(e.error === undefined ? {} : { error: e.error }),
             ...(e.childSeq === undefined ? {} : { childSeq: e.childSeq }),
             ...(e.at === undefined ? {} : { endedAt: e.at }),
-            ...(previous.background === true ? { reportStatus: 'pending' as const } : {})
+            // 回传状态由主进程确认;迟到的结束事件不能把 injecting/reported 打回 pending。
+            ...(previous.background === true && previous.reportStatus === undefined
+              ? { reportStatus: 'pending' as const } : {})
           }
         }
       }

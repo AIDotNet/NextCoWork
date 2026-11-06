@@ -22,7 +22,8 @@ describe('OpenAI Chat Completions decoding', () => {
         completion_tokens_details: { reasoning_tokens: 20 } } }, '[DONE]'
     )))
     expect(accumulated(output).parts).toEqual([
-      { type: 'thinking', text: '让我思考。', opaque: { protocol: 'openai-chat', field: 'reasoning_content' } },
+      // tokens: 夹具里 usage 报了 reasoning_tokens 20,这次回复只有一块思考,归给它(见 block-accumulator)
+      { type: 'thinking', text: '让我思考。', opaque: { protocol: 'openai-chat', field: 'reasoning_content' }, tokens: 20 },
       { type: 'text', text: '你好！' }
     ])
     expect(output.at(-1)).toEqual({ type: 'message_end', stopReason: 'end_turn', usage: {
@@ -69,6 +70,37 @@ describe('OpenAI Chat Completions decoding', () => {
       chunk({}, 'tool_calls'), '[DONE]'
     )))
     expect(accumulated(output).calls).toEqual([{ ok: true, callId: 'call-1', name: 'Echo', input: { text: 'ok' } }])
+  })
+
+  it('accepts a frozen tool call that omits tool_calls[].index', async () => {
+    // ★ 逐字复刻 Google 的 OpenAI 兼容层实测分片:一个调用一次性给全,没有 index,
+    //   还多带一个我们不认识的 extra_content。以前这一帧被判成 invalid tool call,
+    //   症状是「用 Gemini 只要调工具就整轮中止、正文为空」。
+    const output = await collect(decodeOpenAIChat(events(
+      chunk({ role: 'assistant', content: '' }),
+      chunk({ tool_calls: [{
+        extra_content: { google: { thought_signature: 'sig' } },
+        function: { arguments: '{"text":"一"}', name: 'Echo' },
+        id: 'call_297140', type: 'function'
+      }] }),
+      chunk({}, 'tool_calls'), '[DONE]'
+    )))
+    expect(accumulated(output).calls).toEqual([
+      { ok: true, callId: 'call_297140', name: 'Echo', input: { text: '一' } }
+    ])
+    expect(output.at(-1)).toMatchObject({ stopReason: 'tool_use' })
+  })
+
+  it('keeps index-less parallel tool calls in separate slots', async () => {
+    const output = await collect(decodeOpenAIChat(events(
+      chunk({ tool_calls: [{ id: 'call-a', function: { name: 'Echo', arguments: '{"text":"一"}' } }] }),
+      chunk({ tool_calls: [{ id: 'call-b', function: { name: 'Echo', arguments: '{"text":"二"}' } }] }),
+      chunk({}, 'tool_calls'), '[DONE]'
+    )))
+    expect(accumulated(output).calls).toEqual([
+      { ok: true, callId: 'call-a', name: 'Echo', input: { text: '一' } },
+      { ok: true, callId: 'call-b', name: 'Echo', input: { text: '二' } }
+    ])
   })
 
   it('accepts a complete JSON response with message.tool_calls', async () => {
@@ -154,7 +186,7 @@ describe('OpenAI Responses decoding', () => {
       responseDone([reasoningItem, functionItem])
     )))
     expect(accumulated(output).parts).toEqual([
-      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem } },
+      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem }, tokens: 20 },
       { type: 'tool_call', callId: 'call-1', name: 'Echo', input: { text: 'hello' } }
     ])
     expect(output.filter((e) => e.type === 'tool_call_start')).toHaveLength(1)
@@ -249,7 +281,7 @@ describe('OpenAI Responses decoding', () => {
   it('decodes reasoning text and prefers it over the summary', async () => {
     const snapshot = await collect(decodeOpenAIResponses(events(responseDone([reasoningContentItem]))))
     expect(accumulated(snapshot).parts).toEqual([
-      { type: 'thinking', text: '先看参数是否齐全。', opaque: { protocol: 'openai-responses', item: reasoningContentItem } }
+      { type: 'thinking', text: '先看参数是否齐全。', opaque: { protocol: 'openai-responses', item: reasoningContentItem }, tokens: 20 }
     ])
 
     const streamed = await collect(decodeOpenAIResponses(events(
@@ -261,7 +293,7 @@ describe('OpenAI Responses decoding', () => {
       responseDone([reasoningContentItem])
     )))
     expect(accumulated(streamed).parts).toEqual([
-      { type: 'thinking', text: '先看参数是否齐全。', opaque: { protocol: 'openai-responses', item: reasoningContentItem } }
+      { type: 'thinking', text: '先看参数是否齐全。', opaque: { protocol: 'openai-responses', item: reasoningContentItem }, tokens: 20 }
     ])
   })
 
@@ -294,7 +326,7 @@ describe('OpenAI Responses decoding', () => {
     )))
     expect(output.some((e) => e.type === 'error')).toBe(false)
     expect(accumulated(output).parts).toEqual([
-      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem } },
+      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem }, tokens: 20 },
       { type: 'text', text: '完成' }
     ])
   })
@@ -309,7 +341,7 @@ describe('OpenAI Responses decoding', () => {
     )))
     expect(output.some((e) => e.type === 'error')).toBe(false)
     expect(accumulated(output).parts).toEqual([
-      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem } },
+      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem }, tokens: 20 },
       { type: 'text', text: '完成' }
     ])
   })
@@ -325,7 +357,7 @@ describe('OpenAI Responses decoding', () => {
     )))
     expect(output.some((e) => e.type === 'error')).toBe(false)
     expect(accumulated(output).parts).toEqual([
-      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem } },
+      { type: 'thinking', text: '检查参数。', opaque: { protocol: 'openai-responses', item: reasoningItem }, tokens: 20 },
       { type: 'text', text: '完成' }
     ])
   })

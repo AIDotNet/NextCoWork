@@ -51,7 +51,7 @@ import { registerRuntimeHook, runtimeHooksFor } from '../../hook-registry'
 import { nodeHost } from '../../kernel/host'
 import { interactions } from '../../kernel/interaction-gate'
 import { runs } from '../../kernel/run-registry'
-import { latestTodosFrom } from '../../kernel/tool/builtin/todo'
+import { latestTodosFrom } from '../../../shared/agent/todo'
 import type { CanonicalRequest } from '../../kernel/upstream/canonical'
 import {
   DEMO_ALIAS,

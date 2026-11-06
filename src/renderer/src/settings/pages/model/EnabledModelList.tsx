@@ -7,7 +7,11 @@ import { ProviderAvatar } from "./ProviderAvatar";
 import { useI18n } from "../../../i18n";
 
 /**
- * 参考图左边那一列。
+ * 参考图左边那一列 —— 现在只放「启用的供应商」这一件事(库存),不再兼放
+ * 「默认模型/默认子代理」(路由)。后者曾经作为 `footer` 塞在这一列底下,
+ * 被 236px 的列宽挤成两个嵌套的迷你选择器;现在挪到 `ModelPage` 内容区顶部
+ * 横向占满(见 `ModelPage.tsx` 的 `LegacyTextTab`)。这个组件因此不再需要
+ * 知道「路由」这件事,也不用替调用方留一个 `footer` 洞。
  *
  * ★ **每一行是一个供应商,不是一个模型**(理由见 `enabled-models.ts` 文件头)。
  *
@@ -22,19 +26,12 @@ export function EnabledModelList({
   selectedId,
   onSelect,
   onAdd,
-  footer,
 }: {
   entries: readonly ProviderEntry[];
   loaded: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onAdd: () => void;
-  /**
-   * 参考图在这一列底下放的是「哪个角色用哪个模型」。我们真有的那两个
-   * (默认模型 / 默认子代理模型)由 `ModelPage` 塞进来 —— 它们要 `patch()`,
-   * 而这个组件不该知道设置是怎么写回去的。
-   */
-  footer?: ReactNode;
 }): ReactNode {
   const { t } = useI18n();
   return (
@@ -50,7 +47,7 @@ export function EnabledModelList({
           onClick={onAdd}
           className={cn(
             "app-no-drag mt-0.5 flex size-6 shrink-0 items-center justify-center",
-            "rounded-[7px] text-icon transition-colors hover:bg-tint hover:text-fg",
+            "rounded-[8px] text-icon transition-colors hover:bg-tint hover:text-fg",
           )}
         >
           <Plus size={15} />
@@ -65,7 +62,7 @@ export function EnabledModelList({
               onClick={() => onSelect(e.provider.id)}
               aria-current={e.provider.id === selectedId}
               className={cn(
-                "app-no-drag flex w-full items-center gap-2 rounded-[9px] px-1.5 py-2 text-left",
+                "app-no-drag flex w-full items-center gap-2 rounded-[8px] px-1.5 py-2 text-left",
                 "transition-colors",
                 e.provider.id === selectedId ? "bg-tint" : "hover:bg-tint/60",
               )}
@@ -108,20 +105,13 @@ export function EnabledModelList({
         type="button"
         onClick={onAdd}
         className={cn(
-          "app-no-drag mt-1 flex w-full items-center gap-1.5 rounded-[9px] px-1.5 py-2",
+          "app-no-drag mt-1 flex w-full items-center gap-1.5 rounded-[8px] px-1.5 py-2",
           "text-[12.5px] text-fg-muted transition-colors hover:bg-tint/60 hover:text-fg",
         )}
       >
         <Plus size={14} className="shrink-0 text-icon" />
         {t("models.addModel")}
       </button>
-
-      {footer !== undefined && (
-        <>
-          <div className="my-2 border-t border-hairline" />
-          {footer}
-        </>
-      )}
     </div>
   );
 }

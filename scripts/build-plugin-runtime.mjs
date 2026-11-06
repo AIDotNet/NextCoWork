@@ -64,7 +64,17 @@ function fingerprint() {
       else if (/\.(tsx?|css)$/.test(entry.name)) files.push(full)
     }
   }
-  for (const dir of [join(src, 'components/ui'), join(src, 'plugin-ui'), join(src, 'lib'), join(src, 'theme'), join(src, 'styles')]) {
+  /*
+    ★ `shared/document-engine` 也要算进来:`plugin-ui/view.tsx` 从那里导出文档会话客户端用的
+    报文定义与画布换算。漏掉它的话,改了换算函数而运行时不重建 —— 插件视图用的还是旧实现,
+    宿主与视图的坐标换算从此对不上,且零报错。
+  */
+  /*
+    ★ `plugins/` 也算:Tailwind v4 从仓库根自动扫描 class,内置办公插件(ncw.writer / sheets / slides)
+    用到的工具类是从它们的源码里生成进 ui.css 的。不算进来的话,插件新写一个 class 而运行时不重建,
+    那个 class 就不存在 —— 表现为「布局对、某一处没样式」,且零报错。
+  */
+  for (const dir of [join(src, 'components/ui'), join(src, 'components/arc'), join(src, 'plugin-ui'), join(src, 'widget-kit'), join(src, 'lib'), join(src, 'theme'), join(src, 'styles'), join(root, 'src/shared/document-engine'), join(root, 'plugins')]) {
     if (existsSync(dir)) walk(dir)
   }
   files.push(fileURLToPath(import.meta.url))
@@ -107,13 +117,38 @@ const i18nStub = {
   }
 }
 
+/*
+  ★ widget 套件(`widget-kit/index.tsx`)按**相对路径**转发 `plugin-ui/ui` —— 这样它在宿主的
+  类型检查里是一个普通模块。打包时要把那条相对 import 换回裸名 `nextcowork/ui` 并标 external:
+  否则 widget.js 里会再装一份控件实现(连同第二份 Radix 状态),和 ui.css 对不上的那种。
+*/
+const uiExternal = {
+  name: 'ncw-widget-ui-external',
+  enforce: 'pre',
+  resolveId(source, importer) {
+    if (importer === undefined || !importer.startsWith(join(src, 'widget-kit'))) return null
+    const target = resolve(dirname(importer), source)
+    if (target === join(src, 'plugin-ui/ui') || target === join(src, 'plugin-ui/ui.ts')) {
+      return { id: 'nextcowork/ui', external: true }
+    }
+    return null
+  }
+}
+
 /** 一次 vite lib 构建。`external` 里的东西由 import map 在运行期给。 */
 async function bundle(entry, fileName, external) {
   await build({
     root,
     configFile: false,
     logLevel: 'warn',
-    plugins: [react(), tailwind(), i18nStub],
+    plugins: [react(), tailwind(), i18nStub, uiExternal],
+    /*
+      ★ Vite 的 lib 模式**不替换** `process.env.NODE_ENV`(它假设产物会再被使用方的打包器处理),
+      而这两份产物是直接下发给浏览器的 ESM:`ui.js` 里 framer-motion 的那一句
+      `process.env.NODE_ENV !== "production"` 一执行就是 `process is not defined`,
+      用 `nextcowork/ui` 的插件视图整页白屏(Electron 实测)。与上面 React 核的 define 同一个理由。
+    */
+    define: { 'process.env.NODE_ENV': '"production"' },
     build: {
       outDir: out,
       emptyOutDir: false,
@@ -183,7 +218,13 @@ const RESERVED = new Set(['default', 'do', 'if', 'in', 'for', 'new', 'var', 'let
 for (const { ns, spec, file } of REACT_MODULES) {
   const keys = Object.keys(requireCjs(spec)).filter((key) => /^[A-Za-z_$][\w$]*$/.test(key) && !RESERVED.has(key))
   const lines = [
-    `import { ${ns} as __ns } from './react-core.js'`,
+    /*
+      ★ 引的是 `./__react-core.js`,不是产物文件名 `./react-core.js`:门面文件经
+      `ncw-plugin://<id>/__react.js` 下发,相对路径解析到同一目录下,而协议层只按
+      `RUNTIME_FILES` 那张表(`__` 前缀)提供运行时文件。写成 `./react-core.js` 的症状是
+      React 写的插件视图一片空白,控制台只有一条 react-core.js 的 404(Electron 实测)。
+    */
+    `import { ${ns} as __ns } from './__react-core.js'`,
     ...keys.map((key) => `export const ${key} = __ns.${key}`),
     // `import React from 'react'` 拿到的就是 module.exports —— 和 CJS 下一致
     'export default __ns',
@@ -198,9 +239,15 @@ const runtimeExternals = ['react', 'react-dom', 'react-dom/client', 'react/jsx-r
 await bundle('plugin-ui/ui.ts', 'ui.js', runtimeExternals)
 await bundle('plugin-ui/view.tsx', 'view.js', runtimeExternals)
 
+// ── 3. TSX widget 的模块(`ncw-widget://shell/` 下发,见 net/widget-protocol.ts) ──
+const widgetExternals = [...runtimeExternals, 'nextcowork/ui']
+await bundle('widget-kit/index.tsx', 'widget.js', widgetExternals)
+await bundle('widget-kit/charts.tsx', 'charts.js', widgetExternals)
+await bundle('widget-kit/lucide.ts', 'lucide.js', widgetExternals)
+
 writeFileSync(stampFile, stamp)
 
-for (const file of ['react-core.js', 'react.js', 'react-dom.js', 'react-dom-client.js', 'jsx-runtime.js', 'jsx-dev-runtime.js', 'ui.js', 'ui.css', 'view.js']) {
+for (const file of ['react-core.js', 'react.js', 'react-dom.js', 'react-dom-client.js', 'jsx-runtime.js', 'jsx-dev-runtime.js', 'ui.js', 'ui.css', 'view.js', 'widget.js', 'charts.js', 'lucide.js']) {
   const path = join(out, file)
   if (!existsSync(path)) {
     // ★ 缺产物直接失败。让它悄悄通过的话,协议层会对每个视图 404,

@@ -169,6 +169,17 @@ describe('modelOptions', () => {
   it('空列表返回空数组,不返回 undefined', () => {
     expect(modelOptions([])).toEqual([])
   })
+
+  /** ★ 对话模型下拉只列文本模型 —— 图片模型选中了也发不出对话请求(见 modelOptions 里的注释) */
+  it('图片模型不进对话模型下拉(modality 与 imageOutput 两种标法都滤掉)', () => {
+    const imageByModality = { ...alias('gpt-image-2', 'a'), modality: 'image' as const }
+    const imageByCapability = {
+      ...alias('seedream-4', 'a'),
+      capabilities: { ...alias('seedream-4', 'a').capabilities, imageOutput: true }
+    }
+    expect(modelOptions([alias('gpt-6-astra', 'a'), imageByModality, imageByCapability]).map((o) => o.value))
+      .toEqual(['a/gpt-6-astra'])
+  })
 })
 
 describe('avatarInitial', () => {

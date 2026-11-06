@@ -30,6 +30,7 @@ import {
 } from '../shared/domain/shell'
 import type { EnvironmentLease, EnvironmentProcess, WorkspaceEnvironment } from './environment/contract'
 import { shellFor, shellVerbatimArguments } from './environment/shell'
+import type { DetachedProcess } from './kernel/host'
 import { stripAnsi } from './kernel/text'
 
 /** 一条已读走的输出缓冲。读取即清空，于是两次读之间不重不漏。 */
@@ -42,10 +43,21 @@ interface BackgroundEntry {
   info: BackgroundShellInfo
   stdout: Stream
   stderr: Stream
-  process: EnvironmentProcess
+  /**
+   * 给界面看的输出尾巴(stdout 与 stderr 按到达顺序交错)。
+   *
+   * ★ 与上面两条缓冲**分开记**:那两条是「读走即清空」,专为 `BashOutput` 的
+   * 「两次读之间不重不漏」服务。界面若也去读它们,就会把模型还没读到的输出吃掉 ——
+   * 模型下一次 `BashOutput` 什么都拿不到,而它会据此断定「服务没有任何输出」。
+   */
+  tail: string
+  process: AdoptableProcess
   /** 环境租约。★ 必须活到进程结束——SSH 连接空闲 60s 就会被回收，见 manager.ts。 */
   release: () => void
 }
+
+/** 收编只用得到这几样。前台转来的进程没有 stdin(它本来就是关着的)。 */
+type AdoptableProcess = Pick<EnvironmentProcess, 'stdout' | 'stderr' | 'exited' | 'kill'>
 
 function emptyStream(): Stream {
   return { buffer: '', dropped: false }
@@ -65,6 +77,9 @@ function append(stream: Stream, chunk: string): void {
   stream.dropped = true
 }
 
+/** 尾巴只留最后这么多字符。界面上只看最后几十行,不需要更多。 */
+const TAIL_CHARS = 8 * 1024
+
 /** 读走并清空。`filter` 是按**行**过滤的正则，调用方已经筛过 ReDoS。 */
 function take(stream: Stream, filter: RegExp | undefined): string {
   const text = stream.buffer
@@ -74,8 +89,8 @@ function take(stream: Stream, filter: RegExp | undefined): string {
 }
 
 export class AgentShells {
-  /** `runId\u0000callId` → 停止那一条前台命令。 */
-  private readonly foreground = new Map<string, { command: string; stop: () => void }>()
+  /** `runId\u0000callId` → 停止 / 转后台那一条前台命令。 */
+  private readonly foreground = new Map<string, { command: string; stop: () => void; detach?: () => void }>()
   private readonly background = new Map<string, BackgroundEntry>()
   /**
    * 发号器。★ **只增不复用**，哪怕那条 shell 已经被淘汰出表：
@@ -83,12 +98,40 @@ export class AgentShells {
    * 而两边都不会报错。
    */
   private sequence = 0
+  private readonly listeners = new Set<() => void>()
+
+  /**
+   * 后台列表变了(新开、退出、被杀、被淘汰)。返回退订函数。
+   *
+   * ★ 只说「变了」,不带增量:监听方(IPC 广播)每次发全量,丢过一次通知也能自己收敛。
+   * 输出增长**不**算变化 —— 一个刷日志的 dev server 每秒几十次,全量广播会被它淹没。
+   */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener()
+      } catch {
+        // 一个坏掉的监听方不能挡住进程状态本身的推进
+      }
+    }
+  }
 
   // ─────────────────────────── 前台 ───────────────────────────
 
-  hold(call: { runId: string; callId: string; command: string }, stop: () => void): () => void {
+  hold(
+    call: { runId: string; callId: string; command: string },
+    stop: () => void,
+    detach?: () => void
+  ): () => void {
     const key = `${call.runId}\u0000${call.callId}`
-    this.foreground.set(key, { command: call.command, stop })
+    this.foreground.set(key, { command: call.command, stop, ...(detach === undefined ? {} : { detach }) })
     return () => {
       this.foreground.delete(key)
     }
@@ -99,6 +142,21 @@ export class AgentShells {
     const entry = this.foreground.get(`${runId}\u0000${callId}`)
     if (entry === undefined) return false
     entry.stop()
+    return true
+  }
+
+  /**
+   * 把一条前台命令转去后台。返回「请求已发出」。
+   *
+   * ★ 后台名额满了就**当场拒绝**,而不是先转走再在收编时失败:那时进程已经
+   * 脱离了前台,收编失败只能杀掉它 —— 用户想要的是「别等了,让它跑着」,
+   * 拿到的却是「命令没了」。拒绝时前台照旧在等,什么都没坏。
+   */
+  detachCall(runId: string, callId: string): boolean {
+    const entry = this.foreground.get(`${runId}\u0000${callId}`)
+    if (entry?.detach === undefined) return false
+    if (this.runningCount() >= LIMITS.MAX_RUNNING) return false
+    entry.detach()
     return true
   }
 
@@ -119,7 +177,7 @@ export class AgentShells {
     callId: string
     workspaceId: string
     startedAt: number
-    process: EnvironmentProcess
+    process: AdoptableProcess
     release: () => void
   }): BackgroundShellInfo {
     const id = `bash_${String(++this.sequence)}`
@@ -137,6 +195,7 @@ export class AgentShells {
       },
       stdout: emptyStream(),
       stderr: emptyStream(),
+      tail: '',
       process: req.process,
       release: req.release
     }
@@ -152,10 +211,17 @@ export class AgentShells {
         代价:一条序列恰好被切在两个 data 事件之间时剥不干净(极少见,
         残留是几个可见字符,不会影响后续行)。
       */
-      source.on('data', (chunk: string) => append(stream, stripAnsi(chunk)))
+      source.on('data', (chunk: string) => {
+        const text = stripAnsi(chunk)
+        append(stream, text)
+        entry.tail = (entry.tail + text).slice(-TAIL_CHARS)
+      })
       // 进程被杀时管道会抛 EPIPE/ECONNRESET。它不是一个要上报的错误，
       // 而没有这个监听器的话 Node 会把它升级成 uncaughtException 打死主进程。
       source.on('error', () => {})
+      // 从前台转来的流是被显式 pause 过的(见 node-spawn 的 onDetach),挂监听不会让它
+      // 重新流动。对本来就在流动的流这是空操作。
+      source.resume()
     }
     pipe(req.process.stdout, entry.stdout)
     pipe(req.process.stderr, entry.stderr)
@@ -169,8 +235,10 @@ export class AgentShells {
       }
       entry.info.endedAt = Date.now()
       this.evict()
+      this.changed()
     })
     this.evict()
+    this.changed()
     return { ...entry.info }
   }
 
@@ -203,12 +271,23 @@ export class AgentShells {
       entry.info.status = 'killed'
       entry.info.endedAt = Date.now()
       entry.process.kill()
+      this.changed()
     }
     return { ...entry.info }
   }
 
   list(): BackgroundShellInfo[] {
     return [...this.background.values()].map((entry) => ({ ...entry.info }))
+  }
+
+  /**
+   * 界面看一眼输出尾巴。**不消费**模型那两条缓冲(理由见 `BackgroundEntry.tail`)。
+   * 找不到时返回 `undefined` 而不是 throw:界面上那条可能刚好被淘汰,这不是错误。
+   */
+  peek(id: string): { info: BackgroundShellInfo; output: string } | undefined {
+    const entry = this.background.get(id)
+    if (entry === undefined) return undefined
+    return { info: { ...entry.info }, output: entry.tail }
   }
 
   /**
@@ -228,6 +307,7 @@ export class AgentShells {
     }
     this.background.clear()
     this.foreground.clear()
+    this.changed()
   }
 
   /** 只淘汰**已结束**的，从最早结束的那条开始。还在跑的一律不动。 */
@@ -275,10 +355,10 @@ export function shellBridgeFor(deps: {
   retain: () => EnvironmentLease
   now: () => number
   shells?: AgentShells
-}): ShellBridge {
+}): ShellBridge<DetachedProcess> {
   const registry = deps.shells ?? agentShells
   return {
-    hold: (call, stop) => registry.hold(call, stop),
+    hold: (call, stop, detach) => registry.hold(call, stop, detach),
     start: async (req) => {
       if (registry.runningCount() >= LIMITS.MAX_RUNNING) {
         throw new Error(
@@ -315,6 +395,32 @@ export function shellBridgeFor(deps: {
     },
     read: (id, filter) => registry.read(id, filter === undefined ? undefined : new RegExp(filter)),
     kill: (id) => registry.kill(id),
-    list: () => registry.list()
+    list: () => registry.list(),
+    /*
+      ★ 只有本地环境给这一项。前台命令在本地走 `nodeSpawn`(它认 `detach`),
+      在 SSH 上走 `transport.exec` —— 那条路拿不出一个还活着的进程交给我们。
+      不给 = 卡片上不画「转后台」,而不是画一颗按下去没反应的按钮。
+    */
+    ...(deps.environment.remote ? {} : {
+      adopt: (req: Parameters<NonNullable<ShellBridge<DetachedProcess>['adopt']>>[0]): BackgroundShellInfo => {
+        const lease = deps.retain()
+        try {
+          return registry.adopt({
+            command: req.command,
+            ...(req.description === undefined ? {} : { description: req.description }),
+            cwd: req.cwd,
+            runId: req.runId,
+            callId: req.callId,
+            workspaceId: deps.workspaceId,
+            startedAt: deps.now(),
+            process: req.process,
+            release: lease.release
+          })
+        } catch (error) {
+          lease.release()
+          throw error
+        }
+      }
+    })
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button } from '../../components/ui/Button'
+import { Button } from '../../components/arc/button/button'
 import { Dialog } from '../../components/ui/Dialog'
 import { useI18n } from '../../i18n'
 import { quitConfirmed } from '../../services/app'
@@ -86,9 +86,9 @@ export function DocumentDialogs(): ReactNode {
   }
 
   return <Dialog open={confirmation !== null} title={t('document.confirmTitle')} description={t('document.confirmHint')} onClose={() => { if (!busy) close(false) }} footer={<>
-    <Button disabled={busy} onClick={() => close(false)}>{t('common.cancel')}</Button>
-    <Button variant="danger" disabled={busy} onClick={() => { if (confirmation) useDocumentsStore.getState().discard(confirmation.keys); close(true) }}>{t('document.discard')}</Button>
-    <Button variant="accent" disabled={busy} onClick={() => { void saveAll() }}>{t(busy ? 'document.saving' : 'document.saveAll')}</Button>
+    <Button type="button" variant="secondary" disabled={busy} onClick={() => close(false)}>{t('common.cancel')}</Button>
+    <Button type="button" variant="danger" disabled={busy} onClick={() => { if (confirmation) useDocumentsStore.getState().discard(confirmation.keys); close(true) }}>{t('document.discard')}</Button>
+    <Button type="button" variant="primary" disabled={busy} onClick={() => { void saveAll() }}>{t(busy ? 'document.saving' : 'document.saveAll')}</Button>
   </>}>
     <ul className="space-y-2">{confirmation?.keys.map((key) => {
       const entry = entries[key]

@@ -37,6 +37,15 @@ export type PluginTabTarget =
       open: PluginTabOpen
     }
   | { kind: 'browser'; url: string; open: PluginTabOpen }
+  | {
+      kind: 'terminal'
+      /** 主进程已经备好的启动 spec 的 id —— 渲染层 Tab 必须原样引用它,见 `tabs.ts` 的 `case 'terminal'` */
+      terminalId: string
+      /** 菜单是在哪个工作区点的 —— Tab 开在那个工作区,不开在「当前活动」的 */
+      workspaceId: string
+      /** `%key%` 去掉百分号之后的 l10n key 片段,渲染层拼 `plugin.<id>.<key>`;缺省回落「终端」 */
+      title?: string
+    }
 /*
   ★ **没有 `kind: 'view'`。** `contributes.views` 里 location 为 sidebar/panel 的
   视图这一版还打不开:它需要一种「挂一块插件自有 HTML、但**不绑定文件**」的

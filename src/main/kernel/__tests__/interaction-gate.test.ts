@@ -98,6 +98,22 @@ describe('InteractionGate', () => {
     expect(await result).toMatchObject({ action: 'request_revision', feedback: 'Add tests.' })
   })
 
+  it('workflow_approval:只收三种动作,要求修改必须带反馈', async () => {
+    const gate = new InteractionGate()
+    const handle = new RunHandle(req)
+    const result = gate.request(handle, {
+      kind: 'workflow_approval',
+      callId: 'call_1',
+      workflow: { title: 'W', nodes: [] }
+    }, 100)
+    const id = gate.list()[0]!.id
+    expect(() => gate.respond({ id, kind: 'workflow_approval', action: 'go' } as unknown as InteractionResponse)).toThrow('Invalid')
+    expect(() => gate.respond({ id, kind: 'workflow_approval', action: 'revise' })).toThrow('Invalid')
+    expect(() => gate.respond({ id, kind: 'workflow_approval', action: 'revise', feedback: '  ' })).toThrow('Invalid')
+    gate.respond({ id, kind: 'workflow_approval', action: 'revise', feedback: '加一个测试节点' })
+    expect(await result).toMatchObject({ action: 'revise', feedback: '加一个测试节点' })
+  })
+
   it('goal_proposal:approved 必须是布尔,不合格的整份退回', async () => {
     const gate = new InteractionGate()
     const handle = new RunHandle(req)

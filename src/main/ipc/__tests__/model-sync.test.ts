@@ -28,6 +28,27 @@ afterEach(() => {
 })
 
 describe('model metadata synchronization through IPC and runtime', () => {
+  it('recomputes read-only protocol metadata and strips renderer copies before saving', () => {
+    const [imported] = setAliases('relay', [glm.id])
+    const emit = vi.spyOn(windows, 'emitToAll')
+    expect(imported?.runtimeProtocol).toBe('openai-chat')
+    expect(getRouter().resolveModel(glm.id, 'relay')?.runtimeProtocol).toBe('openai-chat')
+    updateModel({ ...imported!, runtimeProtocol: 'anthropic', displayName: 'Renamed' })
+    expect(store.listAliases().find((row) => row.providerId === 'relay')).not.toHaveProperty('runtimeProtocol')
+    const provider = store.listProviders().find((row) => row.id === 'relay')!
+    upsertProvider({ ...provider, protocol: 'anthropic' })
+    const projected = listModels('relay')[0]!
+    expect(projected.runtimeProtocol).toBe('anthropic')
+    expect(getRouter().resolveModel(glm.id, 'relay')?.runtimeProtocol).toBe('anthropic')
+    expect(emit).toHaveBeenLastCalledWith('provider:changed', expect.objectContaining({
+      models: expect.arrayContaining([expect.objectContaining({ providerId: 'relay', runtimeProtocol: 'anthropic' })])
+    }))
+    updateModel({ ...projected, protocolOverride: 'openai-responses' })
+    expect(listModels('relay')[0]?.runtimeProtocol).toBe('openai-responses')
+    expect(getRouter().resolveModel(glm.id, 'relay')?.runtimeProtocol).toBe('openai-responses')
+    expect(store.listAliases().find((row) => row.providerId === 'relay')).not.toHaveProperty('runtimeProtocol')
+  })
+
   it('imports capabilities, limits, thinking and adapters, using the same resolved row for runtime', () => {
     const [model] = setAliases('relay', ['z-ai/GLM-5.3-Flash'])
     expect(model).toMatchObject({ thinkingConfig: glm.thinkingConfig, reasoningEfforts: ['low', 'high', 'max'],
@@ -84,6 +105,33 @@ describe('model metadata synchronization through IPC and runtime', () => {
       baseUrl: 'https://relay.invalid', credentialRef: '', priority: 0, enabled: true })
     const [row] = setAliases('anthropic-relay', ['claude-fable-5.1'])
     expect(row?.protocolOverride).toBeUndefined()
+  })
+
+  it('rejects an adaptive default Off without Off support and keeps the saved declaration', () => {
+    const [model] = setAliases('relay', ['claude-opus-5-5'])
+    expect(() => updateModel({ ...model!,
+      thinkingConfig: { ...model!.thinkingConfig!, defaultEnabled: false } })).toThrow(/配置无效/u)
+    expect(listModels('relay')[0]?.thinkingConfig?.defaultEnabled).toBe(true)
+  })
+
+  it('accepts default Off on an adaptive binding with confirmed Off support', () => {
+    const [model] = setAliases('relay', ['claude-opus-5'])
+    expect(updateModel({ ...model!,
+      thinkingConfig: { ...model!.thinkingConfig!, defaultEnabled: false } }).thinkingConfig)
+      .toMatchObject({ defaultEnabled: false, anthropicAdaptive: true })
+  })
+
+  it('clears the adaptive marker on save when the reasoning editor changes its mode or path', () => {
+    const [model] = setAliases('relay', ['claude-opus-5-5'])
+    for (const thinkingConfig of [
+      { ...model!.thinkingConfig!, anthropicAdaptive: undefined, parameterPath: 'reasoning_effort' },
+      { mode: 'budget' as const, defaultEnabled: true, defaultBudgetTokens: 4096,
+        parameterPath: 'thinking.budget_tokens', anthropicAdaptive: undefined }
+    ]) {
+      const saved = updateModel({ ...model!, thinkingConfig })
+      expect(saved.thinkingConfig?.anthropicAdaptive).toBeUndefined()
+      expect(saved.thinkingConfig?.parameterPath).toBe(thinkingConfig.parameterPath)
+    }
   })
 
   it('keeps effort parameter paths on save and rejects inconsistent supported/default efforts', () => {

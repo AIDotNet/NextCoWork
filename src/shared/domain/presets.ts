@@ -882,6 +882,109 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'probed'
   },
   {
+    id: 'requesty',
+    name: 'Requesty',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://router.requesty.ai/v1', true, true),
+      resp('https://router.requesty.ai/v1', true),
+      anth('https://router.requesty.ai')
+    ],
+    docsUrl: 'https://docs.requesty.ai',
+    apiKeyUrl: 'https://app.requesty.ai/api-keys',
+    suggestedModels: ['claude-fable-5.1', 'kimi-k3', 'glm-5.3'],
+    notes:
+      '模型 ID 可用 vendor/model 形式(如 openai/gpt-4o-mini),也可用托管路由的短名(如 claude-fable-5.1)。' +
+      '模型列表免鉴权就能拉,没填 key 也能先看有哪些模型。' +
+      '欧盟区把地址换成 router.eu.requesty.ai 即可,同一个 key 通用。',
+    verification: 'probed'
+  },
+  {
+    id: 'opper',
+    name: 'Opper',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.opper.ai/v3/compat', true),
+      resp('https://api.opper.ai/v3/compat', true),
+      anth('https://api.opper.ai/v3/compat')
+    ],
+    docsUrl: 'https://docs.opper.ai',
+    apiKeyUrl: 'https://platform.opper.ai',
+    suggestedModels: ['claude-fable-5-1', 'kimi-k3', 'glm-5.3'],
+    notes:
+      '模型 ID 用不带厂商前缀的池化短名(如 claude-sonnet-4-6),由 Opper 为每个请求选线路;' +
+      '写成 provider/model(如 anthropic/claude-sonnet-4-6)可固定一条线路。' +
+      '模型列表要先填 key 才能拉。服务托管在欧盟(AWS 斯德哥尔摩)。',
+    verification: 'probed'
+  },
+  {
+    id: 'api-route',
+    name: 'API Route',
+    category: 'aggregator',
+    endpoints: [oa('https://global.api-route.com/v1', true)],
+    docsUrl: 'https://www.api-route.com/docs/quickstart',
+    apiKeyUrl: 'https://www.api-route.com/api-keys',
+    suggestedModels: ['gpt-6.1-sol'],
+    notes:
+      '模型列表需要 API Key，可用模型取决于密钥的分组与权限。' +
+      '使用模型列表返回的完整 ID（如 gpt-6.1-sol），无需添加厂商前缀。',
+    verification: 'probed'
+  },
+  {
+    id: 'atlascloud',
+    name: 'Atlas Cloud',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.atlascloud.ai/v1', true, true),
+      resp('https://api.atlascloud.ai/v1', true),
+      anth('https://api.atlascloud.ai')
+    ],
+    docsUrl: 'https://www.atlascloud.ai/docs',
+    apiKeyUrl: 'https://console.atlascloud.ai/api-keys',
+    suggestedModels: ['deepseek-ai/deepseek-v4-flash', 'moonshotai/kimi-k3', 'zai-org/glm-5.2'],
+    notes:
+      '模型 ID 带厂商前缀(如 deepseek-ai/deepseek-v4-flash),请使用模型列表返回的完整 ID。' +
+      '模型列表免鉴权就能拉,没填 key 也能先看有哪些模型(因此列表能拉到不代表 key 有效)。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'documented'
+  },
+  {
+    id: 'cheaperinference',
+    name: 'Cheaper Inference',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.cheaperinference.com/v1', true),
+      resp('https://api.cheaperinference.com/v1', true),
+      anth('https://api.cheaperinference.com')
+    ],
+    docsUrl: 'https://cheaperinference.com/docs',
+    apiKeyUrl: 'https://cheaperinference.com/signup',
+    suggestedModels: ['gpt-5.4-mini', 'claude-sonnet-5', 'deepseek-v4-flash'],
+    notes:
+      '模型 ID 用不带厂商前缀的短名(如 gpt-5.4-mini、claude-sonnet-5),用模型列表返回的完整 ID 即可。' +
+      '模型列表要先填 key 才能拉。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'probed'
+  },
+  {
+    id: 'llmbuzz',
+    name: 'llm.buzz',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.llm.buzz/api/v1', true),
+      resp('https://api.llm.buzz/api/v1', true),
+      anth('https://api.llm.buzz/api')
+    ],
+    docsUrl: 'https://llm.buzz',
+    apiKeyUrl: 'https://app.llm.buzz',
+    suggestedModels: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4.1-flash'],
+    notes:
+      '模型 ID 带厂商前缀(如 openai/gpt-5.4-mini、anthropic/claude-sonnet-5),用模型列表返回的完整 ID 即可。' +
+      '模型列表要先填 key 才能拉。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'documented'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',

@@ -1,9 +1,10 @@
-import { cn } from '../../lib/cn'
+import { EmptyState as ArcEmptyState } from '../arc/empty-state/empty-state'
 
 /**
- * 空状态 —— 截图里出现了七八次,形状始终是「淡图标 + 一行主句 + 一行灰副句」
- * (「还没有开始对话」「暂无自定义 MCP 服务器」「没有找到匹配的文件」…)。
- * 副句常常是缺的,所以它是可选的。
+ * ★ **宿主代码不要用这个文件** —— 直接用 `components/arc/empty-state/empty-state`。
+ *
+ * 它只为插件 API(`nextcowork/ui` 的 `EmptyState`)保留旧签名:`hint` 可选,
+ * 对应 Arc 必填的 `description`。
  */
 export function EmptyState({
   icon,
@@ -18,17 +19,5 @@ export function EmptyState({
   action?: React.ReactNode
   className?: string
 }): React.ReactNode {
-  return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center gap-2 px-6 py-10 text-center',
-        className
-      )}
-    >
-      {icon !== undefined && <div className="text-fg-faint">{icon}</div>}
-      <p className="text-[13px] text-fg-muted">{title}</p>
-      {hint !== undefined && <p className="max-w-xs text-[12px] text-fg-faint">{hint}</p>}
-      {action}
-    </div>
-  )
+  return <ArcEmptyState icon={icon} title={title} description={hint ?? ''} action={action} className={className} />
 }

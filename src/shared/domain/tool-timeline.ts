@@ -10,6 +10,7 @@
  * 这里**不 import 任何 React**。组件只负责把这些函数的输出摆进版式。
  */
 import { durationOf } from '../agent/duration'
+import type { ThinkingStats } from '../agent/thinking-stats'
 import type { SubagentState, ToolCallState } from '../agent/transcript'
 import { presenterOf, type ToolShape } from './tool-presenter'
 
@@ -22,7 +23,8 @@ import { presenterOf, type ToolShape } from './tool-presenter'
  * 见 `groupKey` 的说明。
  */
 export type TimelineItem =
-  | { key: string; kind: 'thinking'; text: string; streaming: boolean }
+  /** `stats`:思考卡片的用时与 token 读数来源,见 `shared/agent/thinking-stats.ts`。缺席 = 不画读数。 */
+  | { key: string; kind: 'thinking'; text: string; streaming: boolean; stats?: ThinkingStats }
   | { key: string; kind: 'tool'; callId: string | undefined; name: string; input: unknown }
   | {
       key: string
@@ -227,6 +229,10 @@ export function groupTitle(
     orchestration: (c) => (c === 1 ? '调度了 1 项' : `调度了 ${String(c)} 项`),
     interaction: (c) => (c === 1 ? '等你表态 1 次' : `等你表态 ${String(c)} 次`),
     widget: (c) => (c === 1 ? '画了 1 张图' : `画了 ${String(c)} 张图`),
+    image: (c) => (c === 1 ? '生成了 1 次图片' : `生成了 ${String(c)} 次图片`),
+    video: (c) => (c === 1 ? '生成了 1 段视频' : `生成了 ${String(c)} 段视频`),
+    screenshot: (c) => (c === 1 ? '截取了 1 个页面' : `截取了 ${String(c)} 个页面`),
+    workflow: (c) => (c === 1 ? '运行了 1 个工作流' : `运行了 ${String(c)} 个工作流`),
     external: (c) => (c === 1 ? '调用了 1 个外部工具' : `调用了 ${String(c)} 个外部工具`)
   }
   return LABEL[shape](n)
@@ -295,7 +301,14 @@ export type RunOutcome = 'running' | 'ok' | 'error' | 'aborted'
 export interface WorkspaceDecision {
   /** 是否把过程段收进「工作区」外壳 */
   collapse: boolean
-  /** 收进去了,但默认展开(有失败时) */
+  /**
+   * 收进去之后是否默认展开。
+   *
+   * 需求：本轮正常结束就应该收起，让用户一眼看到结尾正文；曾经有过失败工具调用
+   * 不再是例外——之前「有失败就默认展开」会被后台任务（如更新检查抓取失败）
+   * 永久触发，表现为每次打开会话「用时」面板都是展开的，且看不出是渲染问题还是
+   * 真的出了状况。用户要看失败细节，点开工作区一次就行。
+   */
   defaultOpen: boolean
 }
 
@@ -311,17 +324,15 @@ export interface WorkspaceDecision {
 export function decideWorkspace({
   outcome,
   itemCount,
-  hasTrailingText,
-  errorCount
+  hasTrailingText
 }: {
   outcome: RunOutcome
   itemCount: number
   hasTrailingText: boolean
-  errorCount: number
 }): WorkspaceDecision {
   const collapse =
     outcome === 'ok' && hasTrailingText && itemCount >= WORKSPACE_MIN_ITEMS
-  return { collapse, defaultOpen: collapse && errorCount > 0 }
+  return { collapse, defaultOpen: false }
 }
 
 /**

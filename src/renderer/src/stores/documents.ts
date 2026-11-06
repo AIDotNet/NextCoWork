@@ -1,11 +1,22 @@
 import { create } from 'zustand'
 import type { WorkspaceFile, WorkspaceFileMutationRequest } from '../../../shared/domain/workspace-file'
 import type { TranslationKey } from '../i18n'
-import { readWorkspaceFile, workspaceFileErrorKey, writeWorkspaceFile } from '../services/workspace-files'
+import { announceWorkspaceFileChanged, readWorkspaceFile, workspaceFileErrorKey, writeWorkspaceFile } from '../services/workspace-files'
+import { pendingDocumentSave, pendingDocumentSaveAtPath, trackDocumentSave } from './document-saves'
 
 export interface DocumentDraft {
   workspaceId: string
   path: string
+  /**
+   * 这份**文档身份**的稳定 id。
+   *
+   * ★ 它就是保存回执的认领依据。`path` 不是身份:同一个路径上的文件可能已经
+   * 被删掉又重新建出来,而改名/移动又会让同一份文档换一个 key。按 path 认领的
+   * 话,「保存途中文件被改名」会让回执落到不存在的 key 上(状态永远卡在 saving),
+   * 「删除后重开同 path」会让旧回执清掉新文档的 saving、灌进一个过期的 revision ——
+   * 而这两件事都不报错。
+   */
+  requestId?: string
   file?: WorkspaceFile
   draft: string
   base: string
@@ -30,9 +41,21 @@ interface DocumentsState {
   edit: (workspaceId: string, path: string, content: string) => void
   setMode: (workspaceId: string, path: string, mode: DocumentDraft['mode']) => void
   save: (workspaceId: string, path: string) => Promise<boolean>
+  /** 保存这块草稿的**最后一次在途请求** —— 破坏性操作闸门等它落定(按路径,含已删条目)。 */
+  activeSave: (workspaceId: string, path: string) => Promise<boolean> | undefined
   discard: (keys: readonly string[]) => void
   release: (workspaceId: string, path?: string) => void
   applyMutation: (req: WorkspaceFileMutationRequest) => void
+}
+
+/**
+ * 一次「保存 / 读盘」请求的身份。**在 entry 创建时铸、跟着 entry 一起搬家。**
+ *
+ * 不能拿 path 当身份:同 path 关闭重开、或改名/移动让 path 变了,旧请求的回执
+ * 会落到一个不该属于它的 entry 上(见 `requestId` 的注释)。
+ */
+function newRequestId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 export const documentKey = (workspaceId: string, path: string): string => JSON.stringify([workspaceId, path])
@@ -72,28 +95,68 @@ function editedLineEndings(entry: DocumentDraft, next: string): string[] {
   ]
 }
 
-const saves = new Map<string, Promise<boolean>>()
-
 /**
  * 通知别处（比如聊天里的计划卡片）重读这个刚保存的文件。
  *
- * ★ 必须**在 save 的 try 之外**失败:派发通知失败和写盘失败是两件事。
- * 放在 try 里的话,`window` 不存在(非 DOM 环境)或监听方抛错,都会被那个
- * catch 吞掉,于是一次**已经成功写盘**的保存被报成失败 —— 用户会以为改动丢了。
+ * ★ 走传输层那一个派发点,不再自己 dispatch:两个模块各自 `new CustomEvent`
+ * 迟早会分叉,而分叉的表现是「只有某一条路径上的监听方收不到通知」。
+ * 传输层记录通知异常但不影响保存结果 —— 派发失败和写盘失败是两件事，
+ * 已经写进盘里的东西不能被一个监听方抛的错报成失败。
  */
 function notifyWorkspaceFileChanged(workspaceId: string, path: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.dispatchEvent(new CustomEvent('workspace-files-changed', { detail: { workspaceId, path } }))
-  } catch {
-    // 通知只是锦上添花,不参与保存结果的判定
+  announceWorkspaceFileChanged({ workspaceId, path, operation: 'save' })
+}
+
+/**
+ * 这个路径上**还在飞**的那次保存 —— 破坏性操作闸门用它。
+ *
+ * ★ 判据是 `(工作区, 路径)` 的索引,**不是遍历 entries**:条目可能在闸门被问到
+ * 之前就已经被 `applyMutation` 删掉了(删除 / 改名的调用点正是这里),而那次
+ * 写盘还在飞。靠 entries 找的话,「删除时等保存落定」会在条目删掉后变成空等 ——
+ * 而这时恰恰最需要等。
+ */
+function findSaveAt(state: DocumentsState, workspaceId: string, path: string): Promise<boolean> | undefined {
+  // 先看按路径登记的索引(即使条目已删)
+  const byPath = pendingDocumentSaveAtPath(workspaceId, path)
+  if (byPath !== undefined) return byPath
+  // 再兜一层:改名搬过家的条目,旧路径的请求仍在飞、记录还在旧路径上 —— 条目
+  // 自己带着新的 file.path,拿它反查同一次请求。
+  for (const entry of Object.values(state.entries)) {
+    if (entry.workspaceId !== workspaceId || !entry.saving) continue
+    if (entry.path === path || entry.file?.path === path) {
+      const tracked = pendingDocumentSave(entry.requestId ?? '')
+      if (tracked !== undefined) return tracked
+    }
   }
+  return undefined
 }
 
 export const useDocumentsStore = create<DocumentsState>((set, get) => {
   const patch = (key: string, value: Partial<DocumentDraft>): void => {
     const entry = get().entries[key]
     if (entry) set({ entries: { ...get().entries, [key]: { ...entry, ...value } } })
+  }
+
+  /**
+   * 回执落到**当前**这个 key 上的那份文档 —— 认领靠身份,不是路径。
+   *
+   * 拿 `requestId` 比对:改名/移动把它带着搬家,关闭重开则铸新的。于是
+   * 「保存途中被改名」的回执能找到搬过去的 entry,而「删除后重开同 path」
+   * 的旧回执发现身份对不上,什么都不动。
+   */
+  const settle = (key: string, requestId: string, value: Partial<DocumentDraft>): void => {
+    const entry = get().entries[key]
+    if (entry === undefined || entry.requestId !== requestId) return
+    set({ entries: { ...get().entries, [key]: { ...entry, ...value } } })
+  }
+
+  /** 同 `settle`,但键由一个箭头函数**当场**从最新状态里取 —— 兼容改名搬家的那一刻。 */
+  const settleByIdentity = (requestId: string, value: Partial<DocumentDraft> | ((entry: DocumentDraft) => Partial<DocumentDraft>)): void => {
+    for (const [key, entry] of Object.entries(get().entries)) {
+      if (entry.requestId !== requestId) continue
+      set({ entries: { ...get().entries, [key]: { ...entry, ...(typeof value === 'function' ? value(entry) : value) } } })
+      return
+    }
   }
 
   return {
@@ -103,16 +166,17 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => {
       const key = documentKey(workspaceId, path)
       const previous = get().entries[key]
       if (previous && (!force || previous.loading || previous.saving || isDocumentDirty(previous))) return
-      // The object identity is a request token: late reads cannot revive a closed or moved file.
-      const pending: DocumentDraft = { workspaceId, path, draft: '', base: '', bom: '', lineEnding: '\n', lineEndings: [], loading: true, saving: false, mode: previous?.mode ?? (previewFormat(path) ? 'preview' : 'source') }
+      // 同一路径上重来一次读盘 = 一次**全新**的请求:铸新身份,旧请求的回执
+      // (如果有)落到这里会因为对不上而被丢弃。
+      const requestId = newRequestId()
+      const pending: DocumentDraft = { workspaceId, path, requestId, draft: '', base: '', bom: '', lineEnding: '\n', lineEndings: [], loading: true, saving: false, mode: previous?.mode ?? (previewFormat(path) ? 'preview' : 'source') }
       set({ entries: { ...get().entries, [key]: pending } })
       try {
         const file = await readWorkspaceFile(workspaceId, path)
-        if (get().entries[key] !== pending) return
         const parsed = editableText(file.kind === 'text' ? file.content : '')
-        patch(key, { file, draft: parsed.text, base: parsed.text, bom: parsed.bom, lineEnding: parsed.lineEnding, lineEndings: parsed.lineEndings, loading: false })
+        settle(key, requestId, { file, draft: parsed.text, base: parsed.text, bom: parsed.bom, lineEnding: parsed.lineEnding, lineEndings: parsed.lineEndings, loading: false })
       } catch (error) {
-        if (get().entries[key] === pending) patch(key, { loading: false, error: workspaceFileErrorKey(error) })
+        settle(key, requestId, { loading: false, error: workspaceFileErrorKey(error) })
       }
     },
     edit(workspaceId, path, content) {
@@ -125,29 +189,46 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => {
     },
     save(workspaceId, path) {
       const key = documentKey(workspaceId, path)
-      const inFlight = saves.get(key)
-      if (inFlight) return inFlight
       const entry = get().entries[key]
-      if (!entry || entry.file?.kind !== 'text' || entry.loading) return Promise.resolve(false)
+      if (!entry) return Promise.resolve(false)
+      const identity = entry.requestId ?? key
+      const inFlight = pendingDocumentSave(identity)
+      if (inFlight !== undefined) return inFlight
+      if (entry.file?.kind !== 'text' || entry.loading) return Promise.resolve(false)
       if (!isDocumentDirty(entry)) return Promise.resolve(true)
       const revision = entry.file.revision
+      const savedDraft = entry.draft
       patch(key, { saving: true, error: undefined })
       const promise = (async (): Promise<boolean> => {
         try {
           const file = await writeWorkspaceFile({ workspaceId, path, content: serializeDraft(entry), revision })
-          // Keep any edits typed while the request was in flight.
-          patch(key, { file, base: entry.draft, saving: false })
+          /*
+            ★ 回执按 `requestId` 认领,不按路径。
+            - 文件名变了 → entry 搬到了新 key,这里跟过去;
+            - 文件被删并重开同一路径 → 那份文档是新身份,这里一个字都不动
+              (否则会把它的 saving 清掉、塞进一个过期的 revision);
+            - 保存途中又敲了字 → `draft` 原样留着,只把它标成新的 base。
+          */
+          settleByIdentity(identity, (doc) => ({
+            // 写下去的是请求发出那一刻的草案;文件随后被改名也只是换了路径,
+            // 内容不变 —— 所以新 base 一律是 `savedDraft`,期间新敲的字继续 dirty。
+            file: { ...file, path: doc.path },
+            base: savedDraft,
+            saving: false,
+            error: undefined
+          }))
           notifyWorkspaceFileChanged(workspaceId, path)
           return true
         } catch (error) {
-          patch(key, { saving: false, error: workspaceFileErrorKey(error) })
+          settleByIdentity(identity, { saving: false, error: workspaceFileErrorKey(error) })
           return false
-        } finally {
-          saves.delete(key)
         }
       })()
-      saves.set(key, promise)
+      trackDocumentSave(identity, { workspaceId, path }, promise)
       return promise
+    },
+    activeSave(workspaceId, path) {
+      return findSaveAt(get(), workspaceId, path)
     },
     discard(keys) {
       const entries = { ...get().entries }
@@ -196,8 +277,11 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => {
  */
 export async function confirmDocumentChanges(workspaceId?: string, path?: string): Promise<boolean> {
   const matches = (entry: DocumentDraft): boolean => (workspaceId === undefined || entry.workspaceId === workspaceId) && isWithinPath(entry.path, path)
-  const pending = Object.entries(useDocumentsStore.getState().entries).filter(([, entry]) => matches(entry) && entry.saving)
-  await Promise.all(pending.map(([key]) => saves.get(key)))
+  // ★ 等的是**身份**上挂着的那次保存,不是路径。保存途中文件被改名/移动之后,
+  //   请求记的还是旧 path —— 按路径找会漏掉它,于是「等保存落定」变成了空等。
+  await Promise.all(Object.values(useDocumentsStore.getState().entries)
+    .filter((entry) => matches(entry) && entry.saving)
+    .map((entry) => pendingDocumentSave(entry.requestId ?? '') ?? Promise.resolve(true)))
   const keys = Object.entries(useDocumentsStore.getState().entries).filter(([, entry]) => matches(entry) && isDocumentDirty(entry)).map(([key]) => key)
   if (keys.length > 0) {
     if (useDocumentsStore.getState().confirmation) return false

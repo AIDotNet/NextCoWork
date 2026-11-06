@@ -35,26 +35,31 @@
 import { AlertTriangle, Download, Puzzle } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { PluginMarketItem } from '../../../../../shared/plugin/market'
-import { Button } from '../../../components/ui/Button'
-import { EmptyState } from '../../../components/ui/EmptyState'
+import { Button } from '../../../components/arc/button/button'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { ProgressBar } from '../../../components/ui/ProgressBar'
 import { TextInput } from '../../../components/ui/TextInput'
 import { useI18n, type TranslationKey } from '../../../i18n'
 import { usePluginsStore, type PluginInstallProgress } from '../../../stores/plugins'
 import { PluginIcon } from './PluginIcon'
 import { PluginInstallDialog } from './PluginInstallDialog'
-import { installLabel, installRatio } from './install-progress'
+import { installLabel, installRatio } from '../../../lib/install-progress'
 
 export function PluginMarket(): ReactNode {
   const { t } = useI18n()
   const market = usePluginsStore((state) => state.market)
   const loading = usePluginsStore((state) => state.marketLoading)
   const marketError = usePluginsStore((state) => state.marketError)
+  const marketPage = usePluginsStore((state) => state.marketPage)
+  const marketHasNext = usePluginsStore((state) => state.marketHasNext)
   const loadMarket = usePluginsStore((state) => state.loadMarket)
   const installProgress = usePluginsStore((state) => state.installProgress)
   const installError = usePluginsStore((state) => state.installError)
   const catalog = usePluginsStore((state) => state.catalog)
   const [query, setQuery] = useState('')
+  const loadPage = (page: number): void => {
+    void loadMarket({ q: query, page })
+  }
   /*
     ★ 存**整条**而不是 slug。存 slug 的话,一次「刷新」把某个条目从列表里换掉,
     弹窗会当场变空 —— 而用户正在读的就是那一屏。列表是可变的,他手上这一份不是。
@@ -73,7 +78,7 @@ export function PluginMarket(): ReactNode {
           placeholder={t('plugins.marketSearch')}
           ariaLabel={t('plugins.marketSearch')}
         />
-        <Button size="sm" disabled={loading} onClick={() => { void loadMarket({ q: query }) }}>
+        <Button type="button" variant="secondary" size="sm" disabled={loading} onClick={() => { loadPage(1) }}>
           {t('common.refresh')}
         </Button>
       </div>
@@ -83,12 +88,12 @@ export function PluginMarket(): ReactNode {
           className="my-auto"
           icon={<AlertTriangle size={26} />}
           title={t('plugins.marketUnavailable')}
-          hint={t('plugins.marketUnavailableHint')}
+          description={t('plugins.marketUnavailableHint')}
         />
       ) : loading ? (
         <div className="py-14 text-center text-[13px] text-fg-faint">{t('common.loading')}</div>
       ) : market.length === 0 ? (
-        <EmptyState className="my-auto" icon={<Puzzle size={26} />} title={t('plugins.marketEmpty')} />
+        <EmptyState className="my-auto" icon={<Puzzle size={26} />} title={t('plugins.marketEmpty')} description="" />
       ) : (
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1">
           {/*
@@ -121,6 +126,18 @@ export function PluginMarket(): ReactNode {
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {marketError === null && (marketPage > 1 || marketHasNext) && (
+        <div className="mt-3 flex shrink-0 items-center justify-center gap-3 border-t border-hairline pt-3">
+          <Button type="button" variant="secondary" size="sm" disabled={loading || marketPage <= 1} onClick={() => { loadPage(marketPage - 1) }}>
+            {t('plugins.marketPreviousPage')}
+          </Button>
+          <span className="text-[12px] text-fg-muted tabular-nums">{t('plugins.marketPage', { page: marketPage })}</span>
+          <Button type="button" variant="secondary" size="sm" disabled={loading || !marketHasNext} onClick={() => { loadPage(marketPage + 1) }}>
+            {t('plugins.marketNextPage')}
+          </Button>
         </div>
       )}
 
@@ -238,14 +255,15 @@ function MarketCard({
         <div className="w-[120px] shrink-0">
           {progress === undefined ? (
             <Button
+              type="button"
               className="w-full"
               size="sm"
-              variant={installed ? 'ghost' : 'accent'}
+              variant={installed ? 'secondary' : 'primary'}
               disabled={installed}
-              icon={<Download size={13} />}
               /* ★ 这颗按钮**不直接开装**,它打开确认弹窗 —— 真正的安装在那一屏上 */
               onClick={onOpen}
             >
+              <Download size={13} />
               {installed ? t('plugins.installed') : t('plugins.install')}
             </Button>
           ) : (

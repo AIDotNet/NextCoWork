@@ -40,7 +40,13 @@ asarUnpack:
   - 'resources/**'
 npmRebuild: true
 electronFuses:
-  runAsNode: false
+  # ★ 必须保持 true。Windows 的 SSH 密码认证靠它:OpenSSH 只肯把 SSH_ASKPASS 指向一个
+  # exe(CreateProcess 起不了 .cmd/`#!` 脚本),所以 helper 只能是**同一个 exe 的 node
+  # 形态** —— 关掉这个 fuse,它会退回带 Chromium 的 GUI 形态,Chromium 往 stdout 写的
+  # 那个换行会被 OpenSSH 当成密码,表现为「密码明明是对的却一直认证失败」。
+  # 详见 src/main/environment/ssh/askpass.ts。`browser/headless.ts` 拉 Playwright 安装器
+  # 时同样以 node 形态起自己。
+  runAsNode: true
   enableCookieEncryption: true
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false

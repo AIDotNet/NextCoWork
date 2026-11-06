@@ -16,65 +16,43 @@
  * 子代理卡又浅一档,读起来就是「这个界面有点乱」,而没有任何一条单独的规则写错了。
  * 这正是那种不会有人当 bug 报、却谁都看得见的问题。
  *
- * 所以收敛成两个轴,别的都不给:
+ * 所以收敛成一处定义。**收敛这件事没变,变的是收敛到哪一套外观:**
  *
- *     tone   default | accent | danger    —— 这张卡**是什么性质**
- *     rail   accent  | danger  | 无        —— 左侧竖条,一个正交的强调位
+ * ★★ 需求(本次):转录里的过程块 —— 工具行、折叠组标题、深度思考、子代理卡、
+ * 工作区区块 —— 全部改成**文本风格**:不画描边、不画底色、不画左侧竖条,
+ * 层级只用**缩进 + 颜色 + 字号**表达。理由是这些块在一次长回复里会连着出现
+ * 二三十个,每个都镶一圈边、铺一层底色时,整屏读起来是「一列控件」,
+ * 而它们表达的其实是「模型这一路做了什么」——那是正文的注脚,不是卡片墙。
  *
- * 密度、圆角、底色不透明度不开放为参数。要的就是它们在所有调用点上一模一样;
- * 开一个口子,半年后就会长回七套。
+ * 于是 `tone` / `rail` / `dashed` 三个参数一并删掉,而不是留着让它们什么也不做:
+ * 留下按了没反应的开关,下一个人会以为自己传错了值(§5 不做防御式 UI)。
+ * **失败态因此只剩红字 + 红图标**(这是明确选定的方案),不再有红底和红竖条 ——
+ * 要恢复「左侧竖条」那档强调,得先想清楚它在无边框版式里靠什么立住,
+ * 不要直接把 `border-l-2` 加回来:没有外框的时候,一条孤零零的竖线会被读成缩进线。
  *
- * ★ 描边一律走 `border-stroke` 而**不是** `border-border` —— 那是两个 token,
- *   区别不在颜色而在「谁会改它」,`theme.css` 里 `--color-stroke` 那段有完整说明。
- *   一句话:`border` 受可读性护栏保护(输入框轮廓要够 3:1),卡片描边跟着它走的话,
- *   护栏一开每张卡就都镶上一圈中灰实线。
+ * 原先那两个轴(tone/rail)和它们的底色不透明度、`border-stroke` 而非
+ * `border-border` 的选择,都是为「有边框的卡片」服务的 —— 无边框之后这些
+ * 约束整体失效,所以连同常量一起删,而不是留着注释掉的死代码。
  */
 import { AnimatePresence, motion } from 'motion/react'
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 import { motionScale, useMotionLevel } from '../../theme/useMotionLevel'
 
-export type SurfaceTone = 'default' | 'accent' | 'danger'
-export type SurfaceRail = 'accent' | 'danger'
-
 /**
- * 三种性质各自的底色与描边。
+ * 缩进量 = 折叠箭头(13px) + 行内 gap(8px)。
  *
- * 底色统一压到 `/55`:转录区在图片主题下是**透明的**(见 `theme.css` 里
- * `.app-canvas::before` 那段 —— 壁纸就铺在这一层),实心底色会把壁纸整块挡掉。
- * 半透明让卡片浮在图上,同时在没有壁纸时和 `bg-surface-raised` 拉开一点层次。
+ * ★ 展开区和次级行都靠它和标题文字左对齐 —— 无边框之后,**这条缩进就是
+ * 「这几行属于上面那一行」的唯一视觉证据**。各调用点自己写 `pl-5`、`pl-3`
+ * 会让同一层级的块对不齐,而那种错位不会有人当 bug 报。
  */
-const TONE: Record<SurfaceTone, string> = {
-  default: 'border-stroke bg-surface-raised/55',
-  accent: 'border-accent/25 bg-accent/[0.045]',
-  danger: 'border-danger/35 bg-danger/[0.05]'
-}
-
-/**
- * 左侧竖条。
- *
- * ★ 统一用 `border-l-2`,不用「flex 里塞一个 `w-[2px]` 的 span」——
- *   后者要求外层必须是 flex,于是每个想要竖条的卡片都得为它改结构。
- *   改造前 ToolCallCard 用的是 span、SubagentNode 用的是 border-l,
- *   同一个视觉语言两套实现,正是上面那份清单的缩影。
- */
-const RAIL: Record<SurfaceRail, string> = {
-  accent: 'border-l-2 border-l-accent/70',
-  danger: 'border-l-2 border-l-danger'
-}
+export const SURFACE_INDENT = 'pl-[21px]'
 
 export function Surface({
-  tone = 'default',
-  rail,
-  dashed = false,
   className,
   children,
   ...rest
 }: {
-  tone?: SurfaceTone
-  rail?: SurfaceRail | undefined
-  /** 只给「这不是一张真的卡片,是一条回执」这类用 —— 目前只有后台子代理的汇报行 */
-  dashed?: boolean
   className?: string
   children: ReactNode
   // React 19 起 `ref` 就是一个普通 prop,跟着 `...rest` 一起落到 div 上 ——
@@ -85,13 +63,10 @@ export function Surface({
     <div
       {...rest}
       className={cn(
-        'overflow-hidden rounded-card border',
-        // 描边和底色的过渡:工具从 running 变 error 时整张卡换 tone,
-        // 硬切会在一屏十几行里显得「闪了一下」
-        'transition-[background-color,border-color] duration-200',
-        TONE[tone],
-        dashed && 'border-dashed',
-        rail !== undefined && RAIL[rail],
+        // 文字颜色的过渡:工具从 running 变 error 时整行换色,
+        // 硬切会在一屏十几行里显得「闪了一下」(这条是从有边框那版留下来的,
+        // 当时过渡的是底色和描边,现在过渡的是文字色,理由同一条)
+        'min-w-0 transition-colors duration-200',
         className
       )}
     >
@@ -101,10 +76,11 @@ export function Surface({
 }
 
 /**
- * 卡片**内部**的次级行(运行状态、错误摘要、汇报状态那几条)。
+ * 块**内部**的次级行(运行状态、错误摘要、汇报状态那几条)。
  *
- * 分隔线走 `hairline` 而不是 `stroke` —— 前者是「一张卡里面的横线」,
- * 后者是「一张卡的外轮廓」,两者在设计上本来就差一档亮度。
+ * ★ 原先靠一道 `border-t border-hairline` 把它和标题行分开;无边框之后
+ * 改成缩进对齐到标题文字下方 —— 没有这条缩进,次级行会读成「下一个块」,
+ * 而不是「上一行的补充」。
  */
 export function SurfaceRow({
   className,
@@ -118,7 +94,8 @@ export function SurfaceRow({
     <div
       {...rest}
       className={cn(
-        'flex items-center gap-2 border-t border-hairline px-3 py-2 text-[11.5px]',
+        'flex items-center gap-2 py-0.5 text-[11.5px]',
+        SURFACE_INDENT,
         className
       )}
     >
@@ -128,7 +105,7 @@ export function SurfaceRow({
 }
 
 /**
- * 卡片的展开区(工具详情、思考正文、汇报全文)。
+ * 块的展开区(工具详情、思考正文、汇报全文)。
  *
  * ★★ **这是这次「加动效」里唯一真正需要 Motion 的地方。**
  * 展开区的高度是内容决定的,事先不知道 —— CSS 没法从 0 过渡到一个未知值。
@@ -141,20 +118,17 @@ export function SurfaceRow({
  *
  * ★ padding 挂在**内层**。挂外层的话 `height: 0` 仍然留着上下内边距,
  *   收起后会剩一条几像素的空带。
+ *
+ * ★ 原先有一个 `divider` 参数控制展开区顶上那道分隔线(以及随之而来的内边距)。
+ *   改文本风格后不再画任何分隔线,那个参数没有剩下的语义,所以删掉;
+ *   缩进统一用 `SURFACE_INDENT`,调用点只补自己那份上下留白。
  */
 export function SurfaceReveal({
   open,
-  divider = true,
   className,
   children
 }: {
   open: boolean
-  /**
-   * 展开区顶上那道分隔线。默认有 —— 卡片是「标题行 + 展开区」两段式的时候需要它。
-   * 关掉是给**内边距已经在外壳上**的卡片用的(PlanPanel 就是这种):
-   * 那种卡片的展开区是正文的延续,不是第二个区段,再画一道线等于把它切成两半。
-   */
-  divider?: boolean
   className?: string
   children: ReactNode
 }): ReactNode {
@@ -177,10 +151,7 @@ export function SurfaceReveal({
           style={{ overflow: 'hidden' }}
         >
           <div
-            className={cn(
-              divider ? 'border-t border-hairline px-3 py-2' : 'pt-2',
-              className
-            )}
+            className={cn('pt-1 pb-1', SURFACE_INDENT, className)}
           >
             {children}
           </div>

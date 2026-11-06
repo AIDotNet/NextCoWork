@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '../../../shared/agent/message'
 import { assistantMessage, toolResultMessage, userMessage } from '../../../shared/agent/message'
 import type { AssembleInput, ReminderContext } from '../context-assembler'
-import { assemble, compactMessages, decorate, estimateTokens, withSummary } from '../context-assembler'
+import { assemble, decorate, estimateTokens } from '../context-assembler'
+import { messagesForModel } from '../../../shared/agent/compaction'
 
 /**
  * 注入进消息流的 `<system-reminder>`。
@@ -16,6 +17,21 @@ const NOW = Date.UTC(2026, 8, 4, 12, 0, 0)
 const PLAT = { os: 'darwin', osVersion: '25.6.0', shell: '/bin/zsh' }
 const TOOL = 'TodoWrite'
 const AGENTS = '这个仓库用 pnpm,不要用 npm。'
+
+/**
+ * 一条压缩边界消息(带 `compact_boundary` 块的 internal user 消息)。
+ * 多条用例要「压缩之后的那一份上下文」,而它的唯一判据是 `messagesForModel`。
+ */
+function boundary(id = 'c1'): AgentMessage {
+  return {
+    ...userMessage(id, [{ type: 'text', text: '这是之前对话的摘要…' }], NOW),
+    internal: true,
+    parts: [
+      { type: 'compact_boundary', trigger: 'auto', preTokens: 200_000, postTokens: 8_000, summary: '## 意图\n…' },
+      { type: 'text', text: '这是之前对话的摘要…' }
+    ]
+  }
+}
 
 function base(over: Partial<AssembleInput> = {}): AssembleInput {
   return {
@@ -185,26 +201,31 @@ describe('★ 上下文占用要把注入算进去', () => {
 describe('★ 压缩与摘要', () => {
   const ctx: ReminderContext = { projectInstructions: AGENTS, todoToolName: TOOL }
 
-  it('压缩之后 AGENTS.md 还在第一条 user 消息里', () => {
-    const messages = [ask('帮我改一下'), ...roundTrip(), ...roundTrip(), ask('继续')]
+  /**
+   * 压缩边界消息就是这个数组的第一条 —— 而 AGENTS.md 注入的规则是
+   * 「**当下这个数组里**第一条 user 消息」,不是「整段转录的第一条」。
+   * 破了的表现是:压过一次之后项目说明整段消失,而模型只会开始违反它,不会报错。
+   */
+  it('★ 压缩之后 AGENTS.md 还在第一条 user 消息里', () => {
+    const transcript = [ask('帮我改一下'), ...roundTrip(), boundary(), ask('继续')]
 
-    const out = decorate(compactMessages(messages, { keepRecent: 1 }), ctx)
+    const out = decorate(messagesForModel(transcript), ctx)
 
     expect(text(out[0] as AgentMessage)).toContain(AGENTS)
+    // 边界消息**必须**在这一份里(摘要正文住在它的 text 块上)
+    expect(out[0]?.id).toBe('c1')
   })
 
-  it('★ withSummary 往头部插一条之后,仍然只有一份 —— 规则是「当下这个数组里第一条」', () => {
-    const messages = withSummary([ask('帮我改一下')], '之前聊了 A 和 B', 's1', NOW)
-
-    const out = decorate(messages, { ...ctx, git: GIT })
+  it('★ 压缩之后仍然只有一份 —— 头块不会因为多了一条边界消息而重复', () => {
+    const out = decorate(messagesForModel([ask('帮我改一下'), boundary(), ask('继续')]), { ...ctx, git: GIT })
 
     expect(all(out).split('<system-reminder>').length - 1).toBe(2) // 头块 + 尾块,各一份
     expect(text(out[0] as AgentMessage)).toContain(AGENTS)
   })
 
   /**
-   * ★★ 摘要压缩会把切点之前的历史**整段移出上下文**(`projectContextWindow`),
-   * 而模型的进度表只住在那条 `TodoWrite` 调用里 —— 它落在被裁掉的那一侧时,
+   * ★★ 压缩会把边界之前的历史**整段移出上下文**(`messagesForModel`),
+   * 而模型的进度表只住在那条 `TodoWrite` 调用里 —— 它落在被切掉的那一侧时,
    * 尾块里的 todo 段会**静默消失**:界面上的 todo 面板照旧(它读的是转录),
    * 模型却从这一轮起当无事发生,多半会重新写一份把前面的进度抹掉。
    */
@@ -212,7 +233,7 @@ describe('★ 压缩与摘要', () => {
     // ★ 锚点靠 id 对上,所以这条尾巴必须有自己的 id(`ask()` 给的全是 'u1')
     const tail = userMessage('u-tail', [{ type: 'text', text: '继续' }], NOW)
     const transcript = [ask('帮我改一下'), ...todoCall('跑测试', '改文档'), tail]
-    // 投影:早期那一轮已经不在了(这正是摘要压缩之后的样子)
+    // 边界之后的那一段:早期那一轮已经不在了(这正是压缩之后的样子)
     const projected = [tail]
 
     expect(all(decorate(projected, { todoToolName: TOOL }))).not.toContain('跑测试')
@@ -238,12 +259,14 @@ describe('★ Plan 模式的计划文件', () => {
     )
   ]
 
-  it('★ 压缩把 EnterPlanMode 的输出清空之后,路径仍然到得了模型手里', () => {
+  it('★ 压缩切掉 EnterPlanMode 那一轮之后,路径仍然到得了模型手里', () => {
     /*
       这是「压缩之后写入被围栏拦下」的根因用例:路径原本只存在于那条 tool_result 里,
-      而 `compactMessages` 会把它整条换成占位符。状态块是每轮现算的,压缩动不了它。
+      而压缩之后它整条落在边界之前,不再发给模型。状态块是每轮现算的,压缩动不了它。
+      (原先这条钉的是机械压缩「把 tool_result 换成占位符」;机械压缩已删除,
+       切法变了,但要守的东西一模一样 —— 路径不能只活在历史里。)
     */
-    const compacted = compactMessages([ask('帮我做个方案'), ...entered(), ask('继续')], { keepRecent: 1 })
+    const compacted = messagesForModel([ask('帮我做个方案'), ...entered(), boundary(), ask('继续')])
     expect(all(compacted)).not.toContain(PLAN)
 
     const out = all(decorate(compacted, { planFile: PLAN }))

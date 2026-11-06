@@ -20,7 +20,9 @@ import type { TranscriptState } from '../../../../shared/agent/transcript'
 import type { ActiveGoal } from '../../../../shared/domain/goal'
 import { agentErrorText } from '../../i18n/agent'
 import { hasRun } from '../../../../shared/agent/transcript'
+import { isToolResultOnly } from '../../../../shared/agent/message'
 import type { ContextStatusPhase } from '../../../../shared/agent/context-management'
+import { compactBoundaryOf, lastCompactBoundaryIndex } from '../../../../shared/agent/compaction'
 import { activitySnapshotOf, whimsyBucketOf, type ActivitySnapshot } from '../../../../shared/domain/activity'
 import { contextPressure, type CurrentContextLimits } from './context-pressure'
 import { cn } from '../../lib/cn'
@@ -87,10 +89,16 @@ export function StatusLine({
   const { status, model, contextUsage, notice, contextStatus } = transcript
   // ★ 在 early return 之前调用 —— hooks 不能出现在条件分支后面。
   const whimsy = useWhimsy(running, activitySnapshotOf(transcript, waitingForResponse), locale)
-  const showCompacted = useFading(contextStatus?.phase === 'ready', contextStatus)
+  const showCompacted = useFading(contextStatus?.phase === 'compacted', contextStatus)
   // 还没发过消息的空会话没有「状态」可言 —— 参考实现在这一屏是一句问候加输入框,
   // 输入框上方什么都没有(截图 c6184031)。见 `hasRun` 说明为什么不能只看 status。
   if (!hasRun(transcript, running) && goal === undefined) return null
+  /*
+    回复被删光后只剩提问:没有任何一次「已完成」可言。`done` 是正常收尾的默认值,
+    此时再摆一句「已完成」是在给一个不存在的回复报状态。停止 / 出错仍照常显示。
+  */
+  if (!running && status === 'done' && goal === undefined && transcript.live.length === 0
+    && transcript.warning === undefined && endsWithUnansweredPrompt(transcript.messages)) return null
 
   /*
     ★ 重试 / 切换提示**压过**那句「正在等待回复…」,而不是并排再加一行:
@@ -108,23 +116,14 @@ export function StatusLine({
   const ratio = pressure?.ratio ?? 0
 
   /*
-    ★ **`fallback` 不是故障。** 它是默认配置下每一次自动压缩的正常结果
-    (没开实验摘要 → 走机械折叠)。按 danger 画的话,用户会把产品的正常行为
-    当成一串错误。真正出事的是 `error`:摘要请求挂了,这一轮按原历史发出去,
-    下一步很可能就是 400。两者必须是不同档位。
+    ★ **`failed` 不是熔断。** 它说的是「这一轮按原历史发出去了」,下一轮判据仍为真时
+    还会再压一次;而 `disabled` 是连续失败到上限后**不再自动重试**。
+    两者必须是不同档位 —— 合成一句的话,用户要么把一次可恢复的失败当成死局,
+    要么把死局当成又一次可以忽略的抖动。
   */
   const compaction = compactionLine({
     t, phase: contextStatus?.phase, showCompacted, compactError,
-    saved: savedTokens(transcript),
-    /*
-      需求:`exhausted` 那句(「已无可折叠的历史,请开启摘要压缩或另起会话」)
-      要求用户去做一件事,而**把窗口放开正是那件事之一**。用户在圆环里打开
-      「最大上下文」之后,这句话依据的那次判断已经不成立了,它却要挂到下一次
-      发送才回落 —— 表现为界面在催用户做一件他刚做完的事。所以窗口被改过、
-      且按新窗口重判已经不再接近上限时,不再说它。`fallback` / `error` 不受影响:
-      那两句是事后播报,说的是上一轮真的发生过什么。
-    */
-    windowResolved: pressure?.rescaled === true && !pressure.nearLimit
+    saved: savedTokens(transcript)
   })
 
   return (
@@ -155,6 +154,8 @@ export function StatusLine({
           色板里没有 warning 这一档,不为这一处新造一个 token。 */}
       <span role="status" className={cn('inline-flex items-center gap-1.5',
         noticeText !== undefined ? 'text-danger' : running && 'text-accent')}>
+        {/* 趣味词是几字即逝的短词，纯微光看不出在动，所以这里保留像素波加载图标
+            （见 AgentActivity 头注释）；思考块和工具状态只留文字微光 */}
         {running && <AgentActivityGrid />}
         {noticeText ?? (running && (waitingForResponse || status === 'running') ? (
           /*
@@ -275,51 +276,61 @@ function Dot(): ReactNode {
   return <span aria-hidden className="text-fg-faint/50">·</span>
 }
 
+/** 最后一条可见消息是用户提问(其后没有任何助手回复)。 */
+function endsWithUnansweredPrompt(messages: TranscriptState['messages']): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message === undefined || message.internal === true || isToolResultOnly(message)) continue
+    return message.role === 'user'
+  }
+  return false
+}
+
 /**
  * 压缩相位 → 状态行上的一句话。纯函数,好单测。
  *
  * 手动压缩的失败**压过**自动压缩的相位:用户刚刚亲手点了一下,
  * 他要看的是那一下的结果,而不是上一轮自动压缩留下的读数。
+ *
+ * ★ 原先还有 `fallback` / `exhausted` 两句,描述机械折叠「折叠了 / 折叠不动」。
+ * 机械压缩已随 Claude Code 式重写删除,两句一并删除;它们各自的语气理由
+ * (fallback 是正常结果不能按 danger 画、exhausted 必须可行动)保留在下面两句里:
+ * `failed` 是「这一轮按原历史发出去了」的事后播报,`disabled` 是熔断后唯一可行动的那句。
  */
 function compactionLine({
-  t, phase, showCompacted, compactError, saved, windowResolved = false
+  t, phase, showCompacted, compactError, saved
 }: {
   t: ReturnType<typeof useI18n>['t']
   phase: ContextStatusPhase | undefined
   showCompacted: boolean
   compactError?: string | null
   saved?: number
-  /** 窗口刚被放开,`exhausted` 那句要求的动作已经做过了 —— 见调用点。 */
-  windowResolved?: boolean
 }): { text: string; tone: 'danger' | 'accent' | 'muted'; spinner: boolean; detail?: string } | undefined {
   if (compactError !== undefined && compactError !== null && compactError !== '') {
     // 原始报错进 title:它常常是一整句上游错误,铺在状态行上会把这一行撑爆,
     // 但排查的时候又只有它有用。
-    return { text: t('chat.contextStatus.error'), tone: 'danger', spinner: false, detail: compactError }
+    return { text: t('chat.contextStatus.failed'), tone: 'danger', spinner: false, detail: compactError }
   }
   switch (phase) {
-    case 'preparing':
-      return { text: t('chat.contextStatus.preparing'), tone: 'accent', spinner: true }
-    case 'ready':
+    case 'compacting':
+      return { text: t('chat.contextStatus.compacting'), tone: 'accent', spinner: true }
+    case 'compacted':
       if (!showCompacted) return undefined
       return {
         text: saved === undefined
-          ? t('chat.contextStatus.ready')
-          : t('chat.contextStatus.readySaved', { saved }),
+          ? t('chat.contextStatus.compacted')
+          : t('chat.contextStatus.compactedSaved', { saved }),
         tone: 'muted', spinner: false
       }
-    case 'fallback':
-      return { text: t('chat.contextStatus.fallback'), tone: 'muted', spinner: false }
+    case 'failed':
+      return { text: t('chat.contextStatus.failed'), tone: 'danger', spinner: false }
     /*
-      ★ 用 danger 而不是 muted:这一句要求用户做一件事(开摘要压缩 / 换更大的窗口 /
-      另起会话),而机械压缩已经帮不上忙了。灰掉它等于把唯一一条可行动的提示
-      混进「已折叠较早的历史」那类事后播报里。
+      ★ 用 danger 而不是 muted:熔断之后自动压缩**不会再试**,占用只会继续涨,
+      而唯一有用的动作全在用户那边(/compact、换更大的窗口、另起会话)。
+      灰掉它等于把仅剩的一条可行动提示混进事后播报里。
     */
-    case 'exhausted':
-      if (windowResolved) return undefined
-      return { text: t('chat.contextStatus.exhausted'), tone: 'danger', spinner: false }
-    case 'error':
-      return { text: t('chat.contextStatus.error'), tone: 'danger', spinner: false }
+    case 'disabled':
+      return { text: t('chat.contextStatus.disabled'), tone: 'danger', spinner: false }
     default:
       return undefined
   }
@@ -328,16 +339,17 @@ function compactionLine({
 /**
  * 这一次压缩省下了多少 token。
  *
- * ★ **两边都有才算。** 检查点刚建出来时只有 `before`,`after` 要等下一次组装回填;
- * 那时候拿单边的数字去报「省下 N」就是编的。算不出来就退回不带数字那句。
+ * ★ 读的是转录里**最后一条压缩边界**自己带的前后读数 —— 边界就在消息流里,
+ * 不必再去另一张表按 `windowIndex` 找那条检查点(找不到就悄悄少一个数字)。
+ * ★ 前 ≤ 后就不说:那时候报「省下 N」是编的。
  */
 function savedTokens(transcript: TranscriptState): number | undefined {
-  const index = transcript.contextStatus?.windowIndex
-  if (index === undefined) return undefined
-  const checkpoint = transcript.contextCheckpoints.find((item) => item.windowIndex === index)
-  const { inputTokensBefore: before, inputTokensAfter: after } = checkpoint ?? {}
-  if (before === undefined || after === undefined || before <= after) return undefined
-  return before - after
+  const at = lastCompactBoundaryIndex(transcript.messages)
+  if (at < 0) return undefined
+  const message = transcript.messages[at]
+  const boundary = message === undefined ? undefined : compactBoundaryOf(message)
+  if (boundary === undefined || boundary.preTokens <= boundary.postTokens) return undefined
+  return boundary.preTokens - boundary.postTokens
 }
 
 /**

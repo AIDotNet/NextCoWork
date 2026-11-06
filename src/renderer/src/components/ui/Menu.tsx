@@ -27,7 +27,10 @@
  *
  * 仍然**不 portal** —— 上面那条 `.app-no-drag` 的理由没变,而 `fixed` 已经够用了。
  */
+import { motion, useReducedMotion } from 'motion/react'
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -45,6 +48,30 @@ import { usePresence } from '../../lib/usePresence'
 import { placeMenu, type Placement } from './menu-position'
 
 const MENU_MS = 180
+
+/**
+ * 悬停高亮:**一块**高亮在各行之间滑动,而不是每行各自亮一下(借自 beUI 的
+ * Context Menu「gliding active row」,https://beui.dev/components/motion/context-menu,MIT)。
+ * 用 motion 的 `layoutId` 做共享布局 —— 高亮只在 active 那一行里渲染,换行时由 motion 补间。
+ *
+ * ★ 默认值是 `null`:`MenuItem` 也被不在 `Menu` 面板里的地方用到(比如 portal 出来的二级菜单),
+ * 它们没有 provider,就退回原来每行自己 `hover:bg` 的写法,不会悄悄丢掉悬停反馈。
+ */
+type MenuHighlight = {
+  active: string | null
+  setActive: (id: string | null) => void
+  layoutId: string
+}
+const MenuHighlightContext = createContext<MenuHighlight | null>(null)
+
+/**
+ * 子菜单是 portal 出去的独立面板,React context 仍会穿过 portal 传进来 ——
+ * 不清掉的话,父菜单那块高亮会**飞过去**跟着子菜单里的行走。
+ * `Submenu` 用它包住自己的内容,子菜单里的行就退回逐行 hover。
+ */
+export function MenuHighlightReset({ children }: { children: ReactNode }): ReactNode {
+  return <MenuHighlightContext.Provider value={null}>{children}</MenuHighlightContext.Provider>
+}
 
 export function Menu({
   trigger,
@@ -105,6 +132,7 @@ export function Menu({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
+  const [activeItem, setActiveItem] = useState<string | null>(null)
 
   /*
     ★ `useLayoutEffect` 而不是 `useEffect`:它在**浏览器绘制之前**跑完,
@@ -162,6 +190,7 @@ export function Menu({
   }, [open, presence.mounted, width, align])
 
   useEffect(() => {
+    if (!open) setActiveItem(null)
     if (!open) return
     const onDown = (e: PointerEvent): void => {
       const target = e.target as Node
@@ -219,6 +248,7 @@ export function Menu({
           ref={panelRef}
           id={panelId}
           role="menu"
+          onPointerLeave={() => setActiveItem(null)}
           style={{
             width,
             top: pos?.top ?? 0,
@@ -228,8 +258,9 @@ export function Menu({
             visibility: pos === null ? 'hidden' : undefined
           }}
           className={cn(
-            'app-no-drag scroll-thin fixed z-50 overflow-y-auto rounded-card',
-            'border border-border bg-surface-raised p-1 shadow-2xl shadow-black/40',
+            'app-no-drag scroll-thin fixed z-50 overflow-y-auto rounded-[10px]',
+            align === 'end' ? 'origin-top-right' : 'origin-top-left',
+            'border-0 bg-surface-menu p-[5px] shadow-menu',
             'transition-[opacity,transform,translate,scale] duration-180 ease-panel motion-reduce:transition-none motion-reduce:transform-none motion-reduce:translate-y-0 motion-reduce:scale-100',
             presence.shown
               ? 'translate-y-0 scale-100 opacity-100'
@@ -237,10 +268,14 @@ export function Menu({
             panelClassName
           )}
         >
-          {children(() => {
-            setOpen(false)
-            onOpenChange?.(false)
-          })}
+          <MenuHighlightContext.Provider
+            value={{ active: activeItem, setActive: setActiveItem, layoutId: `${panelId}-highlight` }}
+          >
+            {children(() => {
+              setOpen(false)
+              onOpenChange?.(false)
+            })}
+          </MenuHighlightContext.Provider>
         </div>
       )}
     </div>
@@ -271,43 +306,98 @@ export function MenuItem({
   onHover?: () => void
   onSelect: () => void
 }): ReactNode {
+  const highlight = useContext(MenuHighlightContext)
+  const reduce = useReducedMotion() ?? false
+  const id = useId()
+  const gliding = highlight !== null
+  const lit = gliding && highlight.active === id && !disabled
+  const activate = (): void => {
+    if (!disabled) highlight?.setActive(id)
+  }
   return (
     <button
       ref={buttonRef}
       type="button"
       role="menuitem"
       disabled={disabled}
-      onPointerEnter={onHover}
+      onPointerEnter={() => {
+        activate()
+        onHover?.()
+      }}
+      onFocus={activate}
       onClick={onSelect}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-[7px] px-2.5 py-[7px] text-left text-[13px]',
-        'transition-colors hover:bg-tint-strong disabled:opacity-40 disabled:hover:bg-transparent',
-        danger ? 'text-danger' : 'text-fg'
+        'group/item relative flex w-full items-center gap-2 rounded-[5px] px-2 py-[3px] text-left text-[13px]',
+        'disabled:opacity-40',
+        // 苹果风格:选中行是强调色实底 + 白字(NSMenu)。
+        // 有 provider 时由那块滑动的高亮负责;没有时退回逐行 hover
+        !gliding && 'hover:bg-accent hover:text-accent-fg disabled:hover:bg-transparent',
+        lit ? 'text-accent-fg' : danger ? 'text-danger' : 'text-fg'
       )}
     >
-      {icon !== undefined && (
-        <span className={cn('shrink-0', danger ? 'text-danger' : 'text-accent-soft')}>{icon}</span>
+      {lit && (
+        <motion.span
+          aria-hidden
+          layoutId={highlight.layoutId}
+          className={cn('absolute inset-0 rounded-[5px]', danger ? 'bg-danger' : 'bg-accent')}
+          transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 38, mass: 0.6 }}
+        />
       )}
-      <span className="min-w-0 flex-1">
+      {icon !== undefined && (
+        <span
+          className={cn(
+            'relative shrink-0',
+            lit ? 'text-accent-fg' : danger ? 'text-danger' : 'text-fg-muted',
+            !gliding && 'group-hover/item:text-accent-fg'
+          )}
+        >
+          {icon}
+        </span>
+      )}
+      <span className="relative min-w-0 flex-1">
         <span className="block truncate">{children}</span>
         {description !== undefined && (
-          <span className="mt-0.5 block truncate text-[11px] text-fg-faint">{description}</span>
+          <span
+            className={cn(
+              'mt-0.5 block truncate text-[11px]',
+              lit ? 'text-accent-fg/80' : 'text-fg-faint',
+              !gliding && 'group-hover/item:text-accent-fg/80'
+            )}
+          >
+            {description}
+          </span>
         )}
       </span>
       {accelerator !== undefined && (
-        <kbd className="shrink-0 font-sans text-[11px] text-fg-faint">{accelerator}</kbd>
+        <kbd
+          className={cn(
+            'relative shrink-0 font-sans text-[12px]',
+            lit ? 'text-accent-fg/80' : 'text-fg-faint',
+            !gliding && 'group-hover/item:text-accent-fg/80'
+          )}
+        >
+          {accelerator}
+        </kbd>
       )}
       {checked !== undefined && (
-        <Check size={14} className={cn('shrink-0 text-accent', !checked && 'invisible')} />
+        <Check
+          size={14}
+          className={cn(
+            'relative shrink-0',
+            lit ? 'text-accent-fg' : 'text-accent',
+            !gliding && 'group-hover/item:text-accent-fg',
+            !checked && 'invisible'
+          )}
+        />
       )}
     </button>
   )
 }
 
 export function MenuSeparator(): ReactNode {
-  return <div role="separator" className="my-1 h-px bg-border" />
+  return <div role="separator" className="mx-2 my-[5px] h-px bg-fg/10" />
 }
 
 export function MenuLabel({ children }: { children: ReactNode }): ReactNode {
-  return <div className="px-2.5 pt-2 pb-1 text-[11px] text-fg-faint">{children}</div>
+  return <div className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold text-fg-faint">{children}</div>
 }

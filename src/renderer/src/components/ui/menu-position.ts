@@ -109,3 +109,43 @@ export function placeMenu(
 
   return { top, left, maxHeight, flipped }
 }
+
+/** 子菜单与父菜单那一行之间的横向空隙。比 `GAP` 小:它贴着父面板,不是贴着触发器 */
+const SIDE_GAP = 4
+/** 父面板的 `p-1`:子菜单上移这么多,第一项才和父菜单那一行对齐 */
+const PANEL_PADDING = 4
+
+export interface SubmenuPlacement {
+  top: number
+  left: number
+  maxHeight: number
+  /** 右边放不下,翻到了父菜单左侧 */
+  flipped: boolean
+}
+
+/**
+ * 二级菜单(文件树右键「打开方式 ›」)的落点:贴着父菜单那一行的右侧弹出,
+ * 第一项与那一行对齐。
+ *
+ * 需求:文件树在右侧面板里,右键菜单本身往往就贴着窗口右缘 —— 参考截图里
+ * 子菜单正是翻到**左侧**出现的。所以判据是「右边放得下就右边,否则左边」,
+ * 两边都放不下(窗口极窄)时夹回视口,宁可盖住父菜单也不要出屏。
+ *
+ * ★ 纵向只做「往上推」不做翻转:子菜单的第一项必须和触发它的那一行在同一高度,
+ *   否则鼠标从那一行横移过去会先扫过别的父菜单项、把子菜单切走。
+ */
+export function placeSubmenu(
+  anchor: TriggerRect,
+  panelHeight: number,
+  width: number,
+  viewport: { width: number; height: number }
+): SubmenuPlacement {
+  const maxHeight = Math.max(MIN_HEIGHT, viewport.height - EDGE * 2)
+  const height = Math.min(panelHeight, maxHeight)
+  const right = anchor.right + SIDE_GAP
+  const fitsRight = right + width <= viewport.width - EDGE
+  const wantedLeft = fitsRight ? right : anchor.left - SIDE_GAP - width
+  const left = clamp(wantedLeft, EDGE, Math.max(EDGE, viewport.width - width - EDGE))
+  const top = clamp(anchor.top - PANEL_PADDING, EDGE, Math.max(EDGE, viewport.height - height - EDGE))
+  return { top, left, maxHeight, flipped: !fitsRight }
+}

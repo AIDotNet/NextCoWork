@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  appendMention,
   hasMention,
   insertMention,
   isFilePath,
@@ -161,5 +162,27 @@ describe('skills in drafts', () => {
     expect(skillQueryAt('https://x/y', 10)).toBeNull()
     expect(skillQueryAt('/usr', 4)).toBeNull()
     expect(insertSkill('/data', { start: 0, end: 5 }, 'data-analysis').text).toBe('<skill name="data-analysis" /> ')
+  })
+})
+
+describe('appendMention', () => {
+  const file = { name: 'App.tsx', path: 'src/App.tsx' }
+
+  it('空草稿:只有引用和它后面那个空格', () => {
+    expect(appendMention('', file)).toBe('[App.tsx](src/App.tsx) ')
+  })
+
+  it('★ 草稿末尾不是空白时先补一个空格,引用不会和前一个字粘在一起', () => {
+    expect(appendMention('看下这个', file)).toBe('看下这个 [App.tsx](src/App.tsx) ')
+  })
+
+  it('末尾已经有空白 / 换行就不再补第二个', () => {
+    expect(appendMention('看下 ', file)).toBe('看下 [App.tsx](src/App.tsx) ')
+    expect(appendMention('看下\n', file)).toBe('看下\n[App.tsx](src/App.tsx) ')
+  })
+
+  it('追加进来的这段和 `@` 选中产出的是同一种引用 —— 输入框照样画成 chip', () => {
+    const segments = parseMentions(appendMention('看下', file))
+    expect(segments.some((segment) => segment.kind === 'mention' && segment.path === 'src/App.tsx')).toBe(true)
   })
 })

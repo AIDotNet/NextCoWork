@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PermissionMode } from '../../../shared/agent/permission'
 import { PERMISSION_MODES } from '../../../shared/agent/permission'
-import { TOOLS_NEEDING_NETWORK, evaluate, permissionFacts } from '../permission-gate'
+import { NETWORK_SWITCH_TOOLS, evaluate, permissionFacts } from '../permission-gate'
 import { builtinTools } from '../tool/builtin'
 
 /**
@@ -176,7 +176,7 @@ describe('PermissionGate · 拒绝的说辞', () => {
   })
 })
 
-describe('TOOLS_NEEDING_NETWORK', () => {
+describe('NETWORK_SWITCH_TOOLS', () => {
   /**
    * ★ 这条是**跨文件**的一致性检查。表里写错一个字(`webFetch` / `web_fetch`)
    * 的后果是:联网开关变成一个什么都不管的摆设,而所有单测照绿 ——
@@ -184,65 +184,52 @@ describe('TOOLS_NEEDING_NETWORK', () => {
    */
   it('★ 每一项都必须是真实注册了的 internalId', () => {
     const ids = new Set(builtinTools().map((t) => t.internalId))
-    for (const id of TOOLS_NEEDING_NETWORK) {
-      expect(ids, `TOOLS_NEEDING_NETWORK 里的 "${id}" 不是任何一个已注册工具的 internalId`).toContain(id)
+    for (const id of NETWORK_SWITCH_TOOLS) {
+      expect(ids, `NETWORK_SWITCH_TOOLS 里的 "${id}" 不是任何一个已注册工具的 internalId`).toContain(id)
     }
-  })
-
-  it('WebFetch 在表里', () => {
-    expect(TOOLS_NEEDING_NETWORK.has('WebFetch')).toBe(true)
   })
 
   it('文件类工具不在表里 —— 在的话联网开关会顺手把读文件也关掉', () => {
     for (const id of ['Read', 'Write', 'Edit', 'LS', 'Glob', 'Grep', 'Bash', 'TodoWrite']) {
-      expect(TOOLS_NEEDING_NETWORK.has(id), id).toBe(false)
+      expect(NETWORK_SWITCH_TOOLS.has(id), id).toBe(false)
     }
   })
 
   /**
-   * ★ 表和字段是**取或**的关系(见 `runtime.ts` 里那一行),所以它们不一致时
-   * 这道闸仍然是对的 —— 但那说明有一边写漏了,而漏的那一边可能是将来唯一被读的那边。
-   * 这条不是安全断言,是**一致性**断言,失败信息要说清该改哪一边。
-   */
-  it('★ 表里的每个内置工具,自己的 needsNetwork 字段也必须是 true', () => {
-    for (const t of builtinTools()) {
-      if (!TOOLS_NEEDING_NETWORK.has(t.internalId)) continue
-      expect(
-        t.needsNetwork,
-        `${t.internalId} 在 TOOLS_NEEDING_NETWORK 里,但它的 needsNetwork 字段是 false —— ` +
-          `请改工具那边的字段,别把这张下限表当成唯一的判定来源`
-      ).toBe(true)
-    }
-  })
-
-  /**
-   * ★ 这条用例的价值全在**失败的时候**:新加一个联网工具却忘了更新下限表,
-   * 它会在这里挡下来。所以断言写成「两边完全一致」,而不是「表里的都在」——
-   * 后者放得过「工具说自己联网、表里没有」这一半,而那一半才是会漏的那一半。
+   * ★★ 名单**精确等于**网页搜索 + 网页抓取两个 —— 用户的决定(见名单注释):
+   * 「联网搜索」开关只管这两个。原先它是出网工具的下限表(连浏览器、生图、可视化卡片
+   * 一起管),症状是「选好了生图模型,对话里却找不到工具」。
    *
-   * `Bash` **刻意不在这两边**:标它联网等于「关掉联网开关 = 关掉 Bash」,
-   * 而那不是那颗药丸上写的意思。curl 这条路由 `NETWORK_OFF` 在提示词层面拦。
+   * 写成全等而不是「包含」:往这张表里加名字 = 让开关多管一个工具,是一次**行为改变**,
+   * 必须改到这里、被人看一眼。反过来有人「顺手」把 `needsNetwork: true` 的工具
+   * 同步进来(回到旧的下限表语义),也会在这里红。
    */
-  it('★ 出网的内置工具 = 下限表 —— 加一个就得同时更新两边', () => {
-    const net = builtinTools()
-      .filter((t) => t.needsNetwork)
-      .map((t) => t.internalId)
-      .sort()
-    expect(net).toEqual([...TOOLS_NEEDING_NETWORK].sort())
-    expect(net).toEqual([
-      'WebFetch',
-      'browser_click',
-      'browser_cua_click',
-      'browser_cua_drag',
-      'browser_navigate',
-      'browser_open',
-      'browser_press',
-      'browser_select',
-      'browser_type',
-      // 它自己不出网,但它产出的 widget 会去拉 CDN —— 见 `TOOLS_NEEDING_NETWORK`
-      'visualize_show_widget',
-      'web_search'
-    ])
+  it('★★ 名单精确等于 WebFetch + web_search —— 其余出网工具不受这颗开关管', () => {
+    expect([...NETWORK_SWITCH_TOOLS].sort()).toEqual(['WebFetch', 'web_search'])
+  })
+
+  /**
+   * ★ 这两个工具自己的 `needsNetwork` 也必须是 true —— 字段现在只是事实描述,
+   * 但名单里的工具要是连「会出网」都没标,多半是名单指错了工具。
+   */
+  it('名单里的工具自己也标了 needsNetwork', () => {
+    for (const t of builtinTools()) {
+      if (!NETWORK_SWITCH_TOOLS.has(t.internalId)) continue
+      expect(t.needsNetwork, t.internalId).toBe(true)
+    }
+  })
+
+  /**
+   * 反向:生图、浏览器、可视化卡片**仍然**如实标着 `needsNetwork: true`(事实没变),
+   * 只是不在名单里 —— 钉住「字段是事实、名单是开关」这条分工,别有人为了让它们
+   * 不被拦而把字段改成 false(那会让将来按出网加管控时丢掉事实)。
+   */
+  it('出网但不受开关管的工具:字段照实为 true,名单里没有', () => {
+    for (const id of ['generate_image', 'browser_open', 'visualize_show_widget']) {
+      const t = builtinTools().find((x) => x.internalId === id)
+      expect(t?.needsNetwork, id).toBe(true)
+      expect(NETWORK_SWITCH_TOOLS.has(id), id).toBe(false)
+    }
   })
 })
 

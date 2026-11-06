@@ -1,18 +1,39 @@
 import type { WorkspaceFile, WorkspaceFileMutationRequest, WorkspaceFileMutationResult, WorkspaceFileWriteRequest, WorkspaceRecoveryListing } from '../../../shared/domain/workspace-file'
 import { WORKSPACE_FILE_ERROR_PREFIX } from '../../../shared/domain/workspace-file'
 import type { TranslationKey } from '../i18n'
-import { useDocumentsStore } from '../stores/documents'
-import { useTabsStore } from '../stores/tabs'
-import { useWindowStore } from '../stores/window'
 import { AgentErrorException, invoke } from './ipc'
 
+/**
+ * 文件变更的**广播载荷**。
+ *
+ * ★ 类型住在这里很别扭,但它是「两个模块共用一个形状」的唯一办法:
+ * 真正的落库/同步动作在 `actions/workspace-files.ts`,而这个文件是它引用的
+ * 传输层 —— 反过来由传输层去引动作层,就是这次要拆掉的那个环。
+ */
 export interface WorkspaceFilesChanged extends WorkspaceFileMutationResult {
   workspaceId: string
   operation: WorkspaceFileMutationRequest['operation'] | 'save'
 }
 
-function announce(detail: WorkspaceFilesChanged): void {
-  window.dispatchEvent(new CustomEvent('workspace-files-changed', { detail }))
+/**
+ * 一次文件变更落定后的通知。
+ *
+ * ★ **广播是传输层的事,不是 store 的事。** 转成动作层之后
+ * (`actions/workspace-files.ts`)如果有任何一处记得同步 store 却忘了广播,
+ * 症状是「文件树/聊天里的计划卡还挂着旧内容,重开一次才对」—— 而且只在
+ * 走了那一处的那条路上复现。把 dispatch 钉在这里,动作层只能整体调用,
+ * 分不开。派发失败和写盘失败是两件事：通知异常只记录，不传播给写入者，
+ * 已经写进盘里的东西不能被一个监听方抛的错报成失败。
+ */
+export function announceWorkspaceFileChanged(detail: WorkspaceFilesChanged): void {
+  if (typeof window === 'undefined') return
+  try {
+    const Event = window.CustomEvent ?? CustomEvent
+    window.dispatchEvent(new Event('workspace-files-changed', { detail }))
+  } catch (error) {
+    // 通知失败不是写盘失败，不能让调用方重放已完成的写入。
+    console.warn('[workspace-files] change notification failed', error)
+  }
 }
 
 export function readWorkspaceFile(workspaceId: string, path: string): Promise<WorkspaceFile> {
@@ -57,29 +78,16 @@ export function listWorkspaceRecovery(workspaceId: string): Promise<WorkspaceRec
 
 // 返回类型随契约放宽为 WorkspaceFile:base64(图片)支线返回 image 形状。
 // 存量文本调用方只读 revision / content,不受影响。
-export async function writeWorkspaceFile(req: WorkspaceFileWriteRequest): Promise<WorkspaceFile> {
-  const result = await invoke('workspace:writeFile', req)
-  announce({ workspaceId: req.workspaceId, path: req.path, operation: 'save' })
-  return result
+export function writeWorkspaceFile(req: WorkspaceFileWriteRequest): Promise<WorkspaceFile> {
+  return invoke('workspace:writeFile', req)
 }
 
-export async function mutateWorkspaceFile(req: WorkspaceFileMutationRequest): Promise<WorkspaceFileMutationResult> {
-  const result = await invoke('workspace:mutateFile', req)
-  const change = { ...req, ...result }
-  useDocumentsStore.getState().applyMutation(change)
-  useTabsStore.getState().applyFileMutation(change)
-  announce(change)
-  return result
+export function mutateWorkspaceFile(req: WorkspaceFileMutationRequest): Promise<WorkspaceFileMutationResult> {
+  return invoke('workspace:mutateFile', req)
 }
 
-export async function revealWorkspaceFile(workspaceId: string, path: string): Promise<void> {
-  const result = await invoke('workspace:revealFile', { workspaceId, path })
-  if (result?.remote) {
-    const window = useWindowStore.getState()
-    if (window.activeWorkspaceId !== workspaceId || window.pendingActivation !== null) return
-    useTabsStore.getState().open(workspaceId, 'files', 'right', { path: result.parent, title: result.name, selectedPath: result.path })
-    window.setRightPanelForWorkspace(workspaceId, true)
-  }
+export function revealWorkspaceFile(workspaceId: string, path: string): Promise<void | { remote: true; path: string; parent: string; name: string }> {
+  return invoke('workspace:revealFile', { workspaceId, path })
 }
 
 /** Never show raw filesystem/IPC errors as untranslated UI copy. */

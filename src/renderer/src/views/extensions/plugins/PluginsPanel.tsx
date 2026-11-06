@@ -15,10 +15,10 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { InstalledPlugin, PluginStatus } from '../../../../../shared/plugin/state'
 import type { PluginUpdate } from '../../../../../shared/plugin/market'
 import type { PluginPermission } from '../../../../../shared/plugin/permission'
-import { Button } from '../../../components/ui/Button'
-import { EmptyState } from '../../../components/ui/EmptyState'
-import { Segmented } from '../../../components/ui/Segmented'
-import { Toggle } from '../../../components/ui/Toggle'
+import { Button } from '../../../components/arc/button/button'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
+import { Switch } from '../../../components/arc/switch/switch'
 import { useI18n, type TranslationKey } from '../../../i18n'
 import { cn } from '../../../lib/cn'
 import { usePluginsStore } from '../../../stores/plugins'
@@ -116,11 +116,10 @@ export function PluginsPanel(): ReactNode {
             <h2 className="text-[14px] font-medium text-fg">{t('plugins.title')}</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-fg-faint">{t('plugins.description')}</p>
           </div>
-          <Segmented
+          <SegmentedControl
             className="ml-3"
-            size="sm"
             value={view}
-            onChange={setView}
+            onValueChange={(value) => setView(value as 'installed' | 'market')}
             label={t('plugins.title')}
             /* 顺序跟着默认值走 —— 让「第一个」和「进来看到的」是同一个 */
             options={[
@@ -129,18 +128,20 @@ export function PluginsPanel(): ReactNode {
             ]}
           />
           <Button
+            type="button"
             className="ml-auto"
             size="sm"
-            variant="ghost"
+            variant="secondary"
             disabled={checkingUpdates}
-            icon={<RefreshCw size={13} />}
             onClick={() => { void checkUpdates(true) }}
           >
+            <RefreshCw size={13} />
             {t('plugins.checkUpdates')}
           </Button>
           <Button
+            type="button"
             size="sm"
-            icon={<Package size={13} />}
+            variant="secondary"
             onClick={() => {
               setError(null)
               void install().catch((cause: unknown) => {
@@ -148,6 +149,7 @@ export function PluginsPanel(): ReactNode {
               })
             }}
           >
+            <Package size={13} />
             {t('plugins.install')}
           </Button>
         </div>
@@ -170,7 +172,7 @@ export function PluginsPanel(): ReactNode {
           <div className="mt-4 flex shrink-0 items-center gap-3 rounded-[10px] border border-accent/40 bg-accent/5 px-3 py-2 text-[12px] text-fg">
             <ArrowUpCircle size={14} className="shrink-0 text-accent" aria-hidden />
             <span className="min-w-0 flex-1">{t('plugins.updatesAvailable', { count: batchable.length })}</span>
-            <Button size="sm" variant="accent" disabled={updatingAll} onClick={() => { void updateAll() }}>
+            <Button type="button" variant="primary" size="sm" disabled={updatingAll} onClick={() => { void updateAll() }}>
               {updatingAll ? t('plugins.updating') : t('plugins.updateAll')}
             </Button>
           </div>
@@ -183,7 +185,7 @@ export function PluginsPanel(): ReactNode {
             className="my-auto"
             icon={<Puzzle size={26} />}
             title={t('plugins.empty')}
-            hint={t('plugins.emptyHint')}
+            description={t('plugins.emptyHint')}
           />
         ) : (
           <div className="mt-4 flex min-h-0 flex-1 gap-4">
@@ -262,10 +264,10 @@ function PluginDetail({ plugin, update }: { plugin: InstalledPlugin; update: Plu
           </p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{plugin.manifest.description}</p>
         </div>
-        <Toggle
+        <Switch
           checked={plugin.enabled}
-          onChange={() => { void setEnabled(plugin.id, !plugin.enabled) }}
-          label={plugin.enabled ? t('plugins.disable') : t('plugins.enable')}
+          onCheckedChange={() => { void setEnabled(plugin.id, !plugin.enabled) }}
+          aria-label={plugin.enabled ? t('plugins.disable') : t('plugins.enable')}
         />
       </div>
 
@@ -278,8 +280,9 @@ function PluginDetail({ plugin, update }: { plugin: InstalledPlugin; update: Plu
               {t('plugins.updateTo', { version: update.latestVersion })}
             </span>
             <Button
+              type="button"
               size="sm"
-              variant="accent"
+              variant="primary"
               disabled={updating}
               onClick={() => { void installFromMarket(update.slug, update.latestVersion).catch(() => undefined) }}
             >
@@ -310,11 +313,10 @@ function PluginDetail({ plugin, update }: { plugin: InstalledPlugin; update: Plu
         </div>
       )}
 
-      <Segmented
+      <SegmentedControl
         className="mt-4"
-        size="sm"
         value={tab}
-        onChange={setTab}
+        onValueChange={(value) => setTab(value as 'overview' | 'activity')}
         label={t('plugins.title')}
         options={[
           { value: 'overview', label: t('plugins.permissions') },
@@ -360,12 +362,13 @@ function PluginDetail({ plugin, update }: { plugin: InstalledPlugin; update: Plu
           )}
 
           <Button
+            type="button"
             className="mt-4"
             size="sm"
             variant="danger"
-            icon={<Trash2 size={13} />}
             onClick={() => { void uninstall(plugin.id) }}
           >
+            <Trash2 size={13} />
             {t('plugins.uninstall')}
           </Button>
         </>
@@ -424,7 +427,7 @@ function PermissionRow({
           )}
         </div>
       </div>
-      <Button size="sm" variant="ghost" onClick={granted ? onRevoke : onGrant}>
+      <Button type="button" variant="secondary" size="sm" onClick={granted ? onRevoke : onGrant}>
         {granted ? t('plugins.revoke') : t('plugins.grant')}
       </Button>
     </div>

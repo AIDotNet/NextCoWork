@@ -20,13 +20,28 @@
  * - 首行 `---`(容忍 BOM 和 CRLF),以单独一行 `---` 或 `...` 收尾
  * - 键 `^[A-Za-z_][A-Za-z0-9_-]*$`,不匹配的行**跳过不报错**
  * - 值:裸标量、`'...'` / `"..."`、`[a, b]` 流式序列、`- x` 块式序列
+ * - 块标量 `|`(字面)/ `>`(折叠),含截断指示 `-` / `+` 与缩进指示 `1`-`9`
+ * - **一层**嵌套 map,扁平成 `parent.child` 一个键(`metadata:` 下的 author / tags)
  * - `true` / `false` **保持字符串**,由 `fmBool` 统一 coerce
  *
  * ## 明确不支持,遇到就跳过并记入 `skipped`
  *
- * 嵌套 map、锚点别名(`&a` / `*a`)、块标量(`|` / `>`)、多文档(`---` 再开一段)。
+ * 两层以上的嵌套、锚点别名(`&a` / `*a`)、多文档(`---` 再开一段)。
  * ★ **行内 `#` 注释不剥离** —— Claude Code 自己的 description 里就带 `#`
  * (「用 `#` 开头的行是注释」这类说明),剥了会把语义从中间截断。
+ *
+ * ## 为什么块标量要认
+ *
+ * `description: |` 是官方 Skill 写多行说明最常见的形状。跳过它的代价不止「少一个
+ * 键」:`installSkillZip` 把 `skipped` 非空当**硬失败**(它不装一个自己读不全的包),
+ * 于是整包装不上,而用户只看到一句「SKILL.md frontmatter 无法识别」—— 从这句话
+ * 完全看不出问题出在 description 的写法上。
+ *
+ * ★ 产出仍然只有 `string | string[]` —— 块标量只是「一种换行写法」,一层嵌套只是
+ *   「一种键名写法」,都不引入新类型。上面那条「最坏结果是一个错误的字符串」的
+ *   保证原样成立,`metadata:` 这种纯元信息也不再连坐掉整个安装。
+ * ★ 写回去是双引号里的 `\n`,不是 `|`:往返后**内容**逐字相等,只有形状变了。
+ *   要真写回 `|`,得把截断与缩进指示一起往返,否则结尾换行会在存一次之后变样。
  *
  * ## `parseFrontmatter` 永不 throw
  *
@@ -49,6 +64,16 @@ const FM_VALUE_MAX = 4 * 1024
 const FM_LIST_MAX = 64
 
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/
+
+/**
+ * 块标量的头:`|` 或 `>`,后面可跟截断指示(`-` / `+`)和缩进指示(`1`-`9`),
+ * 两种顺序(`|2-` 与 `|-2`)都合法。
+ *
+ * ★ `needsQuote` 直接复用这个常量,不是抄一个形状近似的正则。两边一旦分叉,
+ *   就会有一个「裸值恰好长得像块标量头」的字符串被原样写出去、再读回来时
+ *   把后面几行吃掉 —— 往返契约就这么破了。
+ */
+const BLOCK_RE = /^([|>])(?:([-+])([1-9])?|([1-9])([-+])?)?$/
 
 /**
  * ★ 这三个键**必须显式拒绝**,不能只靠 `Object.create(null)`。
@@ -153,8 +178,10 @@ export function parseFrontmatter(src: string): Frontmatter {
   const acc = new Map<string, string | string[]>()
   /** 上一个「值为空」的键 —— 块式序列(`- x`)要挂到它上面 */
   let pendingListKey: string | null = null
-  /** 遇到块标量之后,吞掉它后面所有缩进行 */
-  let swallowIndented = false
+  /** 上一个「值为空」的**顶层**键 —— 缩进的 `k: v` 作为它的子键挂上去 */
+  let parentKey: string | null = null
+  /** 子层的缩进宽度,由第一个子键定下来。0 = 还没见过子键 */
+  let childIndent = 0
   let used = 0
   let overflowed = false
 
@@ -169,12 +196,7 @@ export function parseFrontmatter(src: string): Frontmatter {
     const indented = /^\s/.test(line)
     const t = line.trim()
 
-    if (t === '') {
-      swallowIndented = false
-      continue
-    }
-    if (swallowIndented && indented) continue
-    swallowIndented = false
+    if (t === '') continue
 
     // 整行注释:静默跳过。这是标准 YAML,跳过它不算「丢了东西」。
     if (t.startsWith('#')) continue
@@ -198,11 +220,27 @@ export function parseFrontmatter(src: string): Frontmatter {
       continue
     }
 
-    // ★ 有缩进而又不是列表项 —— 这是嵌套 map。跳过,不猜。
+    /*
+      ★ 有缩进而又不是列表项 —— 一层嵌套 map,扁平成 `parent.child` 收下。
+
+      只收**一层**,且值仍然只有 `string | string[]`:这样「最坏结果是一个错误的
+      字符串」的保证没有松动,而现实里的 SKILL.md 也只用到这一层(`metadata:` 下
+      挂 author / version / tags)。再深一层就跳过 —— 那种形状真需要时,该换的是
+      数据模型,不是在这里多猜一层。
+    */
+    const indent = indented ? line.length - line.trimStart().length : 0
     if (indented) {
-      skipped.push(`第 ${String(i + 1)} 行:不支持嵌套结构,已忽略`)
-      pendingListKey = null
-      continue
+      if (parentKey === null) {
+        skipped.push(`第 ${String(i + 1)} 行:缩进的行没有对应的父键,已忽略`)
+        pendingListKey = null
+        continue
+      }
+      if (childIndent === 0) childIndent = indent
+      if (indent !== childIndent) {
+        skipped.push(`第 ${String(i + 1)} 行:只支持一层嵌套,更深的层级已忽略`)
+        pendingListKey = null
+        continue
+      }
     }
 
     const colon = t.indexOf(':')
@@ -212,39 +250,77 @@ export function parseFrontmatter(src: string): Frontmatter {
       continue
     }
 
-    const key = t.slice(0, colon).trim()
+    const bare = t.slice(0, colon).trim()
     const rawValue = t.slice(colon + 1).trim()
     pendingListKey = null
+    if (!indented) {
+      parentKey = null
+      childIndent = 0
+    }
 
-    if (!KEY_RE.test(key)) {
-      skipped.push(`第 ${String(i + 1)} 行:键名 "${key}" 不合法,已忽略`)
+    if (!KEY_RE.test(bare)) {
+      skipped.push(`第 ${String(i + 1)} 行:键名 "${bare}" 不合法,已忽略`)
       continue
     }
-    if (FORBIDDEN_KEYS.has(key)) {
+    if (FORBIDDEN_KEYS.has(bare)) {
       // ★ 记下来而不是静默忽略:出现这个键几乎不可能是手滑
-      skipped.push(`键 "${key}" 出于安全原因被拒绝`)
+      skipped.push(`键 "${bare}" 出于安全原因被拒绝`)
       continue
     }
+    const key = indented && parentKey !== null ? `${parentKey}.${bare}` : bare
     if (!acc.has(key) && acc.size >= FM_KEYS_MAX) {
       skipped.push(`键的数量超过 ${String(FM_KEYS_MAX)} 个,"${key}" 及其后已丢弃`)
       continue
     }
+    // 父键先前按「空值」记了个占位;既然它下面挂着子键,它就是一张 map,不是空串。
+    if (indented && parentKey !== null && acc.get(parentKey) === '') acc.delete(parentKey)
 
-    // 锚点 / 别名 / 块标量:都不支持
+    // 锚点 / 别名:不支持(值已经没了,只能记一笔)
     if (rawValue.startsWith('&') || rawValue.startsWith('*')) {
       skipped.push(`"${key}":不支持锚点或别名,已忽略`)
       continue
     }
-    if (rawValue === '|' || rawValue === '>' || /^[|>][-+]?\d*$/.test(rawValue)) {
-      skipped.push(`"${key}":不支持块标量(| 或 >),已忽略`)
-      swallowIndented = true
+    const block = BLOCK_RE.exec(rawValue)
+    if (block !== null) {
+      const folded = block[1] === '>'
+      const chomp = block[2] ?? block[5] ?? ''
+      // 缩进指示是**相对父节点**的列数,所以要叠上键本身的缩进:顶层的 `|2` 是
+      // 第 2 列,`metadata:` 下某个子键的 `|2` 是第 4 列。0 = 没给,看第一行。
+      const digits = Number(block[3] ?? block[4] ?? 0)
+      let blockIndent = digits === 0 ? 0 : indent + digits
+      const collected: string[] = []
+      let j = i + 1
+      for (; j < end; j++) {
+        const next = lines[j] ?? ''
+        const blank = next.trim() === ''
+        if (!blank) {
+          const width = next.length - next.replace(/^[ \t]+/, '').length
+          // 缩进退回到键这一层(或更浅)= 块到此为止。★ 这一行不能计进 `used`,
+          // 也不能吃掉 —— 它归外层循环,下一轮还要当键值解析。
+          if (width <= indent) break
+          if (blockIndent !== 0 && width < blockIndent) break
+          if (blockIndent === 0) blockIndent = width
+        }
+        used += next.length + 1
+        if (used > FM_BLOCK_MAX) {
+          overflowed = true
+          break
+        }
+        collected.push(blank ? '' : next.slice(blockIndent))
+      }
+      i = j - 1
+      const text = folded ? foldLines(collected) : collected.join('\n')
+      acc.set(key, clampValue(chompBlock(text, chomp), key, skipped))
+      if (overflowed) break
       continue
     }
 
     if (rawValue === '') {
-      // 可能是块式序列的头,也可能是一个空值。先记成空串,`- x` 来了就转成列表。
+      // 可能是块式序列的头、一张嵌套 map 的头,也可能就是一个空值。先记成空串,
+      // `- x` 来了转成列表,缩进的 `k: v` 来了就把这个占位删掉。
       acc.set(key, '')
       pendingListKey = key
+      if (!indented) parentKey = key
       continue
     }
     if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
@@ -268,6 +344,45 @@ export function parseFrontmatter(src: string): Frontmatter {
   for (const [k, v] of acc) data[k] = v
 
   return { data: Object.freeze(data), body, skipped: Object.freeze(skipped) }
+}
+
+/**
+ * 折叠式(`>`)的换行规则,三条缺一不可:相邻非空行之间的换行折成一个空格;
+ * n 个空行变成 n 个换行;**更深缩进的行前后保持字面换行**。最后这条是段落里
+ * 夹一段代码/列表时唯一能让它不被揉成一行的办法。
+ */
+function foldLines(collected: readonly string[]): string {
+  let out = ''
+  let started = false
+  let breaks = 0
+  let previousDeeper = false
+  for (const line of collected) {
+    if (line.trim() === '') {
+      breaks++
+      continue
+    }
+    const deeper = /^[ \t]/.test(line)
+    if (!started) {
+      out = line
+      started = true
+    } else if (breaks > 0) {
+      out += '\n'.repeat(breaks) + line
+    } else {
+      out += (deeper || previousDeeper ? '\n' : ' ') + line
+    }
+    breaks = 0
+    previousDeeper = deeper
+  }
+  return started ? out + '\n'.repeat(breaks) : ''
+}
+
+/** 截断指示:`-` 去掉全部结尾换行,`+` 原样留着,缺省(clip)留一个。 */
+function chompBlock(text: string, chomp: string): string {
+  if (text.trim() === '') return ''
+  const content = `${text}\n`
+  if (chomp === '+') return content
+  if (chomp === '-') return content.replace(/\n+$/, '')
+  return content.replace(/\n+$/, '\n')
 }
 
 /** 削控制字符 + 限长。★ 值会直接进系统提示词,这两步都不能省。 */
@@ -337,7 +452,7 @@ export const FM_LIMITS = {
  * - 首尾有空白    → 解析时 `t.slice(colon + 1).trim()` 会削掉
  * - `[` … `]`     → 被当成流式序列
  * - `&` / `*` 开头 → 被当成锚点 / 别名并跳过
- * - `|` / `>` 形状 → 被当成块标量并跳过,还会吞掉后面的缩进行
+ * - `|` / `>` 形状 → 被当成块标量的头,会把后面的缩进行一起吃进来
  * - `- ` 开头      → 在块式列表的上下文里会被读成列表项
  * - 含换行或 tab   → 一行放不下,只能靠双引号里的 `\n` / `\t`
  * - `#` 开头       → 整行会被当成注释
@@ -353,7 +468,7 @@ function needsQuote(v: string): boolean {
   if (/[\n\t]/.test(v)) return true
   if (v.startsWith('[') && v.endsWith(']')) return true
   if (v.startsWith('&') || v.startsWith('*') || v.startsWith('#')) return true
-  if (v === '|' || v === '>' || /^[|>][-+]?\d*$/.test(v)) return true
+  if (BLOCK_RE.test(v)) return true
   if (v.startsWith('- ') || v === '-') return true
   return false
 }
@@ -372,6 +487,29 @@ function scalar(v: string): string {
   return needsQuote(v) ? quote(v) : v
 }
 
+/** 写一个键值对。`pad` 是缩进 —— 嵌套子键和它的列表项都要跟着缩。 */
+function emitEntry(name: string, value: string | string[] | undefined, pad: string, lines: string[]): void {
+  if (typeof value === 'string') {
+    lines.push(`${pad}${name}: ${scalar(value)}`)
+    return
+  }
+  if (!Array.isArray(value)) return
+  const items = value.slice(0, FM_LIST_MAX)
+  if (items.length === 0) {
+    // `[]` 能原样读回一个空数组（`parseFlowSeq` 把空串过滤掉了）。
+    lines.push(`${pad}${name}: []`)
+    return
+  }
+  // 流式序列按逗号切,所以只要有一项含逗号（或方括号、或首尾空白），整列退块式。
+  const flowSafe = items.every((s) => !/[,[\]]/.test(s) && s === s.trim() && s !== '' && !/[\n\t]/.test(s))
+  if (flowSafe) {
+    lines.push(`${pad}${name}: [${items.join(', ')}]`)
+    return
+  }
+  lines.push(`${pad}${name}:`)
+  for (const item of items) lines.push(`${pad}  - ${scalar(item)}`)
+}
+
 export interface SerializeOptions {
   /** 优先输出的键序;其余键按字母序跟在后面。 */
   order?: readonly string[]
@@ -384,7 +522,13 @@ export interface SerializeOptions {
  *   表单保存一次就丢一个字段,是那种当场看不出、三天后才发现的损坏。
  *
  * ★ **只输出这个解析器读得回来的子集**,照着它的限制写,而不是照着 YAML 规范写:
- *   不产出块标量、不产出嵌套、含逗号的列表退回块式(`parseFlowSeq` 是 `.split(',')`)。
+ *   不产出块标量(多行值走双引号里的 `\n`)、含逗号的列表退回块式
+ *   (`parseFlowSeq` 是 `.split(',')`)。
+ *
+ * ★ 带一个点的键(`metadata.author`)写回成一层嵌套 map,和解析时的扁平化互逆。
+ *   **不写回去就是真的丢**:编辑器读一次写一次,`metadata:` 整块会在用户只改了
+ *   description 的那一次保存里消失。同名的标量与 map 无法同时表示,此时 map 赢
+ *   (`metadata` 与 `metadata.author` 同在 → 只写后者)。
  *
  * ★ **正文紧贴着结束标记写,不额外空一行**。解析时 body 取的是结束标记的下一行起
  *   到结尾,所以 `---\n\nbody` 读回来的 body 自带一个前导换行 —— 如果这里再补一个
@@ -398,8 +542,17 @@ export function serializeFrontmatter(
   options?: SerializeOptions
 ): string {
   const order = options?.order ?? []
-  const keys = Object.keys(data)
-    .filter((k) => KEY_RE.test(k) && !FORBIDDEN_KEYS.has(k) && data[k] !== undefined)
+  const named = Object.keys(data).filter(
+    (k) =>
+      data[k] !== undefined &&
+      k.split('.').every((part) => KEY_RE.test(part) && !FORBIDDEN_KEYS.has(part)) &&
+      k.split('.').length <= 2
+  )
+  // 同名的标量与 map 不能同时写出去:`metadata: x` 后面再跟一个 `metadata:` 块,
+  // 读回来只会剩一个。map 赢 —— 标量那半是占位,子键才是内容。
+  const parents = new Set(named.filter((k) => k.includes('.')).map((k) => k.slice(0, k.indexOf('.'))))
+  const keys = named
+    .filter((k) => k.includes('.') || !parents.has(k))
     .sort((a, b) => {
       const ia = order.indexOf(a)
       const ib = order.indexOf(b)
@@ -410,27 +563,27 @@ export function serializeFrontmatter(
     })
 
   const lines: string[] = []
-  for (const key of keys.slice(0, FM_KEYS_MAX)) {
-    const value = data[key]
-    if (typeof value === 'string') {
-      lines.push(`${key}: ${scalar(value)}`)
+  const written = new Set<string>()
+  let count = 0
+  for (const key of keys) {
+    if (count >= FM_KEYS_MAX) break
+    if (!key.includes('.')) {
+      emitEntry(key, data[key], '', lines)
+      count++
       continue
     }
-    if (!Array.isArray(value)) continue
-    const items = value.slice(0, FM_LIST_MAX)
-    if (items.length === 0) {
-      // `[]` 能原样读回一个空数组（`parseFlowSeq` 把空串过滤掉了）。
-      lines.push(`${key}: []`)
-      continue
+    // 子键在排序后天然连成一片(都带同一个 `parent.` 前缀),整组在第一个子键
+    // 的位置一次写完 —— 否则父键会被写成两个 `metadata:` 块。
+    const parent = key.slice(0, key.indexOf('.'))
+    if (written.has(parent)) continue
+    written.add(parent)
+    lines.push(`${parent}:`)
+    for (const child of keys) {
+      if (count >= FM_KEYS_MAX) break
+      if (!child.startsWith(`${parent}.`)) continue
+      emitEntry(child.slice(parent.length + 1), data[child], '  ', lines)
+      count++
     }
-    // 流式序列按逗号切,所以只要有一项含逗号（或方括号、或首尾空白），整列退块式。
-    const flowSafe = items.every((s) => !/[,[\]]/.test(s) && s === s.trim() && s !== '' && !/[\n\t]/.test(s))
-    if (flowSafe) {
-      lines.push(`${key}: [${items.join(', ')}]`)
-      continue
-    }
-    lines.push(`${key}:`)
-    for (const item of items) lines.push(`  - ${scalar(item)}`)
   }
 
   const normalizedBody = body.replace(/\r\n?/g, '\n')

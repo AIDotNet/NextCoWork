@@ -258,6 +258,18 @@ describe('restoreGoal · 重载恢复', () => {
     expect(getActiveGoal(S)).toBeUndefined()
     expect(rig.commits).toHaveLength(0)
   })
+
+  it('★ 只在第一次读库,且优先走只含最后一条标记的 goalHistory —— 打开长会话不再解析整段转录', () => {
+    const history = vi.fn(() => [] as AgentMessage[])
+    const goalHistory = vi.fn(() => [assistantWith('a9', marker({ id: 'g9', createdAt: 9 }))])
+    installGoalHost({ now: () => Date.now(), history, goalHistory, commit: () => {}, exists: () => true, tokens: () => 0, log: () => {} })
+
+    expect(restoreGoal(S)).toMatchObject({ condition: CONDITION, origin: 'restored' })
+    restoreGoal(S)
+    restoreGoal(S)
+    expect(goalHistory).toHaveBeenCalledTimes(1)
+    expect(history).not.toHaveBeenCalled()
+  })
 })
 
 describe('handleTurnEnd · 判定接线', () => {

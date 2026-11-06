@@ -22,7 +22,7 @@
  */
 import { Search } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
 import { Spinner } from '../../../components/ui/Spinner'
 import { useI18n } from '../../../i18n'
 import { testBuiltinSearch } from '../../../services/websearch'
@@ -82,11 +82,13 @@ export function BuiltinSearchSection({ settings, patch }: Omit<SettingsPageProps
               />
             </div>
             <Button
+              type="button"
+              variant="secondary"
               size="sm"
-              icon={busy ? <Spinner size="xs" /> : <Search size={12} />}
               disabled={busy}
               onClick={test}
             >
+              {busy ? <Spinner size="xs" /> : <Search size={12} />}
               {busy ? t('connection.builtinSearch.testing') : t('connection.builtinSearch.test')}
             </Button>
           </div>

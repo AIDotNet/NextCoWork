@@ -24,7 +24,7 @@ import { avatarInitial } from './enabled-models'
 /** 两种尺寸对应两处既有几何:目录卡片 20px、列表与面板抬头 24px */
 const BOX = {
   sm: { box: 'size-5 rounded-[6px] text-[10px]', icon: 13 },
-  md: { box: 'size-6 rounded-[7px] text-[11px]', icon: 15 }
+  md: { box: 'size-6 rounded-[8px] text-[11px]', icon: 15 }
 } as const
 
 export function ProviderAvatar({

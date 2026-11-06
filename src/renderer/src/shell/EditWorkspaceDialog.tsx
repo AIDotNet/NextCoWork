@@ -18,11 +18,12 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { THINKING_LEVELS, type ThinkingLevel } from '../../../shared/agent/run-request'
 import { modelSelectionKey, parseModelSelectionKey } from '../../../shared/domain/model-selection'
 import type { Workspace } from '../../../shared/domain/workspace'
-import { Button } from '../components/ui/Button'
+import { Button } from '../components/arc/button/button'
 import { Dialog } from '../components/ui/Dialog'
-import { Segmented } from '../components/ui/Segmented'
+import SegmentedControl from '../components/arc/segmented-control/segmented-control'
 import { Select } from '../components/ui/Select'
 import { TextInput } from '../components/ui/TextInput'
+import { useChatModelGuard } from '../components/useChatModelGuard'
 import { useI18n } from '../i18n'
 import { updateWorkspace } from '../services/app'
 import { modelOptions } from '../settings/pages/model/enabled-models'
@@ -70,6 +71,21 @@ export function EditWorkspaceDialog({
   const [deleting, setDeleting] = useState(false)
   const [armDelete, setArmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /*
+    需求:工作区默认模型也只列文本模型,存量里选中了图片模型的在**打开选择器时**
+    校正成第一个文本模型并提示(见 `useChatModelGuard` 文件头;改的是这个弹窗的
+    草稿态,落盘仍走「保存」—— 那是这个弹窗一贯的语义)。
+  */
+  const guardChatModel = useChatModelGuard(
+    models,
+    providers,
+    { model, modelProviderId },
+    (nextModel, nextProviderId) => {
+      setModel(nextModel)
+      setModelProviderId(nextProviderId)
+    }
+  )
 
   /*
     需求：换一个工作区（或者弹窗整个关掉）都要把草稿和「已经按过一次删除」的
@@ -159,17 +175,18 @@ export function EditWorkspaceDialog({
       footer={
         <div className="flex w-full items-center justify-between">
           <Button
+            type="button"
             variant="danger"
             size="sm"
-            icon={<Trash2 size={13} />}
             disabled={deleting}
             onClick={() => { void remove() }}
           >
+            <Trash2 size={13} />
             {armDelete ? t('common.confirmDelete') : t('workspace.delete')}
           </Button>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={onClose}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="accent" disabled={saving || name.trim() === ''} onClick={() => { void save() }}>
+            <Button variant="secondary" type="button" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button type="button" size="sm" variant="primary" disabled={saving || name.trim() === ''} onClick={() => { void save() }}>
               {t('common.save')}
             </Button>
           </div>
@@ -205,18 +222,18 @@ export function EditWorkspaceDialog({
               options={modelOptionList}
               ariaLabel={t('workspace.defaultModel')}
               inModal
+              onOpenChange={guardChatModel}
               onValueChange={(value) => {
                 const selected = parseModelSelectionKey(value)
                 setModel(selected.alias)
                 setModelProviderId(selected.modelProviderId)
               }}
             />
-            <Segmented
+            <SegmentedControl
               label={t('workspace.thinkingLevel')}
-              size="sm"
               value={thinking}
               options={thinkingOptions}
-              onChange={setThinking}
+              onValueChange={(v) => setThinking(v as ThinkingLevel)}
               className="flex-wrap"
             />
           </div>

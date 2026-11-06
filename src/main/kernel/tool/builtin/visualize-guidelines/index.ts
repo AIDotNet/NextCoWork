@@ -27,6 +27,7 @@ import { UI_COMPONENTS } from './ui-components'
 import { COLOR_PALETTE } from './color-palette'
 import { CHARTS_CHART_JS } from './charts'
 import { DIAGRAM_TYPES } from './diagram-types'
+import { TSX_COMPONENTS } from './components'
 
 /**
  * 模块名清单 —— 顺序就是模型在 schema 里看到的枚举顺序,而顺序会影响它挑哪个,
@@ -40,7 +41,11 @@ import { DIAGRAM_TYPES } from './diagram-types'
  * `Record<GuidelineModule, …>`,所以漏一个模块、多一个不存在的模块都会在
  * 编译期报错。`index.test.ts` 再钉一遍顺序与段落的装配结果。
  */
-export const AVAILABLE_MODULES = ['diagram', 'mockup', 'interactive', 'chart', 'art'] as const
+/*
+  ★ `components` 排第一:它是 TSX 模式的规范,而 TSX 是交互类 widget 的首选写法 ——
+  模型看枚举时第一眼就该看到它。
+*/
+export const AVAILABLE_MODULES = ['components', 'diagram', 'mockup', 'interactive', 'chart', 'art'] as const
 
 export type GuidelineModule = (typeof AVAILABLE_MODULES)[number]
 
@@ -52,6 +57,8 @@ export type GuidelineModule = (typeof AVAILABLE_MODULES)[number]
  * 而表里每项的顺序不影响任何东西(装配时按请求顺序去重)。
  */
 const MODULE_SECTIONS: Record<GuidelineModule, readonly string[]> = {
+  // 只有自己这一段:TSX 的颜色、布局全走宿主组件与 CSS 变量,不需要 HTML 那套 class 规范
+  components: [TSX_COMPONENTS],
   diagram: [COLOR_PALETTE, SVG_SETUP, DIAGRAM_TYPES],
   mockup: [UI_COMPONENTS, COLOR_PALETTE],
   interactive: [UI_COMPONENTS, COLOR_PALETTE],
@@ -85,3 +92,4 @@ export { UI_COMPONENTS } from './ui-components'
 export { COLOR_PALETTE } from './color-palette'
 export { CHARTS_CHART_JS } from './charts'
 export { DIAGRAM_TYPES } from './diagram-types'
+export { TSX_COMPONENTS } from './components'

@@ -12,24 +12,35 @@
  * 历史账。所以这里只是求和,不做任何重算。
  */
 import { useI18n } from '../../../../i18n'
-import { EmptyState } from '../../../../components/ui/EmptyState'
+import { EmptyState } from '../../../../components/arc/empty-state/empty-state'
 import { formatCostMicros, formatNumber, formatPercent } from '../usage-format'
 import type { CostBreakdown } from '../usage-overview'
-import { seriesColor } from './colors'
+import { colorOf } from './colors'
 
-export function CostByModel({ breakdown }: { breakdown: CostBreakdown }): React.ReactNode {
+export function CostByModel({
+  breakdown,
+  colors
+}: {
+  breakdown: CostBreakdown
+  /**
+   * key → 颜色,和环形图 / 趋势图共用一张表(`modelColorMap`)。
+   * 原先这里按「本表内的序号」取色,而本表按金额排、环形图按 token 排 ——
+   * 同一个模型在两块面板里颜色不同。查不到的(不在前 N 名)给「其他」的灰。
+   */
+  colors: ReadonlyMap<string, string>
+}): React.ReactNode {
   const { t, locale } = useI18n()
 
   if (breakdown.groups.length === 0) {
     return (
       <EmptyState
         title={t('usage.cost.empty')}
-        hint={
+        description={
           breakdown.unpricedRequests > 0
             ? t('usage.cost.unpricedHint', {
                 count: formatNumber(breakdown.unpricedRequests, locale)
               })
-            : undefined
+            : ''
         }
       />
     )
@@ -47,30 +58,35 @@ export function CostByModel({ breakdown }: { breakdown: CostBreakdown }): React.
           </header>
 
           <ul className="space-y-1.5">
-            {group.rows.map((row, index) => (
+            {group.rows.map((row) => (
               <li key={row.key} className="min-w-0">
                 <div className="flex items-center gap-2 text-[11px]">
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: colorOf(colors, row.key) }}
+                  />
                   <span className="min-w-0 flex-1 truncate text-fg" title={row.label}>
                     {row.label}
                   </span>
-                  <span className="shrink-0 tabular-nums text-fg-muted">
-                    {formatNumber(row.requests, locale)}
+                  {/* 裸数字「2,610」看不出是请求数还是 token 数,带上单位 */}
+                  <span className="shrink-0 tabular-nums text-fg-faint">
+                    {t('usage.models.requests', { count: formatNumber(row.requests, locale) })}
                   </span>
-                  <span className="w-20 shrink-0 text-right tabular-nums text-fg">
+                  <span className="w-24 shrink-0 text-right tabular-nums text-fg">
                     {formatCostMicros(row.micros, group.currency, locale)}
                   </span>
-                  <span className="w-11 shrink-0 text-right tabular-nums text-fg-faint">
+                  <span className="w-12 shrink-0 text-right tabular-nums text-fg-faint">
                     {formatPercent(row.share, locale)}
                   </span>
                 </div>
                 {/* 占比条。宽度直接用 share,不再取 max 归一化 —— 这里比较的是
                     「占总花费多少」,不是「相对最贵的那个多少」 */}
-                <div className="mt-1 h-1 w-full overflow-hidden rounded-pill bg-tint">
+                <div className="mt-1 ml-4 h-[3px] overflow-hidden rounded-pill bg-tint">
                   <div
                     className="h-full rounded-pill"
                     style={{
                       width: `${Math.max(row.share * 100, row.micros > 0 ? 1.5 : 0)}%`,
-                      backgroundColor: seriesColor(index, group.rows.length)
+                      backgroundColor: colorOf(colors, row.key)
                     }}
                   />
                 </div>

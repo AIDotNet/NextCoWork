@@ -16,6 +16,7 @@
  * 1. CSP 里有 `'nonce-…'`(只靠 `'self'` 挡不住内联脚本被拒);
  * 2. 页面里的两段脚本带着**同一个** nonce(各生成各的等于没加)。
  */
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { handlePluginRequest } from '../protocol'
 
@@ -28,6 +29,29 @@ function resolverFor(id: string): (pluginId: string) => { root: string; main: st
 function nonceFromCsp(csp: string): string | null {
   return /'nonce-([^']+)'/.exec(csp)?.[1] ?? null
 }
+
+describe('文档会话垫片', () => {
+  it('forwards each documents method and its per-call scope through the actual runtime bridge', async () => {
+    const response = await handlePluginRequest(new Request('ncw-plugin://acme.demo/__runtime.js'), resolverFor('acme.demo'))
+    expect(response.status).toBe(200)
+    const requests: { method: string; params: unknown }[] = []
+    // 需求：执行实际生成的垫片而非只匹配源码，避免方法表有了却没有可调用的导出。
+    const runtime = runInNewContext(`${(await response.text()).replace(/^export \{[^\n]+\}\s*$/gm, '').replace(/^export /gm, '')}\n;documents`, {
+      __ncwPluginBridge: {
+        request: async (request: { id: number; method: string; params: unknown }) => {
+          requests.push(request)
+          return { id: request.id, ok: true, data: { received: request.params } }
+        }
+      }
+    }) as Record<string, (params: unknown) => Promise<unknown>>
+    const methods = { open: 'open', apply: 'apply', save: 'save', exportDocument: 'export', getState: 'getState', query: 'query', getOperation: 'getOperation', close: 'close' }
+    for (const [name, rpc] of Object.entries(methods)) {
+      const params = { sessionId: 'session', callId: `call-${name}` }
+      expect(await runtime[name]?.(params)).toEqual({ received: params })
+      expect(requests.at(-1)).toMatchObject({ method: `documents.${rpc}`, params })
+    }
+  })
+})
 
 describe('插件宿主页面的 CSP', () => {
   it('★ CSP 放行 nonce,页面里的两段内联脚本带的是同一个 nonce', async () => {

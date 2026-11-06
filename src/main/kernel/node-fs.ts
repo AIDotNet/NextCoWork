@@ -12,6 +12,7 @@
 import { promises as fsp } from 'node:fs'
 import { dirname } from 'node:path'
 import type { KernelFs } from './host'
+import { writeStreamToFile, type StreamSink, type StreamTarget } from './stream-write'
 
 /** 二进制探测的默认取样长度。够看清 ELF/PNG/zip 头和前几行文本,又不至于读大。 */
 const SNIFF_BYTES = 4096
@@ -23,7 +24,7 @@ export function nodeFs(): KernelFs {
     writeFile: (abs, content) => fsp.writeFile(abs, content, 'utf8'),
 
     /**
-     * ★ `withFileTypes` 之后**再逐项 stat**,而不是直接信 `d.isDirectory()`。
+     * ★ `withFileTypes` 之后**对软链再 stat**,而不是直接信 `d.isDirectory()`。
      *
      * `readdir` 给的是 lstat 语义:指向目录的软链会被报成「文件」,于是它在树里
      * 展不开、在 walk 里被当成叶子。`stat` 跟随软链,与 `resolveInWorkspace` 的
@@ -31,11 +32,17 @@ export function nodeFs(): KernelFs {
      *
      * 而 stat 会对**断掉的**软链抛错,所以那一项吞掉异常按文件处理:
      * 一个坏软链不该让整次列目录失败(`ipc/workspace.ts` 已经写下过这条教训)。
+     *
+     * 原先是**逐项**都 stat;现在只对软链 stat。非软链项的 lstat 与 stat 结果相同,
+     * 所以上面那条世界观不变,而 `Grep`/`Glob`/`@` 检索遍历一个两万文件的仓库
+     * 少掉两万次系统调用。文件系统报不出类型(DT_UNKNOWN)时 Node 自己会补 lstat,
+     * 仍落在「非软链可信、软链再 stat」这两条路径里。
      */
     async readDir(abs) {
       const raw = await fsp.readdir(abs, { withFileTypes: true })
       return Promise.all(
         raw.map(async (d) => {
+          if (!d.isSymbolicLink()) return { name: d.name, isDir: d.isDirectory() }
           try {
             const st = await fsp.stat(`${abs}/${d.name}`)
             return { name: d.name, isDir: st.isDirectory() }
@@ -95,6 +102,44 @@ export function nodeFs(): KernelFs {
       } catch {
         return false
       }
-    }
+    },
+
+    /**
+     * 需求:`SaveImage` 在本地工作区写图片字节。`exclusive` 映射到 `wx`,
+     * 让「不覆盖」由文件系统原子地判定,而不是先 exists 再写(两步之间可能被抢先)。
+     */
+    async writeBytes(abs, bytes, options = {}) {
+      await fsp.writeFile(abs, bytes, { flag: options.exclusive === true ? 'wx' : 'w', ...(options.mode === undefined ? {} : { mode: options.mode }) })
+    },
+
+    /**
+     * 需求:`SaveVideo` 把几十到几百兆的视频写进工作区(见 `host.ts` 上那段理由)。
+     * 本地这一份就是把 `fsp.open` 拿到的 FileHandle 包成 `StreamSink`。
+     */
+    writeStream: (abs, source, options, signal) =>
+      writeStreamToFile(localStreamTarget(), abs, source, options, signal)
+  }
+}
+
+/** 本地工作区的流式写目标 —— 逻辑在 `stream-write.ts`,这里只提供文件系统动作。 */
+function localStreamTarget(): StreamTarget {
+  return {
+    async openSink(path, exclusive, mode): Promise<StreamSink> {
+      const handle = await fsp.open(path, exclusive ? 'wx' : 'w', mode)
+      return {
+        write: async (chunk) => { await handle.write(chunk) },
+        sync: async () => { await handle.sync() },
+        close: async () => { await handle.close() }
+      }
+    },
+    rename: async (from, to, replace) => {
+      void replace
+      await fsp.rename(from, to)
+    },
+    unlink: (path) => fsp.unlink(path),
+    exists: async (path) => {
+      try { await fsp.stat(path); return true } catch { return false }
+    },
+    mkdirp: async (path) => { await fsp.mkdir(dirname(path), { recursive: true }) }
   }
 }

@@ -15,6 +15,7 @@
  * 底下一换,组词当场断掉 —— 打一半的中文会碎成拼音。
  */
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { parseMentions } from '../../../../shared/domain/file-mention'
 import { cn } from '../../lib/cn'
 import { caretOf, domDirty, placeCaret, readDraft, renderDraft, selectionOf, type DraftSelection } from './rich-draft'
 
@@ -24,6 +25,14 @@ export interface MentionInputHandle {
   replace: (text: string, caret: number) => void
   /** 菜单移走焦点后，仍能取回用户最后的输入选区。 */
   selection: () => DraftSelection | null
+  /**
+   * 在草稿**末尾**接上一段灰字(Tab 接受)。
+   *
+   * ★ 纯文本走 `execCommand('insertText')`:它是浏览器自己的一次编辑,进原生撤销栈,
+   *   ⌘Z 一下就回到接受之前。走 `replace` 的话整棵重画,撤销栈从此对不上 —— 那是
+   *   从 `@` 弹层选文件时的现状,对 chip 无可避免,对一段纯文字没有理由这样。
+   */
+  acceptGhost: (text: string) => void
 }
 
 export function MentionInput({
@@ -34,7 +43,9 @@ export function MentionInput({
   onPaste,
   onBlur,
   onComposing,
+  onFocus,
   placeholder,
+  ghost,
   metrics,
   handle,
   skillDescriptions,
@@ -55,7 +66,15 @@ export function MentionInput({
   onPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void
   onBlur: () => void
   onComposing: (composing: boolean) => void
-  placeholder: string
+  onFocus?: () => void
+  /** 空草稿时画在这里;Composer 用它显示「建议下一步」 */
+  placeholder: ReactNode
+  /**
+   * 非空草稿时接在文字后面的灰字(已经是显示用的文字)。
+   * ★ 画成根节点上的 `data-ghost` + CSS `::after`(见 theme.css):伪元素不是 DOM 节点,
+   *   `readDraft` / `domDirty` / 光标 / 撤销栈全都看不见它,组词也不会被它打断。
+   */
+  ghost?: string
   /** 内边距 / 字号 / 行高。与占位符共用,两者必须逐像素对齐 */
   metrics: string
   handle: RefObject<MentionInputHandle | null>
@@ -84,11 +103,43 @@ export function MentionInput({
     onChange(text, caret)
   }
 
+  function acceptGhost(text: string): void {
+    const el = root.current
+    if (el === null || text === '') return
+    const cur = shown.current ?? value
+    const chips = (t: string): number => parseMentions(t).filter((seg) => seg.kind !== 'text').length
+    // 会长出新 chip、带换行、或草稿以换行结尾(末尾那个 `<br>`)时,原生插入之后必然要重画,
+    // 撤销栈反正保不住 —— 直接走 apply,至少 DOM 和光标是一次摆对的
+    const native = typeof document.execCommand === 'function'
+      && !text.includes('\n') && !cur.endsWith('\n') && chips(cur + text) === chips(cur)
+    if (native) {
+      el.focus()
+      // ★ 空草稿里只有一个撑行高的 `<br>`:不先换成空文本节点的话,插入后 `domDirty`
+      //   判它是多余的 `<br>` → 重画 → 撤销栈丢失,而空草稿正是「建议下一步」唯一出现的地方
+      if (cur === '') el.replaceChildren(document.createTextNode(''))
+      placeCaret(el, cur.length)
+      try {
+        if (document.execCommand('insertText', false, text)) return
+      } catch {
+        // 落到下面的 apply
+      }
+    }
+    apply(cur + text, cur.length + text.length)
+    el.scrollTop = el.scrollHeight
+  }
+
   handle.current = {
     focus: () => root.current?.focus(),
     replace: apply,
-    selection: () => (root.current === null ? null : selectionOf(root.current)) ?? lastSelection.current
+    selection: () => (root.current === null ? null : selectionOf(root.current)) ?? lastSelection.current,
+    acceptGhost
   }
+
+  // ★ `writingsuggestions` 不在 @types/react 里;它关掉系统 / Chromium 自带的输入预测,
+  //   否则两层灰字会叠在一起(Chrome 124+、Safari 18+)
+  useEffect(() => {
+    root.current?.setAttribute('writingsuggestions', 'false')
+  }, [])
 
   /*
     外面把 `value` 换了(发送后清空、切会话、切换到另一个草稿)。
@@ -165,6 +216,8 @@ export function MentionInput({
       <div
         ref={root}
         data-testid="composer-input"
+        data-composer-input=""
+        data-ghost={value !== '' && ghost !== undefined && ghost !== '' ? ghost : undefined}
         contentEditable
         suppressContentEditableWarning
         role="combobox"
@@ -178,6 +231,7 @@ export function MentionInput({
           'scroll-thin selectable max-h-[280px] w-full cursor-text overflow-y-auto break-words whitespace-pre-wrap text-fg focus:outline-none'
         )}
         onInput={sync}
+        onFocus={() => onFocus?.()}
         onBlur={() => {
           const el = root.current
           if (el !== null) lastSelection.current = selectionOf(el) ?? lastSelection.current

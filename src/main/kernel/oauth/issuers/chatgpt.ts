@@ -7,7 +7,7 @@
  */
 import type { OAuthCredential } from '../../../../shared/domain/credential'
 import type { TransportContext, UpstreamTransport } from '../../upstream/transport'
-import { sessionUuid } from '../../upstream/transport'
+import { sessionUuid } from '../../upstream/ids'
 import type { OAuthIdentity, OAuthProviderSpec } from '../registry'
 import { decodeJwtPayload, record, str } from './shared'
 
@@ -20,6 +20,32 @@ import { decodeJwtPayload, record, str } from './shared'
  * 证据时才动,并且把实测结论和日期写在旁边。
  */
 const ORIGINATOR = 'codex_cli_rs'
+
+/**
+ * 需求:codex 这条线的**出站请求要自报成 Codex CLI**,UA 与 originator 同族 ——
+ * 在这之前业务请求发的是 `NextCoWork/<版本> (darwin; arm64)`,与 originator 自相矛盾。
+ *
+ * 实测依据(2026-09-27):npm `latest` 的 `@openai/codex` 是 **0.157.1** ——
+ * 从 registry 拉了 `0.157.1-darwin-arm64` 平台包,二进制里留有同族的
+ * `codex-doctor/0.157.1` 字面量,`codex_cli_rs` 仍在源码路径
+ * `login/src/auth/default_client.rs` 下,client id 未变。Codex 源码
+ * `codex-rs/login/src/auth/default_client.rs` 的 `get_codex_user_agent()` 拼的正是
+ * `{originator}/{CARGO_PKG_VERSION} (OS 版本; 架构) …`,版本格式与这里一致。
+ * 注:本机全局还装着 0.154.0 未升级,但 registry 上的 latest(0.157.1)才是
+ * 大多数用户真实在跑的版本,UA 跟后者。
+ *
+ * ★ 版本号写死一个**真实存在过的**值,理由同 `zcode.ts` 那条:编一个不存在的版本号
+ * 是在赌上游不做版本白名单,赌输了是一个不解释原因的 403。
+ *
+ * ★ 我们只发前段(`codex_cli_rs/<版本>`),**没有实测过**整串与前段的差别 ——
+ * 这是按用户口径定的。若上游开始拒,先补 OS/架构段,别去改 originator。
+ *
+ * 两处用它:业务请求(`transport.headers`,压过 `router.ts` 那行通用 UA)、
+ * OAuth 换 token 与刷新(`spec.oauthHeaders`)。授权 URL 那一跳是浏览器导航,
+ * **不带**它 —— 见 `kernel/user-agent.ts` 文件头那张表的第 1 行。
+ * 不满足会怎样:表现是 403 或被静默降级,而错误信息里不会出现 UA 一个字。
+ */
+const CODEX_USER_AGENT = 'codex_cli_rs/0.157.1'
 
 /**
  * ★ 这是 Codex CLI 的**公开** client id(public client + PKCE,没有 client_secret ——
@@ -108,6 +134,8 @@ function transport(cred: OAuthCredential, ctx: TransportContext): UpstreamTransp
       'chatgpt-account-id': cred.accountId,
       'openai-beta': 'responses=experimental',
       originator: ORIGINATOR,
+      // ★ 与 originator 同族;写在这里才会压过 router.ts 那行通用的 NextCoWork UA
+      'user-agent': CODEX_USER_AGENT,
       session_id: sessionUuid(ctx.sessionId)
     },
     /*
@@ -140,6 +168,13 @@ export const CHATGPT_OAUTH: OAuthProviderSpec = {
   label: 'ChatGPT',
   tokenUrl: 'https://auth.openai.com/oauth/token',
   clientId: CLIENT_ID,
+  /*
+    ★ 换 token 与第二天的刷新共用这一处 —— 只写进换码那一跳的私货头会漏掉刷新,
+    表现是「能登录、第二天刷新 403」,而错误信息里不会出现任何一个头的名字
+    (见 `registry.ts` 那个字段的注释,kimi / zcode 也是这么挂的)。
+    ★ 授权 URL 是浏览器导航,不吃这个对象 —— 那一跳继续保持浏览器 UA。
+  */
+  oauthHeaders: { 'user-agent': CODEX_USER_AGENT },
   scope: 'openid profile email offline_access',
   grant: {
     kind: 'authorization-code',

@@ -22,15 +22,16 @@ import {
   parseModelSelectionKey
 } from '../../../../../shared/domain/model-selection'
 import type { InvokeReq } from '../../../../../shared/ipc/contract'
-import { Button } from '../../../components/ui/Button'
+import { Button } from '../../../components/arc/button/button'
+import { useChatModelGuard } from '../../../components/useChatModelGuard'
 import { Dialog } from '../../../components/ui/Dialog'
-import { EmptyState } from '../../../components/ui/EmptyState'
+import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { NumberInput } from '../../../components/ui/NumberInput'
-import { Segmented } from '../../../components/ui/Segmented'
+import SegmentedControl from '../../../components/arc/segmented-control/segmented-control'
 import { Select } from '../../../components/ui/Select'
 import { TextArea } from '../../../components/ui/TextArea'
 import { TextInput } from '../../../components/ui/TextInput'
-import { Toggle } from '../../../components/ui/Toggle'
+import { Switch } from '../../../components/arc/switch/switch'
 import { useI18n } from '../../../i18n'
 import { modelOptions } from '../../../settings/pages/model/enabled-models'
 import {
@@ -93,6 +94,26 @@ export function HooksPanel(): ReactNode {
    * 那正是「预览」这个词最坏的一种失效方式。
    */
   const [testResult, setTestResult] = useState<HookRunReport | null>(null)
+
+  /*
+    需求:prompt 型钩子的模型选择器只列文本模型,存量钩子里钉着图片模型的在
+    **打开选择器时**校正成第一个文本模型并提示(见 `useChatModelGuard` 文件头;
+    改的是编辑草稿,落盘仍走「保存」)。
+  */
+  const guardChatModel = useChatModelGuard(
+    models,
+    providers,
+    {
+      model: editing?.draft.model ?? '',
+      modelProviderId: editing?.draft.modelProviderId.trim() === ''
+        ? undefined
+        : editing?.draft.modelProviderId
+    },
+    (model, modelProviderId) => {
+      if (editing === null) return
+      setEditing({ ...editing, draft: { ...editing.draft, model, modelProviderId } })
+    }
+  )
 
   useEffect(() => {
     if (!modelsLoaded) void loadModels()
@@ -202,15 +223,16 @@ export function HooksPanel(): ReactNode {
       <div className="flex shrink-0 items-center gap-2 px-4 py-2">
         <span className="text-[12px] text-fg-faint">{t('hooks.runNote')}</span>
         <Button
+          type="button"
+          variant="primary"
           size="sm"
-          variant="accent"
-          icon={<Plus size={13} />}
           className="ml-auto"
           onClick={() => {
             setTestResult(null)
             setEditing({ draft: emptyHookDraft('PreToolUse'), scope: workspaceId === null ? 'global' : 'project' })
           }}
         >
+          <Plus size={13} />
           {t('ext.new')}
         </Button>
       </div>
@@ -225,7 +247,7 @@ export function HooksPanel(): ReactNode {
 
       {rows.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <EmptyState icon={<Webhook size={26} />} title={t('ext.hooks.empty')} hint={t('ext.hooks.emptyHint')} />
+          <EmptyState icon={<Webhook size={26} />} title={t('ext.hooks.empty')} description={t('ext.hooks.emptyHint')} />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
@@ -271,14 +293,14 @@ export function HooksPanel(): ReactNode {
                     <span className="shrink-0 rounded-pill bg-tint px-2 py-0.5 text-[10px] text-fg-muted">
                       {row.scope === 'project' ? t('ext.scope.project') : t('ext.scope.global')}
                     </span>
-                    <Toggle
+                    <Switch
                       checked={row.enabled}
-                      label={t('ext.toggleLabel', { name: hookBody(row) })}
-                      onChange={(v) => {
+                      aria-label={t('ext.toggleLabel', { name: hookBody(row) })}
+                      onCheckedChange={(v) => {
                         void setHookEnabled(row.scope, row.id, v, workspaceId ?? undefined).then(refresh)
                       }}
                     />
-                    <Button size="sm" variant="danger" onClick={() => remove(row)}>{t('ext.delete')}</Button>
+                    <Button type="button" variant="danger" size="sm" onClick={() => remove(row)}>{t('ext.delete')}</Button>
                   </li>
                 ))}
               </ul>
@@ -294,8 +316,8 @@ export function HooksPanel(): ReactNode {
         width={560}
         footer={
           <>
-            <Button size="sm" onClick={() => setEditing(null)}>{t('common.cancel')}</Button>
-            <Button size="sm" variant="accent" onClick={save} disabled={invalid !== null}>{t('ext.save')}</Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(null)}>{t('common.cancel')}</Button>
+            <Button type="button" variant="primary" size="sm" onClick={save} disabled={invalid !== null}>{t('ext.save')}</Button>
           </>
         }
       >
@@ -338,11 +360,10 @@ export function HooksPanel(): ReactNode {
             */}
             <label className="flex flex-col gap-1">
               <span className="text-[12px] text-fg-muted">{t('hooks.field.type')}</span>
-              <Segmented<HookType>
-                size="sm"
+              <SegmentedControl
                 value={editing.draft.type}
                 label={t('hooks.field.type')}
-                onChange={(v) => {
+                onValueChange={(value) => {
                   // 换类型 = 上一次那份结果属于另一种钩子,清掉。
                   setTestResult(null)
                   /*
@@ -354,8 +375,8 @@ export function HooksPanel(): ReactNode {
                     ...editing,
                     draft: {
                       ...editing.draft,
-                      type: v,
-                      timeoutSeconds: defaultTimeoutMs(editing.draft.event, v) / 1000
+                      type: value as HookType,
+                      timeoutSeconds: defaultTimeoutMs(editing.draft.event, value as HookType) / 1000
                     }
                   })
                 }}
@@ -424,6 +445,7 @@ export function HooksPanel(): ReactNode {
                     value={currentModelKey}
                     options={promptModelOptions}
                     ariaLabel={t('hooks.prompt.model')}
+                    onOpenChange={guardChatModel}
                     onValueChange={(key) => {
                       const { alias, modelProviderId } = parseModelSelectionKey(key)
                       // 空键 = 两半一起清掉:只留一个 providerId 配不出任何一条绑定。
@@ -459,14 +481,13 @@ export function HooksPanel(): ReactNode {
                   max={600}
                 />
               </label>
-              <Segmented<HookScope>
-                size="sm"
+              <SegmentedControl
                 value={editing.scope}
-                onChange={(v) => setEditing({ ...editing, scope: v })}
+                onValueChange={(v) => setEditing({ ...editing, scope: v as HookScope })}
                 label={t('ext.scopeFilter')}
                 options={[
                   { value: 'global', label: t('ext.scope.global') },
-                  ...(workspaceId === null ? [] : [{ value: 'project' as const, label: t('ext.scope.project') }])
+                  ...(workspaceId === null ? [] : [{ value: 'project', label: t('ext.scope.project') }])
                 ]}
               />
             </div>
@@ -492,7 +513,8 @@ export function HooksPanel(): ReactNode {
               `testResult` 那段。
             */}
             <div className="flex items-center gap-2 border-t border-hairline pt-3">
-              <Button size="sm" icon={<Play size={13} />} onClick={test} disabled={invalid !== null || testing}>
+              <Button type="button" variant="secondary" size="sm" onClick={test} disabled={invalid !== null || testing}>
+                <Play size={13} />
                 {testing
                   ? t('hooks.testing')
                   : editing.draft.type === 'prompt' ? t('hooks.prompt.preview') : t('hooks.test')}

@@ -19,7 +19,7 @@
  */
 import { ImageOff } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { NCW_SCHEME } from "../../../../shared/domain/attachment";
+import { NCW_SCHEME, ncwPreviewUrl } from "../../../../shared/domain/attachment";
 import { cn } from "../../lib/cn";
 import { useI18n } from "../../i18n";
 import { ImageLightbox, type LightboxImage } from "./ImageLightbox";
@@ -29,6 +29,8 @@ export function MessageImage({
   dataRef,
   siblings,
   index = 0,
+  compact = false,
+  workspaceId,
 }: {
   mime: string;
   dataRef: string;
@@ -36,6 +38,16 @@ export function MessageImage({
   siblings?: readonly LightboxImage[];
   /** 本图在 siblings 里的位置 */
   index?: number;
+  /** 用户消息下方的附件卡片限制缩略图高度，不改变助手图片尺寸。 */
+  compact?: boolean;
+  /**
+   * 这张图属于哪个工作区 —— 灯箱据此决定要不要给「用别的程序打开」。
+   *
+   * ★ 缺省 = 不画。**只读的子代理面板**拿不到工作区上下文(与
+   *   `MessageFileRef.onOpen` 同一条规矩):那种情况下画一枚点了没反应的入口,
+   *   比干脆不画更难解释。
+   */
+  workspaceId?: string;
 }): ReactNode {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
@@ -74,7 +86,7 @@ export function MessageImage({
         className="block cursor-zoom-in"
       >
         <img
-          src={dataRef}
+          src={ncwPreviewUrl(dataRef)}
           alt=""
           data-testid="message-image"
           loading="lazy"
@@ -84,9 +96,13 @@ export function MessageImage({
           /*
             ★ 尺寸上限是必须的:一张 4000px 宽的截图会把消息气泡撑破,
             而 `max-w-full` 只管宽度 —— 竖长图仍会占满整屏往下推。
-            两个方向都要限,`object-contain` 保证不变形。
+            两个方向都要限,`object-contain` 保证不变形。用户附件另收紧到 96px 高，
+            不影响助手消息的 320px 上限。
           */
-          className="my-1 max-h-[320px] max-w-full rounded-card border border-stroke object-contain"
+          className={cn(
+            "max-w-full rounded-card border border-stroke object-contain",
+            compact ? "max-h-24 max-w-36" : "my-1 max-h-[320px]"
+          )}
         />
       </button>
 
@@ -94,6 +110,7 @@ export function MessageImage({
         <ImageLightbox
           images={group}
           startIndex={index}
+          {...(workspaceId === undefined ? {} : { workspaceId })}
           onClose={() => {
             setZoomed(false);
           }}

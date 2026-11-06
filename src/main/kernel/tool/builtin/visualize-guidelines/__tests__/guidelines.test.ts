@@ -29,7 +29,7 @@ describe('AVAILABLE_MODULES', () => {
   })
 
   it('顺序是模型看到的枚举顺序,改动要当成产品改动看', () => {
-    expect([...AVAILABLE_MODULES]).toEqual(['diagram', 'mockup', 'interactive', 'chart', 'art'])
+    expect([...AVAILABLE_MODULES]).toEqual(['components', 'diagram', 'mockup', 'interactive', 'chart', 'art'])
   })
 })
 

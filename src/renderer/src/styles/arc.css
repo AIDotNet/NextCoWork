@@ -1,0 +1,110 @@
+/*
+  Arc 组件库的设计 token。由 theme.css 以 `layer(arc)` 引入,并且排在 tailwindcss 之前。
+
+  ★ **为什么要放进层、而且是最低的那一层。** foundation.css 写的是 `:root { … }`,
+    其中有几个名字和本应用的 Tailwind token 撞了:`--radius-panel`(应用 12px / Arc 26px)、
+    `--radius-pill`、`--text-xl` 以上几档、`--ease-in-out`。不分层的话它是无层样式,
+    会盖过 Tailwind 的 `@layer theme`,侧边栏、面板的圆角会一起变成 26px。
+    放进最低层之后,撞名的那几个以应用为准,其余全部以 Arc 为准。
+
+  ★ Arc 组件自己的样式是 CSS Modules,**不在任何层里**,所以永远压得住 Tailwind 的
+    工具类 —— 往 Arc 组件上传 `h-7`、`px-3` 这类类名是不会生效的,要调尺寸就改下面的 token。
+*/
+@import '../components/arc/foundation.css';
+
+/*
+  桌面端密度,按 macOS 控件尺寸取:小号 22、常规 28、大号 32;圆角 6px(NSButton 的圆角)。
+*/
+:root {
+  --control-height-sm: 1.5rem;
+  --control-height-md: 1.75rem;
+  --control-height-lg: 2rem;
+  /* Liquid Glass:控件一律胶囊形 */
+  --radius-control: 999px;
+  --radius-surface: 0.875rem;
+}
+
+/*
+  ── 苹果风格:把 Arc 的中性灰 token 接到应用的主题 token 上 ──
+
+  Arc 自带一套和应用无关的黑白灰(`--foreground` / `--surface` / `--accent` …),于是
+  按钮、开关、下拉一直是「另一套皮肤」,换颜色主题也不跟着走。这里让它们**全部从
+  `--color-*` 取值** —— 那组变量由 `theme/apply.ts` 写成行内样式,深浅两套都会落到这里。
+
+  ★ 选择器特异性是 (0,3,0),而且排在 foundation.css 之后,所以压得住它的
+    `:root[data-theme="dark"]` 和 `:root[data-theme="dark"][data-accent="…"]` ——
+    不然深色下 Arc 会退回它自己的那套灰 / 预设强调色(index.html 曾经挂着
+    `data-accent="green"`,深色下开关和主按钮因此一直是绿的)。
+*/
+:root:is([data-theme], :not([data-theme])):is([data-accent], :not([data-accent])) {
+  --background: var(--color-canvas);
+  /* 输入框、下拉、次要按钮的底:半透明玻璃填充 + 一圈浅色描边(见 --border-strong) */
+  --surface: color-mix(in srgb, var(--color-surface-input) 62%, transparent);
+  --surface-raised: var(--color-surface-raised);
+  --surface-muted: var(--color-tint);
+  --foreground: var(--color-fg);
+  --text-secondary: var(--color-fg-muted);
+  --text-muted: var(--color-fg-faint);
+  --border: color-mix(in srgb, var(--color-fg) 12%, transparent);
+  --border-subtle: color-mix(in srgb, var(--color-fg) 7%, transparent);
+  --border-strong: color-mix(in srgb, var(--color-fg) 14%, transparent);
+  --accent: var(--color-accent);
+  --accent-strong: color-mix(in srgb, var(--color-accent), black 18%);
+  --accent-subtle: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --accent-foreground: var(--color-accent-fg);
+  --danger: var(--color-danger);
+  --warning: var(--color-warning);
+  --success: #34c759;
+
+  /* 开关、单选、滑块:macOS 的「开」就是强调色,滑块恒为白色圆钮 */
+  --control-on: var(--color-accent);
+  --control-glyph: #ffffff;
+  --control-track: color-mix(in srgb, var(--color-fg) 14%, transparent);
+  --control-track-hover: color-mix(in srgb, var(--color-fg) 20%, transparent);
+  --control-thumb: #ffffff;
+  --control-thumb-on: #ffffff;
+  --control-fill: var(--color-accent);
+  --control-thumb-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 1px 1px rgb(0 0 0 / 0.1), 0 2px 4px rgb(0 0 0 / 0.14);
+
+  /* 键盘焦点:macOS 的焦点环 —— 强调色半透明外扩 3px */
+  --focus-outline: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  --focus-outline-width: 3px;
+  --focus-outline-offset: 0px;
+
+  /* 阴影:贴近 NSWindow / NSPopover 的投影 —— 一圈 0.5px 发丝收边 + 大而淡的柔影 */
+  --shadow-resting: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 1.5px rgb(0 0 0 / 0.1);
+  --shadow-raised: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.1);
+  --shadow-floating: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 12px 36px rgb(0 0 0 / 0.18), 0 3px 10px rgb(0 0 0 / 0.08);
+
+  /* 字体:系统字体(SF Pro),不再加载 Inter / Geist */
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+  --tracking-display: -0.022em;
+  --tracking-body: -0.006em;
+  --leading-body: 1.38;
+
+  /* 苹果的弹簧:快起、轻微回弹 */
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-enter: cubic-bezier(0.2, 0.9, 0.3, 1);
+
+  /* 毛玻璃材质(菜单 / 弹窗 / 提示共用) */
+  --material-menu: color-mix(in srgb, var(--color-surface-raised) 78%, transparent);
+  --material-sheet: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
+  --material-blur: saturate(180%) blur(24px);
+}
+
+:root[data-theme='dark']:is([data-accent], :not([data-accent])) {
+  --success: #30d158;
+  --border: color-mix(in srgb, var(--color-fg) 14%, transparent);
+  --border-strong: color-mix(in srgb, var(--color-fg) 16%, transparent);
+  --surface: color-mix(in srgb, var(--color-fg) 6%, transparent);
+  --control-track: color-mix(in srgb, var(--color-fg) 18%, transparent);
+  --control-track-hover: color-mix(in srgb, var(--color-fg) 24%, transparent);
+  --control-thumb-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-resting: 0 0 0 0.5px rgb(0 0 0 / 0.4), 0 1px 1.5px rgb(0 0 0 / 0.3);
+  --shadow-raised: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 6px 16px rgb(0 0 0 / 0.35);
+  /* 深色浮层多一道内侧高光,像 macOS 深色菜单的顶边 */
+  --shadow-floating: inset 0 0.5px 0 rgb(255 255 255 / 0.08), 0 0 0 0.5px rgb(0 0 0 / 0.6),
+    0 16px 40px rgb(0 0 0 / 0.45), 0 3px 10px rgb(0 0 0 / 0.3);
+  --material-menu: color-mix(in srgb, var(--color-surface-raised) 72%, transparent);
+}

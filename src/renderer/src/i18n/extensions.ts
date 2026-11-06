@@ -86,6 +86,8 @@ export const extensionsZh = {
   'ext.field.toolsHint': '留空 = 继承全部，例如 Read, Grep',
   'ext.field.model': '模型',
   'ext.field.modelHint': '留空 = 用默认子代理模型',
+  'ext.field.thinking': '思考深度',
+  'ext.field.thinkingHint': '留空 = 用设置里的子代理思考深度',
   'ext.field.name': '名称',
   'ext.field.nameHint': '小写字母、数字、连字符；模型按它派活',
   'ext.field.color': '颜色标记',
@@ -115,7 +117,7 @@ export const extensionsZh = {
   'ext.error.modeIdTaken': '这个作用域下已有同名模式',
   'ext.error.modeInvalid': '请填写有效 ID、名称、说明、提示词和工具配置',
   'ext.lossyWarning': ({ count }: Params) =>
-    `这个文件里有 ${String(count)} 处本应用读不懂的语法（嵌套、块标量等），保存会丢掉它们`,
+    `这个文件里有 ${String(count)} 处本应用读不懂的语法（两层以上的嵌套、锚点等），保存会丢掉它们`,
   'ext.confirmLossy': ({ list }: Params) => `保存会丢掉这些读不懂的内容：\n\n${String(list)}\n\n继续？`,
 
   // ── 钩子 ──
@@ -243,6 +245,8 @@ export const extensionsEn = {
   'ext.field.toolsHint': 'Empty = inherit all, e.g. Read, Grep',
   'ext.field.model': 'Model',
   'ext.field.modelHint': 'Empty = use the default subagent model',
+  'ext.field.thinking': 'Thinking depth',
+  'ext.field.thinkingHint': 'Empty = use the subagent thinking depth from settings',
   'ext.field.name': 'Name',
   'ext.field.nameHint': 'Lowercase letters, digits, hyphens; the model dispatches by it',
   'ext.field.color': 'Color',
@@ -271,7 +275,7 @@ export const extensionsEn = {
   'ext.error.modeIdTaken': 'A mode with this ID already exists in this scope',
   'ext.error.modeInvalid': 'Enter a valid ID, name, description, prompt, and tool policy',
   'ext.lossyWarning': ({ count }: Params) =>
-    `This file has ${String(count)} construct(s) this app cannot parse (nesting, block scalars); saving drops them`,
+    `This file has ${String(count)} construct(s) this app cannot parse (deep nesting, anchors); saving drops them`,
   'ext.confirmLossy': ({ list }: Params) => `Saving will drop these unparsable parts:\n\n${String(list)}\n\nContinue?`,
 
   'hooks.runNote': 'Command hooks run on the workspace host; prompt hooks evaluate the conversation in a separate model request.',

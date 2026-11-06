@@ -3,7 +3,7 @@ import { constants, promises as fs, type Stats } from 'node:fs'
 import { homedir, hostname, userInfo } from 'node:os'
 import { createConnection } from 'node:net'
 import type { KernelHost } from '../kernel/host'
-import { killTree } from '../kernel/node-spawn'
+import { killTree, mergeChildEnv, terminalShellArgs } from '../kernel/node-spawn'
 import type { EnvironmentFs, EnvironmentStat, WorkspaceEnvironment } from './contract'
 import { EnvironmentError, missingPath } from './errors'
 import { createWorkspacePaths } from './paths'
@@ -57,9 +57,15 @@ export function localEnvironment(host: KernelHost, rootPath: string): WorkspaceE
     spawn: (command, options) => host.spawn(command, { ...options, shell: platform.shell }),
     openTcp: async (hostname, port) => createConnection({ host: hostname, port }),
     openProcess: async (command, args, options) => {
-      const env = { ...process.env, ...options.env }
-      delete env.ELECTRON_RUN_AS_NODE
-      delete env.NODE_OPTIONS
+      /*
+        需求:后台 shell 和本地钩子与前台 Bash 是同一批「Agent 起的本机命令」,
+        代理跟随必须给同一个答案(`npm run dev` 在后台装依赖、钩子里 curl 回调都是
+        真出网的)。这条路不经过 `host.spawn`,得在这里自己并一次 —— 合并次序
+        (继承 ← 注入不覆盖 ← 显式 env)与 `nodeSpawn` 共用 `mergeChildEnv`,
+        「注入不越过用户自己的配置」这条不变式只有一份实现。
+      */
+      const extra = (await host.childEnv?.()) ?? {}
+      const env = mergeChildEnv(process.env, extra, options.env)
       /*
         调用方传 `detached` 表达的需求是**「kill 要带走整棵树」**,两件事因此分开:
 
@@ -93,7 +99,15 @@ export function localEnvironment(host: KernelHost, rootPath: string): WorkspaceE
     },
     openTerminal: async (options) => {
       const pty = await import('node-pty')
-      return pty.spawn(terminalShell, [], { ...options, name: 'xterm-256color', env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string> })
+      /*
+        `options.env` 是插件终端的额外注入(`tabs.openTerminal` 的启动 spec),
+        放在默认值之后 —— 插件值赢过默认值;没传时与原行为逐字节一致。
+      */
+      return pty.spawn(terminalShell, terminalShellArgs(terminalShell), {
+        ...options,
+        name: 'xterm-256color',
+        env: { ...process.env, TERM: 'xterm-256color', ...(options.env ?? {}) } as Record<string, string>
+      })
     }
   }
 }

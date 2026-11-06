@@ -4,7 +4,7 @@
  * 类型放在 shared 是因为渲染层要渲染它们(审批弹窗要显示工具名与入参、
  * 设置页要列 MCP 工具)。**运行时的 Tool 对象只有主进程有**,因为 execute 是闭包。
  */
-import type { SubagentResult, ToolOutput } from './message'
+import type { SubagentResult, ToolOutput, ToolOutputImage } from './message'
 import type { ToolCard } from './tool-card'
 
 /**
@@ -61,9 +61,12 @@ export interface ToolInfo {
    * (那是我们库里的配置),而**不是**读服务器自报的 annotations ——
    * 否则一个远程 MCP 服务器只要声明「我不联网」,用户那颗联网开关就被它关掉了。
    *
-   * 两处消费者:`registry.snapshot({network})` 决定这一轮要不要下发它,
-   * `permission-gate.ts` 那张表的第 1 行决定要不要放行这一次调用。
-   * 前者省掉一次白跑的轮次,后者是兜底 —— 缺了任何一个都还站得住。
+   * ★ 现在它**只是事实描述,不参与任何开关判定**。原先两处消费者
+   * (`registry.snapshot({network})` 决定下不下发、`permission-gate.ts` 第 1 行决定放不放行)
+   * 都读它;输入框「联网搜索」开关收窄成只管网页搜索与抓取之后(用户决定,见
+   * `permission-gate.ts` 的 `NETWORK_SWITCH_TOOLS`),两处都改成按那张名单判。
+   * 留着这个字段(而不是删掉)是因为插件协议 `tools.register` 与 MCP 桥都在填它,
+   * 将来要按「会不会出网」加任何管控时,事实已经在这里。
    */
   needsNetwork: boolean
   source: ToolSource
@@ -92,6 +95,31 @@ export interface ToolProgress {
    * 这张是过程态。用户在它上面点动作 → 反向通道回到挂起的工具。
    */
   card?: ToolCard
+  /**
+   * 生图工具**刚到手的那一张**图(`index` = 它在这次请求里的第几格,0 起)。
+   *
+   * 需求:一次要多张时,生成期的图片卡要逐张把占位换成真图,而不是让用户对着
+   * N 格加载动画等到最慢的那一张。只推「新到的这一张」而不是累计数组:每张是
+   * 几 MB 的 data URL,累计推送会让第 4 张到来时把前 3 张再过一遍 IPC。
+   * ★ 同样易失、不进转录 —— 落盘的是最终 `output.images`;`tool_end` 时清掉。
+   * ★ 只有内置 `generate_image` 会填它:插件进度由 `plugin/manager.ts` 逐字段
+   * 重建,插件伪造不出这一项。
+   */
+  image?: { index: number; image: ToolOutputImage }
+  /**
+   * 这次调用此刻**能被用户转去后台**(前台 `Bash` 且环境支持)。
+   *
+   * ★ 走进度事件而不是 presenter 的静态能力声明:能不能转取决于**这一次**跑在哪
+   * (本地能、SSH 不能),同一个工具名给不出一个固定答案。同样易失、不进转录 ——
+   * `tool_end` 之后这条调用也就无所谓转不转了。
+   * ★ 只有内置 `Bash` 会填它:插件进度由 `plugin/manager.ts` 逐字段重建,伪造不出。
+   */
+  detachable?: boolean
+  /**
+   * `Workflow` 工具此刻的整份节点状态(见 `shared/agent/workflow.ts`)。
+   * ★ 同样易失、不进转录 —— 落盘的是最终 `output.workflow`;`tool_end` 时清掉。
+   */
+  workflow?: import('./workflow').WorkflowState
 }
 
 export interface ToolResult {

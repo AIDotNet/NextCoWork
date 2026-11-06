@@ -14,7 +14,7 @@ export function WelcomeView({ onComplete }: { onComplete: () => void }): ReactNo
   }
   const offline = async (): Promise<void> => { setBusy(true); setError(null); try { await useOffline(); onComplete() } catch { setError(t('auth.offlineFailed')) } finally { setBusy(false) } }
   return (
-    <main className="relative flex h-full items-center justify-center overflow-hidden bg-[#171918] text-white">
+    <main className="relative flex h-full items-center justify-center overflow-hidden bg-[#1c1c1e] text-white">
       <div className="app-drag absolute inset-x-0 top-0 h-10" aria-hidden="true" />
       <div className="relative flex w-[360px] flex-col items-center px-6 text-center">
         <div className="mb-5 flex items-center gap-3 text-[32px] font-semibold tracking-[-0.04em]">

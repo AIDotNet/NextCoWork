@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../../window/registry', () => ({ windows: { broadcast: vi.fn() } }))
-vi.mock('../../kernel/run-registry', () => ({ runs: { activeRunIds: (): string[] => [], onAbortAll: vi.fn(() => () => {}) } }))
+vi.mock('../../kernel/run-registry', () => ({ runs: { activeRunIds: (): string[] => [], hasSessionOperations: (): boolean => false, onAbortAll: vi.fn(() => () => {}) } }))
 
 import { DRAFT_ATTACHMENT_TTL_MS } from '../../../shared/domain/attachment'
 import { closeDatabase, openDatabase } from '../../db'

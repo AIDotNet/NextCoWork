@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '../agent/event'
-import type { ContextCheckpoint } from '../agent/context-management'
 import { assistantMessage, toolResultMessage, userMessage } from '../agent/message'
+import type { TranscriptState } from '../agent/transcript'
 import { applyChildEvent, applyEvent, applyEvents, emptyTranscript, hasRun, liveText, subagentsFromMessages } from '../agent/transcript'
 
 /**
@@ -178,6 +178,20 @@ describe('applyEvent · 工具状态', () => {
     // 结束后实时卡片必须清掉,让展示切到 output.card(结果快照)
     s = applyEvent(s, { type: 'tool_end', callId: 'c1', output: { content: 'ok' }, isError: false })
     expect(s.tools['c1']?.card).toBeUndefined()
+  })
+
+  it('★ 生图逐张进度按格子序号累加进 partialImages(乱序到达也各归各格),tool_end 时清掉', () => {
+    const img = (tag: string): { mime: 'image/png'; dataRef: string } => ({ mime: 'image/png', dataRef: `data:image/png;base64,${tag}` })
+    let s = applyEvent(emptyTranscript(), start)
+    s = applyEvent(s, { type: 'tool_progress', callId: 'c1', progress: { callId: 'c1', message: '1/3', image: { index: 2, image: img('CC') } } })
+    s = applyEvent(s, { type: 'tool_progress', callId: 'c1', progress: { callId: 'c1', message: '2/3', image: { index: 0, image: img('AA') } } })
+    // 不带图的普通进度不能把已到手的图冲掉
+    s = applyEvent(s, { type: 'tool_progress', callId: 'c1', progress: { callId: 'c1', message: '2/3' } })
+    expect(s.tools['c1']?.partialImages).toEqual({ 0: img('AA'), 2: img('CC') })
+    expect(s.tools['c1']?.progress).toBe('2/3')
+    s = applyEvent(s, { type: 'tool_end', callId: 'c1', output: { content: 'ok', images: [img('AA'), img('CC')] }, isError: false })
+    expect(s.tools['c1']?.partialImages).toBeUndefined()
+    expect(s.tools['c1']?.output?.images).toHaveLength(2)
   })
 
   it('★ 没见过 start 的 tool_end 不能丢 —— 重放裁剪后可能真的只剩 end', () => {
@@ -668,67 +682,77 @@ describe('applyEvent · 重试与切换提示', () => {
 })
 
 /**
- * 压缩相关的两个分支。
+ * 压缩相关的分支。
  *
  * ★ 它们原先**一条覆盖都没有**,而它们恰好是界面上「压缩看不见」的最后一段接线:
- * 事件到了投影这里若被丢掉、或检查点按顺序追加导致同一条重复两行,
- * 症状都是消息流里多出/少掉一条分隔线,而不是报错。
+ * 事件到了投影这里若被丢掉,症状是状态行一声不吭地少掉一句,而不是报错。
+ *
+ * ★ 检查点那一组用例随 `context_checkpoint` 事件一并删除:压缩边界现在是转录里的
+ * 一条消息,由 `message_commit` 走常规路径进来,没有独立的事件要测。
+ * 「同一段压缩只画一条线」这条不变式也因此不再需要用例去钉 —— 一条消息天然只有一条。
  */
 describe('applyEvent · 上下文压缩', () => {
-  const checkpoint = (over: Partial<ContextCheckpoint> = {}): ContextCheckpoint => ({
-    id: 'sess:context:1',
-    sessionId: 'sess',
-    windowIndex: 1,
-    note: '折叠了 14 条消息',
-    source: 'mechanical',
-    createdAt: 0,
-    updatedAt: 0,
-    revision: 1,
-    ...over
-  })
-
   it('context_status 原样落到 contextStatus', () => {
     const s = applyEvent(emptyTranscript(), {
       type: 'context_status',
-      status: { phase: 'fallback', windowIndex: 3 }
+      status: { phase: 'compacting', trigger: 'auto' }
     })
-    expect(s.contextStatus).toEqual({ phase: 'fallback', windowIndex: 3 })
+    expect(s.contextStatus).toEqual({ phase: 'compacting', trigger: 'auto' })
   })
 
   it('后一个相位覆盖前一个 —— 它是瞬时状态,不是流水', () => {
-    let s = applyEvent(emptyTranscript(), { type: 'context_status', status: { phase: 'preparing' } })
-    s = applyEvent(s, { type: 'context_status', status: { phase: 'error' } })
-    expect(s.contextStatus).toEqual({ phase: 'error' })
-  })
-
-  it('context_checkpoint 追加,并把相位推到 ready', () => {
-    const s = applyEvent(emptyTranscript(), { type: 'context_checkpoint', checkpoint: checkpoint() })
-    expect(s.contextCheckpoints).toHaveLength(1)
-    expect(s.contextStatus).toEqual({ phase: 'ready', windowIndex: 1 })
+    let s = applyEvent(emptyTranscript(), { type: 'context_status', status: { phase: 'compacting' } })
+    s = applyEvent(s, { type: 'context_status', status: { phase: 'failed' } })
+    expect(s.contextStatus).toEqual({ phase: 'failed' })
   })
 
   /**
-   * ★ 最值钱的一条。机械压缩是**每轮重做的投影**,同一个窗口号会被反复落盘
-   * (边界随对话推进而移动)。按 id 覆盖是「一段压缩期只画一条线」的依据 ——
-   * 改成追加的话,消息流里的分隔线会按轮次线性增生,且不报错。
+   * ★ 最值钱的一条。`lastInputTokens` 是压缩**之前**那次请求的上游真值(比如 624K);
+   * 压完不清掉的话,它要等下一次上游回包才被覆盖 —— 表现为「已压缩」和圆环上
+   * 那个爆表的读数同时挂在界面上,而且零报错。
    */
-  it('★ 同 id 覆盖而不是追加', () => {
-    let s = applyEvent(emptyTranscript(), { type: 'context_checkpoint', checkpoint: checkpoint() })
-    s = applyEvent(s, {
-      type: 'context_checkpoint',
-      checkpoint: checkpoint({ note: '折叠了 20 条消息', revision: 2 })
-    })
-    expect(s.contextCheckpoints).toHaveLength(1)
-    expect(s.contextCheckpoints[0]?.note).toBe('折叠了 20 条消息')
+  it('★ compacted 清掉压缩前的 lastInputTokens', () => {
+    let s: TranscriptState = { ...emptyTranscript(), lastInputTokens: 624_000 }
+    s = applyEvent(s, { type: 'context_status', status: { phase: 'compacted', trigger: 'auto' } })
+    expect(s.lastInputTokens).toBeUndefined()
+    expect(s.contextStatus).toEqual({ phase: 'compacted', trigger: 'auto' })
   })
 
-  it('不同窗口号各占一条,顺序按到达', () => {
-    let s = applyEvent(emptyTranscript(), { type: 'context_checkpoint', checkpoint: checkpoint() })
-    s = applyEvent(s, {
-      type: 'context_checkpoint',
-      checkpoint: checkpoint({ id: 'sess:context:2', windowIndex: 2, source: 'model' })
-    })
-    expect(s.contextCheckpoints.map((c) => c.windowIndex)).toEqual([1, 2])
-    expect(s.contextStatus).toEqual({ phase: 'ready', windowIndex: 2 })
+  it('其余相位不动 lastInputTokens —— 压缩失败时那一轮仍按原历史发出去了', () => {
+    let s: TranscriptState = { ...emptyTranscript(), lastInputTokens: 624_000 }
+    s = applyEvent(s, { type: 'context_status', status: { phase: 'failed', trigger: 'auto' } })
+    expect(s.lastInputTokens).toBe(624_000)
+  })
+})
+
+describe('applyEvent · 思考卡片的实时计时', () => {
+  it('thinking 块起点取上一条内容事件的 at,终点随每个思考增量前移', () => {
+    const s = applyEvents(emptyTranscript(), [
+      { type: 'stream', delta: { type: 'message_start', model: 'm' }, at: 1_000 },
+      { type: 'stream', delta: { type: 'thinking_delta', index: 0, text: '想' }, at: 31_000 },
+      { type: 'stream', delta: { type: 'thinking_delta', index: 0, text: '完' }, at: 32_000 }
+    ])
+    expect(s.live[0]).toMatchObject({ kind: 'thinking', text: '想完', startedAt: 1_000, endedAt: 32_000 })
+  })
+
+  it('正文开始后思考块的终点不再前移 —— 否则正文输出期间思考时长还在涨', () => {
+    const s = applyEvents(emptyTranscript(), [
+      { type: 'stream', delta: { type: 'message_start', model: 'm' }, at: 0 },
+      { type: 'stream', delta: { type: 'thinking_delta', index: 0, text: '想' }, at: 200 },
+      { type: 'stream', delta: { type: 'text_delta', index: 1, text: '答' }, at: 900 },
+      { type: 'stream', delta: { type: 'text_delta', index: 1, text: '案' }, at: 1_500 }
+    ])
+    expect(s.live[0]).toMatchObject({ kind: 'thinking', startedAt: 0, endedAt: 200 })
+    expect(s.live[1]).not.toHaveProperty('startedAt')
+  })
+
+  it('续跑的 message_start 重置起点,不把被丢弃那次尝试的时间算进去', () => {
+    const s = applyEvents(emptyTranscript(), [
+      { type: 'stream', delta: { type: 'message_start', model: 'm' }, at: 0 },
+      { type: 'stream', delta: { type: 'text_delta', index: 0, text: '断' }, at: 100 },
+      { type: 'stream', delta: { type: 'message_start', model: 'm' }, at: 5_000 },
+      { type: 'stream', delta: { type: 'thinking_delta', index: 0, text: '重想' }, at: 6_000 }
+    ])
+    expect(s.live[0]).toMatchObject({ kind: 'thinking', startedAt: 5_000, endedAt: 6_000 })
   })
 })

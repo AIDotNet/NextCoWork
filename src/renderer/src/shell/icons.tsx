@@ -39,6 +39,10 @@ import {
   Upload,
   Wrench,
   FileText,
+  Film,
+  Gamepad2,
+  Music,
+  Tv,
   type LucideIcon
 } from 'lucide-react'
 import type { MenuIconName } from '../../../shared/plugin/contribution'
@@ -109,6 +113,16 @@ export const INNER_TAB_ICON: Record<InnerTabKind, LucideIcon> = {
  *   而菜单是用户判断「这个操作是谁提供的」的地方;
  * - 给名字则让这一层完全在宿主控制之下:认不出的名字回落到拼图块
  *   (`normalizeMenuIcon`),永远不会渲染出一个宿主没审过的字形。
+ *
+ * ★★ 上面那条「不给 SVG」后来被有意**放宽了一条并行通道**,原理由保留如上:
+ * claude-code / codex 这类 CLI 插件要求用官方品牌 logo 出现在 `+` 菜单里,
+ * 而品牌字形不该由宿主硬编码(品牌会改版,宿主不该追)。放宽后的边界:
+ * 图标文件(`contributes.commands[].iconFile`)来自**用户已安装的那个插件包**,
+ * 由主进程装载时读出转 data URL(`manager.readCommandIcons`,≤32KB,svg/png),
+ * 只出现在带该插件署名的菜单条目上(`<img>` 是非脚本上下文,svg 脚本不执行;
+ * 渲染入口见 `InnerTabBar` 的 `menuIcon`)。风险从「宿主字形被冒充」缩小为
+ * 「插件自己的图标」—— 与插件标题文案同级别的信任。名字闭集对**其余**
+ * 菜单项的保证原样不变。
  */
 export const MENU_ICON: Record<MenuIconName, LucideIcon> = {
   file: File,
@@ -140,5 +154,10 @@ export const MENU_ICON: Record<MenuIconName, LucideIcon> = {
   table: Table,
   link: Link,
   bookmark: Bookmark,
-  shield: Shield
+  shield: Shield,
+  // 网页应用那一类(见 shared/plugin/contribution.ts 的 MENU_ICON_NAMES)
+  tv: Tv,
+  film: Film,
+  music: Music,
+  gamepad: Gamepad2
 }

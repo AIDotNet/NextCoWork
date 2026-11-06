@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { AgentMessage, ContentPart } from '../../../../../shared/agent/message'
 import { assistantMessage, toolResultMessage, userMessage } from '../../../../../shared/agent/message'
 import type { TurnEndInput, TurnEndResult } from '../../../agent-session'
-import { compactMessages } from '../../../context-assembler'
 import { createTodoReconciler } from '../../../todo-reconciliation'
-import { MARK, TODO_LIMITS, latestTodosFrom } from '../todo'
+import { MARK, latestTodosFrom } from '../../../../../shared/agent/todo'
+import { TODO_LIMITS } from '../todo'
 
 /**
  * `latestTodosFrom` 的测试 —— 从**转录**反推当前 todo 列表。
@@ -12,6 +12,10 @@ import { MARK, TODO_LIMITS, latestTodosFrom } from '../todo'
  * 这个函数存在的前提是 `todo.ts` 文件头那条设计:**不持久化任何一份 todo**。
  * 唯一真相源就是最近一次成功的 `TodoWrite` 调用,它已经躺在转录里了。
  * 所以这里钉的每一条,本质都是「怎样才算『最近一次成功』」。
+ *
+ * ★ 被钉的函数现在住在 `shared/agent/todo.ts`(渲染层也要用它,见那里的文件头),
+ * 但**判据一条都没改**,所以这组用例原样留在这里 —— 它们同时覆盖着
+ * `todo-reconciliation` 那条消费路径。
  */
 
 const TOOL = 'TodoWrite'
@@ -102,21 +106,15 @@ describe('★ 什么样的调用不算数', () => {
   })
 })
 
-describe('★ 压缩之后还取得到', () => {
-  it('compactMessages 只清空 tool_result 的内容,tool_call 原样保留', () => {
-    const messages = [
-      START,
-      ...call(todos(['读代码', 'completed'], ['写代码', 'in_progress'])),
-      ...Array.from({ length: 10 }, (_, i) =>
-        userMessage(`f${String(i)}`, [{ type: 'text', text: '换个话题' }], 0)
-      )
-    ]
+/*
+  原先这里有一组「★ 压缩之后还取得到」:机械压缩只清空 tool_result 的内容、保留
+  tool_call,所以压完仍然反推得出 todo。机械压缩已随 Claude Code 式重写删除 ——
+  现在边界之前的消息**整段**不再发给模型,这条路走不通了。
 
-    const compacted = compactMessages(messages)
-
-    expect(latestTodosFrom(compacted, TOOL)?.length).toBe(2)
-  })
-})
+  同一条需求(压缩之后模型不能忘记自己的进度表)改由压缩后重附件承担:
+  `kernel/compaction/attachments.ts` 把当前 todo 列表重新写进边界消息,
+  用例在 `kernel/compaction/__tests__/attachments.test.ts`。
+*/
 
 describe('入参来自模型,一律当 unknown 处理', () => {
   const bad: unknown[] = [

@@ -23,10 +23,15 @@ import { DEFAULT_UPSTREAM_IDLE_TIMEOUT_SECONDS } from '../../../shared/domain/se
 import {
   applyThinkingAdapter,
   enforceThinkingPreference,
+  reasoningReplayFor,
   ThinkingAdapterError,
   type ThinkingAdapterInput
 } from '../../../shared/domain/thinking-adapter'
 import { abortable, abortableSleep, abortableStream, isAbortError } from '../abort'
+import type { AccountPool } from './account-pool'
+import type { ProviderAccount } from '../../../shared/domain/provider-account'
+import { accountCredentialRef } from '../../../shared/domain/provider-account'
+import { codexQuotaHeaderNames, headerReaderOf, parseCodexQuota } from './codex-quota'
 import { estimateTokens } from '../context-assembler'
 import { userAgent } from '../user-agent'
 import type { KernelHost } from '../host'
@@ -91,6 +96,16 @@ const DEFAULT_RATE_LIMIT_FLOOR_MS = 4_000
 const MAX_RETRY_DELAY_MS = 60_000
 /** 连续失败到这个数就判不健康 */
 const UNHEALTHY_AFTER = 3
+/**
+ * 一次逻辑请求里最多换几个账号。
+ *
+ * ★★ **这是一道保险,不是业务规则。** 正常情况下换号次数天然被账号数量兜住:
+ * 每换一次都会先给上一个落闸,`select()` 不会再挑到它。但「换号不消耗重试次数」
+ * 这条规则意味着**只要池子一直说"还能换",循环就一直不前进** —— 池子那边任何一个
+ * 判断写歪(比如轮换关掉时仍返回下一个账号)都会变成一个死循环:run 卡住、
+ * CPU 打满、一条错误都不输出。这个上限保证最坏情况也只是多打几次请求。
+ */
+const MAX_ACCOUNT_SWITCHES = 8
 const COOLDOWN_MS = 30_000
 const ANTHROPIC_USER_ID_MAX = 512
 
@@ -230,6 +245,15 @@ export interface UpstreamRouterOptions {
     usage: TokenUsage,
     at: number
   ) => RunCost | null
+  /**
+   * 同一家供应商的多个登录账号(schema 第 24 条)。
+   *
+   * ★ **不给就退化成单槽**:`attempt()` 里 `select()` 返回 null 时用的是
+   * `provider.credentialRef` —— 那条路径逐字节等于多账号上线之前。
+   * 于是 gateway、会话标题生成器和现有全部 router 测试一行都不用改
+   * (和 `credentials` 在构造函数里自己建是同一个套路)。
+   */
+  accounts?: AccountPool
 }
 
 export class UpstreamRouter {
@@ -245,6 +269,12 @@ export class UpstreamRouter {
    *
    * ★ 只记 `rate_limit`。5xx / 网络错误是**这一条请求**的事,拿它去挡住别的流
    * 会把一次偶发抖动放大成全局停顿。
+   *
+   * ★★ **键从 providerId 细化成了「账号 ref ?? providerId」**(多账号上线,
+   * 见 `gateKeyFor`)。上面那条理由一个字都没变 —— 变的只是粒度:额度是按账号
+   * 算的,拿一个账号的 429 去挡住同一家的**另一个**账号,等于把多账号这件事
+   * 白做了(表现:配了三个号,一个被限流之后整家都发不出请求)。
+   * 没有账号表的供应商仍然按 providerId 记,行为逐字节不变。
    */
   private readonly rateLimitGate = new Map<string, { until: number; reason: string }>()
   private readonly baseDelayMs: number
@@ -258,6 +288,8 @@ export class UpstreamRouter {
    * `new UpstreamRouter(host, config)` 一行都不用改。
    */
   private readonly credentials: CredentialResolver
+  /** 见 `UpstreamRouterOptions.accounts`:不给就走单槽,逐字节等于多账号上线之前 */
+  private readonly accounts: AccountPool | undefined
 
   constructor(
     private readonly host: KernelHost,
@@ -274,6 +306,7 @@ export class UpstreamRouter {
     this.onUsageAttempt = opts.onUsageAttempt
     this.priceAttempt = opts.priceAttempt
     this.credentials = new CredentialResolver(host, opts.onCredentialChanged)
+    this.accounts = opts.accounts
   }
 
   /**
@@ -320,9 +353,15 @@ export class UpstreamRouter {
    * 被静默跳过 —— 那是个只在供应商刚挂过之后才复现的幽灵 bug。
    */
   resolveModel(model: string, modelProviderId?: string): ModelAlias | undefined {
-    return modelBindingsFor(
-      this.config.aliases(), this.config.providers(), model, modelProviderId
+    const providers = this.config.providers()
+    const alias = modelBindingsFor(
+      this.config.aliases(), providers, model, modelProviderId
     )[0]
+    if (alias === undefined) return undefined
+    const provider = providers.find((p) => p.id === alias.providerId)
+    return provider === undefined
+      ? undefined
+      : { ...alias, runtimeProtocol: effectiveModelProtocol(provider, alias) }
   }
 
   health(): ProviderHealth[] {
@@ -337,7 +376,12 @@ export class UpstreamRouter {
       this.healthMap.delete(providerId)
       // 「重置健康状态」在用户眼里就是「当它没挂过,现在就重试」——
       // 留着限流闸门会让那一下点击看起来毫无反应(它会安静地睡满剩下的退避)。
+      // ★ 闸门现在按账号记(见 `rateLimitGate`),所以这家名下的几把一起清:
+      //   只清 providerId 那一把会漏掉全部账号级闸门,而用户点的是同一颗按钮。
       this.rateLimitGate.delete(providerId)
+      for (const key of [...this.rateLimitGate.keys()]) {
+        if (key.startsWith(`provider:${providerId}#`)) this.rateLimitGate.delete(key)
+      }
     }
   }
 
@@ -404,7 +448,7 @@ export class UpstreamRouter {
     return h
   }
 
-  private recordSuccess(id: string, latencyMs: number): void {
+  private recordSuccess(id: string, latencyMs: number, gateKey = id): void {
     const h = this.healthOf(id)
     h.healthy = true
     h.consecutiveFailures = 0
@@ -415,7 +459,10 @@ export class UpstreamRouter {
     delete h.cooldownUntil
     delete h.lastError
     // 一次成功 = 配额确实回来了。留着闸门只会让后面那几条流白等一场。
-    this.rateLimitGate.delete(id)
+    // ★ 清的是**这一次真的用了的那个键**(账号 ref 或 providerId)——
+    //   拿 providerId 去清账号级闸门等于没清,表现是换号成功之后
+    //   其余并发流仍然在等一个已经不存在的限流。
+    this.rateLimitGate.delete(gateKey)
   }
 
   /**
@@ -432,16 +479,26 @@ export class UpstreamRouter {
     return Math.min(base * 2 ** attempt, MAX_RETRY_DELAY_MS)
   }
 
-  /** 闸门还剩多久;没被挡住就是 0。 */
-  private gateWaitFor(providerId: string): { waitMs: number; reason: string } {
-    const gate = this.rateLimitGate.get(providerId)
+  /** 闸门还剩多久;没被挡住就是 0。★ 键是 `gateKeyFor` 给的那个,不一定是 providerId */
+  private gateWaitFor(gateKey: string): { waitMs: number; reason: string } {
+    const gate = this.rateLimitGate.get(gateKey)
     if (gate === undefined) return { waitMs: 0, reason: '' }
     const waitMs = gate.until - this.host.clock.now()
     if (waitMs <= 0) {
-      this.rateLimitGate.delete(providerId)
+      this.rateLimitGate.delete(gateKey)
       return { waitMs: 0, reason: '' }
     }
     return { waitMs, reason: gate.reason }
+  }
+
+  /**
+   * 进程内限流闸门的键。
+   *
+   * ★ 有账号时用账号的凭证 ref,没有时退回 providerId —— 后者正是多账号上线之前
+   * 的行为,所以纯 API Key 供应商的闸门逐字节不变。
+   */
+  private gateKeyFor(providerId: string, account: ProviderAccount | null): string {
+    return account === null ? providerId : accountCredentialRef(account)
   }
 
   private recordFailure(id: string, err: AgentError): void {
@@ -467,7 +524,16 @@ export class UpstreamRouter {
     req: CanonicalRequest,
     parentSignal: AbortSignal,
     context: UpstreamRequestContext,
-    attemptNumber: number
+    attemptNumber: number,
+    /**
+     * 这一次用哪个账号。**`null` = 这家没有账号表**(纯 API Key / 还没登录),
+     * 凭证走 `provider.credentialRef` —— 那条路径逐字节等于多账号上线之前。
+     *
+     * ★ 账号由上一层(`stream`)挑好再传进来,不在这里自己挑:挑账号要读闸门,
+     * 而闸门的等待发生在上一层(等待不消耗重试次数)。两处各挑一次的话,
+     * 等的是 A、发给的是 B。
+     */
+    account: ProviderAccount | null
   ): AsyncGenerator<ProviderStreamEvent, Outcome> {
     let sawContent = false
     const protocol = effectiveModelProtocol(c.provider, c.alias)
@@ -556,7 +622,13 @@ export class UpstreamRouter {
 
     try {
       signal.throwIfAborted()
-      const cred = await waitFor(() => this.credentials.resolve(c.provider.credentialRef, signal))
+      /*
+        ★★ **凭证 ref 是这一层唯一知道「用了哪个账号」的地方。**
+        账号为 null 时取 `provider.credentialRef`(旧槽)—— 那既是 API Key 供应商
+        的常态,也是多账号上线之前的全部行为,所以零回归。
+      */
+      const credentialRef = account === null ? c.provider.credentialRef : accountCredentialRef(account)
+      const cred = await waitFor(() => this.credentials.resolve(credentialRef, signal))
       if (cred === null) {
         return finish({
           kind: 'failed',
@@ -572,16 +644,24 @@ export class UpstreamRouter {
       */
       const apiKey = bearerOf(cred)
       const cacheTtl = anthropicCacheTtlOf(c.provider)
+      /*
+        需求:Responses 的回传方言必须在**下发请求体之前**定好,而它和思考线形读的是
+        同一份 thinkingConfig(显式声明、standardWire 都在里面)。提上来共用一次调用,
+        不在下面再判一遍 —— 两处判据迟早会分叉。
+      */
+      const thinkingConfig = thinkingConfigFor(req, c, protocol)
       const prepared = await waitFor(() => prepareRequestImages(req, this.host, context, signal))
       const enc = encodeUpstream(protocol, prepared, c.alias.upstreamModel, apiKey, {
         userId: context.workspaceId,
-        cacheTtl
+        cacheTtl,
+        reasoningReplay: reasoningReplayFor(thinkingConfig, c.alias.upstreamModel)
       })
       const thinkingInput: ThinkingAdapterInput = {
         protocol,
         upstreamModel: c.alias.upstreamModel,
-        config: thinkingConfigFor(req, c, protocol),
+        config: thinkingConfig,
         reasoning: reasoningFor(req, c.alias),
+        ...(req.thinkingLevel === undefined ? {} : { thinkingLevel: req.thinkingLevel }),
         maxOutputTokens: req.maxOutputTokens,
         // Legacy bindings without a request adapter must retain automatic
         // model-specific thinking detection. Explicit adapters still win;
@@ -668,7 +748,10 @@ export class UpstreamRouter {
       if (res.status === 401 && cred.kind === 'oauth') {
         // 必须读完,否则这条连接不会被释放
         await waitFor(() => res.text().catch(() => ''))
-        const fresh = await waitFor(() => this.credentials.refreshNow(c.provider.credentialRef, signal))
+        // ★ 刷的必须是**这次用的那条 ref**。拿 `provider.credentialRef`(旧槽)去刷,
+        //   刷新后的 token 会写回旧槽,而下一次请求读的是账号 ref —— 401 于是一直复发,
+        //   且每次都"刷新成功"。
+        const fresh = await waitFor(() => this.credentials.refreshNow(credentialRef, signal))
         /*
          * ★★ 签名式凭证(Ollama)重发**不带 extraHeaders**:`send()` 会现签一把新的
          * (新 ts),而 `authHeader()` 会把凭证槽里的东西当 Bearer/x-api-key 塞进去 ——
@@ -679,6 +762,17 @@ export class UpstreamRouter {
         )
       }
       httpStatus = res.status
+      /*
+        ★★ **额度快照在这里读,而且成功失败都读。**
+
+        只在成功路径读的表现是:额度条永远停在 99%,因为**跑满之后的那一次请求
+        必然失败** —— 而那一次的响应头里带的正是「已用 100%、几点重置」这组数,
+        也就是唯一能让界面说清楚「为什么现在发不出去」的数据。
+
+        ★ 整条路径自己吞异常:一次额度解析绝不能掀掉用户的对话(同
+        `onUsageAttempt` 外面那圈 try/catch 的理由)。
+      */
+      this.captureQuota(res, account)
 
       if (!res.ok) {
         // 必须把 body 读完(或 cancel),否则连接不会被释放
@@ -783,7 +877,13 @@ export class UpstreamRouter {
       if (stopReason === null) {
         return finish({ kind: 'failed', sawContent, error: interruptedResponse() })
       }
-      this.recordSuccess(c.provider.id, this.host.clock.now() - startedAt)
+      this.recordSuccess(
+        c.provider.id,
+        this.host.clock.now() - startedAt,
+        this.gateKeyFor(c.provider.id, account)
+      )
+      // 这个账号成功了 = 它的额度确实回来了,清掉落库的那条限流(见 `AccountPool`)
+      if (account !== null) this.accounts?.reportSuccess(account)
       return finish({ kind: 'ok' })
     } catch (err) {
       if (parentSignal.aborted || (isAbortError(err) && !timedOut)) {
@@ -901,7 +1001,30 @@ export class UpstreamRouter {
         }
       }
 
+      // 见 `MAX_ACCOUNT_SWITCHES`:换号不消耗重试次数,所以要单独有个数管住它
+      let accountSwitches = 0
       for (let attempt = 0; attempt < MAX_NETWORK_ATTEMPTS; attempt++) {
+        /*
+          这一次用哪个账号。**挑在发请求之前、闸门之前** —— 下面那次等待等的是
+          这个账号的闸门,而不是"这家"的。
+
+          ★★ 换号是**涌现**出来的,不是一条 if:上一轮失败时 `reportFailure` 把那个
+          账号落了闸,于是这一轮 `select()` 自然返回下一个。写成显式的
+          "switchAccount()" 会造出第二个真相来源 —— 和 `candidates()` 里
+          「锁死语义整个由候选集表达」是同一条规矩。
+        */
+        const account = this.accounts?.select(c.provider.id) ?? null
+        /*
+          ★ 账号表非空但一个都挑不出来 = 这家的**全部账号**都在限流/停用/待重登。
+          此时**绝不能**回落到 `provider.credentialRef`:那个旧槽里装的正是
+          当前账号的镜像,用它发请求等于绕过刚刚立起来的闸门,必然再吃一个 429。
+          交回外层候选循环(产品决策 D11),错误文案带上最早恢复时刻。
+        */
+        if (account === null && this.accounts?.hasAccounts(c.provider.id) === true) {
+          lastError = this.allAccountsLimitedError(c.provider.name, c.provider.id)
+          break
+        }
+        const gateKey = this.gateKeyFor(c.provider.id, account)
         /*
           ★ 别人刚在这一家上吃了 429 —— **在发请求之前**先把这次退避等掉。
 
@@ -912,7 +1035,7 @@ export class UpstreamRouter {
           (「在等,因为上游限流」),而新增事件类型意味着 `stream.ts`、转录、
           `block-accumulator` 各改一遍,换不来任何新信息。
         */
-        const gate = this.gateWaitFor(c.provider.id)
+        const gate = this.gateWaitFor(gateKey)
         if (gate.waitMs > 0) {
           yield { type: 'provider_retry', attempt: attempt + 1, delayMs: gate.waitMs, reason: gate.reason }
           await abortableSleep(gate.waitMs, signal)
@@ -924,7 +1047,8 @@ export class UpstreamRouter {
           req,
           signal,
           runContext,
-          attemptOrdinal
+          attemptOrdinal,
+          account
         )
         if (outcome.kind === 'ok') return
 
@@ -948,11 +1072,19 @@ export class UpstreamRouter {
         */
         const delayMs = this.retryDelayFor(outcome.error, attempt)
         if (outcome.error.code === 'rate_limit') {
-          this.rateLimitGate.set(c.provider.id, {
+          this.rateLimitGate.set(gateKey, {
             until: this.host.clock.now() + delayMs,
             reason: outcome.error.message
           })
         }
+
+        /*
+          账号级落闸(**落库**,重启后仍然有效)+ 还有没有下一个账号可用。
+          ★ 和上面那个进程内闸门是两回事:那个管"这几秒别再发",量级是秒;
+          这个管"这个账号这一轮额度没了",量级是分钟到小时(见 `AccountPool`)。
+        */
+        const nextAccount =
+          account === null ? null : (this.accounts?.reportFailure(account, outcome.error) ?? null)
 
         /**
          * ★ §5.3 的那条边界:**只能在收到第一个内容字节之前切换或重试**。
@@ -964,6 +1096,21 @@ export class UpstreamRouter {
         if (outcome.sawContent) {
           yield { type: 'error', error: outcome.error }
           return
+        }
+
+        /*
+          ★★ **换号不消耗重试次数。** 刚才那次失败是"那个账号的额度没了",
+          不是"这次请求不行" —— 拿一个全新的账号重发本质上是第一次尝试。
+          算进 `attempt` 的话,三个账号的用户实际只能用到前两个
+          (第三次尝试时次数已经用光),而界面上第三个账号一直显示可用。
+
+          ★ 循环上限 `MAX_NETWORK_ATTEMPTS` 仍然兜着底:账号再多也不会无限换,
+          因为每换一次都会先给上一个落闸,`select()` 不会再挑到它。
+        */
+        if (nextAccount !== null && accountSwitches < MAX_ACCOUNT_SWITCHES) {
+          accountSwitches += 1
+          attempt -= 1
+          continue
         }
 
         // network 借用更宽的上限,其余可重试错误(限流、5xx …)维持原来的 3 次
@@ -980,6 +1127,75 @@ export class UpstreamRouter {
     // auth 比「最后一个网络错误」更值得展示:它有明确的行动(去设置页填密钥),
     // 而一个 network 错误只会让用户干瞪眼重试
     yield { type: 'error', error: authError ?? lastError ?? agentError('unknown', '上游请求失败') }
+  }
+
+  /**
+   * 把这次响应里的额度快照记到账号上(今天只有 Codex 有这组头)。
+   *
+   * ★ 非 chatgpt 的账号、没有账号表的供应商:一个字节都不做,连头都不读。
+   * ★ 解析不出来时**什么都不写** —— 写一个空快照会把界面上那句
+   *   「尚未获取,发一条消息后更新」变成一条 0% 的进度条,而那是一句假话。
+   */
+  private captureQuota(res: Response, account: ProviderAccount | null): void {
+    if (account === null || account.issuer !== 'chatgpt') return
+    if (this.accounts === undefined) return
+    try {
+      const snapshot = parseCodexQuota(headerReaderOf(res.headers), this.host.clock.now())
+      if (snapshot === null) {
+        /*
+          ★★ 计划 §11 第 1 条:头名**还没有拿真实响应验证过**。解析不出来和
+          「上游根本没给」在日志里长得一样,所以把看到的 `x-codex-*` 原样记一行 ——
+          这是把那组候选名收敛成实测结论的唯一入口。
+          debug 级:正常用户看不到,排查时开日志就有。
+        */
+        const seen = codexQuotaHeaderNames(res.headers)
+        if (seen.length > 0) {
+          this.host.logger.debug('[codex-quota] 认不出这组头,请补进 codex-quota.ts', seen.join(' '))
+        }
+        return
+      }
+      this.accounts.reportQuota(account, snapshot)
+    } catch (error) {
+      this.host.logger.warn('[codex-quota] 解析额度失败,请求本身不受影响', error)
+    }
+  }
+
+  /**
+   * 这家的全部账号都用不了。
+   *
+   * ★★ **必须给得出「最早什么时候能再用」。** 没有这个数的话,用户看到的是
+   * 一句「全部账号都在限流中」,而他完全不知道该等 5 分钟还是 5 小时 ——
+   * 于是他会反复点重发,每一次都在给冷却期续命。
+   *
+   * ★ `retryable: true`:限流会自己过去,界面上那颗「重试」按钮是有意义的。
+   * 账号全被停用/待重新登录时(`earliestRecoveryAt` 为 null)则不是 —— 那要人去动手。
+   *
+   * ★ 文案走 `messageKey`,时刻以**时间戳**下发:格式化成「14:30」是渲染层的事
+   * (那边才知道用户的 locale 和时区)。在这里拼一个中文时间串,英文界面上会出现半句中文。
+   */
+  private allAccountsLimitedError(providerName: string, providerId: string): AgentError {
+    const recoveryAt = this.accounts?.earliestRecoveryAt(providerId) ?? null
+    if (recoveryAt === null) {
+      return agentError(
+        'no_healthy_provider',
+        `供应商「${providerName}」的账号都不可用,请检查账号是否被停用或需要重新登录。`,
+        {
+          retryable: false,
+          messageKey: 'agent.error.allAccountsUnusable',
+          messageParams: { provider: providerName }
+        }
+      )
+    }
+    return agentError(
+      'rate_limit',
+      `供应商「${providerName}」的全部账号都在限流中,最早恢复时间已在设置页显示。`,
+      {
+        retryable: true,
+        retryAfterMs: Math.max(0, recoveryAt - this.host.clock.now()),
+        messageKey: 'agent.error.allAccountsRateLimited',
+        messageParams: { provider: providerName, recoveryAt }
+      }
+    )
   }
 
   /**

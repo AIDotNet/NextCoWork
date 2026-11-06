@@ -3,6 +3,8 @@
  *
  * 复用 `UsagePage` 里 `SummaryCards` 的既有样式(`rounded-[18px] bg-surface` +
  * `grid-cols-2 min-[760px]:grid-cols-4`),同一页上两排卡不该长得不一样。
+ * 卡片外观仍与之一致;栅格断点已改成容器查询(理由见下方 grid 处),
+ * `SummaryCards` 那排还是视口断点,没有一并改。
  */
 import type { UsageActivityStats } from '../../../../../../shared/domain/usage'
 import { useI18n } from '../../../../i18n'
@@ -82,7 +84,10 @@ export function OverviewCards({
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-2 min-[760px]:grid-cols-3 min-[1100px]:grid-cols-6">
+    // 断点是容器查询(`@container` 挂在 UsageOverview 根上),不是视口 ——
+    // 原先 `min-[1100px]:grid-cols-6` 在宽视口下把六张卡塞进半宽的设置浮层,
+    // 每张一百来像素,「US$3,326.94」这类值被截断
+    <div className="grid grid-cols-2 gap-2 @min-[520px]:grid-cols-3 @min-[1040px]:grid-cols-6">
       {cards.map((card) => (
         <section
           key={card.key}
