@@ -175,7 +175,7 @@ describe('服务在纯 Node 里直接可用', () => {
     broadcastActiveRuns()
     expect(probe.countOf('agent:activeRuns')).toBeGreaterThan(0)
     const last = probe.globals.filter((g) => g.channel === 'agent:activeRuns').at(-1)
-    expect(last?.payload).toEqual({ runs: [] })
+    expect(last?.payload).toEqual({ runs: [], subagents: [] })
     // 这一轮结束了,权威索引里就没有它了
     expect(activeRunIndex().find((e) => e.runId === request.runId)).toBeUndefined()
   })

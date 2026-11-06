@@ -13,7 +13,7 @@
  */
 import type { WidgetActionPreflight, WidgetActionResult } from '../domain/widget'
 import type { AgentError } from '../agent/error'
-import type { ActiveRunEntry, AgentEvent, RunSnapshot } from '../agent/event'
+import type { ActiveRunEntry, ActiveSubagentEntry, AgentEvent, RunSnapshot } from '../agent/event'
 import type { AgentMessage, ContentPart } from '../agent/message'
 import type { ContextPreview } from '../agent/context-management'
 import type { InteractionResponse, PendingInteraction } from '../agent/interaction'
@@ -1432,7 +1432,14 @@ export interface IpcEventMap {
    * ★ 全量而不是增量:增量要求每条都不丢,而这条广播存在的全部意义就是
    *   **能在丢过消息之后自己收敛**。
    */
-  'agent:activeRuns': { runs: ActiveRunEntry[] }
+  'agent:activeRuns': {
+    runs: ActiveRunEntry[]
+    /**
+     * 活着的子 run(权威全集)。缺席 = 旧版主进程没带这一半,渲染层不据此对账;
+     * 空数组 = 一个都没有,渲染层会把还挂着「运行中」的子代理卡片收口。
+     */
+    subagents?: ActiveSubagentEntry[]
+  }
   /**
    * 某条会话的排队消息变了(入队、插话、续跑消费、送达回执)。**全量 + 全局广播**:
    * 队列是「这条会话还欠着什么」的事实,与谁在看哪个 run 无关,且条数有上限(20 条)。

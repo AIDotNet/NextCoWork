@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { WebContents } from 'electron'
-import type { ActiveRunEntry } from '../../../shared/agent/event'
+import type { ActiveRunEntry, ActiveSubagentEntry } from '../../../shared/agent/event'
 import type { RunRequest } from '../../../shared/agent/run-request'
 import { runs } from '../../kernel/run-registry'
 import { windows } from '../../window/registry'
@@ -45,6 +45,12 @@ class FakeWebContents {
     return this.sent
       .filter((message) => message.channel === 'agent:activeRuns')
       .map((message) => (message.payload as { runs: ActiveRunEntry[] }).runs)
+  }
+
+  subagentBroadcasts(): ActiveSubagentEntry[][] {
+    return this.sent
+      .filter((message) => message.channel === 'agent:activeRuns')
+      .map((message) => (message.payload as { subagents?: ActiveSubagentEntry[] }).subagents ?? [])
   }
 }
 
@@ -98,19 +104,36 @@ describe('agent:activeRuns', () => {
     off()
   })
 
-  it('leaves subagents out of the set so their end never has to be observed', () => {
+  it('keeps subagents out of the top-level set but broadcasts them in their own half', () => {
     const off = wire()
     const wc = bystander()
     const parent = runs.create(req())
     const child = runs.create(req({ runId: 'child-run', sessionId: 'child-session', parentRunId: parent.runId, parentSessionId: parent.sessionId, depth: 1 }))
 
-    // 子 run 既不进集合,也不该单独触发一次内容相同的广播。
-    expect(wc.broadcasts()).toHaveLength(1)
+    // 子 run 不进顶层集合(角标不数子代理),但它的起止必须广播出去 ——
+    // 渲染层拿 `subagents` 对账,否则漏一条结束事件卡片就永远「运行中」。
+    expect(wc.broadcasts().at(-1)).toHaveLength(1)
+    expect(wc.subagentBroadcasts().at(-1)).toEqual([expect.objectContaining({
+      runId: 'child-run', parentRunId: parent.runId, sessionId: 's1', workspaceId: 'w1', status: 'running'
+    })])
     child.finish('done')
-    expect(wc.broadcasts()).toHaveLength(1)
+    expect(wc.subagentBroadcasts().at(-1)).toEqual([])
+    expect(wc.broadcasts().at(-1)).toHaveLength(1)
 
     parent.finish('done')
     expect(wc.broadcasts().at(-1)).toEqual([])
+    off()
+  })
+
+  it('still reports a background child after its parent has been reaped', () => {
+    const off = wire()
+    const wc = bystander()
+    const parent = runs.create(req())
+    runs.create(req({ runId: 'child-run', sessionId: 'child-session', parentRunId: parent.runId, parentSessionId: parent.sessionId, depth: 1 }))
+    parent.finish('done')
+    runs.reap()
+    broadcastActiveRuns()
+    expect(wc.subagentBroadcasts().at(-1)).toEqual([expect.objectContaining({ runId: 'child-run', sessionId: 's1' })])
     off()
   })
 

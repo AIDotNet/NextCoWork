@@ -20,6 +20,7 @@ import { on } from './services/ipc'
 import { AppShell } from './shell/AppShell'
 import { AppSkeleton } from './shell/AppSkeleton'
 import { WindowControls } from './shell/WindowControls'
+import { startBackgroundShellSync } from './stores/background-shells'
 import { startAgentEventPump, adoptActiveRuns, adoptActiveSubagents, refreshHydratedSessions, useRunIndex } from './stores/session'
 import { setSoundPreferences, startNotificationSounds } from './stores/notification-sounds'
 import { setComposerPrefs } from './stores/composer-prefs'
@@ -78,6 +79,8 @@ export default function App(): React.JSX.Element {
   }, [settings, setLocale])
 
   useEffect(() => startAgentEventPump(), [])
+  // 后台 shell 的唯一镜像,和事件泵同理只起一次(见 `stores/background-shells.ts`)
+  useEffect(() => startBackgroundShellSync(), [])
 
   // 需求:设置 › 通用 › 提示音。和事件泵同理只起一次,否则一个 run 跑完响 N 声(见该文件头)
   useEffect(() => startNotificationSounds(), [])

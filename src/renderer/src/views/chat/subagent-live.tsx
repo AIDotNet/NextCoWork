@@ -19,8 +19,7 @@
  * 工具调用数 —— 卡片上本来就有,而卡片才是用户发现异常的地方。
  */
 import { useEffect, type ReactNode } from 'react'
-import { sessionStore } from '../../stores/session'
-import { openChildSession } from '../../stores/session'
+import { sessionStore, syncChildPanel } from '../../stores/session'
 
 export function SubagentLiveFeed({
   childSessionId,
@@ -32,15 +31,18 @@ export function SubagentLiveFeed({
 }): ReactNode {
   const useParent = sessionStore(parent.sessionId)
   const childRunId = useParent((s) => s.transcript.subagents[parent.callId]?.childRunId)
+  // ★ 面板的运行态**以父会话那张卡片为准**(唯一真源),不是子 store 自己那份 —— 见 `syncChildPanel`
+  const parentStatus = useParent((s) => s.transcript.subagents[parent.callId]?.status)
 
   /*
     ★ 依赖里带上 `childRunId`:父转录是懒 hydrate 的,首帧多半还没有这个字段,
     等它到了才接得上实时流。`openChildSession` 自己是幂等的(`attachRun` 那侧有
     `restoreInFlight` 去重),重复调用不会重放两遍。
+    ★ 带上 `parentStatus`:卡片一到终态,面板跟着离开运行态、照抄同一个终态。
   */
   useEffect(() => {
-    openChildSession(childSessionId, childRunId)
-  }, [childSessionId, childRunId])
+    syncChildPanel(childSessionId, childRunId, parentStatus)
+  }, [childSessionId, childRunId, parentStatus])
 
   return null
 }

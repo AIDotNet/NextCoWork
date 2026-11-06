@@ -14,7 +14,7 @@ import { useMemo } from 'react'
 import { create, type UseBoundStore, type StoreApi } from 'zustand'
 import type { PermissionMode } from '../../../shared/agent/permission'
 import type { SessionChange, SessionPage } from '../../../shared/domain/session'
-import type { AgentEvent } from '../../../shared/agent/event'
+import type { ActiveSubagentEntry, AgentEvent, RunStatus } from '../../../shared/agent/event'
 import { mergeGoalStatusMessage, userMessage, type AgentMessage, type ContentPart } from '../../../shared/agent/message'
 import { editUserMessage, editedParts, removeSpan, replySpan, turnSpan } from '../../../shared/agent/history-edit'
 import type { ActiveGoal, GoalChange } from '../../../shared/domain/goal'
@@ -1217,6 +1217,58 @@ export function openChildSession(childSessionId: string, childRunId?: string): v
 }
 
 /**
+ * 只读子会话的运行态**跟着父会话那张卡片走** —— 卡片是这个子代理状态的唯一真源。
+ *
+ * ★★ 子会话自己的 store 有一份独立的 `transcript.status` / `activeRunId`:它读库(hydrate 一律写
+ *   `'done'`)、或者靠转发来的那几条事件。卡片说「出错」「已停止」时,面板却说「已完成」;
+ *   卡片已经收口时,面板还挂着运行中的停止按钮 —— 两份拷贝各自都「没错」。这里让面板
+ *   在卡片到达终态时照抄卡片的终态,而不是自己再判一遍。
+ *
+ * 由 `SubagentLiveFeed`(面板挂着时)在卡片状态变化时调用;`finishChildRoute` 收口时也调。
+ */
+export function syncChildPanel(childSessionId: string, childRunId: string | undefined, parentStatus: RunStatus | undefined): void {
+  if (childRunId === undefined || parentStatus === undefined) return
+  if (parentStatus === 'running') {
+    openChildSession(childSessionId, childRunId)
+    return
+  }
+  settleChildPanel(childSessionId, childRunId, parentStatus)
+}
+
+function settleChildPanel(childSessionId: string, childRunId: string, status?: RunStatus): void {
+  const store = stores.get(childSessionId)
+  if (store === undefined) return
+  const terminal = status ?? cardStatusOf(childRunId)
+  const state = store.getState()
+  const wasLive = state.activeRunId === childRunId
+  if (!wasLive && (terminal === undefined || state.transcript.status === terminal)) return
+  store.setState((s) => ({
+    ...(s.activeRunId === childRunId ? { activeRunId: null } : {}),
+    transcript: {
+      ...s.transcript,
+      live: s.activeRunId === childRunId ? [] : s.transcript.live,
+      status: terminal ?? (s.transcript.status === 'running' ? 'done' : s.transcript.status)
+    }
+  }))
+  // 刚离开运行态:库里那份已提交的子转录是最完整的版本
+  if (wasLive) void hydrateHistory(childSessionId, true).then(() => {
+    const after = terminal ?? cardStatusOf(childRunId)
+    if (after !== undefined && after !== 'running' && stores.get(childSessionId)?.getState().transcript.status !== after) {
+      stores.get(childSessionId)?.setState((s) => ({ transcript: { ...s.transcript, status: after } }))
+    }
+  })
+}
+
+/** 父会话那张卡片此刻的状态 —— 子代理状态的唯一真源。 */
+function cardStatusOf(childRunId: string): RunStatus | undefined {
+  for (const store of stores.values()) {
+    const found = Object.values(store.getState().transcript.subagents).find((subagent) => subagent.childRunId === childRunId)
+    if (found !== undefined) return found.status
+  }
+  return undefined
+}
+
+/**
  * 工作区退场时,放掉这个会话在渲染层占的内存(主要是整段转录)。
  * 不放的话,开过的几百个会话会一直挂着。
  *
@@ -1534,14 +1586,8 @@ function settleAfterStop(sessionId: string, runId: string): void {
   }, STOP_SETTLE_GRACE_MS)
 }
 
-export interface ActiveSubagentIndexEntry {
-  runId: string
-  parentRunId: string
-  sessionId: string
-  workspaceId: string
-  status?: 'running' | 'done' | 'error' | 'aborted'
-  startedAt?: number
-}
+/** 与主进程同一个类型:bootstrap 首帧与 `agent:activeRuns` 广播共用,见 `ActiveSubagentEntry` */
+export type ActiveSubagentIndexEntry = Omit<ActiveSubagentEntry, 'status'> & { status?: RunStatus }
 
 /**
  * Restore child-topic routing after a renderer reload. Top-level active runs
@@ -1549,6 +1595,8 @@ export interface ActiveSubagentIndexEntry {
  * not feed the running indicators because a child is not a conversation run.
  */
 export function adoptActiveSubagents(entries: readonly ActiveSubagentIndexEntry[]): void {
+  // bootstrap 首帧本身就是一份权威全集,和之后的广播同一个口径
+  authoritativeChildren = new Set(entries.map((entry) => entry.runId))
   const detachedParents = new Map<string, ActiveSubagentIndexEntry>()
   for (const entry of entries) {
     childRunIndex.set(entry.runId, {
@@ -1582,29 +1630,134 @@ export function adoptActiveSubagents(entries: readonly ActiveSubagentIndexEntry[
   }
 }
 
+/** 父会话里那张还停在「运行中」的卡片属于哪个会话。查不到 = 没有任何卡片还在等它。 */
+function ownerOfRunningSubagent(childRunId: string): [string, SessionStore] | undefined {
+  for (const entry of stores) {
+    if (Object.values(entry[1].getState().transcript.subagents)
+      .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running')) return entry
+  }
+  return undefined
+}
+
+function subagentStillRunning(store: SessionStore, childRunId: string): boolean {
+  return Object.values(store.getState().transcript.subagents)
+    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running')
+}
+
 /**
- * 用户点子代理卡片的停止时,主进程可能早就没有这个 run 了(它已跑完/被回收),
- * 此时 `agent:abort` 是无声的空操作,而父会话里那张卡片因为漏了结束事件还停在「运行中」。
- * 这里按主进程的实际状态把卡片收口:还在跑就什么都不动(真正的 run_end 会自己到),
- * 已经结束或查不到了就补一条结束。
+ * 只把库里的 Task 回执合进卡片表,不动消息与活跃块。
+ *
+ * ★ 主进程在子 run 结束时**一定**会改写回执(`persistSubagentCompletion`),所以事件全丢了的时候,
+ *   库里那份就是这个子代理的终态真相;`subagentsFromMessages` 的合并是单调的(终态压过 running),
+ *   不会被内存里那份过期的「运行中」盖回去。父 run 还在跑时 `hydrateHistory` 会直接让路给
+ *   attach,所以这里单独读一页,而不是借它。
+ */
+async function refreshSubagentReceipts(sessionId: string): Promise<void> {
+  const store = stores.get(sessionId)
+  if (store === undefined) return
+  const page = await getSessionPage(sessionId, pageLimitFor(store.getState().transcript))
+  if (stores.get(sessionId) !== store) return
+  store.setState((s) => ({
+    transcript: { ...s.transcript, subagents: subagentsFromMessages(page.messages, s.transcript.subagents) }
+  }))
+}
+
+/**
+ * 主进程说这个子 run 已经不在了(或者用户按了停止),而父会话里那张卡片还停在「运行中」时的收口。
+ *
+ * 三段,越往后越粗:
+ * 1. attach 子 run,把漏掉的尾巴(含 `run_end`)补回卡片 —— 用量、摘要、错误都只在事件里;
+ * 2. attach 不到(已被回收)就读库里的回执 —— 主进程写的终态;
+ * 3. 还是 running 就判 aborted。宁可少一截尾巴,也不能留一张永远转圈的卡片。
+ *
+ * 主进程说它仍在跑就什么都不动 —— 真正的结束事件会自己到。
+ * 收口之后,点开着的只读子会话跟着收(`settleChildPanel`),三处说同一句话。
  */
 export async function settleSubagent(childRunId: string): Promise<void> {
-  const owner = [...stores.values()].find((store) => Object.values(store.getState().transcript.subagents)
-    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running'))
-  if (owner === undefined) return
-  let status: 'done' | 'error' | 'aborted' = 'aborted'
-  try {
-    const entry = Object.values(owner.getState().transcript.subagents).find((subagent) => subagent.childRunId === childRunId)
-    const snap = await attachRun(childRunId, entry?.childSeq ?? 0)
-    owner.getState().applyChildEvents(childRunId, snap.events, snap.seq - snap.events.length + 1)
-    if (snap.status === 'running') return
-    status = snap.status
-  } catch {
-    // 查不到 = 已被回收,即已结束
+  const owner = ownerOfRunningSubagent(childRunId)
+  if (owner === undefined) {
+    finishChildRoute(childRunId)
+    return
   }
-  const stuck = Object.values(owner.getState().transcript.subagents)
-    .some((subagent) => subagent.childRunId === childRunId && subagent.status === 'running')
-  if (stuck) owner.getState().applyChildEvents(childRunId, [{ type: 'run_end', status, at: Date.now() }])
+  const [sessionId, store] = owner
+  try {
+    const entry = Object.values(store.getState().transcript.subagents).find((subagent) => subagent.childRunId === childRunId)
+    const snap = await attachRun(childRunId, entry?.childSeq ?? 0)
+    store.getState().applyChildEvents(childRunId, snap.events, snap.seq - snap.events.length + 1)
+    if (snap.status === 'running') return
+  } catch {
+    // 查不到 = 已被回收,即已结束。终态去库里的回执找
+    await refreshSubagentReceipts(sessionId).catch(() => undefined)
+  }
+  if (subagentStillRunning(store, childRunId)) {
+    store.getState().applyChildEvents(childRunId, [{ type: 'run_end', status: 'aborted', at: Date.now() }])
+  }
+  finishChildRoute(childRunId)
+}
+
+/**
+ * 停止一个子代理 —— 卡片上那颗和胶囊里那颗是**同一个动作**。
+ *
+ * ★ 以前胶囊只 `abortRun`,卡片是 abort + `settleSubagent`:run 早已被回收时 abort 是无声的空操作,
+ *   于是同一个子代理,点卡片的停止会收口,点胶囊的停止永远「运行中」。动作也只许有一份。
+ */
+export function stopSubagent(childRunId: string): void {
+  void abortRun(childRunId, true).catch(() => {}).then(() => settleSubagent(childRunId)).catch(() => {})
+}
+
+/** 子 run 已结束:摘掉转发路由,并让点开着的只读子会话离开运行态。 */
+function finishChildRoute(childRunId: string): void {
+  childRunIndex.delete(childRunId)
+  const panel = childSessionOfRun.get(childRunId)
+  childSessionOfRun.delete(childRunId)
+  if (panel !== undefined) settleChildPanel(panel, childRunId)
+}
+
+/**
+ * 主进程推来的**活着的子 run 全集**(`agent:activeRuns` 的 `subagents`)。缺席 = 还没收到过
+ * (旧版主进程不带这一半),此时不据它收口任何东西。
+ */
+let authoritativeChildren: ReadonlySet<string> | null = null
+
+/** 已经排了收口的子 run,免得每次广播都再排一次 */
+const settlePending = new Set<string>()
+
+/**
+ * 把子代理的三处显示对齐到主进程的权威集合 —— `syncActiveRuns` 的另一半。
+ *
+ * 需求:卡片、胶囊、只读子会话三处说的必须是同一件事。子 run 的结束以前只能靠事件流送到,
+ * 而事件流按订阅定向推、窗口藏着时整批不收、父会话的 store 当时不在就原地丢掉 ——
+ * 漏一条,卡片和胶囊永远「运行中」,点开子会话(读库)却是「已完成」。
+ *
+ * - **多出来的**(集合里有、路由表里没有):补上路由,之后它的事件才有地方落;
+ * - **少掉的**(卡片说 running、集合里没有):宽限一下再核一次(结束事件和这条广播是同一刻
+ *   出发的,正常情况下事件先落地,这里什么都不用做),还不对就 `settleSubagent`。
+ */
+export function syncActiveSubagents(entries: readonly ActiveSubagentIndexEntry[]): void {
+  authoritativeChildren = new Set(entries.map((entry) => entry.runId))
+  for (const entry of entries) {
+    if (childRunIndex.has(entry.runId)) continue
+    childRunIndex.set(entry.runId, { runId: entry.runId, sessionId: entry.sessionId, workspaceId: entry.workspaceId })
+  }
+  for (const runId of [...childRunIndex.keys()]) {
+    if (!authoritativeChildren.has(runId)) scheduleSubagentSettle(runId)
+  }
+  for (const store of stores.values()) {
+    for (const subagent of Object.values(store.getState().transcript.subagents)) {
+      if (subagent.status === 'running' && !authoritativeChildren.has(subagent.childRunId)) scheduleSubagentSettle(subagent.childRunId)
+    }
+  }
+}
+
+function scheduleSubagentSettle(childRunId: string): void {
+  if (settlePending.has(childRunId)) return
+  settlePending.add(childRunId)
+  setTimeout(() => {
+    settlePending.delete(childRunId)
+    // 宽限期内又出现在集合里了(start 先于第一次广播到)—— 它活着,不动
+    if (authoritativeChildren?.has(childRunId) === true) return
+    void settleSubagent(childRunId)
+  }, MISSED_RUN_GRACE_MS)
 }
 
 async function restoreChildSnapshot(entry: ActiveSubagentIndexEntry): Promise<void> {
@@ -2024,7 +2177,11 @@ export function startAgentEventPump(): () => void {
     它和 `agent:event` 描述的是同一件事的两面,分开起的话总有一处会忘了退订,
     而漏退订在 HMR 下就是监听器叠加(方案 §3 规则 4)。
   */
-  const offRuns = onActiveRuns(syncActiveRuns)
+  const offRuns = onActiveRuns((runs, subagents) => {
+    syncActiveRuns(runs)
+    // 旧版主进程不带这一半:不据一个「不知道」去收口任何卡片
+    if (subagents !== undefined) syncActiveSubagents(subagents)
+  })
   // 队列与后台汇报的真源在主进程;这里只把镜像跟上
   const offQueue = onSessionQueueChanged((snapshot) => applyQueueSnapshot(snapshot.sessionId, snapshot))
   const offReport = onSubagentReport(({ sessionId, callId, status }) => applySubagentReport(sessionId, callId, status))
@@ -2093,10 +2250,8 @@ function drain(): void {
       */
       const panel = childSessionOfRun.get(env.runId)
       if (panel !== undefined) stores.get(panel)?.getState().applyEnvelope(env)
-      if (env.events.some((event) => event.type === 'run_end')) {
-        childRunIndex.delete(env.runId)
-        childSessionOfRun.delete(env.runId)
-      }
+      // 收口走同一个出口:路由摘掉、面板照抄卡片的终态(见 `finishChildRoute`)
+      if (env.events.some((event) => event.type === 'run_end')) finishChildRoute(env.runId)
       continue
     }
     const sessionId = runIndex.get(env.runId)?.sessionId

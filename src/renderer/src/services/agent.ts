@@ -4,7 +4,7 @@
  * 长任务的三段式(协议 §9):`invoke` 启动 + `on` 收进度 + `invoke` 中断。
  * 这里唯一值得注意的是 `startRun` 的调用契约,见下。
  */
-import type { ActiveRunEntry, RunSnapshot } from '../../../shared/agent/event'
+import type { ActiveRunEntry, ActiveSubagentEntry, RunSnapshot } from '../../../shared/agent/event'
 import type { RunRequest, SendOptions } from '../../../shared/agent/run-request'
 import type { InteractionResponse, PendingInteraction } from '../../../shared/agent/interaction'
 import type { InterjectItem } from '../../../shared/agent/interject'
@@ -106,8 +106,10 @@ export function onAgentEvent(cb: (env: AgentEventEnvelope) => void): Unsubscribe
  * 就整批丢弃(定时任务的 run、⌘R 之后还没打开的会话都属于这一类);
  * 这条是广播,专门用来让运行中角标**在丢过消息之后依然收敛**。
  */
-export function onActiveRuns(cb: (entries: readonly ActiveRunEntry[]) => void): Unsubscribe {
-  return on('agent:activeRuns', ({ runs }) => cb(runs))
+export function onActiveRuns(
+  cb: (entries: readonly ActiveRunEntry[], subagents: readonly ActiveSubagentEntry[] | undefined) => void
+): Unsubscribe {
+  return on('agent:activeRuns', ({ runs, subagents }) => cb(runs, subagents))
 }
 
 export function listInteractions(runId?: string, sessionId?: string): Promise<PendingInteraction[]> {

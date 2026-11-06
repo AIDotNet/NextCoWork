@@ -13,7 +13,9 @@
 import { ArrowDownToLine, Bot, Brain, CheckCircle2, CircleAlert, Clock3, ListChecks, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { formatCallDuration } from "../../../../shared/agent/duration";
-import { elapsedOf, formatDuration } from "../../../../shared/agent/duration";
+import { formatDuration } from "../../../../shared/agent/duration";
+import { subagentViewOf } from "../../../../shared/domain/subagent-view";
+import { useTicker } from "../../lib/useTicker";
 import {
   thinkingElapsedMs,
   thinkingTokenReading,
@@ -40,8 +42,9 @@ import { useWorkspaceFile } from "./workspace-file";
 import { previewOf } from "./interaction-preview";
 import { MAX_PARTIAL_JSON_CHARS, parsePartialJson } from "./partial-json";
 import { ToolIcon, type ToolViewStatus } from "./ToolIcon";
-import { abortRun, backgroundSubagent } from "../../services/agent";
-import { settleSubagent } from "../../stores/session";
+import { backgroundSubagent } from "../../services/agent";
+import { stopSubagent } from "../../stores/session";
+import { useTranscriptSubagents } from "./thread-tables";
 import { getLastAssistantMessage } from "../../services/sessions";
 import { visibleText } from "../../../../shared/agent/message";
 import { useOpenSubagent } from "./subagent-open";
@@ -524,34 +527,37 @@ function StatusSlot({
  *    旧转录没有 `childSessionId` 时只是没有这颗按钮,卡片本身照样能展开。
  */
 export function SubagentNode({
+  callId,
   summary,
-  state,
+  state: fallbackState,
   pending = false,
 }: {
+  /**
+   * ★ 卡片**自己按 callId 去会话级那张表里查**(`useTranscriptSubagents`),而不是吃上游
+   * 递下来的快照 —— 状态只有一个真源,见 `shared/domain/subagent-view.ts` 与 AGENTS.md。
+   */
+  callId?: string;
   summary: string | undefined;
+  /** 表里查不到时的兜底(单测直接渲一张卡片时用)。界面路径一律传 `callId`。 */
   state?: SubagentState;
   /**
    * 子代理**还没派出去**:`Task` 的参数还在流,`subagent_start` 没到。
    *
    * 需求:那几秒里卡片就该长成子代理卡的样子(见 `thread-content.ts` 里那段),
    * 但状态得说实话。★ 不能靠「state 为空」判断 —— 旧转录里的子代理块同样没有 state,
-   * 而它们早就跑完了,下面那行 `?? 'done'` 正是为它们写的。
+   * 而它们早就跑完了,`subagentViewOf` 里那条兜底 done 正是为它们写的。
    */
   pending?: boolean;
 }): ReactNode {
   const { t } = useI18n();
   const openSubagent = useOpenSubagent();
-  const [now, setNow] = useState(() => Date.now());
+  const table = useTranscriptSubagents();
+  const state = (callId === undefined ? undefined : table[callId]) ?? fallbackState;
   const [open, setOpen] = useState(false);
-  const running = state?.status === 'running';
+  const now = useTicker(state?.status === 'running');
+  const view = subagentViewOf(state, now, pending);
+  const { status, running } = view;
 
-  useEffect(() => {
-    if (!running) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [running])
-
-  const status = pending && state === undefined ? 'pending' : state?.status ?? 'done';
   const errorText = state?.error === undefined ? undefined : agentErrorText(state.error, t);
   /*
     ★★ 「正在退避重试」以前**只画在主对话的状态行上**,而子代理不看状态行 ——
@@ -572,22 +578,10 @@ export function SubagentNode({
     : notice.kind === 'retry'
       ? t('chat.status.retrying', { attempt: notice.attempt, reason: notice.reason })
       : t('chat.status.providerSwitched', { to: notice.to, reason: notice.reason });
-  const duration = state?.startedAt === undefined
-    ? undefined
-    : formatDuration(elapsedOf({ startedAt: state.startedAt, endedAt: state.endedAt }, now) ?? 0)
+  const duration = view.elapsedMs === undefined ? undefined : formatDuration(view.elapsedMs)
   const title = state?.description ?? summary ?? t("chat.subagent.default");
-  /*
-    ★★ 「汇报」这件事**只对后台子代理成立**。前台子代理的结果就是它那条
-    `tool_result`,同步回到主代理,根本不存在「回传」这一步 —— 而这里以前的兜底是
-    「没写 reportStatus 且不在跑 → reported」,前台在 `runtime.ts` 里恰恰从不写
-    这个字段(只有 background 才写 'pending'),于是**每一张跑完的前台卡片**
-    都挂着一句「结果已汇报给主代理」。那句话本该是后台专属的信号,
-    结果人人都有,等于把两者的区别抹平了。
-  */
   const background = state?.background === true;
-  const reportStatus = !background
-    ? 'none'
-    : state?.reportStatus ?? (status === 'done' ? 'pending' : status === 'running' ? 'none' : 'reported');
+  const reportStatus = view.report;
   const reportLabel = reportStatus === 'pending'
     ? t('chat.subagent.report.pending')
     : reportStatus === 'injecting'
@@ -598,27 +592,24 @@ export function SubagentNode({
           ? t('chat.subagent.report.blocked')
         : undefined;
   const color = status === 'error' ? undefined : agentColorHex(state?.color);
+  // 停止与胶囊里那颗是**同一个动作**(abort + 按主进程实情收口),见 `stopSubagent`
   const stop = (): void => {
-    const childRunId = state?.childRunId
-    if (childRunId === undefined) return
-    // abort 对已结束的 run 是空操作 —— 随后按主进程的实际状态把卡片收口,不让它卡在「运行中」。
-    void abortRun(childRunId, true).catch(() => {}).then(() => settleSubagent(childRunId)).catch(() => {})
+    if (state !== undefined) stopSubagent(state.childRunId)
   }
   /*
     需求:前台子代理跑得比预想久时,让主代理先接着干别的 —— 子代理不停,
     结论跑完后按后台那条路送回来。只对**还在跑的前台**子代理成立。
     ★ 失败静默:false 只意味着它刚好跑完了,用户要的「别再等」已经成立。
   */
-  const childRunId = state?.childRunId
-  const toBackground = running && !background && childRunId !== undefined
-    ? (): void => { void backgroundSubagent(childRunId).catch(() => {}) }
+  const toBackground = view.canBackground && state !== undefined
+    ? (): void => { void backgroundSubagent(state.childRunId).catch(() => {}) }
     : undefined
   /*
     ★ 没有 `childSessionId` 的是**旧转录**(那个字段是随这次改动才加进
     `subagent_start` 的)。它们点开会是一个空面板,所以这里索性不让点 ——
     一张点了没反应的卡片比一张不能点的卡片难解释得多。
   */
-  const canOpen = openSubagent !== undefined && state !== undefined && state.childSessionId !== undefined;
+  const canOpen = openSubagent !== undefined && state !== undefined && view.canOpen;
 
   return (
     <Surface

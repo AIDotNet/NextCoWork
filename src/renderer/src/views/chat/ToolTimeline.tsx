@@ -298,11 +298,13 @@ function TimelineRow({
     case "subagent":
       return (
         <SubagentNode
+          // ★ 只递 callId,卡片自己去会话级那张表里查 —— 不递 `item.state` 快照,
+          //   否则卡片和胶囊读的是同一个子代理的两份拷贝(见 AGENTS.md「状态统一管理」)。
+          callId={item.callId}
           summary={item.summary}
-          state={item.state ?? subagents[item.callId]}
           // 参数还在流、subagent_start 还没到 —— 理由见 thread-content.ts 里那段需求注释。
-          // 这里再核一次 subagents 表:item 是上一帧算出来的,状态可能刚刚到。
-          pending={item.pending === true && item.state === undefined && subagents[item.callId] === undefined}
+          // 卡片只在表里查不到时才采纳这个标记。
+          pending={item.pending === true && subagents[item.callId] === undefined}
         />
       );
     case "tool":

@@ -255,11 +255,42 @@ async function firstImage(
 ): Promise<GeneratedImage | null> {
   const data = (payload as { data?: unknown } | null)?.data
   if (!Array.isArray(data) || data.length === 0) return null
-  const first: unknown = data[0]
-  if (typeof first !== 'object' || first === null) return null
-  const entry = first as { b64_json?: unknown; url?: unknown }
-  if (typeof entry.b64_json === 'string' && entry.b64_json !== '') {
-    const bytes = Buffer.from(entry.b64_json, 'base64')
+  /*
+    ★ 生成 GIF 的上游常在 `data` 里回**两项**:动图本体 + 一张 PNG(首帧/预览),顺序不定。
+    只取 data[0] 的话,PNG 排前面就把动图丢了。规则:有 GIF 取 GIF(PNG 是它的静态替身,
+    一并展示只会重复一张);没有 GIF 取第一张能解出来的图,行为与单图回包一致。
+    找到 GIF 即停,不再下载后面的 url。
+  */
+  let fallback: GeneratedImage | null = null
+  let firstError: unknown
+  for (const entry of data) {
+    let image: GeneratedImage | null
+    try {
+      image = await imageOfEntry(entry, deps, signal)
+    } catch (err) {
+      // 中断原样上抛;单项失败(坏字节/超限/被拒的 url)先记着,别的项能用就用别的
+      if (signal.aborted) throw err
+      firstError ??= err
+      continue
+    }
+    if (image === null) continue
+    if (image.mime === 'image/gif') return image
+    fallback ??= image
+  }
+  if (fallback === null && firstError !== undefined) throw firstError
+  return fallback
+}
+
+/** `data[]` 的一项 → 内联图。`b64_json` 与 `url` 两条都接;两者都没有答 `null` */
+async function imageOfEntry(
+  entry: unknown,
+  deps: ImageGenDeps,
+  signal: AbortSignal
+): Promise<GeneratedImage | null> {
+  if (typeof entry !== 'object' || entry === null) return null
+  const { b64_json, url } = entry as { b64_json?: unknown; url?: unknown }
+  if (typeof b64_json === 'string' && b64_json !== '') {
+    const bytes = Buffer.from(b64_json, 'base64')
     // ★ 与下载分支同一条上限:base64 回包同样能装下任意大图,而它接下来要进
     //   转录、SQLite 和每一轮的上游请求
     if (bytes.length > MAX_ATTACHMENT_BYTES) {
@@ -267,8 +298,8 @@ async function firstImage(
     }
     return imageFromBytes(bytes)
   }
-  if (typeof entry.url !== 'string' || entry.url === '') return null
-  return downloadImage(deps.fetch, entry.url, signal)
+  if (typeof url !== 'string' || url === '') return null
+  return downloadImage(deps.fetch, url, signal)
 }
 
 /** 一次「候选家」的结果:成功带图,否则给人读的原因(不带供应商名,调用方加) */

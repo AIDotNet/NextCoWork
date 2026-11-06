@@ -5,7 +5,7 @@
  * 一次拿全,而不是让渲染层开局打七八个 invoke —— 那样会出现「设置到了但工作区还没到」
  * 的中间态,每个组件都得写一遍 loading 分支。
  */
-import type { ActiveRunEntry, RunStatus } from '../agent/event'
+import type { ActiveRunEntry, ActiveSubagentEntry } from '../agent/event'
 import type { AppSettings, ResolvedTheme } from './settings'
 import type { WindowKind, WindowTabState } from './tab'
 import type { Workspace } from './workspace'
@@ -26,14 +26,7 @@ export interface Bootstrap {
    */
   activeRuns: ActiveRunEntry[]
   /** Background child runs survive a renderer reload and are restored into their parent Task card. */
-  activeSubagents?: Array<{
-    runId: string
-    parentRunId: string
-    sessionId: string
-    workspaceId: string
-    status: RunStatus
-    startedAt?: number
-  }>
+  activeSubagents?: ActiveSubagentEntry[]
   versions: {
     app: string
     electron: string

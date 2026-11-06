@@ -173,6 +173,16 @@ describe('生图桥 · 回包解析', () => {
       .rejects.toThrow(/Refused to download the image/u)
   })
 
+  it('★ GIF 回包带一张 PNG 预览(任意顺序)—— 取 GIF,不被 data[0] 的 PNG 顶掉', async () => {
+    const gif = Buffer.from('GIF89a\x01\x00\x01\x00\x00\x00\x00;', 'binary').toString('base64')
+    for (const data of [[{ b64_json: PNG_B64 }, { b64_json: gif }], [{ b64_json: gif }, { b64_json: PNG_B64 }]]) {
+      const bridge = imageGenBridgeFor(deps({ fetch: vi.fn(async () => json({ data })) }))
+      const result = await bridge.generate('a dancing cat', new AbortController().signal)
+      expect(result.images).toHaveLength(1)
+      expect(result.images[0]!.mime).toBe('image/gif')
+    }
+  })
+
   it('200 但回包里没有图 —— 记 response carried no image,不谎报成功', async () => {
     const bridge = imageGenBridgeFor(deps({ fetch: vi.fn(async () => json({ data: [] })) }))
     await expect(bridge.generate('x', new AbortController().signal))

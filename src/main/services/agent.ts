@@ -23,7 +23,7 @@
  * ★ 本文件**零 electron import** —— 端口不碰窗口,`RunDriver` 的默认值是真驱动
  * `runtime.runAgent`(那条链按设计也是零 electron,见 runtime.ts 文件头)。
  */
-import type { ActiveRunEntry, AgentEvent, RunSnapshot } from '../../shared/agent/event'
+import type { ActiveRunEntry, ActiveSubagentEntry, AgentEvent, RunSnapshot } from '../../shared/agent/event'
 import type { RunRequest, SendOptions } from '../../shared/agent/run-request'
 import type { SessionInputPersistence, SessionQueueOp, SessionQueueResult, SessionQueueSnapshot, SubagentReportStatus } from '../../shared/domain/queued-input'
 import { isValidSessionInput, partsToAttachments } from '../../shared/domain/queued-input'
@@ -151,7 +151,7 @@ export type GlobalAgentChannel =
   | 'imports:changed'
 
 export interface GlobalAgentEventMap {
-  'agent:activeRuns': { runs: ActiveRunEntry[] }
+  'agent:activeRuns': { runs: ActiveRunEntry[]; subagents?: ActiveSubagentEntry[] }
   'session:queueChanged': SessionQueueSnapshot
   'session:subagentReport': { sessionId: string; callId: string; status: SubagentReportStatus }
   'session:inputPersistence': SessionInputPersistence
@@ -242,6 +242,33 @@ export function activeRunIndex(): ActiveRunEntry[] {
   })
 }
 
+/**
+ * 活着的子 run 的权威快照 —— 和 `activeRunIndex` 同一份口径的另一半。
+ *
+ * ★ bootstrap 首帧(`app:getBootstrap` 的 `activeSubagents`)和 `agent:activeRuns`
+ *   广播的 `subagents` 字段**都只能从这里取**:两边各写一遍的话,迟早只有一边会改判据。
+ * ★ `sessionId` 是**父**会话(Task 卡片住在那里)。父 run 已被回收时退回
+ *   `parentSessionId` —— 后台子代理活得比父 run 长是常态,不能因为父 run 没了就把它漏掉,
+ *   漏掉 = 渲染层永远等不到它的结束。
+ */
+export function activeSubagentIndex(): ActiveSubagentEntry[] {
+  return runs.activeRunIds().flatMap((id) => {
+    const run = runs.get(id)
+    if (run === undefined || run.parentRunId === undefined) return []
+    const parent = runs.get(run.parentRunId)
+    const sessionId = parent?.sessionId ?? run.parentSessionId
+    if (sessionId === undefined) return []
+    return [{
+      runId: run.runId,
+      parentRunId: run.parentRunId,
+      sessionId,
+      workspaceId: parent?.workspaceId ?? run.workspaceId,
+      status: run.status,
+      startedAt: run.startedAt
+    }]
+  })
+}
+
 /** 一个顶层 run 连同它派出的子代理,一共有几条审批 / 提问在等用户 */
 function pendingInteractionCount(handle: RunHandle): number {
   let count = handle.pendingInteractions.length
@@ -258,7 +285,7 @@ function pendingInteractionCount(handle: RunHandle): number {
  * 结束时渲染层收不到任何东西,角标就一直转着 —— 且全程零报错。
  */
 export function broadcastActiveRuns(): void {
-  notifyDelivery(() => delivery.emitGlobal('agent:activeRuns', { runs: activeRunIndex() }))
+  notifyDelivery(() => delivery.emitGlobal('agent:activeRuns', { runs: activeRunIndex(), subagents: activeSubagentIndex() }))
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -409,9 +409,10 @@ export class RunRegistry {
    * 它按 run 主题定向推,没有订阅者时 `RunPump.flush()` 整批丢弃。
    * 不满足会怎样:run 早就结束了,外层工作区 Tab 上的圆点一直转到应用重启。
    *
-   * ★ 只为**顶层** run 通知。子 run 的起止不改变这个集合(渲染层的角标本来就
-   * 不数子 run,见 `adoptActiveSubagents`),一次编排派十几个子代理时,
-   * 在这里不设防就是十几次内容完全相同的广播。
+   * ★ **子 run 的起止也通知。** 广播里带着子 run 的权威全集(`activeSubagentIndex`),
+   * 渲染层的子代理卡片、活动胶囊、只读子会话三处都拿它对账 —— 以前这里只为顶层 run
+   * 通知,子 run 的结束只能靠事件流送到,漏一条卡片就永远停在「运行中」。
+   * 顶层集合(`runs`)仍然不含子 run:角标不数子代理。
    */
   onActiveChange(listener: () => void): Unsubscribe {
     this.activeListeners.add(listener)
@@ -537,20 +538,17 @@ export class RunRegistry {
     const handle = new RunHandle(req)
     this.runs.set(req.runId, handle)
 
-    if (req.parentRunId !== undefined) {
-      this.runs.get(req.parentRunId)?.children.add(req.runId)
-    } else {
-      /*
-        ★ 这个监听器**不影响 `reap()`**:`emit()` 在派发完 run_end 之后会
-        `listeners.clear()`,所以 `listenerCount` 立刻回到 0。
-        (`reap` 拿 listenerCount 当「还有没有人在看」的判据,常驻监听器会让
-        已结束的 run 永远回收不掉,内存里那份事件日志跟着一起留下。)
-      */
-      handle.on((event) => {
-        if (event.type === 'run_end') this.notifyActiveChange()
-      })
-      this.notifyActiveChange()
-    }
+    if (req.parentRunId !== undefined) this.runs.get(req.parentRunId)?.children.add(req.runId)
+    /*
+      ★ 这个监听器**不影响 `reap()`**:`emit()` 在派发完 run_end 之后会
+      `listeners.clear()`,所以 `listenerCount` 立刻回到 0。
+      (`reap` 拿 listenerCount 当「还有没有人在看」的判据,常驻监听器会让
+      已结束的 run 永远回收不掉,内存里那份事件日志跟着一起留下。)
+    */
+    handle.on((event) => {
+      if (event.type === 'run_end') this.notifyActiveChange()
+    })
+    this.notifyActiveChange()
     return handle
   }
 

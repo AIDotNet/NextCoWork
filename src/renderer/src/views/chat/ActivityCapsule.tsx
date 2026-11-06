@@ -11,6 +11,10 @@
  *   让出来。数量为 0 的那一类不画;三类都没有时整颗胶囊不画。
  * ★ 任务和子代理来自转录(本会话),后台 shell 来自主进程注册表(本工作区)——
  *   后台 shell 不随 run 结束,也不属于某一条会话,换个会话照样在跑,所以按工作区筛。
+ * ★★ **这里不持有任何业务状态,也不自己判状态**(AGENTS.md「状态统一管理」):
+ *   - 子代理:读父转录的 `transcript.subagents`,状态 / 耗时 / 能不能停都走
+ *     `subagentViewOf` —— 和转录里那张卡片**同一个函数**;停止走 `stopSubagent`,和卡片同一个动作。
+ *   - 后台 shell:读 `stores/background-shells.ts` 那唯一一份镜像,不再自己订阅一条 IPC。
  */
 import { AnimatePresence, motion } from 'motion/react'
 import { Bot, ChevronRight, SquareTerminal } from 'lucide-react'
@@ -18,61 +22,20 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { formatDuration } from '../../../../shared/agent/duration'
 import type { SubagentState } from '../../../../shared/agent/transcript'
 import { agentColorHex } from '../../../../shared/domain/agent-def'
+import { compareSubagentsByRecency, subagentViewOf } from '../../../../shared/domain/subagent-view'
 import type { BackgroundShellInfo } from '../../../../shared/domain/shell'
 import SegmentedControl from '../../components/arc/segmented-control/segmented-control'
 import { Spinner } from '../../components/ui/Spinner'
 import { useI18n } from '../../i18n'
 import { cn } from '../../lib/cn'
-import { abortRun } from '../../services/agent'
-import {
-  killBackgroundShell,
-  listBackgroundShells,
-  onBackgroundShellsChanged,
-  peekBackgroundShell
-} from '../../services/shell'
+import { useTicker } from '../../lib/useTicker'
+import { killBackgroundShell, peekBackgroundShell } from '../../services/shell'
+import { useBackgroundShells } from '../../stores/background-shells'
+import { stopSubagent } from '../../stores/session'
 import { motionScale, useMotionLevel } from '../../theme/useMotionLevel'
 import { ProgressRing, TaskChecklistRows, type TaskChecklistExecution, type TaskChecklistItem } from './TaskChecklist'
 
 type ActivityTab = 'tasks' | 'agents' | 'shells'
-
-/**
- * 本工作区的后台 shell。初值主动拉一次,之后靠全量广播收敛。
- *
- * ★ 先订阅、再拉:反过来的话,拉取与订阅之间那一刻的变化会丢,而下一次广播
- *   可能要等到某条命令退出 —— 那之前胶囊一直报着错的数。
- */
-function useBackgroundShells(workspaceId: string): BackgroundShellInfo[] {
-  const [shells, setShells] = useState<BackgroundShellInfo[]>([])
-  useEffect(() => {
-    let live = true
-    let pushed = false
-    const off = onBackgroundShellsChanged((all) => {
-      pushed = true
-      setShells(all.filter((shell) => shell.workspaceId === workspaceId))
-    })
-    void listBackgroundShells(workspaceId).then((initial) => {
-      // 广播已经先到过的话它更新,拉取的结果作废
-      if (live && !pushed) setShells(initial)
-    }).catch(() => {})
-    return () => {
-      live = false
-      off()
-    }
-  }, [workspaceId])
-  return shells
-}
-
-/** 每秒走一格的「现在」,只在有东西在跑时才走 —— 否则面板开着也不该每秒重渲。 */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    setNow(Date.now())
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return now
-}
 
 export function ActivityCapsule({
   workspaceId,
@@ -292,31 +255,26 @@ function byRecency<T extends { startedAt?: number }>(running: (item: T) => boole
 
 function AgentsPane({ subagents, onOpen }: { subagents: readonly SubagentState[]; onOpen: (state: SubagentState) => void }): ReactNode {
   const { t } = useI18n()
-  const sorted = useMemo(
-    () => [...subagents].sort(byRecency<SubagentState>((state) => state.status === 'running')),
-    [subagents]
-  )
-  const now = useNow(subagents.some((state) => state.status === 'running'))
+  const sorted = useMemo(() => [...subagents].sort(compareSubagentsByRecency), [subagents])
+  const now = useTicker(subagents.some((state) => state.status === 'running'))
   if (sorted.length === 0) return <EmptyPane>{t('activity.empty.agents')}</EmptyPane>
   return (
     <ul className="scroll-thin max-h-[min(400px,60vh)] overflow-y-auto p-1">
       {sorted.map((state) => {
-        const running = state.status === 'running'
-        const elapsed = state.startedAt === undefined ? undefined : (state.endedAt ?? now) - state.startedAt
+        // ★ 与转录里那张卡片同一个投影 —— 两处对同一个子代理不许说两种话
+        const view = subagentViewOf(state, now)
+        const { running } = view
         const title = state.description ?? state.subagentType ?? t('chat.subagent.default')
-        const detail = running && state.currentTool !== undefined
-          ? [state.currentTool, state.currentTarget].filter(Boolean).join(' · ')
-          : state.subagentType
         const statusText = running
           ? t('activity.status.running')
-          : state.status === 'done'
+          : view.status === 'done'
             ? t('activity.status.done')
-            : state.status === 'error'
+            : view.status === 'error'
               ? t('activity.status.error')
               : t('activity.status.stopped')
-        const canOpen = state.childSessionId !== undefined
         return (
-          <li key={state.callId} className="group flex items-center gap-2.5 rounded-[8px] px-2 py-1.5 hover:bg-tint-hover/60">
+          <li key={state.callId} data-subagent-call-id={state.callId} data-subagent-status={view.status}
+            className="group flex items-center gap-2.5 rounded-[8px] px-2 py-1.5 hover:bg-tint-hover/60">
             <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
               {running ? (
                 <Spinner size="sm" className="text-accent" />
@@ -327,17 +285,17 @@ function AgentsPane({ subagents, onOpen }: { subagents: readonly SubagentState[]
             <span className="min-w-0 flex-1">
               <span className={cn('block truncate text-[12.5px]', running ? 'text-fg' : 'text-fg-muted')}>{title}</span>
               <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-fg-faint">
-                <span className={cn(state.status === 'error' && 'text-danger')}>{statusText}</span>
-                {elapsed !== undefined && <span className="tabular-nums">· {formatDuration(elapsed)}</span>}
+                <span className={cn(view.status === 'error' && 'text-danger')}>{statusText}</span>
+                {view.elapsedMs !== undefined && <span className="tabular-nums">· {formatDuration(view.elapsedMs)}</span>}
                 {state.background === true && <span>· {t('activity.background')}</span>}
-                {detail !== undefined && <span className="min-w-0 truncate">· {detail}</span>}
+                {view.detail !== undefined && <span className="min-w-0 truncate">· {view.detail}</span>}
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-1">
-              {running && (
-                <RowButton danger onClick={() => { void abortRun(state.childRunId, true) }}>{t('activity.stop')}</RowButton>
+              {view.canStop && (
+                <RowButton danger onClick={() => stopSubagent(state.childRunId)}>{t('activity.stop')}</RowButton>
               )}
-              {canOpen && (
+              {view.canOpen && (
                 <RowButton onClick={() => onOpen(state)}>
                   {t('activity.view')}
                   <ChevronRight aria-hidden size={12} />
@@ -360,7 +318,7 @@ function ShellsPane({ shells }: { shells: readonly BackgroundShellInfo[] }): Rea
     () => [...shells].sort(byRecency<BackgroundShellInfo>((shell) => shell.status === 'running')),
     [shells]
   )
-  const now = useNow(shells.some((shell) => shell.status === 'running'))
+  const now = useTicker(shells.some((shell) => shell.status === 'running'))
   if (sorted.length === 0) return <EmptyPane>{t('activity.empty.shells')}</EmptyPane>
   return (
     <ul className="scroll-thin max-h-[min(440px,65vh)] overflow-y-auto p-1">

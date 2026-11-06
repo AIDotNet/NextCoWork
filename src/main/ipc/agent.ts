@@ -342,5 +342,5 @@ export function backgroundSubagent(req: { childRunId: string }, ctx: WindowConte
  */
 export { launchDetachedRun } from '../services/agent'
 
-export { activeRunIndex, broadcastActiveRuns, queueSessionInput, reapFinishedRuns, reportBackgroundChild, sessionRuntime, shutdownRuns } from '../services/agent'
+export { activeRunIndex, activeSubagentIndex, broadcastActiveRuns, queueSessionInput, reapFinishedRuns, reportBackgroundChild, sessionRuntime, shutdownRuns } from '../services/agent'
 export type { AgentRunStart, RunDriver } from '../services/agent'

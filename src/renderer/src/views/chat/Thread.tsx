@@ -1128,7 +1128,7 @@ function AssistantTurn({
   // 需求:生图这类「产物即回答」的卡片在过程折进「用时」后仍要留在外面(同 goal_status 的理由,见 isPinnedToolBlock)
   const pinnedSegments = processSegments.filter((segment) => segment.kind === 'block' && isPinnedToolBlock(segment.block))
   const processItems = processSegments.flatMap((segment) => segment.kind === 'process' ? segment.items : [])
-  const hasRunningSubagent = processItems.some((item) => item.kind === 'subagent' && item.state?.status === 'running')
+  const hasRunningSubagent = processItems.some((item) => item.kind === 'subagent' && subagents[item.callId]?.status === 'running')
   const hasTrailingText = trailingSegments.some((segment) => segment.kind === 'block' && isAssistantTextBlock(segment.block))
   const outcome = lastKnownStatus === 'done' ? 'ok' : lastKnownStatus
   const decision = !hasRunningSubagent
@@ -1315,7 +1315,7 @@ function PartBlock({
     case 'tool_result':
       return null
     case 'subagent':
-      return <SubagentNode summary={part.summary} />
+      return <SubagentNode callId={part.callId} summary={part.summary} />
     case 'image':
       return <MessageImage mime={part.mime} dataRef={part.dataRef} {...(workspaceId === undefined ? {} : { workspaceId })} />
     // 只出现在用户消息里(ChatView 的 partsOf),渲染由 UserBubble 负责

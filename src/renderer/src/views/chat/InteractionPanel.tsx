@@ -17,6 +17,7 @@ import { onGoalChanged } from '../../services/goal'
 import { copyText, saveTextFile } from '../../services/app'
 import type { PlanExecutionRef } from '../../../../shared/domain/plan-file'
 import { documentKey, isDocumentDirty, useDocumentsStore } from '../../stores/documents'
+import { useRunIndex } from '../../stores/session'
 import { motionScale, useMotionLevel } from '../../theme/useMotionLevel'
 import { ActionRows, type ActionRowSpec } from './ActionRows'
 import { isEditableTarget, isSelfHandlingButton, resolveRowKey } from './interaction-keys'
@@ -37,6 +38,17 @@ export function InteractionPanel({ runId, sessionId, workspaceId, onOpenPlan, on
   const [pending, setPending] = useState<PendingInteraction[]>([])
   const [failed, setFailed] = useState(false)
   const [reload, setReload] = useState(0)
+  /*
+    ★ 权威计数(`agent:activeRuns` 广播的 `pendingInteractions`)变了就重拉一次。
+    下面那条事件监听只能收到**这个窗口订阅着**的 run 的事件 —— 窗口藏着、子代理在后台时
+    一条都到不了,于是侧边栏说「有一条在等你」而这里一张卡片都没有。两处必须是同一个事实,
+    所以让这份列表跟着权威计数收敛,而不是只信自己那条监听。
+  */
+  const authoritativePending = useRunIndex().reduce(
+    (sum, run) => (sessionId !== undefined && run.sessionId === sessionId) || (runId !== undefined && run.runId === runId)
+      ? sum + (run.pendingInteractions ?? 0) : sum,
+    0
+  )
   useEffect(() => {
     let disposed = false
     let version = 0
@@ -58,7 +70,7 @@ export function InteractionPanel({ runId, sessionId, workspaceId, onOpenPlan, on
     const offGoal = onGoalChanged((change) => { if (change.sessionId === sessionId) refresh() })
     refresh()
     return () => { disposed = true; off(); offGoal() }
-  }, [runId, sessionId, reload])
+  }, [runId, sessionId, reload, authoritativePending])
   if (pending.length === 0 && !failed) return null
   return (
     <div className="w-full" aria-live="polite">

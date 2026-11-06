@@ -23,7 +23,7 @@
  * 那一刻。插件发上来的每一条消息都按 `event.sender.id` 反查身份 ——
  * 报文里有没有 pluginId 字段无关紧要,主进程一个字都不看。
  */
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import type { PluginInvocation, PluginRequest, PluginResponse } from '../../shared/plugin/protocol'
 import type { PluginRuntime } from './manager'
@@ -59,6 +59,19 @@ interface HostEntry {
   nextInvocationId: number
 }
 
+/**
+ * 当前装着的那一份插件 IPC 接线的卸载函数。
+ *
+ * ★★ 这几条频道在进程里**只能有一份接线**。`ipcMain.handle` 对同一频道注册第二次会直接抛
+ * (`Attempted to register a second handler for 'plugin:rpc'`),而切账户正是「关掉插件系统、
+ * 再起一个新的 `ElectronPluginRuntime`」—— 旧实例的接线从没人摘,于是登录流程在
+ * `prepareAccountSwitch → startPlugins` 这一步整条失败。两条 `ipcMain.on` 不会抛,但每切一次
+ * 就叠一层,旧实例的闭包(连同它那张已经失效的 webContents 表)永远挂在监听器上。
+ *
+ * 新实例装接线时先把上一份摘掉:同一时刻只有一个插件系统在跑,最新的那个才是唯一该应答的。
+ */
+let uninstallCurrentIpc: (() => void) | null = null
+
 export class ElectronPluginRuntime implements PluginRuntime {
   private readonly hosts = new Map<string, HostEntry>()
   private readonly byWebContents = new Map<number, string>()
@@ -73,6 +86,7 @@ export class ElectronPluginRuntime implements PluginRuntime {
   }
 
   private installIpc(): void {
+    uninstallCurrentIpc?.()
     ipcMain.handle(CHANNEL_REQUEST, async (event: IpcMainInvokeEvent, raw: unknown): Promise<PluginResponse> => {
       /*
         ★ 身份来自 `event.sender.id`,**不是报文里的任何字段**。
@@ -87,13 +101,14 @@ export class ElectronPluginRuntime implements PluginRuntime {
       return this.handleRequest(pluginId, { id, method: String(request?.method), params: request?.params })
     })
 
-    ipcMain.on(CHANNEL_READY, (event) => {
+    const onReady = (event: IpcMainEvent): void => {
       const pluginId = this.byWebContents.get(event.sender.id)
       if (pluginId === undefined) return
       this.hosts.get(pluginId)?.resolveReady()
-    })
+    }
+    ipcMain.on(CHANNEL_READY, onReady)
 
-    ipcMain.on(CHANNEL_INVOKE_RESULT, (event, raw: unknown) => {
+    const onInvokeResult = (event: IpcMainEvent, raw: unknown): void => {
       const pluginId = this.byWebContents.get(event.sender.id)
       if (pluginId === undefined) return
       const result = raw as { id: number; ok: boolean; data?: unknown; error?: { message: string } }
@@ -103,7 +118,16 @@ export class ElectronPluginRuntime implements PluginRuntime {
       entry?.pending.delete(result.id)
       if (result.ok) settle.resolve(result.data)
       else settle.reject(new Error(result.error?.message ?? 'plugin error'))
-    })
+    }
+    ipcMain.on(CHANNEL_INVOKE_RESULT, onInvokeResult)
+
+    const uninstall = (): void => {
+      ipcMain.removeHandler(CHANNEL_REQUEST)
+      ipcMain.removeListener(CHANNEL_READY, onReady)
+      ipcMain.removeListener(CHANNEL_INVOKE_RESULT, onInvokeResult)
+      if (uninstallCurrentIpc === uninstall) uninstallCurrentIpc = null
+    }
+    uninstallCurrentIpc = uninstall
   }
 
   async spawn(plugin: { id: string; root: string; main: string }): Promise<void> {

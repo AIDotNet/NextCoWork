@@ -377,6 +377,31 @@ function writeSubagentResult(subagents: TranscriptState['subagents'], part: Extr
   }
 }
 
+/**
+ * 库里的回执(`saved`)与内存里的实时遥测(`live`)合成一张卡。
+ *
+ * ★★ **状态单调:终态压过 `running`,不管它来自哪一边。** 以前是 `{ ...saved, ...live }`
+ * —— 实时那份一律赢。于是只要漏过一条子 run 的结束事件(窗口藏着、父会话的 store
+ * 当时没建),实时那份就永远停在 `running`,而主进程早已把回执改成了 done
+ * (`persistSubagentCompletion`):胶囊和卡片说「运行中」,点开子会话(读库)说「已完成」。
+ * 一个子 run 只会从 running 走向终态,不会反过来,所以「谁是终态听谁的」永远不会错。
+ *
+ * 遥测类字段(工具数、阶段、上下文占用……)只有实时那份有,照旧以它为准。
+ */
+export function mergeSubagentRecord(saved: SubagentState, live: SubagentState): SubagentState {
+  const merged: SubagentState = { ...saved, ...live, callId: saved.callId, childRunId: live.childRunId }
+  if (live.status !== 'running' || saved.status === 'running') return merged
+  return {
+    ...merged,
+    status: saved.status,
+    currentTool: undefined,
+    currentTarget: undefined,
+    notice: undefined,
+    ...(saved.summary === undefined ? {} : { summary: saved.summary }),
+    ...(saved.error === undefined ? {} : { error: saved.error })
+  }
+}
+
 /** Rebuild durable child-agent cards from session history, retaining live telemetry. */
 export function subagentsFromMessages(
   messages: readonly AgentMessage[],
@@ -408,7 +433,7 @@ export function subagentsFromMessages(
   for (const [callId, saved] of Object.entries(subagents)) {
     const current = live[callId]
     if (current === undefined) continue
-    subagents[callId] = { ...saved, ...current, callId, childRunId: current.childRunId }
+    subagents[callId] = mergeSubagentRecord(saved, current)
   }
   for (const [callId, current] of Object.entries(live)) {
     if (subagents[callId] !== undefined) continue
@@ -731,6 +756,13 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
 
     case 'subagent_start': {
       const previous = s.subagents[e.callId]
+      /*
+        ★ 同一个子 run 已经是终态时**不许被重放的 start 打回 running**。
+        attach 从 0 重放父 run 的日志时 start 一定在里面,而后台子代理的结束
+        往往不在父 run 的日志里(它比父 run 活得久)—— 不挡的话,一次 ⌘R 或窗口重新露出
+        就能把一张早已完成的卡片永久改回「运行中」。状态单调,见 `mergeSubagentRecord`。
+      */
+      if (previous !== undefined && previous.childRunId === e.childRunId && previous.status !== 'running') return s
       return {
         ...s,
         subagents: {
@@ -760,6 +792,8 @@ export function applyEvent(s: TranscriptState, e: AgentEvent): TranscriptState {
     case 'subagent_update': {
       const previous = s.subagents[e.callId]
       if (previous === undefined) return s
+      // 终态之后的遥测只能是重放出来的旧事件:让它改 currentTool 会让一张已结束的卡片「复活」出一个在跑的工具
+      if (previous.status !== 'running') return s
       if (e.childSeq !== undefined && previous.childSeq !== undefined && e.childSeq <= previous.childSeq) return s
       return {
         ...s,

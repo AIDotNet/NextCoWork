@@ -197,6 +197,28 @@ export interface ActiveRunEntry {
   pendingInteractions?: number
 }
 
+/**
+ * 「现在还有哪些**子** run 活着」的索引项 —— `ActiveRunEntry` 的另一半。
+ *
+ * 需求:子代理的状态在界面上出现在三处(转录里的卡片、右上角活动胶囊、点开后的只读子会话),
+ * 三处都必须和主进程 RunRegistry 一致。子 run 的结束以前**只能**靠事件流送到
+ * (`subagent_end` / 子主题上的 `run_end`),而事件流按订阅定向推、窗口藏着时整批不收 ——
+ * 漏掉一条,卡片和胶囊就永远停在「运行中」,而点开子会话(读库)看到的却是已完成。
+ *
+ * ★ 和顶层集合走**同一条广播**(`agent:activeRuns`),bootstrap 首帧也用同一个类型:
+ *   全量快照,丢过一条之后下一条自己收敛。渲染层拿它对账,见 `stores/session.ts` 的
+ *   `syncActiveSubagents`。
+ */
+export interface ActiveSubagentEntry {
+  runId: string
+  parentRunId: string
+  /** **父**会话 —— Task 卡片住在那里;子会话自己的 id 由卡片上的 `childSessionId` 给 */
+  sessionId: string
+  workspaceId: string
+  status: RunStatus
+  startedAt?: number
+}
+
 /** run 结束后不再有事件,UI 可以据此收掉 loading 态。 */
 export function isTerminal(s: RunStatus): boolean {
   return s !== 'running'
