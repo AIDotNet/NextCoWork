@@ -11,15 +11,14 @@ import SegmentedControl from '../../components/arc/segmented-control/segmented-c
 import { Slider } from '../../components/ui/Slider'
 import { Switch } from '../../components/arc/switch/switch'
 import { Select } from '../../components/ui/Select'
-import { ProviderModelMenu, type ProviderModelMenuRow } from '../../components/ProviderModelMenu'
+import { ModelPickerMenu } from '../../components/ModelPickerMenu'
+import { modelDisplayName, providerModelGroups } from '../../../../shared/domain/model-groups'
 import { useChatModelGuard } from '../../components/useChatModelGuard'
 import { cn } from '../../lib/cn'
 import { useModelsStore } from '../../stores/models'
 import {
   modelOptions,
-  providerAliasOptions,
-  roleModelChoice,
-  selectableProviders
+  roleModelChoice
 } from './model/enabled-models'
 import {
   modelSelectionKey,
@@ -89,7 +88,7 @@ export function GeneralPage({ settings, sub, patch }: SettingsPageProps): ReactN
     // 一条绑定一个选项 —— 同一别名挂在多家上时,「用哪一家审核」是用户要选的东西
     const reviewerOptions = [
       { value: '', label: t('general.permissionReviewerModelEmpty') },
-      ...modelOptions(models.filter((m) => m.enabled !== false), providers)
+      ...modelOptions(models, providers, modelSelectionKey(settings.permissionReviewerModelProviderId, settings.permissionReviewerModel))
     ]
     /*
       ★ 目标判定模型和审核模型存的是**同一种东西**(别名 + 供应商一对),所以候选也
@@ -99,7 +98,7 @@ export function GeneralPage({ settings, sub, patch }: SettingsPageProps): ReactN
     */
     const goalEvaluatorOptions = [
       { value: '', label: t('models.followConversation') },
-      ...modelOptions(models.filter((m) => m.enabled !== false), providers)
+      ...modelOptions(models, providers, modelSelectionKey(settings.goalEvaluatorModelProviderId, settings.goalEvaluatorModel))
     ]
     // Shell 名称不翻译；值不在本平台表里时回到自动选择。
     const shellChoices = shellPreferencesForPlatform(window.nextcowork.platform)
@@ -121,7 +120,7 @@ export function GeneralPage({ settings, sub, patch }: SettingsPageProps): ReactN
           ★ 这两行现在是 `SettingRow wide`,跟同屏的 AI 审核模型/目标判定模型
           用同一种控件外观(单个下拉触发器)——之前那版拆成「供应商」「模型」
           两个并排 `Select` 之后用户反馈还是不够贴合这一屏其余行的样子。
-          `ProviderModelMenu` 复刻的是输入框模型选择器那套弹层交互(先选供应商
+          `ModelPickerMenu` 复刻的是输入框模型选择器那套弹层交互(先选供应商
           再选模型、当前项打勾),理由和取舍写在该组件的文件头。
         */}
         <SettingRow title={t('models.default')} wide>
@@ -463,7 +462,7 @@ export function GeneralPage({ settings, sub, patch }: SettingsPageProps): ReactN
  * 分支头部的需求注释)。
  *
  * ★ 触发器画成跟 `Select`(`components/ui/Select.tsx`)同款的按钮(高度/边框/
- * 字号都照抄),点开之后走的是 `ProviderModelMenu`——输入框模型选择器那套
+ * 字号都照抄),点开之后走的是 `ModelPickerMenu`——输入框模型选择器那套
  * 「先选供应商、进去再选模型、当前项打勾」的弹层交互,而不是原生 `<select>`。
  * 这一栏之前拆成两个并排 `Select`(供应商一个、模型一个),摆在这一屏其余
  * 单控件的行里明显不像原生设置,所以换成跟别的行一样「一个下拉触发器」。
@@ -514,33 +513,21 @@ function RoleModelPickerComponent({
   const chatModels = useMemo(() => models.filter(isChatModelAlias), [models])
   const choice = roleModelChoice(models, providers, model, modelProviderId)
   const providerName = providers.find((p) => p.id === choice.providerId)?.name
+  const chosen = models.find((m) => m.providerId === choice.providerId && m.alias === choice.alias)
+  const chosenName = chosen === undefined ? choice.alias : modelDisplayName(chosen)
   const triggerLabel =
     choice.alias === ''
       ? emptyText
       : providerName === undefined
-        ? choice.alias
-        : `${choice.alias} · ${providerName}`
-  const rows: ProviderModelMenuRow[] = useMemo(
-    () =>
-      selectableProviders(chatModels, providers, choice.providerId).map((p) => {
-        const aliasOptions = providerAliasOptions(chatModels, p.id)
-        return {
-          id: p.id,
-          label: p.name,
-          description: t('chat.availableModels', { count: aliasOptions.length }),
-          selected: p.id === choice.providerId,
-          models: aliasOptions.map((o) => ({
-            value: o.value,
-            label: o.label,
-            selected: p.id === choice.providerId && o.value === choice.alias
-          }))
-        }
-      }),
-    [chatModels, providers, choice.providerId, choice.alias, t]
+        ? chosenName
+        : `${chosenName} · ${providerName}`
+  const groups = useMemo(
+    () => providerModelGroups(providers, chatModels, { keepProviderId: choice.providerId }),
+    [chatModels, providers, choice.providerId]
   )
 
   return (
-    <ProviderModelMenu
+    <ModelPickerMenu
       trigger={
         <>
           <span className="min-w-0 flex-1 truncate">{triggerLabel}</span>
@@ -556,19 +543,18 @@ function RoleModelPickerComponent({
       )}
       className="w-full"
       align="start"
-      width={280}
+      width={300}
       ariaLabel={label}
-      menuLabel={t('chat.selectProvider')}
       loaded={loaded}
-      loadingLabel={t('common.loading')}
       emptyLabel={t('chat.noModelsConfigured')}
-      rows={rows}
+      groups={groups}
+      value={choice}
       topItem={{
         label: emptyText,
         selected: choice.providerId === '',
         onSelect: () => onChange('', undefined)
       }}
-      onSelectModel={(providerId, alias) => onChange(alias, providerId)}
+      onSelect={(providerId, alias) => onChange(alias, providerId)}
       onOpenChange={guardChatModel}
     />
   )

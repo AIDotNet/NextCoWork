@@ -25,6 +25,8 @@ import {
   modelSelectionKey,
   parseModelSelectionKey
 } from '../../../../../shared/domain/model-selection'
+import { isChatModelAlias } from '../../../../../shared/domain/provider'
+import { modelBindingOptions } from '../../../../../shared/domain/model-groups'
 import { INHERIT_THINKING, SUBAGENT_THINKING_CHOICES } from '../../../../../shared/domain/subagent-thinking'
 import { Button } from '../../../components/arc/button/button'
 import { Dialog } from '../../../components/ui/Dialog'
@@ -188,12 +190,8 @@ export function AgentEditor({
   )
   const modelOptions = [
     { value: '', label: t('ext.field.inheritDefault') },
-    ...models
-      .filter((m) => m.enabled !== false)
-      .map((m) => ({
-        value: modelSelectionKey(m.providerId, m.alias),
-        label: `${providers.find((p) => p.id === m.providerId)?.name ?? m.providerId} · ${m.alias}`
-      }))
+    // 可用性 + 标签统一走 `modelBindingOptions`;标签**总是**带供应商(理由见上)
+    ...modelBindingOptions(providers, models, { filter: isChatModelAlias, keepKey: currentModelKey, providerLabel: 'always' })
   ]
   /*
     ★ 文件里那一对**未必**还在上面这张表里,而两种落空的含义完全不同:

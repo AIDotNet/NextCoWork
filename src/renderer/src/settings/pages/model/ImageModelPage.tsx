@@ -8,7 +8,8 @@ import { Button } from "../../../components/arc/button/button";
 import { EmptyState } from "../../../components/arc/empty-state/empty-state";
 import { TextInput } from "../../../components/ui/TextInput";
 import { Switch } from "../../../components/arc/switch/switch";
-import { ProviderModelMenu, type ProviderModelMenuRow } from "../../../components/ProviderModelMenu";
+import { ModelPickerMenu } from "../../../components/ModelPickerMenu";
+import { providerModelGroups } from "../../../../../shared/domain/model-groups";
 import { cn } from "../../../lib/cn";
 import { useI18n } from "../../../i18n";
 import { useModelsStore } from "../../../stores/models";
@@ -16,7 +17,7 @@ import { setProviderAliases, updateModel, upsertProvider } from "../../../servic
 import type { SettingsPageProps } from "../../props";
 import { ProviderAvatar } from "./ProviderAvatar";
 import { ProviderPanel } from "./ProviderPanel";
-import { providerAliasOptions, providerEntries, roleModelChoice, selectableProviders, type ProviderEntry } from "./enabled-models";
+import { providerEntries, roleModelChoice, type ProviderEntry } from "./enabled-models";
 import { providerFromPreset, seedModelsForPreset } from "./provider-edit";
 
 type ImagePreset = {
@@ -187,20 +188,7 @@ function ImageGenModelRow({
       : providerName === undefined
         ? choice.alias
         : `${choice.alias} · ${providerName}`;
-  const rows: ProviderModelMenuRow[] = selectableProviders(imageModels, providers, choice.providerId).map((p) => {
-    const aliasOptions = providerAliasOptions(imageModels, p.id);
-    return {
-      id: p.id,
-      label: p.name,
-      description: t("chat.availableModels", { count: aliasOptions.length }),
-      selected: p.id === choice.providerId,
-      models: aliasOptions.map((o) => ({
-        value: o.value,
-        label: o.label,
-        selected: p.id === choice.providerId && o.value === choice.alias
-      }))
-    };
-  });
+  const groups = providerModelGroups(providers, imageModels, { keepProviderId: choice.providerId });
   return (
     <div className="flex shrink-0 items-center gap-3 border-t border-hairline px-1 pt-3">
       <div className="min-w-0 flex-1">
@@ -214,7 +202,7 @@ function ImageGenModelRow({
         </p>
       </div>
       <div className="w-[240px] shrink-0">
-        <ProviderModelMenu
+        <ModelPickerMenu
           trigger={
             <>
               <span className="min-w-0 flex-1 truncate">{triggerLabel}</span>
@@ -230,14 +218,13 @@ function ImageGenModelRow({
           )}
           className="w-full"
           align="end"
-          width={280}
+          width={300}
           ariaLabel={t("imageGen.model")}
-          menuLabel={t("imageGen.modelPick")}
           loaded={loaded}
-          loadingLabel={t("common.loading")}
           emptyLabel={t("imageGen.noImageModels")}
-          rows={rows}
-          onSelectModel={(providerId, alias) => patch({ imageModel: alias, imageModelProviderId: providerId })}
+          groups={groups}
+          value={choice}
+          onSelect={(providerId, alias) => patch({ imageModel: alias, imageModelProviderId: providerId })}
         />
       </div>
     </div>

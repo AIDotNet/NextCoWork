@@ -15,6 +15,7 @@ import type { ProviderStreamEvent, StopReason, TokenUsage } from '../../../share
 import type { ResolvedModelThinking } from '../../../shared/domain/model-runtime'
 import { resolveModelThinking } from '../../../shared/domain/model-runtime'
 import { modelBindingsFor } from '../../../shared/domain/model-selection'
+import { availableBindings } from '../../../shared/domain/model-groups'
 import { REQUEST_PATH } from '../../../shared/domain/baseurl'
 import type { ModelAlias, ProviderHealth, ThinkingConfig, UpstreamProvider, UpstreamProtocol } from '../../../shared/domain/provider'
 import { anthropicCacheTtlOf, effectiveModelProtocol } from '../../../shared/domain/provider'
@@ -333,10 +334,8 @@ export class UpstreamRouter {
   }
 
   listModels(): ModelAlias[] {
-    const enabled = new Set(
-      this.config.providers().filter((p) => p.enabled).map((p) => p.id)
-    )
-    return this.config.aliases().filter((a) => enabled.has(a.providerId) && a.enabled !== false)
+    // 与渲染层所有选择器同一条可用性判据(`shared/domain/model-groups.ts`)
+    return availableBindings(this.config.providers(), this.config.aliases())
   }
 
   /**

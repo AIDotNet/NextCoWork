@@ -35,7 +35,8 @@ import { EmptyState } from '../../../components/arc/empty-state/empty-state'
 import { Select } from '../../../components/ui/Select'
 import { TextInput } from '../../../components/ui/TextInput'
 import { Switch } from '../../../components/arc/switch/switch'
-import { ProviderModelMenu, type ProviderModelMenuRow } from '../../../components/ProviderModelMenu'
+import { ModelPickerMenu } from '../../../components/ModelPickerMenu'
+import { providerModelGroups } from '../../../../../shared/domain/model-groups'
 import { cn } from '../../../lib/cn'
 import { useI18n, type TranslationKey } from '../../../i18n'
 import { useModelsStore } from '../../../stores/models'
@@ -43,7 +44,7 @@ import { getCredentialInfo, removeProvider, setCredential, setProviderAliases, u
 import type { SettingsPageProps } from '../../props'
 import { ProviderAvatar } from './ProviderAvatar'
 import { customProviderId } from './custom-provider'
-import { roleModelChoice, selectableProviders, providerAliasOptions } from './enabled-models'
+import { roleModelChoice } from './enabled-models'
 
 // 自定义连接复用已实现的 API Key 协议,不把尚未接通或需要签名的接口当作兼容格式。
 const CUSTOM_VIDEO_PRESETS = VIDEO_PROVIDER_PRESETS.filter((preset) =>
@@ -730,16 +731,7 @@ function VideoGenModelRow({ settings, patch, models, providers, loaded }: { sett
   const triggerLabel = choice.alias === ''
     ? t('videoGen.modelPick')
     : providerName === undefined ? choice.alias : `${choice.alias} · ${providerName}`
-  const rows: ProviderModelMenuRow[] = selectableProviders(videoModels, providers, choice.providerId).map((p) => {
-    const aliasOptions = providerAliasOptions(videoModels, p.id)
-    return {
-      id: p.id,
-      label: p.name,
-      description: t('chat.availableModels', { count: aliasOptions.length }),
-      selected: p.id === choice.providerId,
-      models: aliasOptions.map((option) => ({ value: option.value, label: option.label, selected: p.id === choice.providerId && option.value === choice.alias }))
-    }
-  })
+  const groups = providerModelGroups(providers, videoModels, { keepProviderId: choice.providerId })
   return (
     <div className="flex shrink-0 items-center gap-3 border-t border-hairline px-1 pt-3">
       <div className="min-w-0 flex-1">
@@ -749,20 +741,19 @@ function VideoGenModelRow({ settings, patch, models, providers, loaded }: { sett
         </p>
       </div>
       <div className="w-[240px] shrink-0">
-        <ProviderModelMenu
+        <ModelPickerMenu
           trigger={<><span className="min-w-0 flex-1 truncate">{triggerLabel}</span><ChevronDown size={12} className="shrink-0 text-fg-faint" /></>}
           triggerClassName={cn('apple-field group flex h-7 w-full items-center gap-1.5 rounded-[8px] border border-border', 'bg-surface-field px-2 text-left text-[11.5px] text-fg outline-none', 'transition-[background-color,border-color,box-shadow] duration-150', 'hover:bg-tint focus-visible:border-fg-faint focus-visible:ring-2 focus-visible:ring-fg-faint/15')}
           className="w-full"
           align="end"
-          width={280}
+          width={300}
           ariaLabel={t('videoGen.model')}
-          menuLabel={t('videoGen.modelPick')}
           loaded={loaded}
-          loadingLabel={t('common.loading')}
           emptyLabel={t('videoGen.noVideoModels')}
-          rows={rows}
+          groups={groups}
+          value={choice}
           // ★ patch 成对无条件写:只给别名会留下"新别名 + 旧供应商"的脏配对
-          onSelectModel={(providerId, alias) => patch({ videoModel: alias, videoModelProviderId: providerId })}
+          onSelect={(providerId, alias) => patch({ videoModel: alias, videoModelProviderId: providerId })}
         />
       </div>
     </div>

@@ -19,7 +19,6 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
   CircleDollarSign,
   Code2,
   Database,
@@ -49,6 +48,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -104,9 +104,10 @@ import type {
 import { isChatModelAlias } from "../../../../shared/domain/provider";
 import { ProviderIcon } from "../../components/brand/ProviderIcon";
 import {
-  ProviderModelMenu,
-  type ProviderModelMenuRow,
-} from "../../components/ProviderModelMenu";
+  ModelPickerMenu,
+  type ModelPickerSetting,
+} from "../../components/ModelPickerMenu";
+import { availableBindings, modelDisplayName, providerModelGroups } from "../../../../shared/domain/model-groups";
 import { useChatModelGuard } from "../../components/useChatModelGuard";
 import {
   Menu,
@@ -114,7 +115,6 @@ import {
   MenuLabel,
   MenuSeparator,
 } from "../../components/ui/Menu";
-import { Slider } from "../../components/ui/Slider";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { cn } from "../../lib/cn";
 import { GoalPanel, GoalPill } from './GoalPanel';
@@ -333,8 +333,7 @@ export function Composer({
   const pluginTools = pluginToolList(pluginCatalog);
   const [pluginToolsOpen, setPluginToolsOpen] = useState(false);
   const { models: configuredModels, providers, loaded, providerOf, load } = useModelsStore();
-  const models = configuredModels.filter((m) => m.enabled !== false &&
-    providers.some((p) => p.id === m.providerId && p.enabled));
+  const models = useMemo(() => availableBindings(providers, configuredModels), [providers, configuredModels]);
   const [value, setValue] = useState<ComposerValue>(() => ({
     ...fromSettings(workspace.settings),
     ...(sessionModel === undefined || sessionModel.model === ""
@@ -771,7 +770,9 @@ export function Composer({
     void updateWorkspace({ id: workspace.id, settings: { defaultThinking: thinking } }).catch(console.error);
   }, [loaded, thinking, value.thinking, workspace.id]);
   const modelLabel =
-    model !== "" ? model : loaded ? t("chat.noModel") : t("common.loading");
+    model !== ""
+      ? selectedModel === undefined ? model : modelDisplayName(selectedModel)
+      : loaded ? t("chat.noModel") : t("common.loading");
   const builtInModes = modes.filter((mode) => isBuiltinModeId(mode.id));
   const customModes = modes.filter((mode) => !isBuiltinModeId(mode.id));
   const selectedMode = modes.find((mode) => mode.id === value.mode);
@@ -1132,17 +1133,10 @@ export function Composer({
 
           {/*
             ── 右半边:「怎么想 / 装得下多少 / 发给谁」 ──
-            左半边(权限档位 / `+`)说的是「允许它做什么」。这三颗加发送是另一件事。
+            左半边(权限档位 / `+`)说的是「允许它做什么」。这两颗加发送是另一件事。
 
-            ★ 思考强度从模型菜单的二级页搬到这里。原来它的**显示**在工具栏(一个
-            点不动的只读徽标)、**操作**在模型药丸 → 滚到底 → 模型配置 → 第二页,
-            改一个每轮都要动的旋钮要走四步。显示和操作分居两地正是「不方便」的根因。
+            ★ 推理强度并进了模型选择器底部,当前值写在模型药丸上(见 `ModelPicker`)。
           */}
-          <ThinkingPill
-            model={selectedModel}
-            thinking={thinking}
-            onThinking={(next) => patch({ thinking: next })}
-          />
 
           {/*
             ── 上下文余量:紧挨模型选择器的左边 ──
@@ -1204,7 +1198,12 @@ export function Composer({
             provider={provider}
             providers={providers}
             models={models}
+            selectedModel={selectedModel}
             loaded={loaded}
+            thinking={thinking}
+            maxContext={value.maxContext}
+            onThinking={(next) => patch({ thinking: next })}
+            onMaxContext={(next) => patch({ maxContext: next })}
             onModel={(nextModel, nextProviderId) => {
               patch({
                 model: nextModel,
@@ -1672,196 +1671,6 @@ function Pill({
 
 /** 超过它就换成告警色 —— 和状态行那根压力条同一个判据。 */
 const CONTEXT_WARN = 0.75;
-
-/**
- * 思考强度药丸。
- *
- * ★ 它取代的是「工具栏上一个点不动的只读徽标 + 模型菜单第四层的二级页」这个组合。
- * 原来**显示**和**操作**分居两地,改一个每轮都要动的旋钮要走四步,这正是「不方便」的根因。
- *
- * 三处刻意的选择:
- * - `thinking === 'auto'` 时**照样显示**(旧徽标偏偏在 auto 时整个消失)——
- *   auto 恰恰是最需要能一键调走的那个值。
- * - 触发器用 `active` 而不是 `accent`:整个浅色界面只有两处用色,见 `Pill` 的注释。
- * - 面板里是**滑杆**不是七行单选:强度本来就是个有序量,列表把它画成了七个互不相干的
- *   选项,还要占掉 300px 的高度。滑杆顺带白拿了左右方向键(原生 `range` 的语义),
- *   而这正是这颗药丸要解决的「切一档要走四步」。
- *   代价是滑杆没有逐档的文字,所以标题行必须**拖动中实时跟着变**(`onPreview`)。
- */
-function ThinkingPill({
-  model,
-  thinking,
-  onThinking,
-}: {
-  model?: ModelAlias;
-  thinking: ThinkingLevel;
-  onThinking: (level: ThinkingLevel) => void;
-}): ReactNode {
-  const { t } = useI18n();
-  const levels = modelThinkingLevels(model);
-  const config = model === undefined ? undefined : effectiveModelThinking(model).thinkingConfig;
-  const label = (level: ThinkingLevel): string =>
-    t(
-      config?.mode === "toggle" && level === "medium"
-        ? "chat.thinkingOn"
-        : `chat.thinkingLevel.${level}`,
-    );
-  const defaultLevel: ThinkingLevel =
-    config?.defaultEnabled !== true || config.defaultEffort === "none"
-      ? "off"
-      : config.defaultEffort === "xhigh"
-        ? "higher"
-        : config.defaultEffort ?? "medium";
-  const description = config?.mode === "unsupported" ? t("chat.thinkingUnsupported")
-    : config?.mode === "always" ? t("chat.thinkingAlways")
-    : thinking === "auto" && config !== undefined
-      ? t("chat.thinkingAutomatic", { level: label(defaultLevel) })
-      : t("chat.thinkingLevelDescription", { level: label(thinking) });
-  /*
-    ★ 滑杆的轨道上**只放有序的强度**,`auto` 不在轴上。
-
-    「自动」的意思是"不指定,由模型和协议自己决定",把它塞进轨道的任何一个位置
-    都是在声明一个它并不具有的序关系 —— 所以它单独占一行。而 `off` 在
-    `THINKING_LEVELS` 里排在**末尾**(那是给菜单列表用的排法),上了轴必须挪到最左:
-    强度为 0 就该在最左边,否则拖到头反而是关掉。
-  */
-  const track: ThinkingLevel[] = [
-    ...(levels.includes("off") ? (["off"] as ThinkingLevel[]) : []),
-    ...levels.filter((level) => level !== "auto" && level !== "off"),
-  ];
-  /*
-    `auto` 档下滑杆停在**这个模型自动会落到的那一档**上并调暗 ——
-    比停在 0 诚实:auto 不等于不思考。查不到就落 0(只发生在
-    `defaultEffort` 指向一个该模型不提供的档位时,而那时滑杆本来就是暗的)。
-  */
-  const shown = thinking === "auto" ? defaultLevel : thinking;
-  const index = Math.max(0, track.indexOf(shown));
-  // 拖动中的实时读数,只用来更新标题那行;写回走 onCommit。null = 没在拖。
-  const [preview, setPreview] = useState<number | null>(null);
-  const headline = preview === null ? thinking : (track[preview] ?? thinking);
-
-  /*
-    药丸**聚焦时**的 ↑/↓ —— 面板根本不用打开。
-
-    这颗药丸存在的全部理由是把「改一个每轮都要动的旋钮」从四步压到一步,
-    而「Tab 过去 → Enter 开面板 → 拖滑杆 → Esc」仍然是四步。
-    左右也收,因为面板里那根滑杆就是横的,两套方向在同一颗控件上指的是同一件事。
-
-    ★ 从 `auto` 出发时按一下就**移动一格**,而不是原地落到 `defaultLevel`。
-      滑杆本来就停在 defaultLevel 上(只是暗的),原地点亮不动看起来像没反应。
-  */
-  const shift = (delta: number): void => {
-    if (track.length < 2) return;
-    const from = track.indexOf(shown);
-    const next = track[Math.min(track.length - 1, Math.max(0, (from < 0 ? 0 : from) + delta))];
-    // 已经在两端时不写回 —— 顶着边连按不该每次都走一遍工作区落盘。
-    if (next !== undefined && next !== thinking) onThinking(next);
-  };
-
-  /*
-    只有一档可选 = 没什么可切的(unsupported / always / 模型还没加载完)。
-    整颗不渲染,而不是置灰 —— 一颗永远点不动的药丸只是在工具栏上占位置。
-  */
-  if (levels.length < 2) return null;
-  return (
-    <Menu
-      label={t("composer.thinking")}
-      width={232}
-      align="end"
-      onOpenChange={(open) => {
-        if (!open) setPreview(null);
-      }}
-      onTriggerKeyDown={(e) => {
-        // ★ 不碰 Enter / Space —— 那是 button 打开菜单的原生路径。
-        const delta =
-          e.key === "ArrowUp" || e.key === "ArrowRight"
-            ? 1
-            : e.key === "ArrowDown" || e.key === "ArrowLeft"
-              ? -1
-              : 0;
-        if (delta === 0) return;
-        e.preventDefault(); // 否则上下键会把整个转录滚走
-        shift(delta);
-      }}
-      trigger={
-        <Pill active={thinking !== "auto"}>
-          <BrainCircuit size={12} />
-          <span>{label(thinking)}</span>
-          <ChevronDown size={12} className="text-fg-faint" />
-        </Pill>
-      }
-    >
-      {(close) => (
-        <>
-          <MenuLabel>
-            <span className="flex items-center gap-1.5 text-fg">
-              <BrainCircuit size={12} className="text-fg-faint" />
-              {t("composer.thinkingHeadline", { level: label(headline) })}
-            </span>
-          </MenuLabel>
-          {/*
-            ★ 轨道不足两档时退回列表(`['auto','off']` 这种模型:轴上只剩一个点,
-            画出来是一根拖不动的杠)。两档的 toggle 型模型还是走滑杆 ——
-            那就是「关闭 ↔ 开启」,滑杆表达得了。
-          */}
-          {track.length >= 2 ? (
-            <div className="px-2.5 pt-1 pb-0.5">
-              <Slider
-                value={index}
-                min={0}
-                max={track.length - 1}
-                ariaLabel={t("composer.thinking")}
-                /*
-                  拖动本身就是一次表态 —— 所以 `preview` 一出现就立刻**点亮**,
-                  而不是等松手写回 `thinking` 之后才亮。暗着拖是最别扭的那种手感:
-                  你已经在操作它了,它还显示着"这一档不是你选的"。
-                */
-                className={cn(thinking === "auto" && preview === null && "opacity-45")}
-                onPreview={setPreview}
-                onCommit={(v) => {
-                  setPreview(null);
-                  const level = track[v];
-                  // 拖动即是一次明确表态,于是自动脱离 `auto`。
-                  if (level !== undefined) onThinking(level);
-                }}
-              />
-              {/* 只标两端 —— 中间每一档都标的话,232px 里七个标签会糊在一起,
-                  而"现在是哪一档"由上面那行标题实时回答,不靠猜滑块落点。 */}
-              <div className="mt-1 flex justify-between text-[10.5px] text-fg-faint">
-                <span>{label(track[0] ?? "off")}</span>
-                <span>{label(track[track.length - 1] ?? "max")}</span>
-              </div>
-            </div>
-          ) : (
-            track.map((level) => (
-              <MenuItem
-                key={level}
-                checked={level === thinking}
-                onSelect={() => {
-                  onThinking(level);
-                  close();
-                }}
-              >
-                {label(level)}
-              </MenuItem>
-            ))
-          )}
-          <MenuSeparator />
-          <MenuItem
-            checked={thinking === "auto"}
-            onSelect={() => {
-              onThinking("auto");
-              close();
-            }}
-          >
-            {label("auto")}
-          </MenuItem>
-          <MenuLabel>{description}</MenuLabel>
-        </>
-      )}
-    </Menu>
-  );
-}
 
 /**
  * 圆环菜单里压缩那两栏要的全部东西 —— `ContextRing` 和它的二级视图共用。
@@ -2467,16 +2276,14 @@ function ContextBreakdown({
 
 
 /**
- * 模型选择采用两级结构：第一次打开先选供应商，进入供应商后再选模型。
- * 这样模型别名很多时不会把所有供应商混在一个长菜单里。
+ * 模型选择器:供应商图标页签 + 搜索 + 模型列表,底部是「推理强度 / 上下文窗口」。
  *
- * ★ 这一对下拉的定位/子菜单机制现在是共享组件 `ProviderModelMenu`
- * (`components/ProviderModelMenu.tsx`)——设置页「通用 → Agent」的默认模型/
- * 默认子代理是它的第二个调用方,原因和搬迁细节写在那个文件的文件头。这里只负责
- * 把 composer 自己的 `providers`/`models` 翻译成它要的 `rows`。
+ * ★ 数据统一走 `providerModelGroups`(与设置页供应商列表同源):只列启用的
+ *   供应商里启用的对话模型。之前这里只按模态过滤,设置页停用的供应商仍然出现在
+ *   输入框里,选了也会被路由器拒掉。
  *
- * ★ 这里曾经还挂着一个「模型配置 ›」二级页(只有思考强度一项)。它被拆成了
- * 工具栏上的 `ThinkingPill` —— 一个每轮都要调的旋钮不该埋在第四层。
+ * ★ 推理强度原先是工具栏上独立的 `ThinkingPill`。现在并进这个面板的底部,
+ *   当前值直接写在触发器上(`模型名  最高 · 1M`),仍然是「看得见、一步可改」。
  */
 function ModelPicker({
   model,
@@ -2485,8 +2292,13 @@ function ModelPicker({
   provider,
   providers,
   models,
+  selectedModel,
   loaded,
+  thinking,
+  maxContext,
   onModel,
+  onThinking,
+  onMaxContext,
 }: {
   model: string;
   modelProviderId?: string;
@@ -2494,8 +2306,13 @@ function ModelPicker({
   provider?: UpstreamProvider;
   providers: UpstreamProvider[];
   models: ModelAlias[];
+  selectedModel?: ModelAlias;
   loaded: boolean;
+  thinking: ThinkingLevel;
+  maxContext: boolean;
   onModel: (model: string, modelProviderId: string) => void;
+  onThinking: (level: ThinkingLevel) => void;
+  onMaxContext: (next: boolean) => void;
 }): ReactNode {
   const { t } = useI18n();
   // 打开选择器时校正存量的「选中了图片模型」(见 useChatModelGuard 文件头的需求说明)
@@ -2505,31 +2322,73 @@ function ModelPicker({
     { model, modelProviderId },
     onModel,
   );
-  // ★ 对话输入框只列文本模型:图片模型发不出对话请求,出现在这里就是一个选了就废的
-  // 选项(判据收口在 `isChatModelAlias`,别在下面的过滤里再写一份)。
-  const chatModels = models.filter(isChatModelAlias);
-  const availableProviders = providers.filter((p) =>
-    chatModels.some((m) => m.providerId === p.id),
+  const groups = useMemo(
+    () => providerModelGroups(providers, models, { filter: isChatModelAlias, keepProviderId: provider?.id }),
+    [providers, models, provider?.id],
   );
-  const rows: ProviderModelMenuRow[] = availableProviders.map((p) => {
-    const providerModels = chatModels.filter((m) => m.providerId === p.id);
-    return {
-      id: p.id,
-      label: p.name,
-      description: t("chat.availableModels", { count: providerModels.length }),
-      selected: p.id === provider?.id,
-      models: providerModels.map((m) => ({
-        value: m.alias,
-        label: m.alias,
-        // ★ 必须带上 providerId:同一个别名在两家的子菜单里都会出现,只比别名的话
-        //   **两边同时打勾**,用户会以为自己选了两个。
-        selected: m.alias === model && m.providerId === modelProviderId,
+
+  // ── 推理强度 ──
+  const levels = modelThinkingLevels(selectedModel);
+  const thinkingConfig = selectedModel === undefined ? undefined : effectiveModelThinking(selectedModel).thinkingConfig;
+  const levelLabel = (level: ThinkingLevel): string =>
+    t(
+      thinkingConfig?.mode === "toggle" && level === "medium"
+        ? "chat.thinkingOn"
+        : `chat.thinkingLevel.${level}`,
+    );
+  const defaultLevel: ThinkingLevel =
+    thinkingConfig?.defaultEnabled !== true || thinkingConfig.defaultEffort === "none"
+      ? "off"
+      : thinkingConfig.defaultEffort === "xhigh"
+        ? "higher"
+        : thinkingConfig.defaultEffort ?? "medium";
+  // 列表从强到弱,「自动」放最后(它不在强度轴上)
+  const ordered: ThinkingLevel[] = [
+    ...levels.filter((l) => l !== "auto" && l !== "off").reverse(),
+    ...(levels.includes("off") ? (["off"] as ThinkingLevel[]) : []),
+    "auto",
+  ];
+
+  // ── 上下文窗口 ──
+  const protocolWindow = selectedModel?.contextWindow;
+  const canMax = supportsMaxContext(protocolWindow);
+  const baseWindow = formatContextWindow(effectiveContextWindow(protocolWindow, false));
+  const fullWindow = formatContextWindow(effectiveContextWindow(protocolWindow, true));
+  const contextValue = canMax && maxContext ? fullWindow : baseWindow;
+
+  const settings: ModelPickerSetting[] = [
+    {
+      id: "thinking",
+      label: t("modelPicker.thinking"),
+      value: levelLabel(thinking),
+      disabled: levels.length < 2,
+      hint: thinkingConfig?.mode === "always" ? t("chat.thinkingAlways") : t("chat.thinkingUnsupported"),
+      options: ordered.map((level) => ({
+        value: level,
+        label: level === "auto" ? t("modelPicker.autoHint", { level: levelLabel(defaultLevel) }) : levelLabel(level),
+        selected: level === thinking,
       })),
-    };
-  });
+      onSelect: (v) => onThinking(v as ThinkingLevel),
+    },
+    {
+      id: "context",
+      label: t("modelPicker.context"),
+      value: contextValue,
+      disabled: !canMax,
+      hint: t("modelPicker.contextUnavailable", { window: fullWindow }),
+      options: [
+        { value: "default", label: baseWindow, note: t("modelPicker.default"), selected: !maxContext },
+        { value: "max", label: fullWindow, selected: maxContext },
+      ],
+      onSelect: (v) => onMaxContext(v === "max"),
+    },
+  ];
+  const meta = [levels.length >= 2 ? levelLabel(thinking) : undefined, contextValue]
+    .filter((x): x is string => x !== undefined)
+    .join(" · ");
 
   return (
-    <ProviderModelMenu
+    <ModelPickerMenu
       trigger={
         <Pill className="min-w-0 shrink">
           <ProviderIcon
@@ -2537,20 +2396,22 @@ function ModelPicker({
             size={13}
           />
           <span className="min-w-0 max-w-[150px] truncate">{modelLabel}</span>
-          <ChevronRight size={12} className="ml-0.5 shrink-0 text-fg-faint" />
+          {selectedModel !== undefined && (
+            <span className="shrink-0 text-[11px] text-fg-faint">{meta}</span>
+          )}
         </Pill>
       }
       // 这一排里**只有模型名可以退让** —— 其余药丸都是短词,压缩它们只会换行。
       triggerClassName="min-w-0"
       align="end"
-      width={300}
-      menuLabel={t("chat.selectProvider")}
-      menuIcon={<Settings2 size={12} />}
+      width={320}
+      ariaLabel={t("chat.modelPicker")}
       loaded={loaded}
-      loadingLabel={t("common.loading")}
       emptyLabel={t("chat.noModelsConfigured")}
-      rows={rows}
-      onSelectModel={(selectedProviderId, alias) => onModel(alias, selectedProviderId)}
+      groups={groups}
+      value={{ providerId: provider?.id ?? modelProviderId ?? "", alias: model }}
+      settings={settings}
+      onSelect={(selectedProviderId, alias) => onModel(alias, selectedProviderId)}
       onOpenChange={guardChatModel}
     />
   );

@@ -13,7 +13,7 @@
  * 症状是只有一两处带着提示,其余静默换模型 —— 那正是「配置自己变了」。
  * 这里是唯一收口;判据本身在 shared 的 `chatModelCorrection`(纯函数,有测试)。
  *
- * 用法:`onOpenChange={guard}`(ProviderModelMenu / Select 都收这个形状的回调)。
+ * 用法:`onOpenChange={guard}`(ModelPickerMenu / Select 都收这个形状的回调)。
  */
 import type { ModelAlias, UpstreamProvider } from '../../../shared/domain/provider'
 import { chatModelCorrection } from '../../../shared/domain/model-selection'

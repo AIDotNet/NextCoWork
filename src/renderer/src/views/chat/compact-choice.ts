@@ -14,6 +14,8 @@ import {
   modelSelectionKey,
   parseModelSelectionKey
 } from '../../../../shared/domain/model-selection'
+import { modelBindingOptions } from '../../../../shared/domain/model-groups'
+import { isChatModelAlias, type ModelAlias, type UpstreamProvider } from '../../../../shared/domain/provider'
 import type { WorkspaceCompactionOverride } from '../../../../shared/domain/compaction-model'
 import { isSubagentThinking, type SubagentThinking } from '../../../../shared/domain/subagent-thinking'
 
@@ -70,17 +72,11 @@ export function compactModelPatch(value: string): {
  * 停用的绑定不列 —— 画出来的每个控件都是一次会失败的承诺(§5)。
  */
 export function compactModelOptions(
-  models: readonly { alias: string; providerId: string; enabled?: boolean }[],
-  providers: readonly { id: string; name: string; enabled?: boolean }[]
+  models: readonly ModelAlias[],
+  providers: readonly UpstreamProvider[]
 ): { value: string; label: string }[] {
-  const byId = new Map(providers.map((p) => [p.id, p]))
-  return models
-    .filter((m) => m.enabled !== false && byId.get(m.providerId)?.enabled !== false)
-    .map((m) => ({
-      value: modelSelectionKey(m.providerId, m.alias),
-      // 别名和供应商名都是领域值,不翻译(§6.5)。
-      label: `${m.alias} · ${byId.get(m.providerId)?.name ?? m.providerId}`
-    }))
+  // 可用性判据与标签格式统一在 `modelBindingOptions`(压缩是对话请求,只列文本模型)
+  return modelBindingOptions(providers, models, { filter: isChatModelAlias, providerLabel: 'always' })
 }
 
 /** 工作区覆盖 → 档位下拉的 value。`null`(改回跟随全局)和缺席同义。 */

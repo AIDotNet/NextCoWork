@@ -106,7 +106,7 @@ export function EditWorkspaceDialog({
 
   const modelOptionList = [
     { value: '', label: t('models.followConversation') },
-    ...modelOptions(models.filter((m) => m.enabled !== false), providers)
+    ...modelOptions(models, providers, modelSelectionKey(modelProviderId, model))
   ]
   const thinkingOptions = THINKING_LEVELS.map((level) => ({
     value: level,
