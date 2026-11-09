@@ -88,6 +88,7 @@ const EXPECTED: Readonly<Record<string, Brand | null>> = {
   atlascloud: 'atlascloud',
   cheaperinference: null,
   llmbuzz: null,
+  standardcompute: null,
   siliconflow: 'siliconcloud',
   'siliconflow-intl': 'siliconcloud',
   together: 'together',
@@ -130,10 +131,10 @@ describe('内置预设的品牌图标', () => {
    * 「null 只有这么几家」:某天规则表改窄了让一堆家一起掉进 null,
    * 这里会红,而界面上只会安静地多出几个字母。
    */
-  it('没有图标的就是这八家,不多不少', () => {
+  it('没有图标的就是这九家,不多不少', () => {
     const blank = PROVIDER_PRESETS.filter((p) => resolveBrand(p.name, p.id) === null).map(
       (p) => p.id
     )
-    expect(blank).toEqual(['requesty', 'opper', 'api-route', 'cheaperinference', 'llmbuzz', 'ohmygpt', 'llamacpp', 'localai'])
+    expect(blank).toEqual(['requesty', 'opper', 'api-route', 'cheaperinference', 'llmbuzz', 'standardcompute', 'ohmygpt', 'llamacpp', 'localai'])
   })
 })

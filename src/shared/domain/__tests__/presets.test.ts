@@ -258,6 +258,7 @@ describe('预设表 × joinUpstreamUrl:拼出来的 URL 没有畸形', () => {
     ['atlascloud', 'anthropic', 'https://api.atlascloud.ai/v1/messages'],
     ['cheaperinference', 'anthropic', 'https://api.cheaperinference.com/v1/messages'],
     ['llmbuzz', 'anthropic', 'https://api.llm.buzz/api/v1/messages'],
+    ['standardcompute', 'anthropic', 'https://api.stdcmpt.com/v1/messages'],
     ['opper', 'openai-chat', 'https://api.opper.ai/v3/compat/chat/completions'],
     ['opper', 'anthropic', 'https://api.opper.ai/v3/compat/v1/messages'],
     ['kimi-coding', 'anthropic', 'https://api.kimi.com/coding/v1/messages'],
@@ -350,12 +351,12 @@ describe('预设表 · 模型列表', () => {
     })
   })
 
-  it('实测免鉴权的那六家标了 modelListPublic', () => {
+  it('实测免鉴权的那七家标了 modelListPublic', () => {
     const publics = PROVIDER_PRESETS.filter((p) =>
       p.endpoints.some((e) => e.modelListPublic === true)
     ).map((p) => p.id)
     expect(new Set(publics)).toEqual(
-      new Set(['openrouter', 'requesty', 'atlascloud', 'deepinfra', 'opencode-go', 'ollama-cloud'])
+      new Set(['openrouter', 'requesty', 'atlascloud', 'standardcompute', 'deepinfra', 'opencode-go', 'ollama-cloud'])
     )
   })
 })

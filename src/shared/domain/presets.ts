@@ -985,6 +985,25 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'documented'
   },
   {
+    id: 'standardcompute',
+    name: 'Standard Compute',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.stdcmpt.com/v1', true, true),
+      resp('https://api.stdcmpt.com/v1', true),
+      anth('https://api.stdcmpt.com')
+    ],
+    docsUrl: 'https://docs.standardcompute.com',
+    apiKeyUrl: 'https://standardcompute.com/dashboard',
+    suggestedModels: ['StandardCompute', 'deepseek/deepseek-v4-flash', 'z-ai/glm-5.3'],
+    notes:
+      '模型 StandardCompute 是自动路由:每个请求发给能处理它的最便宜的已启用模型,失败时自动切换。' +
+      '要固定某个模型,用模型列表返回的完整 ID(带厂商前缀,如 deepseek/deepseek-v4-flash)。' +
+      '模型列表免鉴权就能拉(因此列表能拉到不代表 key 有效)。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'probed'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
