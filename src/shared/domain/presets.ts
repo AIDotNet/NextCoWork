@@ -985,6 +985,24 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     verification: 'documented'
   },
   {
+    id: 'uberllm',
+    name: 'UberLLM',
+    category: 'aggregator',
+    endpoints: [
+      oa('https://api.uberllm.dev/v1', true, true),
+      resp('https://api.uberllm.dev/v1', true),
+      anth('https://api.uberllm.dev')
+    ],
+    docsUrl: 'https://uberllm.dev/docs/quickstart',
+    apiKeyUrl: 'https://uberllm.dev/signup',
+    suggestedModels: ['openai/gpt-5.4-mini', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4-flash'],
+    notes:
+      '模型 ID 带厂商前缀(如 openai/gpt-5.4-mini、anthropic/claude-sonnet-5),请使用模型列表返回的完整 ID。' +
+      '模型列表免鉴权就能拉,没填 key 也能先看有哪些模型(因此列表能拉到不代表 key 有效)。' +
+      '同一个 key 也可走 OpenAI Responses 与 Anthropic 协议。',
+    verification: 'probed'
+  },
+  {
     id: 'siliconflow',
     name: '硅基流动(国内)',
     category: 'aggregator',
