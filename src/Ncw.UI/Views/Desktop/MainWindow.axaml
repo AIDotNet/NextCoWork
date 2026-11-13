@@ -1,6 +1,5 @@
 <ui:NcwWindow xmlns="https://github.com/avaloniaui"
               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
               xmlns:ui="using:Ncw.UI.Controls"
               xmlns:desktop="using:Ncw.UI.Views.Desktop"
               xmlns:vm="using:Ncw.Client.ViewModels"
@@ -11,9 +10,9 @@
               Height="900"
               MinWidth="760"
               MinHeight="520"
+              IsTitleBarVisible="False"
+              ExtendClientAreaTitleBarHeightHint="40"
               WindowStartupLocation="CenterScreen">
-  <ui:NcwWindow.TitleBar>
-    <ui:NcwTitleBar />
-  </ui:NcwWindow.TitleBar>
-  <desktop:DesktopShell />
+  <!-- 没有标题栏:内容铺到窗口顶端,系统按钮浮在顶部 40px 这一行里(见 Chrome/WindowChrome.cs)。 -->
+  <desktop:DesktopShell x:Name="Shell" />
 </ui:NcwWindow>

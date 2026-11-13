@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.InspectorPanel"
              x:DataType="vm:ShellViewModel">
@@ -20,8 +21,29 @@
       <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
     </Style>
   </UserControl.Styles>
-  <ScrollViewer>
-    <StackPanel Margin="14" Spacing="14">
+  <Grid RowDefinitions="40,*">
+  <!-- 页签行 = 窗口顶部这一行的右段;右端给常驻的检查器开关和窗口按钮让位 -->
+  <Grid x:Name="HeaderRow" ColumnDefinitions="Auto,*" Margin="8,0">
+    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+      <ui:PlainButton Classes="active" Height="28" Padding="8,0">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="LayoutDashboard" Size="14" VerticalAlignment="Center" />
+          <TextBlock x:Name="OverviewLabel" Text="概览" VerticalAlignment="Center" />
+        </StackPanel>
+      </ui:PlainButton>
+      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="变更" arc:Tooltip.Tip="变更">
+        <lucide:LucideIcon Kind="GitCompare" Size="14" HorizontalAlignment="Center" />
+      </ui:PlainButton>
+      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="子代理" arc:Tooltip.Tip="子代理">
+        <lucide:LucideIcon Kind="Bot" Size="14" HorizontalAlignment="Center" />
+      </ui:PlainButton>
+      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="历史" arc:Tooltip.Tip="历史">
+        <lucide:LucideIcon Kind="History" Size="14" HorizontalAlignment="Center" />
+      </ui:PlainButton>
+    </StackPanel>
+  </Grid>
+  <ScrollViewer Grid.Row="1">
+    <StackPanel Margin="14,6,14,14" Spacing="14">
       <StackPanel Spacing="8">
         <TextBlock Classes="section" Text="上下文" />
         <Border Classes="card">
@@ -79,4 +101,5 @@
       </StackPanel>
     </StackPanel>
   </ScrollViewer>
+  </Grid>
 </UserControl>

@@ -1,16 +1,18 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:chrome="using:Ncw.UI.Chrome"
              xmlns:desktop="using:Ncw.UI.Views.Desktop"
              xmlns:themes="using:Ncw.UI.Themes"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.DesktopShell"
-             x:DataType="vm:ShellViewModel"
-             Background="{arc:ArcDesignTokenResource Background}">
+             x:DataType="vm:ShellViewModel">
   <!--
-    桌面三栏外壳(docs/design/03 §1、§2):
-      栏 1 项目栏 64px | 栏 2 项目面板 240–360 | 栏 3 主工作区 | 右侧检查器(可选)
-    断点由 code-behind 按宽度计算(纯 UI 状态),≥1440 检查器停靠,720–1024 收起项目面板。
+    桌面外壳(docs/design/03 §1、§2)。窗口没有系统标题栏,内容铺到顶端;顶部 40px 这一行由各栏头部拼成:
+      左侧区域头部(红绿灯留白 + 名称 + 收起按钮)| 工作区标签栏 | 检查器页签,再加右上角常驻的检查器开关和窗口按钮。
+    这一行里没有被控件处理的按下用来拖动窗口(MainWindow)。断点和左右栏显隐由 code-behind 计算(纯 UI 状态)。
   -->
   <UserControl.Resources>
     <ResourceDictionary>
@@ -19,36 +21,82 @@
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
   </UserControl.Resources>
+  <UserControl.Styles>
+    <themes:NcwStyles />
+  </UserControl.Styles>
   <UserControl.KeyBindings>
-    <KeyBinding Gesture="Meta+B" Command="{Binding TogglePanelCommand}" />
-    <KeyBinding Gesture="Ctrl+B" Command="{Binding TogglePanelCommand}" />
+    <KeyBinding Gesture="Meta+B" Command="{Binding ToggleSidebarCommand}" />
+    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
     <KeyBinding Gesture="Meta+Alt+I" Command="{Binding ToggleInspectorCommand}" />
     <KeyBinding Gesture="Ctrl+Alt+I" Command="{Binding ToggleInspectorCommand}" />
   </UserControl.KeyBindings>
 
-  <Grid x:Name="Columns" ColumnDefinitions="64,Auto,*,Auto">
-    <Border Grid.Column="0"
-            Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-            BorderThickness="0,0,1,0"
-            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-      <desktop:ProjectRail DataContext="{Binding Rail}" />
-    </Border>
-    <Border x:Name="PanelColumn"
-            Grid.Column="1"
-            Width="288"
-            Background="{arc:ArcDesignTokenResource Surface}"
-            BorderThickness="0,0,1,0"
-            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-      <desktop:ProjectPanel DataContext="{Binding Panel}" />
-    </Border>
-    <desktop:WorkspaceArea Grid.Column="2" />
-    <Border x:Name="InspectorColumn"
-            Grid.Column="3"
-            Width="320"
-            Background="{arc:ArcDesignTokenResource Surface}"
-            BorderThickness="1,0,0,0"
-            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-      <desktop:InspectorPanel />
-    </Border>
+  <Grid x:Name="Root" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+      <!-- 左侧区域:头部 + 项目栏 + 项目面板 -->
+      <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*" Width="352">
+        <Grid x:Name="SidebarLead" ColumnDefinitions="Auto,*,Auto" Margin="0,0,8,0">
+          <Border x:Name="SidebarInset" Width="0" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
+            <Border Width="20" Height="20" CornerRadius="6" Background="{arc:ArcDesignTokenResource Foreground}">
+              <lucide:LucideIcon Kind="Sparkles" Size="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Foreground="{arc:ArcDesignTokenResource Background}" />
+            </Border>
+            <TextBlock Text="NextCoWork" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="2" Classes="icon" Variant="Ghost"
+                        Command="{Binding ToggleSidebarCommand}"
+                        AutomationProperties.Name="收起侧边栏"
+                        arc:Tooltip.Tip="收起侧边栏(⌘B)">
+            <lucide:LucideIcon Kind="PanelLeftClose" Size="16" />
+          </ui:NcwButton>
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="64,*">
+          <Border BorderThickness="0,0,1,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+            <desktop:ProjectRail DataContext="{Binding Rail}" />
+          </Border>
+          <desktop:ProjectPanel Grid.Column="1" DataContext="{Binding Panel}" />
+        </Grid>
+      </Grid>
+
+      <!-- 主工作区:标签栏就是顶部这一行 -->
+      <Border Grid.Column="1"
+              Background="{arc:ArcDesignTokenResource Background}"
+              BorderThickness="1,0,1,0"
+              BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <Panel>
+          <desktop:WorkspaceArea x:Name="Workspace" />
+          <!-- 左侧区域收起时:红绿灯留白、名称和展开按钮并入标签栏的最左边 -->
+          <StackPanel x:Name="CollapsedLead" Orientation="Horizontal" Height="40"
+                      HorizontalAlignment="Left" VerticalAlignment="Top" IsVisible="False">
+            <Border x:Name="CollapsedInset" Width="0" />
+            <TextBlock Text="NextCoWork" FontWeight="SemiBold" VerticalAlignment="Center" Margin="14,0,6,0" />
+            <ui:NcwButton Classes="icon" Variant="Ghost" Margin="0,0,6,0"
+                          Command="{Binding ToggleSidebarCommand}"
+                          AutomationProperties.Name="展开侧边栏"
+                          arc:Tooltip.Tip="展开侧边栏(⌘B)">
+              <lucide:LucideIcon Kind="PanelLeftOpen" Size="16" />
+            </ui:NcwButton>
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <!-- 右侧检查器:自己的页签行也在顶部这一行 -->
+      <Border x:Name="InspectorColumn" Grid.Column="2" Width="320">
+        <desktop:InspectorPanel x:Name="Inspector" />
+      </Border>
+    </Grid>
+
+    <!-- 右上角常驻:检查器开关 + (Windows / Linux)窗口按钮 -->
+    <StackPanel x:Name="TopRight" Orientation="Horizontal" Height="40" Spacing="2" Margin="0,0,8,0"
+                HorizontalAlignment="Right" VerticalAlignment="Top">
+      <ui:NcwButton Classes="icon" Variant="Ghost"
+                    Command="{Binding ToggleInspectorCommand}"
+                    AutomationProperties.Name="检查器"
+                    arc:Tooltip.Tip="检查器(⌘⌥I)">
+        <lucide:LucideIcon Kind="PanelRight" Size="16" />
+      </ui:NcwButton>
+      <chrome:CaptionButtons x:Name="Captions" Margin="6,0,0,0" IsVisible="False" />
+    </StackPanel>
   </Grid>
 </UserControl>

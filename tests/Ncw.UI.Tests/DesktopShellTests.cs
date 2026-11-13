@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
 using Ncw.Client.Mock;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Chrome;
 using Ncw.UI.Views.Desktop;
 
 namespace Ncw.UI.Tests;
@@ -17,11 +18,12 @@ public class DesktopShellTests
         public override DateTimeOffset GetUtcNow() => now.ToUniversalTime();
     }
 
-    private static (Window Window, DesktopShell Shell, ShellViewModel Vm) Render(double width, double height = 860)
+    private static (Window Window, DesktopShell Shell, ShellViewModel Vm) Render(double width, double height = 860, WindowChrome? chrome = null)
     {
         Ncw.UI.Converters.RelativeTimeConverter.Clock = new FixedClock(Now);
         var vm = new ShellViewModel(MockWorkspace.Create(Now));
-        var shell = new DesktopShell { DataContext = vm };
+        // 截图按 macOS 外框(左上角给红绿灯留 78px);另有一个用例覆盖 Windows / Linux 的窗口按钮。
+        var shell = new DesktopShell { DataContext = vm, Chrome = chrome ?? new WindowChrome(78, false) };
         var window = new Window { Width = width, Height = height, Content = shell };
         window.Show();
         Dispatch();
@@ -44,35 +46,42 @@ public class DesktopShellTests
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, name + ".png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
     }
 
-    private static bool Visible(DesktopShell shell, string name) =>
-        shell.FindControl<Border>(name)!.IsEffectivelyVisible;
 
     [AvaloniaTheory]
     [InlineData(1500, ShellBreakpoint.Wide, true, true)]
     [InlineData(1200, ShellBreakpoint.Medium, true, false)]
     [InlineData(900, ShellBreakpoint.Narrow, false, false)]
-    public void Columns_follow_breakpoints(double width, ShellBreakpoint expected, bool panel, bool inspector)
+    public void Columns_follow_breakpoints(double width, ShellBreakpoint expected, bool sidebar, bool inspector)
     {
         var (window, shell, _) = Render(width);
 
         Assert.Equal(expected, shell.Breakpoint);
-        Assert.Equal(panel, Visible(shell, "PanelColumn"));
-        Assert.Equal(inspector, Visible(shell, "InspectorColumn"));
+        Assert.Equal(sidebar, shell.IsSidebarVisible);
+        Assert.Equal(inspector, shell.IsInspectorVisible);
         Snapshot(window, $"shell-{width}");
     }
 
     [AvaloniaFact]
-    public void Toggles_hide_panel_and_inspector()
+    public void Toggles_hide_sidebar_and_inspector()
     {
         var (window, shell, vm) = Render(1500);
 
-        vm.TogglePanelCommand.Execute(null);
+        vm.ToggleSidebarCommand.Execute(null);
         vm.ToggleInspectorCommand.Execute(null);
         Dispatch();
 
-        Assert.False(Visible(shell, "PanelColumn"));
-        Assert.False(Visible(shell, "InspectorColumn"));
+        Assert.False(shell.IsSidebarVisible);
+        Assert.False(shell.IsInspectorVisible);
         Snapshot(window, "shell-1500-collapsed");
+    }
+
+    [AvaloniaFact]
+    public void Windows_and_linux_chrome_draws_caption_buttons()
+    {
+        var (window, shell, _) = Render(1500, chrome: new WindowChrome(0, true));
+
+        Assert.True(shell.FindControl<Ncw.UI.Chrome.CaptionButtons>("Captions")!.IsVisible);
+        Snapshot(window, "shell-1500-windows-chrome");
     }
 
     [AvaloniaFact]

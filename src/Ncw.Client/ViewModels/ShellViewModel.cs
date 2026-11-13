@@ -27,14 +27,14 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public WorkspaceViewModel Workspace { get; }
 
-    /// <summary>⌘B:收起 / 展开项目面板。</summary>
-    [ObservableProperty] public partial bool IsPanelOpen { get; set; } = true;
+    /// <summary>⌘B:收起 / 展开左侧区域(项目栏 + 项目面板)。</summary>
+    [ObservableProperty] public partial bool IsSidebarOpen { get; set; } = true;
 
     /// <summary>⌘⌥I:右侧检查器。</summary>
     [ObservableProperty] public partial bool IsInspectorOpen { get; set; } = true;
 
     [RelayCommand]
-    private void TogglePanel() => IsPanelOpen = !IsPanelOpen;
+    private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
 
     [RelayCommand]
     private void ToggleInspector() => IsInspectorOpen = !IsInspectorOpen;

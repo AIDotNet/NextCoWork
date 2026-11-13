@@ -7,15 +7,11 @@
              x:Class="Ncw.UI.Views.Desktop.WorkspaceArea"
              x:DataType="vm:ShellViewModel">
   <!-- 栏 3:主工作区。标签栏 + 内容 + 输入框(会话内容在 M4 接入)。 -->
-  <Grid RowDefinitions="44,*,Auto">
-    <!-- 标签栏 -->
+  <Grid RowDefinitions="40,*,Auto">
+    <!-- 标签栏 = 窗口顶部这一行(空白处拖动窗口)。左右留白由外壳按左侧区域、检查器的显隐设置。 -->
     <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0">
-        <ui:PlainButton Grid.Column="0" Width="30" Height="30" VerticalAlignment="Center"
-                        Command="{Binding TogglePanelCommand}" AutomationProperties.Name="收起项目面板">
-          <lucide:LucideIcon Kind="PanelLeft" Size="16" HorizontalAlignment="Center" />
-        </ui:PlainButton>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="6,0,0,0">
+      <Grid x:Name="TabRow" ColumnDefinitions="*,Auto" Margin="8,0">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
           <ItemsControl ItemsSource="{Binding Workspace.Tabs}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
@@ -45,28 +41,24 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <ui:PlainButton Width="28" Height="28" VerticalAlignment="Center" AutomationProperties.Name="新建标签页">
-            <lucide:LucideIcon Kind="Plus" Size="15" HorizontalAlignment="Center" />
-          </ui:PlainButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="新建标签页" arc:Tooltip.Tip="新建标签页">
+            <lucide:LucideIcon Kind="Plus" Size="15" />
+          </ui:NcwButton>
         </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="更多">
-            <lucide:LucideIcon Kind="Ellipsis" Size="16" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-          <StackPanel Orientation="Horizontal" Spacing="5" Margin="6,0" VerticalAlignment="Center">
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="更多" arc:Tooltip.Tip="更多">
+            <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+          </ui:NcwButton>
+          <StackPanel Orientation="Horizontal" Spacing="5" Margin="8,0" VerticalAlignment="Center"
+                      arc:Tooltip.Tip="上下文占用">
             <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <TextBlock VerticalAlignment="Center"
-                       FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                       Foreground="{arc:ArcDesignTokenResource TextSecondary}">
+            <TextBlock Classes="caption">
               <Run Text="{Binding Workspace.ContextPercent}" /><Run Text="%" />
             </TextBlock>
           </StackPanel>
-          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="分屏">
-            <lucide:LucideIcon Kind="Columns2" Size="16" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-          <ui:PlainButton Width="30" Height="30" Command="{Binding ToggleInspectorCommand}" AutomationProperties.Name="检查器">
-            <lucide:LucideIcon Kind="PanelRight" Size="16" HorizontalAlignment="Center" />
-          </ui:PlainButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="向右分屏" arc:Tooltip.Tip="向右分屏">
+            <lucide:LucideIcon Kind="Columns2" Size="16" />
+          </ui:NcwButton>
         </StackPanel>
       </Grid>
     </Border>

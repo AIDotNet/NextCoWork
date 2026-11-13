@@ -170,20 +170,15 @@
   </UserControl.DataTemplates>
 
   <DockPanel>
-    <!-- 底部:设置 -->
-    <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12" Spacing="6">
+    <!-- 底部:账户、设置 -->
+    <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12" Spacing="8">
+      <ui:NcwAvatar HorizontalAlignment="Center" DisplayName="Token" Status="Online" />
       <ui:PlainButton Width="36" Height="36" HorizontalAlignment="Center" AutomationProperties.Name="设置">
         <lucide:LucideIcon Kind="Settings" Size="18" HorizontalAlignment="Center" />
       </ui:PlainButton>
     </StackPanel>
-    <!-- 顶部:账户 -->
-    <ui:NcwAvatar DockPanel.Dock="Top"
-                  Margin="0,10,0,8"
-                  HorizontalAlignment="Center"
-                  DisplayName="Token"
-                  Status="Online" />
     <ScrollViewer VerticalScrollBarVisibility="Hidden">
-      <StackPanel>
+      <StackPanel Margin="0,4,0,0">
         <ItemsControl ItemsSource="{Binding Items}" />
         <ui:PlainButton Width="40"
                         Height="40"
