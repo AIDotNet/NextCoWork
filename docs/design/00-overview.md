@@ -6,7 +6,7 @@
    仓库里不再有 Node / TypeScript 运行时依赖。需要执行 JS 的地方(插件)一律用 [Jaunt](https://github.com/AIDotNet/Jaunt)。
    - 客户端:Avalonia 12(≥ 12.1.5,< 13)+ TKCode.Arc(锁定正式版 `1.1.0`,Avalonia 锁定 `12.1.5`),一套代码覆盖
      macOS / Windows / Linux / iOS / Android。浏览器(WASM)先不做,但架构上不堵死。
-   - Agent:用 C# 重写,NativeAOT 发布为单文件 `ncw-agent`,不再内置 Node。
+   - Agent:用 C# 重写,NativeAOT 发布为原生可执行文件 `ncw-agent`(旁边只带一个 e_sqlite3 原生库),不再内置 Node。
 2. **Agent 运行时单独设计**:Agent 是一个独立的服务进程,对客户端类型无感知。
    桌面、手机、平板都是它的「控制端」,地位相同。3.0 只有两种部署:桌面内置和云端。
 3. **3.0 只做 GUI**:所有用户操作(安装、配对、数据接管、诊断、回滚)都在图形界面里完成或自动完成。
@@ -42,7 +42,7 @@
 |---|---|---|---|
 | D1 | 客户端和 Agent 分成两个进程,中间只走「设备协议」 | 移动端和云端只能远程连接。本机和远程走同一条路径,移动端就不需要额外开发;Agent 也能在关窗后继续运行 | 桌面端把 Agent 放进客户端进程:同语言后技术上可行,但本机和远程会变成两套逻辑,崩溃也会互相拖垮 |
 | D2 | 桌面端安装包内置本机 Agent(sidecar),用回环地址加本机令牌连接 | 用户感知不到多了一个进程,开箱即用 | 让用户自己装设备服务:门槛太高 |
-| D3 | **Agent 用 C#(.NET 10)重写**,NativeAOT 发布为单文件。2.x 的 TS 实现只作为参考实现和行为基准,不迁入本分支 | 一种语言;客户端和 Agent 共享领域模型、派生函数和协议类型;不再内置 Node,包更小,签名和公证更简单;云端也是同一个二进制 | 继续用 TS:两种语言、协议要双实现、Node sidecar 的签名和公证复杂。代价是重写的工作量(见 [01 §4](01-architecture.md#4-agent-移植策略)) |
+| D3 | **Agent 用 C#(.NET 10)重写**,NativeAOT 发布为原生可执行文件(外加 e_sqlite3 原生库)。2.x 的 TS 实现只作为参考实现和行为基准,不迁入本分支 | 一种语言;客户端和 Agent 共享领域模型、派生函数和协议类型;不再内置 Node,包更小,签名和公证更简单;云端也是同一个二进制 | 继续用 TS:两种语言、协议要双实现、Node sidecar 的签名和公证复杂。代价是重写的工作量(见 [01 §4](01-architecture.md#4-agent-移植策略)) |
 | D4 | 协议**全新设计,不参考 2.x**(见 [09](09-protocol.md))。3.0 先做局域网直连:打开远程开关,用 `IP:端口` + 配对码连接;服务器中继以后加,只新增承载、不改协议。定义只有一个来源:`Ncw.Protocol` 程序集,客户端和 Agent 直接引用同一份类型;远程安全层用 TLS 1.3 双向认证,经中继时隧道内再跑 TLS;对外导出 JSON Schema / OpenAPI | 两端同一种语言,不需要代码生成,也不会漂移 | 维护单独的 schema 再生成代码:多一层,没有必要 |
 | D5 | UI 用 TKCode.Arc,但业务视图只引用我们自己的薄封装 `Ncw.UI.*` | Arc 还是 preview 版本,封装一层可以隔离它的破坏性变更 | 业务视图直接用 Arc:升级时改动面太大 |
 | D6 | MVVM 用 CommunityToolkit.Mvvm;序列化用 System.Text.Json 和 MessagePack 的源生成器;全栈不依赖反射 | iOS 和 Agent 都要 NativeAOT,桌面端也希望启动快 | ReactiveUI:较重,依赖反射的地方多 |

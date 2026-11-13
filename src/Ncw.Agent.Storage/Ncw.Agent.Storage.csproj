@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Agent 的数据存储(决策 D13):直接读写 2.x 的 SQLite 结构(nextcowork.db,迁移表 + user_version),
+    3.0 只追加迁移。2.x 的 37 条迁移 SQL 原样嵌入在 Schema/Legacy/,3.0 新增的放在 Schema/V3/。
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Schema/**/*.sql" LogicalName="Ncw.Schema/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

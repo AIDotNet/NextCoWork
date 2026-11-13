@@ -91,7 +91,7 @@ public class RealAgentTests
 
         await Pump(() => vm.Panel.HasProject, "project added");
         Assert.Equal(Path.GetFileName(folder), vm.Panel.Name);
-        Assert.Equal(folder, vm.Panel.Path);
+        Assert.Equal(Ncw.Agent.Host.PathCanon.RealPath(folder), vm.Panel.Path); // 与 2.x 一样取 realpath(/var → /private/var)
         var tile = Assert.Single(vm.Rail.Items.OfType<RailProjectViewModel>());
         Assert.True(tile.IsSelected);
         Assert.False(tile.IsOffline);

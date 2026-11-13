@@ -71,7 +71,7 @@
   和同一组元数据(mandatory、minimumSupportedVersion、graceUntil、更新说明 base64)。
 - 强制更新的语义保持不变。`canStartNewRuns` 的判定改到 Agent 侧,由控制端上报版本,
   Agent 拒绝来自过低版本控制端的新 Run。
-- **sidecar 和客户端一起更新**:内置的 `ncw-agent`(NativeAOT 单文件)打进同一个 Velopack 包,版本号和客户端一致。
+- **sidecar 和客户端一起更新**:内置的 `ncw-agent`(NativeAOT 可执行文件 + 同目录的 `libe_sqlite3` 原生库)打进同一个 Velopack 包,版本号和客户端一致。
   更新前,桌面端先让 sidecar 收尾,再执行重启安装(沿用 2.x「先走应用自己的退出流程,再安装」的经验)。
 - **云端 Agent** 由编排服务滚动升级,和客户端版本不必同步,靠协议 N/N-1 兼容。
 - 3.0 不做独立设备服务,也就没有单独的服务端更新链路。

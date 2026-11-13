@@ -16,7 +16,7 @@
     <ProjectReference Include="../Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
-  <!-- 开发构建:把 ncw-agent 的输出整目录复制到 <输出>/agent/,和桌面端的依赖互不干扰。发布包里换成 NativeAOT 单文件。 -->
+  <!-- 开发构建:把 ncw-agent 的输出整目录复制到 <输出>/agent/,和桌面端的依赖互不干扰。发布包里换成 NativeAOT 产物(可执行文件 + e_sqlite3 原生库)。 -->
   <Target Name="CopyAgentSidecar" AfterTargets="Build">
     <ItemGroup>
       <_NcwAgentFiles Include="$(MSBuildThisFileDirectory)../Ncw.Agent/bin/$(Configuration)/$(TargetFramework)/**/*" />

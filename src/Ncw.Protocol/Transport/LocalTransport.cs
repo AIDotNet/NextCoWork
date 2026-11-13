@@ -75,66 +75,19 @@ public static class LocalTransport
         return hash;
     }
 
+    /// <summary>
+    /// 立刻绑定监听(返回时端点已经可以连接),之后用 <see cref="LocalListener.AcceptAsync"/> 接受连接。
+    /// 绑定和接受分开,调用方才能在「真的能连」之后再报告 ready。
+    /// </summary>
+    public static LocalListener Listen(string endpoint) => new(endpoint);
+
+    /// <summary>绑定并接受连接的简写(测试用)。</summary>
     public static async IAsyncEnumerable<Stream> ListenAsync(string endpoint, [EnumeratorCancellation] CancellationToken ct)
     {
-        if (OperatingSystem.IsWindows())
+        using var listener = Listen(endpoint);
+        await foreach (var stream in listener.AcceptAsync(ct).ConfigureAwait(false))
         {
-            while (!ct.IsCancellationRequested)
-            {
-                var pipe = new NamedPipeServerStream(endpoint, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                try
-                {
-                    await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    await pipe.DisposeAsync().ConfigureAwait(false);
-                    yield break;
-                }
-
-                yield return pipe;
-            }
-
-            yield break;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(endpoint)!);
-        if (File.Exists(endpoint))
-        {
-            File.Delete(endpoint); // 上次崩溃留下的 socket 文件
-        }
-
-        using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        listener.Bind(new UnixDomainSocketEndPoint(endpoint));
-        File.SetUnixFileMode(endpoint, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        listener.Listen(16);
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                Socket accepted;
-                try
-                {
-                    accepted = await listener.AcceptAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    yield break;
-                }
-
-                yield return new NetworkStream(accepted, ownsSocket: true);
-            }
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(endpoint);
-            }
-            catch (IOException)
-            {
-            }
+            yield return stream;
         }
     }
 
@@ -157,6 +110,98 @@ public static class LocalTransport
         {
             socket.Dispose();
             throw;
+        }
+    }
+}
+
+/// <summary>已经绑定的本机监听器。释放时删除 socket 文件。</summary>
+public sealed class LocalListener : IDisposable
+{
+    private readonly string _endpoint;
+    private readonly Socket? _socket;
+
+    internal LocalListener(string endpoint)
+    {
+        _endpoint = endpoint;
+        if (OperatingSystem.IsWindows())
+        {
+            return; // 命名管道在 AcceptAsync 里逐个创建
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(endpoint)!);
+        if (File.Exists(endpoint))
+        {
+            File.Delete(endpoint); // 上次崩溃留下的 socket 文件
+        }
+
+        _socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        try
+        {
+            _socket.Bind(new UnixDomainSocketEndPoint(endpoint));
+            File.SetUnixFileMode(endpoint, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            _socket.Listen(16);
+        }
+        catch
+        {
+            _socket.Dispose();
+            throw;
+        }
+    }
+
+    public async IAsyncEnumerable<Stream> AcceptAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var pipe = new NamedPipeServerStream(_endpoint, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                try
+                {
+                    await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    await pipe.DisposeAsync().ConfigureAwait(false);
+                    yield break;
+                }
+
+                yield return pipe;
+            }
+
+            yield break;
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            Socket accepted;
+            try
+            {
+                accepted = await _socket!.AcceptAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                yield break;
+            }
+
+            yield return new NetworkStream(accepted, ownsSocket: true);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_socket is null)
+        {
+            return;
+        }
+
+        _socket.Dispose();
+        try
+        {
+            File.Delete(_endpoint);
+        }
+        catch (IOException)
+        {
         }
     }
 }

@@ -10,7 +10,7 @@ if (options is null)
     return 2;
 }
 
-using var cts = new CancellationTokenSource();
+var cts = new CancellationTokenSource(); // 不 using:进程退出回调可能在 Main 返回之后才触发
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
@@ -19,10 +19,12 @@ Console.CancelKeyPress += (_, e) =>
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
 var host = new AgentHost(options);
-// 桌面端等这一行出现再连接(也可以直接重试连接)。
-Console.Out.WriteLine($"ncw-agent ready {host.DeviceId} {options.Endpoint}");
-Console.Out.Flush();
-await host.RunAsync(cts.Token);
+// 只有端点真的可以连接之后才报告 ready;桌面端等这一行再连接。
+await host.RunAsync(cts.Token, onListening: () =>
+{
+    Console.Out.WriteLine($"ncw-agent ready {host.DeviceId} {options.Endpoint}");
+    Console.Out.Flush();
+});
 return 0;
 
 static AgentOptions? Parse(string[] args)

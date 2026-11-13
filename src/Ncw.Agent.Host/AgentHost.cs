@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Ncw.Agent.Storage;
 using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
 using Ncw.Protocol.Transport;
@@ -10,13 +11,14 @@ namespace Ncw.Agent.Host;
 /// <summary>
 /// Agent 服务进程:装配方法表与主题,在本机承载上接受连接。一个进程可以同时服务多个控制端。
 /// </summary>
-public sealed class AgentHost
+public sealed class AgentHost : IDisposable
 {
     private readonly AgentOptions _options;
     private readonly MethodRouter _router = new();
     private readonly TopicHub _topics = new();
     private readonly ProjectRegistry _projects;
     private readonly DeviceIdentityFile _identity;
+    private readonly AgentDatabase _database;
 
     public AgentHost(AgentOptions options, TimeProvider? clock = null)
     {
@@ -24,7 +26,8 @@ public sealed class AgentHost
         var time = clock ?? TimeProvider.System;
         Directory.CreateDirectory(options.DataRoot);
         _identity = LoadIdentity(options.DataRoot, time);
-        _projects = new ProjectRegistry(options.DataRoot, time);
+        _database = AgentDatabase.Open(options.DataRoot);
+        _projects = new ProjectRegistry(new WorkspaceRepository(_database, time));
 
         _router.Handle(DeviceMethods.Info, (_, _, _) => ValueTask.FromResult(new DeviceInfoResult(
             _identity.DeviceId, _identity.Name, options.Mode == AgentMode.Cloud ? "cloud" : "local",
@@ -48,8 +51,10 @@ public sealed class AgentHost
 
     public string DeviceId => _identity.DeviceId;
 
-    /// <summary>运行直到取消或父进程退出。</summary>
-    public async Task RunAsync(CancellationToken ct)
+    public void Dispose() => _database.Dispose();
+
+    /// <summary>运行直到取消或父进程退出。<paramref name="onListening"/> 在端点真正可以连接之后调用(用来报告 ready)。</summary>
+    public async Task RunAsync(CancellationToken ct, Action? onListening = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         if (_options.ParentPid is { } parent)
@@ -59,9 +64,11 @@ public sealed class AgentHost
 
         var server = new ServerOptions(_identity.DeviceId, Version, Transports.Local, Authenticate);
         var sessions = new List<Task>();
+        using var listener = LocalTransport.Listen(_options.Endpoint);
+        onListening?.Invoke();
         try
         {
-            await foreach (var stream in LocalTransport.ListenAsync(_options.Endpoint, lifetime.Token).ConfigureAwait(false))
+            await foreach (var stream in listener.AcceptAsync(lifetime.Token).ConfigureAwait(false))
             {
                 sessions.Add(new ServerSession(new FrameStream(stream), _router, _topics, server).RunAsync(lifetime.Token));
                 sessions.RemoveAll(t => t.IsCompleted);
@@ -71,6 +78,7 @@ public sealed class AgentHost
         {
             await lifetime.CancelAsync().ConfigureAwait(false);
             await Task.WhenAll(sessions).ConfigureAwait(false);
+            _database.Dispose();
         }
     }
 

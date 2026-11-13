@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Agent 服务进程的宿主:设备身份、项目登记、方法表、监听。不引用 Avalonia,也不引用任何客户端项目(AGENTS.md §5)。 -->
+  <PropertyGroup>
+    <!-- LibraryImport(realpath)需要;生成的封送代码是安全的,本项目手写代码里没有 unsafe 块。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
     <ProjectReference Include="../Ncw.Protocol/Ncw.Protocol.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
   </ItemGroup>
 </Project>

@@ -3,7 +3,7 @@
 这是 NextCoWork **3.0** 的独立分支(`v3/avalonia`,孤儿分支,和 2.x 的 `main` 没有共同历史)。
 
 3.0 全栈 C#(.NET 10):客户端用 **Avalonia 12 + [TKCode.Arc](https://docs.tkcode.si/llms.txt)** 重写,覆盖桌面端(macOS / Windows / Linux)和移动端(iOS / Android);
-Agent 运行时也用 C# 重写,发布为 NativeAOT 单文件 `ncw-agent`。两者分成两个进程,只通过「设备协议」通信。
+Agent 运行时也用 C# 重写,发布为 NativeAOT 原生可执行文件 `ncw-agent`(同目录带 e_sqlite3 原生库)。两者分成两个进程,只通过「设备协议」通信。
 中继服务、构建发布工具同样用 C#;插件里的 JS 用 [Jaunt](https://github.com/AIDotNet/Jaunt) 执行。
 
 > 3.0 只做 GUI:不做命令行控制端、插件 CLI,也不做独立部署的设备服务。
