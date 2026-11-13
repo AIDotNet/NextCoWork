@@ -1,0 +1,139 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.ProjectPanel"
+             x:DataType="vm:ProjectPanelViewModel">
+  <!-- 栏 2:项目面板(docs/design/03 §1) -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding HasProject}">
+    <!-- 头部:项目名、路径、所在设备与执行环境、分支 -->
+    <StackPanel Grid.Row="0" Margin="16,14,16,10" Spacing="4">
+      <ui:PlainButton Padding="4,2" Margin="-4,0" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{Binding Name}"
+                     FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                     FontWeight="SemiBold" />
+          <lucide:LucideIcon Kind="ChevronDown" Size="14" VerticalAlignment="Center" />
+        </StackPanel>
+      </ui:PlainButton>
+      <TextBlock Classes="muted"
+                 Text="{Binding Path}"
+                 FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}"
+                 TextTrimming="CharacterEllipsis" />
+      <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,10,0">
+          <lucide:LucideIcon Kind="Monitor" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          <TextBlock Classes="muted" Text="{Binding DeviceName}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,10,0" IsVisible="{Binding IsSsh}">
+          <lucide:LucideIcon Kind="Link" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          <TextBlock Classes="muted" Text="{Binding EnvironmentName}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <lucide:LucideIcon Kind="GitBranch" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          <TextBlock Classes="muted" Text="{Binding Branch}" />
+          <lucide:LucideIcon Kind="Check" Size="12" VerticalAlignment="Center"
+                             Foreground="{arc:ArcDesignTokenResource Success}"
+                             IsVisible="{Binding WorkingTreeClean}" />
+          <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center"
+                  Background="{arc:ArcDesignTokenResource Warning}"
+                  IsVisible="{Binding !WorkingTreeClean}" />
+        </StackPanel>
+      </WrapPanel>
+    </StackPanel>
+
+    <!-- 搜索 -->
+    <ui:NcwSearchField Grid.Row="1" Margin="12,0,12,8" Text="{Binding SearchText}" PlaceholderText="在此项目中搜索" />
+
+    <ScrollViewer Grid.Row="2">
+      <StackPanel Margin="8,4,8,12" Spacing="2">
+        <!-- 会话 -->
+        <Grid ColumnDefinitions="*,Auto" Margin="8,6,4,4">
+          <TextBlock Classes="section" Text="会话" />
+          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="新建会话">
+            <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Sessions}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:SessionItemViewModel">
+              <ui:PlainButton Padding="8,7" Command="{Binding OpenCommand}" Classes.active="{Binding IsSelected}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                  <Panel Width="8" Height="8" VerticalAlignment="Center">
+                    <Border CornerRadius="4" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" />
+                    <Border CornerRadius="4" BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
+                            IsVisible="{Binding !IsRunning}" />
+                  </Panel>
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Classes="muted" VerticalAlignment="Center"
+                             Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+                </Grid>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 终端和智能体 -->
+        <Grid ColumnDefinitions="*,Auto" Margin="8,14,4,4">
+          <TextBlock Classes="section" Text="终端和智能体" />
+          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="新建终端">
+            <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Terminals}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:TerminalItemViewModel">
+              <ui:PlainButton Padding="8,7">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Panel Width="14">
+                    <lucide:LucideIcon Kind="Bot" Size="14" IsVisible="{Binding IsExternalAgent}"
+                                       Foreground="{arc:ArcDesignTokenResource Accent}" />
+                    <lucide:LucideIcon Kind="SquareTerminal" Size="14" IsVisible="{Binding !IsExternalAgent}" />
+                  </Panel>
+                  <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                </StackPanel>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 其他入口 -->
+        <TextBlock Classes="section" Text="项目" Margin="8,14,4,4" />
+        <ui:PlainButton Padding="8,7">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="Folder" Size="14" />
+            <TextBlock Text="文件" />
+          </StackPanel>
+        </ui:PlainButton>
+        <ui:PlainButton Padding="8,7">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="GitCompare" Size="14" />
+            <TextBlock Text="Git 变更" />
+          </StackPanel>
+        </ui:PlainButton>
+        <ui:PlainButton Padding="8,7">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="CalendarClock" Size="14" />
+            <TextBlock Text="定时任务" />
+          </StackPanel>
+        </ui:PlainButton>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

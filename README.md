@@ -8,7 +8,25 @@ Agent 运行时也用 C# 重写,发布为 NativeAOT 单文件 `ncw-agent`。两�
 
 > 3.0 只做 GUI:不做命令行控制端、插件 CLI,也不做独立部署的设备服务。
 
-> 现阶段:**设计计划评审(M0)**。下面的文档没有评审通过之前,不写业务代码。
+> 现阶段:**M1 骨架**(设计文档见下表,M0 已完成)。
+
+## 开发
+
+需要 .NET 10 SDK(见 `global.json`)。
+
+```bash
+dotnet build NextCoWork.slnx                       # 构建
+dotnet test NextCoWork.slnx             # 单测 + headless UI 测试(含截图)
+dotnet run --project src/Ncw.Desktop               # 启动桌面端(M1 使用模拟数据)
+```
+
+| 项目 | 内容 |
+|---|---|
+| `src/Ncw.Core` | 领域模型与派生纯函数(客户端和 Agent 共用):项目栏布局、项目活动状态 |
+| `src/Ncw.Client` | Store、Action、ViewModel;M1 的模拟数据 |
+| `src/Ncw.UI` | Avalonia 视图、对 Arc 的封装(`Ncw.UI.Controls`)、桌面三栏外壳 |
+| `src/Ncw.Desktop` | 桌面宿主 |
+| `tests/*` | xunit v3;UI 测试用 Avalonia.Headless + Skia 渲染截图 |
 
 ## 设计文档
 

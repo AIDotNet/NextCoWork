@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 控制端的 Store、Action、ViewModel。与平台无关,不引用 Avalonia,也不能引用任何 Ncw.Agent.*(AGENTS.md §5)。 -->
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+  </ItemGroup>
+</Project>

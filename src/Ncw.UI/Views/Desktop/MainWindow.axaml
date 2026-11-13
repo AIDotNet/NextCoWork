@@ -1,0 +1,19 @@
+<ui:NcwWindow xmlns="https://github.com/avaloniaui"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+              xmlns:ui="using:Ncw.UI.Controls"
+              xmlns:desktop="using:Ncw.UI.Views.Desktop"
+              xmlns:vm="using:Ncw.Client.ViewModels"
+              x:Class="Ncw.UI.Views.Desktop.MainWindow"
+              x:DataType="vm:ShellViewModel"
+              Title="NextCoWork"
+              Width="1500"
+              Height="900"
+              MinWidth="760"
+              MinHeight="520"
+              WindowStartupLocation="CenterScreen">
+  <ui:NcwWindow.TitleBar>
+    <ui:NcwTitleBar />
+  </ui:NcwWindow.TitleBar>
+  <desktop:DesktopShell />
+</ui:NcwWindow>

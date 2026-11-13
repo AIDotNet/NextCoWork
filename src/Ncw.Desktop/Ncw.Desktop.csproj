@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 桌面宿主:窗口、托盘、sidecar 管理、Velopack 更新(后续里程碑)。 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>NextCoWork</AssemblyName>
+    <ApplicationManifest Condition="'$(OS)' == 'Windows_NT'">app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />
+  </ItemGroup>
+</Project>

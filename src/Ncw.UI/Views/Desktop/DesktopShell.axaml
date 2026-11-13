@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             xmlns:themes="using:Ncw.UI.Themes"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.DesktopShell"
+             x:DataType="vm:ShellViewModel"
+             Background="{arc:ArcDesignTokenResource Background}">
+  <!--
+    桌面三栏外壳(docs/design/03 §1、§2):
+      栏 1 项目栏 64px | 栏 2 项目面板 240–360 | 栏 3 主工作区 | 右侧检查器(可选)
+    断点由 code-behind 按宽度计算(纯 UI 状态),≥1440 检查器停靠,720–1024 收起项目面板。
+  -->
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <themes:NcwTheme />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Meta+B" Command="{Binding TogglePanelCommand}" />
+    <KeyBinding Gesture="Ctrl+B" Command="{Binding TogglePanelCommand}" />
+    <KeyBinding Gesture="Meta+Alt+I" Command="{Binding ToggleInspectorCommand}" />
+    <KeyBinding Gesture="Ctrl+Alt+I" Command="{Binding ToggleInspectorCommand}" />
+  </UserControl.KeyBindings>
+
+  <Grid x:Name="Columns" ColumnDefinitions="64,Auto,*,Auto">
+    <Border Grid.Column="0"
+            Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+            BorderThickness="0,0,1,0"
+            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <desktop:ProjectRail DataContext="{Binding Rail}" />
+    </Border>
+    <Border x:Name="PanelColumn"
+            Grid.Column="1"
+            Width="288"
+            Background="{arc:ArcDesignTokenResource Surface}"
+            BorderThickness="0,0,1,0"
+            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <desktop:ProjectPanel DataContext="{Binding Panel}" />
+    </Border>
+    <desktop:WorkspaceArea Grid.Column="2" />
+    <Border x:Name="InspectorColumn"
+            Grid.Column="3"
+            Width="320"
+            Background="{arc:ArcDesignTokenResource Surface}"
+            BorderThickness="1,0,0,0"
+            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <desktop:InspectorPanel />
+    </Border>
+  </Grid>
+</UserControl>

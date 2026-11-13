@@ -4,7 +4,7 @@
 
 ## 0. 当前阶段
 
-M0 设计评审。`docs/design/` 没有评审通过之前,不写业务代码。
+M1 骨架(进行中)。设计文档在 `docs/design/`(M0 已完成);实现必须与设计一致,偏离时先改设计文档。
 
 ## 1. 范围(必须)
 
@@ -14,7 +14,7 @@ M0 设计评审。`docs/design/` 没有评审通过之前,不写业务代码。
 
 ## 2. 技术栈(必须)
 
-- .NET 10;Avalonia `[12.1.5, 13)`;TKCode.Arc **锁定**在 `1.1.0-preview.6`。所有版本只写在 `Directory.Packages.props` 里。
+- .NET 10(`global.json`);Avalonia **锁定** `12.1.5`(Arc 按这个版本构建,所有 Avalonia 包保持一致);TKCode.Arc **锁定** `1.1.0`。所有版本只写在 `Directory.Packages.props` 里。
 - 注册方式是 `AppBuilder.UseArc(arc => arc.UseArcControls() …)`,`App.axaml` 里不放 Fluent 或 Simple 主题。
 - 业务视图只引用 `Ncw.UI.Controls` 封装,不直接引用 `arc:` 控件(封装层自己除外)。
 - 和 Avalonia 同名的控件(Button、TreeView、Slider……)在 XAML 里必须加 `arc:` 前缀,在 C# 里用别名。
@@ -62,6 +62,6 @@ M0 设计评审。`docs/design/` 没有评审通过之前,不写业务代码。
 ## 7. 常用命令(骨架建好后补全)
 
 - 构建:`dotnet build NextCoWork.slnx`
-- 测试:`dotnet test`
+- 测试:`dotnet test NextCoWork.slnx`(UI 测试的截图输出在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`)
 - 桌面运行:`dotnet run --project src/Ncw.Desktop`
 - Agent 运行:`dotnet run --project src/Ncw.Agent -- --mode local`

@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.WorkspaceArea"
+             x:DataType="vm:ShellViewModel">
+  <!-- 栏 3:主工作区。标签栏 + 内容 + 输入框(会话内容在 M4 接入)。 -->
+  <Grid RowDefinitions="44,*,Auto">
+    <!-- 标签栏 -->
+    <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0">
+        <ui:PlainButton Grid.Column="0" Width="30" Height="30" VerticalAlignment="Center"
+                        Command="{Binding TogglePanelCommand}" AutomationProperties.Name="收起项目面板">
+          <lucide:LucideIcon Kind="PanelLeft" Size="16" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="6,0,0,0">
+          <ItemsControl ItemsSource="{Binding Workspace.Tabs}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="4" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:WorkspaceTabViewModel">
+                <ui:PlainButton Height="30" Padding="10,0,6,0" VerticalAlignment="Center"
+                                Classes.active="{Binding IsActive}"
+                                Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.ActivateCommand}"
+                                CommandParameter="{Binding}">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Panel Width="14" VerticalAlignment="Center">
+                      <lucide:LucideIcon Kind="MessageSquare" Size="13" IsVisible="{Binding IsSession}" />
+                      <lucide:LucideIcon Kind="SquareTerminal" Size="13" IsVisible="{Binding IsTerminal}" />
+                    </Panel>
+                    <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <ui:PlainButton Width="18" Height="18" CornerRadius="5"
+                                    Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.CloseCommand}"
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.Name="关闭标签页">
+                      <lucide:LucideIcon Kind="X" Size="11" HorizontalAlignment="Center" />
+                    </ui:PlainButton>
+                  </StackPanel>
+                </ui:PlainButton>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <ui:PlainButton Width="28" Height="28" VerticalAlignment="Center" AutomationProperties.Name="新建标签页">
+            <lucide:LucideIcon Kind="Plus" Size="15" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="更多">
+            <lucide:LucideIcon Kind="Ellipsis" Size="16" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+          <StackPanel Orientation="Horizontal" Spacing="5" Margin="6,0" VerticalAlignment="Center">
+            <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <TextBlock VerticalAlignment="Center"
+                       FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                       Foreground="{arc:ArcDesignTokenResource TextSecondary}">
+              <Run Text="{Binding Workspace.ContextPercent}" /><Run Text="%" />
+            </TextBlock>
+          </StackPanel>
+          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="分屏">
+            <lucide:LucideIcon Kind="Columns2" Size="16" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+          <ui:PlainButton Width="30" Height="30" Command="{Binding ToggleInspectorCommand}" AutomationProperties.Name="检查器">
+            <lucide:LucideIcon Kind="PanelRight" Size="16" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- 内容:M1 占位 -->
+    <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="520">
+      <lucide:LucideIcon Kind="Sparkles" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      <TextBlock HorizontalAlignment="Center"
+                 FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                 FontWeight="SemiBold"
+                 Text="{Binding Workspace.ActiveTab.Title, FallbackValue=打开一个会话}"
+                 TextWrapping="Wrap"
+                 TextAlignment="Center" />
+      <TextBlock HorizontalAlignment="Center"
+                 Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                 Text="会话内容将在 M4 接入设备协议后显示。" />
+    </StackPanel>
+
+    <!-- 输入框 -->
+    <Border Grid.Row="2"
+            Margin="16,0,16,16"
+            Padding="12,10"
+            CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+            BorderThickness="1"
+            BorderBrush="{arc:ArcDesignTokenResource Border}"
+            Background="{arc:ArcDesignTokenResource Surface}"
+            MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
+        <ui:NcwTextArea Text="{Binding Workspace.Draft}" PlaceholderText="输入消息,@ 引用文件,/ 使用命令" FrameMinHeight="56" IsResizable="False" />
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="添加附件">
+            <lucide:LucideIcon Kind="Paperclip" Size="15" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+          <ui:PlainButton Grid.Column="1" Height="30" Padding="8,0">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Text="claude-opus-5-5" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
+              <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+            </StackPanel>
+          </ui:PlainButton>
+          <ui:NcwButton Grid.Column="3" Variant="Primary" Width="34" Height="34" Padding="0" AutomationProperties.Name="发送">
+            <lucide:LucideIcon Kind="ArrowUp" Size="16" />
+          </ui:NcwButton>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,24 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Arc 1.1.0 按 Avalonia 12.1.5 构建:所有 Avalonia 包必须保持在同一个版本。 -->
+    <PackageVersion Include="Avalonia" Version="12.1.5" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.5" />
+    <PackageVersion Include="Avalonia.Skia" Version="12.1.5" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.5" />
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.5" />
+    <PackageVersion Include="TKCode.Arc" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Blocks" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Fonts" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- 测试 -->
+    <!-- Avalonia.Headless.XUnit 12.1.5 基于 xunit v3(extensibility 3.2.x),测试统一用 xunit v3 3.2.x。 -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+</Project>

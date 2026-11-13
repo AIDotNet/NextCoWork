@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.InspectorPanel"
+             x:DataType="vm:ShellViewModel">
+  <!-- 右侧检查器(可选的第四栏)。内容跟随当前标签页;M1 是占位。 -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+    </Style>
+  </UserControl.Styles>
+  <ScrollViewer>
+    <StackPanel Margin="14" Spacing="14">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="上下文" />
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="已用 102K / 200K" />
+              <TextBlock Grid.Column="1" Foreground="{arc:ArcDesignTokenResource TextMuted}">
+                <Run Text="{Binding Workspace.ContextPercent}" /><Run Text="%" />
+              </TextBlock>
+            </Grid>
+            <Grid ColumnDefinitions="51*,49*" Height="6">
+              <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
+              <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="待办" />
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <lucide:LucideIcon Kind="CircleCheck" Size="14" Foreground="{arc:ArcDesignTokenResource Success}" />
+              <TextBlock Text="搭建解决方案骨架" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Accent}" />
+              <TextBlock Text="三栏外壳与项目分组" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <lucide:LucideIcon Kind="Circle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Text="设备协议骨架" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="子代理 (2)" />
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <TextBlock Text="code-analyst · 阅读 kernel/upstream" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="general-purpose · 调研 pi 设计" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="变更文件 (3)" />
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="src/Ncw.Core/Layout/RailLayout.cs" TextTrimming="CharacterEllipsis" />
+            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="src/Ncw.UI/Views/Desktop/DesktopShell.axaml" TextTrimming="CharacterEllipsis" />
+            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="docs/design/03-ui-layout.md" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

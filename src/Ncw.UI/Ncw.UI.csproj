@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Avalonia 视图 + 对 Arc 的薄封装(Ncw.UI.Controls)。业务视图只引用封装,不直接写 arc: 控件(AGENTS.md §2)。 -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="TKCode.Arc" />
+    <PackageReference Include="TKCode.Arc.Fonts" />
+    <PackageReference Include="TKCode.Arc.Icons.Lucide" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Client/Ncw.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 运行时才确定的 Lucide 图标必须在这里声明,否则画不出来(ARCL002)。 -->
+    <LucideIcon Include="Cloud;Link;Monitor;Bot;SquareTerminal;MessageSquare" />
+  </ItemGroup>
+</Project>

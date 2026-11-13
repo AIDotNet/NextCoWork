@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 客户端和 Agent 共用:领域模型与派生纯函数。不引用 Avalonia,也不引用任何平台相关的包(AGENTS.md)。 -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
