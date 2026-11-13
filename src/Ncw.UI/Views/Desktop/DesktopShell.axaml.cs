@@ -82,8 +82,9 @@ public partial class DesktopShell : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged += OnViewModelChanged;
-            // 弹窗盖在这个外壳所在的窗口上。
+            // 弹窗盖在这个外壳所在的窗口上;Client 层的文字按当前语言提供。
             _vm.Dialogs = new NcwDialogService(this);
+            _vm.Text = Localization.NcwClientText.Instance;
         }
 
         ApplyLayout();

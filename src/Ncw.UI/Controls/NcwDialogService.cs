@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Ncw.Client.Services;
+using Ncw.UI.Localization;
 using TKCode.Arc;
 
 namespace Ncw.UI.Controls;
@@ -18,8 +19,8 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
             Content = new StackPanel { Spacing = 16, Margin = new Thickness(0, 4, 0, 0), Children = { input } },
             Actions = Dialog.BuildActions(
             [
-                new DialogAction("取消", false),
-                new DialogAction("保存", true, ButtonVariant.Primary),
+                new DialogAction(NcwTexts.Get(NcwTextKind.Cancel), false),
+                new DialogAction(NcwTexts.Get(NcwTextKind.Save), true, ButtonVariant.Primary),
             ]),
         };
 

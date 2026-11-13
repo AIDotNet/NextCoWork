@@ -48,14 +48,4 @@ public static class InspectorTabs
         var set = added.ToHashSet();
         return Addable.Where(k => !set.Contains(k)).ToList();
     }
-
-    public static string Title(InspectorTabKind kind) => kind switch
-    {
-        InspectorTabKind.Files => "文件",
-        InspectorTabKind.Git => "Git",
-        InspectorTabKind.Context => "上下文",
-        InspectorTabKind.History => "历史",
-        InspectorTabKind.Subagents => "子代理",
-        _ => kind.ToString(),
-    };
 }

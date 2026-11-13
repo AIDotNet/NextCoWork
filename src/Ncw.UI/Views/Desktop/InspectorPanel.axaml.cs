@@ -64,7 +64,7 @@ public partial class InspectorPanel : UserControl
         AddMenu.ItemsSource = _vm.Addable
             .Select(kind => new MenuEntry
             {
-                Header = InspectorTabs.Title(kind),
+                Header = Converters.InspectorTabTitleConverter.Title(kind),
                 Command = _vm.AddCommand,
                 CommandParameter = kind,
             })

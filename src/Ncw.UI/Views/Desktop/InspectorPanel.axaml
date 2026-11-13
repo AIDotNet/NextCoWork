@@ -1,8 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.InspectorPanel"
              x:DataType="vm:InspectorViewModel">
@@ -62,8 +64,8 @@
                             Classes.active="{Binding IsActive}"
                             Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).ActivateCommand}"
                             CommandParameter="{Binding Kind}"
-                            AutomationProperties.Name="{Binding Title}"
-                            arc:Tooltip.Tip="{Binding Title}">
+                            AutomationProperties.Name="{Binding Kind, Converter={x:Static cv:InspectorTabTitleConverter.Instance}}"
+                            arc:Tooltip.Tip="{Binding Kind, Converter={x:Static cv:InspectorTabTitleConverter.Instance}}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <Panel Width="14" VerticalAlignment="Center">
                   <lucide:LucideIcon Kind="Files" Size="14" IsVisible="{Binding IsFiles}" />
@@ -73,7 +75,7 @@
                   <lucide:LucideIcon Kind="Bot" Size="14" IsVisible="{Binding IsSubagents}" />
                 </Panel>
                 <!-- 选中的页签显示名称;其余只显示图标 -->
-                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" IsVisible="{Binding IsActive}" />
+                <TextBlock Text="{Binding Kind, Converter={x:Static cv:InspectorTabTitleConverter.Instance}}" VerticalAlignment="Center" IsVisible="{Binding IsActive}" />
                 <Border MinWidth="16" Height="16" Padding="4,0" CornerRadius="8" VerticalAlignment="Center"
                         Background="{arc:ArcDesignTokenResource AccentSubtle}" IsVisible="{Binding HasCount}">
                   <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"
@@ -82,7 +84,7 @@
                 <ui:PlainButton Width="16" Height="16" CornerRadius="4" IsVisible="{Binding ShowsClose}"
                                 Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).CloseCommand}"
                                 CommandParameter="{Binding Kind}"
-                                AutomationProperties.Name="关闭页签">
+                                AutomationProperties.Name="{l:NcwText CloseTabShort}">
                   <lucide:LucideIcon Kind="X" Size="10" HorizontalAlignment="Center" />
                 </ui:PlainButton>
               </StackPanel>
@@ -94,7 +96,7 @@
       <ui:NcwDropdownMenu x:Name="AddMenu" Grid.Column="1" Margin="2,0,0,0" VerticalAlignment="Center"
                           IsVisible="{Binding HasAddable}">
         <ui:NcwDropdownMenu.Trigger>
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="添加页签" arc:Tooltip.Tip="添加页签">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText AddTab}" arc:Tooltip.Tip="{l:NcwText AddTab}">
             <lucide:LucideIcon Kind="Plus" Size="15" />
           </ui:NcwButton>
         </ui:NcwDropdownMenu.Trigger>
@@ -107,13 +109,13 @@
         <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                    Text="{Binding Files.ProjectName}" arc:Tooltip.Tip="{Binding Files.ProjectPath}" />
         <StackPanel Grid.Column="1" Orientation="Horizontal">
-          <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnCollapseAll" AutomationProperties.Name="全部折叠" arc:Tooltip.Tip="全部折叠">
+          <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnCollapseAll" AutomationProperties.Name="{l:NcwText CollapseAll}" arc:Tooltip.Tip="{l:NcwText CollapseAll}">
             <lucide:LucideIcon Kind="ListCollapse" Size="14" />
           </ui:NcwButton>
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="刷新" arc:Tooltip.Tip="刷新">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
             <lucide:LucideIcon Kind="RefreshCw" Size="14" />
           </ui:NcwButton>
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="更多" arc:Tooltip.Tip="更多">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
             <lucide:LucideIcon Kind="Ellipsis" Size="14" />
           </ui:NcwButton>
         </StackPanel>
@@ -149,9 +151,8 @@
         <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,8,4,8">
           <lucide:LucideIcon Kind="GitBranch" Size="14" VerticalAlignment="Center" />
           <TextBlock Text="{Binding Branch}" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <TextBlock Classes="hint" VerticalAlignment="Center">
-            <Run Text="{Binding GitChanges.Count}" /><Run Text=" 个变更" />
-          </TextBlock>
+          <TextBlock Classes="hint" VerticalAlignment="Center"
+                     Text="{Binding GitChanges.Count, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=GitChangeCount}" />
         </StackPanel>
         <ItemsControl ItemsSource="{Binding GitChanges}">
           <ItemsControl.ItemTemplate>
@@ -177,11 +178,11 @@
     <ScrollViewer Grid.Row="1" IsVisible="{Binding IsContext}">
       <StackPanel Margin="14,6,14,14" Spacing="14">
         <StackPanel Spacing="8">
-          <TextBlock Classes="section" Text="上下文" />
+          <TextBlock Classes="section" Text="{l:NcwText TabContext}" />
           <Border Classes="card">
             <StackPanel Spacing="8">
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="已用 102K / 200K" />
+                <TextBlock Text="102K / 200K" />
                 <TextBlock Grid.Column="1" Classes="hint" Text="51%" />
               </Grid>
               <Grid ColumnDefinitions="51*,49*" Height="6">
@@ -192,22 +193,9 @@
           </Border>
         </StackPanel>
         <StackPanel Spacing="8">
-          <TextBlock Classes="section" Text="待办" />
+          <TextBlock Classes="section" Text="{l:NcwText Todos}" />
           <Border Classes="card">
-            <StackPanel Spacing="6">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <lucide:LucideIcon Kind="CircleCheck" Size="14" Foreground="{arc:ArcDesignTokenResource Success}" />
-                <TextBlock Text="搭建解决方案骨架" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Accent}" />
-                <TextBlock Text="右侧面板与文件管理器" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <lucide:LucideIcon Kind="Circle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                <TextBlock Text="设备协议骨架" />
-              </StackPanel>
-            </StackPanel>
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText TodosPlaceholder}" />
           </Border>
         </StackPanel>
       </StackPanel>
@@ -215,8 +203,8 @@
 
     <!-- 历史(M4 接入) -->
     <StackPanel Grid.Row="1" Margin="14,16" Spacing="6" IsVisible="{Binding IsHistory}">
-      <TextBlock Text="历史" FontWeight="SemiBold" />
-      <TextBlock Classes="hint" Text="本会话的文件改动和检查点将在 M4 接入后显示。" TextWrapping="Wrap" />
+      <TextBlock Text="{l:NcwText TabHistory}" FontWeight="SemiBold" />
+      <TextBlock Classes="hint" Text="{l:NcwText HistoryPlaceholder}" TextWrapping="Wrap" />
     </StackPanel>
 
     <!-- 子代理:状态文案、计时、能否停止都来自 SubagentView.Of -->
@@ -236,10 +224,10 @@
                   <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsTerminal}" />
                 </Panel>
                 <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Classes="hint" Text="{Binding StatusText}" VerticalAlignment="Center" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="{Binding Detail}" />
+                <TextBlock Grid.Column="2" Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Detail}}" />
                 <ui:NcwButton Grid.Row="1" Grid.Column="2" Classes="icon" Variant="Ghost" IsVisible="{Binding CanStop}"
-                              AutomationProperties.Name="停止子代理" arc:Tooltip.Tip="停止">
+                              AutomationProperties.Name="{l:NcwText StopSubagent}" arc:Tooltip.Tip="{l:NcwText Stop}">
                   <lucide:LucideIcon Kind="Square" Size="12" />
                 </ui:NcwButton>
               </Grid>

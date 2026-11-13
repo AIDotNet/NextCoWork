@@ -1,17 +1,18 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
              x:Class="Ncw.UI.Chrome.CaptionButtons">
   <!-- Windows / Linux:应用自己画的最小化、最大化、关闭。macOS 用系统红绿灯,不显示这一组。 -->
   <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnMinimize" AutomationProperties.Name="最小化">
+    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnMinimize" AutomationProperties.Name="{l:NcwText Minimize}">
       <lucide:LucideIcon Kind="Minus" Size="16" />
     </ui:NcwButton>
-    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnMaximize" AutomationProperties.Name="最大化">
+    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnMaximize" AutomationProperties.Name="{l:NcwText Maximize}">
       <lucide:LucideIcon Kind="Square" Size="14" />
     </ui:NcwButton>
-    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnClose" AutomationProperties.Name="关闭">
+    <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnClose" AutomationProperties.Name="{l:NcwText Close}">
       <lucide:LucideIcon Kind="X" Size="16" />
     </ui:NcwButton>
   </StackPanel>

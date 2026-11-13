@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
@@ -59,14 +60,14 @@
     </StackPanel>
 
     <!-- 搜索 -->
-    <ui:NcwSearchField Grid.Row="1" Margin="12,0,12,8" Text="{Binding SearchText}" PlaceholderText="在此项目中搜索" />
+    <ui:NcwSearchField Grid.Row="1" Margin="12,0,12,8" Text="{Binding SearchText}" PlaceholderText="{l:NcwText SearchInProject}" />
 
     <ScrollViewer Grid.Row="2">
       <StackPanel Margin="8,4,8,12" Spacing="2">
         <!-- 会话 -->
         <Grid ColumnDefinitions="*,Auto" Margin="8,6,4,4">
-          <TextBlock Classes="section" Text="会话" />
-          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="新建会话">
+          <TextBlock Classes="section" Text="{l:NcwText Sessions}" />
+          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
             <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
           </ui:PlainButton>
         </Grid>
@@ -91,8 +92,8 @@
 
         <!-- 终端和智能体 -->
         <Grid ColumnDefinitions="*,Auto" Margin="8,14,4,4">
-          <TextBlock Classes="section" Text="终端和智能体" />
-          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="新建终端">
+          <TextBlock Classes="section" Text="{l:NcwText TerminalsAndAgents}" />
+          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="{l:NcwText NewTerminal}" arc:Tooltip.Tip="{l:NcwText NewTerminal}">
             <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
           </ui:PlainButton>
         </Grid>
@@ -114,23 +115,23 @@
         </ItemsControl>
 
         <!-- 其他入口 -->
-        <TextBlock Classes="section" Text="项目" Margin="8,14,4,4" />
+        <TextBlock Classes="section" Text="{l:NcwText ProjectSection}" Margin="8,14,4,4" />
         <ui:PlainButton Padding="8,7">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <lucide:LucideIcon Kind="Folder" Size="14" />
-            <TextBlock Text="文件" />
+            <TextBlock Text="{l:NcwText TabFiles}" />
           </StackPanel>
         </ui:PlainButton>
         <ui:PlainButton Padding="8,7">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <lucide:LucideIcon Kind="GitCompare" Size="14" />
-            <TextBlock Text="Git 变更" />
+            <TextBlock Text="{l:NcwText GitChanges}" />
           </StackPanel>
         </ui:PlainButton>
         <ui:PlainButton Padding="8,7">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <lucide:LucideIcon Kind="CalendarClock" Size="14" />
-            <TextBlock Text="定时任务" />
+            <TextBlock Text="{l:NcwText ScheduledTasks}" />
           </StackPanel>
         </ui:PlainButton>
       </StackPanel>

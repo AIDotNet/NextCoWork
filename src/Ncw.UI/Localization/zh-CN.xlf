@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xliff version="2.1" srcLang="en-US" trgLang="zh-CN" xmlns="urn:oasis:names:tc:xliff:document:2.0">
+  <file id="Ncw.UI.Localization.NcwTextKind">
+    <unit id="Settings"><segment><source>Settings</source><target state="translated">设置</target></segment></unit>
+    <unit id="AddProject"><segment><source>Add project</source><target state="translated">添加项目</target></segment></unit>
+    <unit id="Minimize"><segment><source>Minimize</source><target state="translated">最小化</target></segment></unit>
+    <unit id="Maximize"><segment><source>Maximize</source><target state="translated">最大化</target></segment></unit>
+    <unit id="Close"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
+    <unit id="Cancel"><segment><source>Cancel</source><target state="translated">取消</target></segment></unit>
+    <unit id="Save"><segment><source>Save</source><target state="translated">保存</target></segment></unit>
+    <unit id="More"><segment><source>More</source><target state="translated">更多</target></segment></unit>
+    <unit id="Refresh"><segment><source>Refresh</source><target state="translated">刷新</target></segment></unit>
+    <unit id="Stop"><segment><source>Stop</source><target state="translated">停止</target></segment></unit>
+    <unit id="TimeJustNow"><segment><source>Just now</source><target state="translated">刚刚</target></segment></unit>
+    <unit id="TimeMinutesAgo"><segment><source>{0} min ago</source><target state="translated">{0} 分钟前</target></segment></unit>
+    <unit id="TimeHoursAgo"><segment><source>{0} h ago</source><target state="translated">{0} 小时前</target></segment></unit>
+    <unit id="TimeYesterday"><segment><source>Yesterday</source><target state="translated">昨天</target></segment></unit>
+    <unit id="CollapseSidebar"><segment><source>Collapse sidebar</source><target state="translated">收起侧边栏</target></segment></unit>
+    <unit id="CollapseSidebarHint"><segment><source>Collapse sidebar (⌘B)</source><target state="translated">收起侧边栏(⌘B)</target></segment></unit>
+    <unit id="ExpandSidebar"><segment><source>Expand sidebar</source><target state="translated">展开侧边栏</target></segment></unit>
+    <unit id="ExpandSidebarHint"><segment><source>Expand sidebar (⌘B)</source><target state="translated">展开侧边栏(⌘B)</target></segment></unit>
+    <unit id="RightPanel"><segment><source>Right panel</source><target state="translated">右侧面板</target></segment></unit>
+    <unit id="RightPanelHint"><segment><source>Right panel (⌘⌥I)</source><target state="translated">右侧面板(⌘⌥I)</target></segment></unit>
+    <unit id="NewGroup"><segment><source>New group</source><target state="translated">新建项目组</target></segment></unit>
+    <unit id="LeaveGroup"><segment><source>Remove from group</source><target state="translated">移出项目组</target></segment></unit>
+    <unit id="RemoveFromRail"><segment><source>Remove from sidebar</source><target state="translated">从项目栏移除</target></segment></unit>
+    <unit id="Rename"><segment><source>Rename</source><target state="translated">重命名</target></segment></unit>
+    <unit id="ToggleGroup"><segment><source>Expand / collapse</source><target state="translated">展开 / 收起</target></segment></unit>
+    <unit id="ChangeColor"><segment><source>Change color</source><target state="translated">更改颜色</target></segment></unit>
+    <unit id="DissolveGroup"><segment><source>Ungroup</source><target state="translated">解散项目组</target></segment></unit>
+    <unit id="NewGroupDefaultName"><segment><source>New group</source><target state="translated">新项目组</target></segment></unit>
+    <unit id="RenameGroupTitle"><segment><source>Rename group</source><target state="translated">重命名项目组</target></segment></unit>
+    <unit id="RenameGroupDescription"><segment><source>The name syncs to all your devices.</source><target state="translated">名字会同步到你的所有设备。</target></segment></unit>
+    <unit id="NameLabel"><segment><source>Name</source><target state="translated">名称</target></segment></unit>
+    <unit id="SearchInProject"><segment><source>Search in this project</source><target state="translated">在此项目中搜索</target></segment></unit>
+    <unit id="Sessions"><segment><source>Sessions</source><target state="translated">会话</target></segment></unit>
+    <unit id="NewSession"><segment><source>New session</source><target state="translated">新建会话</target></segment></unit>
+    <unit id="TerminalsAndAgents"><segment><source>Terminals &amp; agents</source><target state="translated">终端和智能体</target></segment></unit>
+    <unit id="NewTerminal"><segment><source>New terminal</source><target state="translated">新建终端</target></segment></unit>
+    <unit id="ProjectSection"><segment><source>Project</source><target state="translated">项目</target></segment></unit>
+    <unit id="GitChanges"><segment><source>Git changes</source><target state="translated">Git 变更</target></segment></unit>
+    <unit id="ScheduledTasks"><segment><source>Scheduled tasks</source><target state="translated">定时任务</target></segment></unit>
+    <unit id="OpenASession"><segment><source>Open a session</source><target state="translated">打开一个会话</target></segment></unit>
+    <unit id="SessionContentPlaceholder"><segment><source>Session content appears once the device protocol is connected (M4).</source><target state="translated">会话内容将在 M4 接入设备协议后显示。</target></segment></unit>
+    <unit id="ContextUsage"><segment><source>Context usage</source><target state="translated">上下文占用</target></segment></unit>
+    <unit id="SplitRight"><segment><source>Split right</source><target state="translated">向右分屏</target></segment></unit>
+    <unit id="NewTab"><segment><source>New tab</source><target state="translated">新建标签页</target></segment></unit>
+    <unit id="CloseTab"><segment><source>Close tab</source><target state="translated">关闭标签页</target></segment></unit>
+    <unit id="AddAttachment"><segment><source>Add attachment</source><target state="translated">添加附件</target></segment></unit>
+    <unit id="Send"><segment><source>Send</source><target state="translated">发送</target></segment></unit>
+    <unit id="ComposerPlaceholder"><segment><source>Message, @ to reference files, / for commands</source><target state="translated">输入消息,@ 引用文件,/ 使用命令</target></segment></unit>
+    <unit id="TabFiles"><segment><source>Files</source><target state="translated">文件</target></segment></unit>
+    <unit id="TabGit"><segment><source>Git</source><target state="translated">Git</target></segment></unit>
+    <unit id="TabContext"><segment><source>Context</source><target state="translated">上下文</target></segment></unit>
+    <unit id="TabHistory"><segment><source>History</source><target state="translated">历史</target></segment></unit>
+    <unit id="TabSubagents"><segment><source>Subagents</source><target state="translated">子代理</target></segment></unit>
+    <unit id="AddTab"><segment><source>Add tab</source><target state="translated">添加页签</target></segment></unit>
+    <unit id="CloseTabShort"><segment><source>Close tab</source><target state="translated">关闭页签</target></segment></unit>
+    <unit id="CollapseAll"><segment><source>Collapse all</source><target state="translated">全部折叠</target></segment></unit>
+    <unit id="GitChangeCount"><segment><source>{0} changes</source><target state="translated">{0} 个变更</target></segment></unit>
+    <unit id="ContextUsed"><segment><source>Used {0} of {1}</source><target state="translated">已用 {0} / {1}</target></segment></unit>
+    <unit id="Todos"><segment><source>To-dos</source><target state="translated">待办</target></segment></unit>
+    <unit id="TodosPlaceholder"><segment><source>The session&#x27;s to-do list appears here (M4).</source><target state="translated">本会话的待办将在 M4 接入后显示。</target></segment></unit>
+    <unit id="HistoryPlaceholder"><segment><source>File changes and checkpoints of this session appear here (M4).</source><target state="translated">本会话的文件改动和检查点将在 M4 接入后显示。</target></segment></unit>
+    <unit id="StopSubagent"><segment><source>Stop subagent</source><target state="translated">停止子代理</target></segment></unit>
+    <unit id="SubagentQueued"><segment><source>Queued</source><target state="translated">排队中</target></segment></unit>
+    <unit id="SubagentRunning"><segment><source>Running</source><target state="translated">运行中</target></segment></unit>
+    <unit id="SubagentDone"><segment><source>Done</source><target state="translated">已完成</target></segment></unit>
+    <unit id="SubagentError"><segment><source>Failed</source><target state="translated">出错</target></segment></unit>
+    <unit id="SubagentAborted"><segment><source>Stopped</source><target state="translated">已停止</target></segment></unit>
+    <unit id="SubagentDetail"><segment><source>{0} tool calls · {1}</source><target state="translated">{0} 次工具调用 · {1}</target></segment></unit>
+    <unit id="SubagentDetailWithTool"><segment><source>{0} · {1} tool calls · {2}</source><target state="translated">{0} · {1} 次工具调用 · {2}</target></segment></unit>
+  </file>
+</xliff>

@@ -160,8 +160,6 @@ public sealed partial class InspectorTabViewModel(InspectorTabKind kind, int cou
 {
     public InspectorTabKind Kind { get; } = kind;
 
-    public string Title { get; } = InspectorTabs.Title(kind);
-
     /// <summary>文件页签不能关;子代理页签随会话自动出现和消失,也不能手动关。</summary>
     public bool IsClosable { get; } = kind is not (InspectorTabKind.Files or InspectorTabKind.Subagents);
 
@@ -212,15 +210,16 @@ public sealed class GitChangeItemViewModel(string path, GitChange change)
     public bool IsModified => Change is GitChange.Modified or GitChange.Renamed;
 }
 
+/// <summary>一张子代理卡片。只携带 <see cref="SubagentView.Of"/> 的结构化结果,文案由 UI 按语言格式化。</summary>
 public sealed class SubagentItemViewModel(string callId, SubagentViewState view)
 {
     public string CallId { get; } = callId;
 
-    public string Title { get; } = view.Title;
+    public SubagentViewState View { get; } = view;
 
-    public string StatusText { get; } = view.StatusText;
+    public string Title { get; } = $"{view.AgentType} · {view.Description}";
 
-    public string Detail { get; } = view.Detail;
+    public SubagentStatus Status => View.Status;
 
     public bool IsActive { get; } = view.IsActive;
 

@@ -191,6 +191,34 @@ public class InteractionTests
         Assert.Equal("前端", vm.Rail.Items.OfType<RailGroupViewModel>().First().Name);
     }
 
+    [AvaloniaFact]
+    public void English_ui_follows_language_switch()
+    {
+        TKCode.Arc.Localization.ArcLanguage.Set(TKCode.Arc.Localization.LanguageTags.EnUS);
+        try
+        {
+            var (window, shell, vm) = Render();
+            var texts = shell.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToHashSet();
+
+            Assert.Contains("Sessions", texts);
+            Assert.Contains("Terminals & agents", texts);
+            Assert.Contains("Files", texts); // 右侧面板选中的页签
+            Assert.Contains("3 min ago", texts);
+            Assert.DoesNotContain("会话", texts);
+            Snapshot(window, "shell-1500-en");
+
+            vm.Inspector.ActivateCommand.Execute(InspectorTabKind.Subagents);
+            Dispatch();
+            texts = shell.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToHashSet();
+            Assert.Contains("Running", texts);
+            Assert.Contains("Grep · 14 tool calls · 2:00", texts);
+        }
+        finally
+        {
+            TKCode.Arc.Localization.ArcLanguage.Set(TKCode.Arc.Localization.LanguageTags.ZhCN);
+        }
+    }
+
     private static void Click(Window window, Visual target)
     {
         var at = Center(target, window);

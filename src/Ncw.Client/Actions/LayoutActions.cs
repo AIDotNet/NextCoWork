@@ -1,3 +1,4 @@
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
 using Ncw.Core.Layout;
@@ -7,8 +8,10 @@ namespace Ncw.Client.Actions;
 /// <summary>
 /// 项目栏的用户意图。每个意图只有这一个入口(AGENTS.md §3 规则 4):右键菜单、拖放、快捷键都调这里。
 /// </summary>
-public sealed class LayoutActions(ClientStores stores)
+public sealed class LayoutActions(ClientStores stores, Func<IClientText>? text = null)
 {
+    private string DefaultGroupName => (text?.Invoke() ?? DefaultClientText.Instance).NewGroupDefaultName;
+
     /// <summary>项目组可选的颜色(用户数据,不是主题色)。</summary>
     public static readonly IReadOnlyList<string> GroupPalette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#14B8A6"];
 
@@ -31,12 +34,12 @@ public sealed class LayoutActions(ClientStores stores)
     public void Move(ProjectRef project, RailTarget target) =>
         UpdateRail(rail => RailLayoutOps.Move(rail, project, target));
 
-    public void CreateGroup(ProjectRef onto, ProjectRef dragged, string name = "新项目组") =>
-        UpdateRail(r => RailLayoutOps.CreateGroup(r, onto, dragged, NewGroup(r, name)));
+    public void CreateGroup(ProjectRef onto, ProjectRef dragged, string? name = null) =>
+        UpdateRail(r => RailLayoutOps.CreateGroup(r, onto, dragged, NewGroup(r, name ?? DefaultGroupName)));
 
     /// <summary>右键「新建项目组」:把这个项目包进一个新组。</summary>
-    public void WrapInGroup(ProjectRef project, string name = "新项目组") =>
-        UpdateRail(r => RailLayoutOps.WrapInGroup(r, project, NewGroup(r, name)));
+    public void WrapInGroup(ProjectRef project, string? name = null) =>
+        UpdateRail(r => RailLayoutOps.WrapInGroup(r, project, NewGroup(r, name ?? DefaultGroupName)));
 
     /// <summary>右键「移出项目组」:放到组的后面。</summary>
     public void LeaveGroup(ProjectRef project)

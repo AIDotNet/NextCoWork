@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
+using Ncw.UI.Localization;
 using TKCode.Arc;
 
 namespace Ncw.UI.Views.Desktop.Rail;
@@ -48,9 +49,9 @@ public partial class RailProjectTile : UserControl
         NcwMenus.Attach(this,
         [
             vm.IsInGroup
-                ? new NcwMenus.Item("移出项目组", vm.LeaveGroupCommand) { Glyph = ArcIcons.FolderOpen }
-                : new NcwMenus.Item("新建项目组", vm.WrapInGroupCommand) { Glyph = ArcIcons.Folder },
-            new NcwMenus.Item("从项目栏移除", vm.RemoveFromRailCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 },
+                ? new NcwMenus.Item(NcwTexts.Get(NcwTextKind.LeaveGroup), vm.LeaveGroupCommand) { Glyph = ArcIcons.FolderOpen }
+                : new NcwMenus.Item(NcwTexts.Get(NcwTextKind.NewGroup), vm.WrapInGroupCommand) { Glyph = ArcIcons.Folder },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.RemoveFromRail), vm.RemoveFromRailCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 },
         ]);
     }
 }

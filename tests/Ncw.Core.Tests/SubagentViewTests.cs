@@ -16,8 +16,9 @@ public class SubagentViewTests
 
         Assert.True(view.IsActive);
         Assert.True(view.CanStop);
-        Assert.Equal("运行中", view.StatusText);
-        Assert.Equal("Grep · 3 次工具调用 · 1:15", view.Detail);
+        Assert.Equal(SubagentStatus.Running, view.Status);
+        Assert.Equal("Grep", view.CurrentTool);
+        Assert.Equal("1:15", SubagentView.FormatElapsed(view.Elapsed));
     }
 
     [Fact]
@@ -26,6 +27,7 @@ public class SubagentViewTests
         var view = SubagentView.Of(Record(SubagentStatus.Done, T0.AddSeconds(30)), T0.AddHours(2));
 
         Assert.False(view.CanStop);
+        Assert.Null(view.CurrentTool);
         Assert.Equal(TimeSpan.FromSeconds(30), view.Elapsed);
     }
 

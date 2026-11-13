@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
@@ -23,7 +24,7 @@
     <!-- 底部:账户、设置 -->
     <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12" Spacing="8">
       <ui:NcwAvatar HorizontalAlignment="Center" DisplayName="Token" Status="Online" />
-      <ui:PlainButton Width="36" Height="36" HorizontalAlignment="Center" AutomationProperties.Name="设置">
+      <ui:PlainButton Width="36" Height="36" HorizontalAlignment="Center" AutomationProperties.Name="{l:NcwText Settings}" arc:Tooltip.Tip="{l:NcwText Settings}">
         <lucide:LucideIcon Kind="Settings" Size="18" HorizontalAlignment="Center" />
       </ui:PlainButton>
     </StackPanel>
@@ -34,7 +35,7 @@
                         Height="40"
                         Margin="0,6,0,0"
                         HorizontalAlignment="Center"
-                        AutomationProperties.Name="添加项目">
+                        AutomationProperties.Name="{l:NcwText AddProject}" arc:Tooltip.Tip="{l:NcwText AddProject}">
           <lucide:LucideIcon Kind="Plus" Size="18" HorizontalAlignment="Center" />
         </ui:PlainButton>
       </StackPanel>

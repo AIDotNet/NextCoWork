@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
+using Ncw.UI.Localization;
 using TKCode.Arc;
 
 namespace Ncw.UI.Views.Desktop.Rail;
@@ -34,10 +35,10 @@ public partial class RailGroupView : UserControl
 
         NcwMenus.Attach(this,
         [
-            new NcwMenus.Item("重命名", vm.RenameCommand) { Glyph = ArcIcons.Pencil },
-            new NcwMenus.Item("展开 / 收起", vm.ToggleCommand) { Glyph = ArcIcons.FolderOpen },
-            new NcwMenus.Item("更改颜色", null) { Glyph = ArcIcons.Palette, Children = colors },
-            new NcwMenus.Item("解散项目组", vm.DissolveCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.Rename), vm.RenameCommand) { Glyph = ArcIcons.Pencil },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ToggleGroup), vm.ToggleCommand) { Glyph = ArcIcons.FolderOpen },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ChangeColor), null) { Glyph = ArcIcons.Palette, Children = colors },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.DissolveGroup), vm.DissolveCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 },
         ]);
     }
 }

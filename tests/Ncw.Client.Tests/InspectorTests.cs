@@ -75,8 +75,10 @@ public class InspectorViewModelTests
         var tab = Assert.Single(inspector.Tabs, t => t.Kind == InspectorTabKind.Subagents);
         Assert.Equal(1, tab.Count); // 只数还在运行的
         Assert.Equal(2, inspector.Subagents.Count);
-        Assert.Equal("运行中", inspector.Subagents[0].StatusText);
-        Assert.Equal("Grep · 14 次工具调用 · 2:00", inspector.Subagents[0].Detail);
+        Assert.Equal(SubagentStatus.Running, inspector.Subagents[0].Status);
+        Assert.Equal("Grep", inspector.Subagents[0].View.CurrentTool);
+        Assert.Equal(14, inspector.Subagents[0].View.ToolCalls);
+        Assert.Equal(TimeSpan.FromMinutes(2), inspector.Subagents[0].View.Elapsed);
         Assert.False(tab.IsActive); // 出现但不抢焦点
     }
 

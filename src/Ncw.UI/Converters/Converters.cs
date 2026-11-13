@@ -1,6 +1,9 @@
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Ncw.Client.ViewModels;
+using Ncw.Core.Domain;
+using Ncw.UI.Localization;
 
 namespace Ncw.UI.Converters;
 
@@ -31,7 +34,7 @@ public sealed class HexBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>会话列表的相对时间:「刚刚 / 3 分钟前 / 2 小时前 / 昨天 / 11-12」。</summary>
+/// <summary>会话列表的相对时间:「刚刚 / 3 分钟前 / 2 小时前 / 昨天 / 11-12」,按当前语言。</summary>
 public sealed class RelativeTimeConverter : IValueConverter
 {
     public static readonly RelativeTimeConverter Instance = new();
@@ -49,10 +52,10 @@ public sealed class RelativeTimeConverter : IValueConverter
         var elapsed = Clock.GetUtcNow() - time;
         return elapsed switch
         {
-            { TotalMinutes: < 1 } => "刚刚",
-            { TotalHours: < 1 } => $"{(int)elapsed.TotalMinutes} 分钟前",
-            { TotalDays: < 1 } => $"{(int)elapsed.TotalHours} 小时前",
-            { TotalDays: < 2 } => "昨天",
+            { TotalMinutes: < 1 } => NcwTexts.Get(NcwTextKind.TimeJustNow),
+            { TotalHours: < 1 } => NcwTexts.Format(NcwTextKind.TimeMinutesAgo, (int)elapsed.TotalMinutes),
+            { TotalDays: < 1 } => NcwTexts.Format(NcwTextKind.TimeHoursAgo, (int)elapsed.TotalHours),
+            { TotalDays: < 2 } => NcwTexts.Get(NcwTextKind.TimeYesterday),
             _ => time.ToLocalTime().ToString("MM-dd", CultureInfo.InvariantCulture),
         };
     }
@@ -68,6 +71,80 @@ public sealed class CountConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is int n ? (n > 9 ? "9+" : n.ToString(CultureInfo.InvariantCulture)) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>右侧面板页签的名称(页签类型 → 当前语言的文字)。</summary>
+public sealed class InspectorTabTitleConverter : IValueConverter
+{
+    public static readonly InspectorTabTitleConverter Instance = new();
+
+    public static string Title(InspectorTabKind kind) => NcwTexts.Get(kind switch
+    {
+        InspectorTabKind.Files => NcwTextKind.TabFiles,
+        InspectorTabKind.Git => NcwTextKind.TabGit,
+        InspectorTabKind.Context => NcwTextKind.TabContext,
+        InspectorTabKind.History => NcwTextKind.TabHistory,
+        _ => NcwTextKind.TabSubagents,
+    });
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is InspectorTabKind kind ? Title(kind) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>子代理卡片的状态与明细。数据来自 SubagentView.Of,这里只负责按语言写成文字。</summary>
+public sealed class SubagentTextConverter : IValueConverter
+{
+    public static readonly SubagentTextConverter Status = new(detail: false);
+    public static readonly SubagentTextConverter Detail = new(detail: true);
+
+    private readonly bool _detail;
+
+    private SubagentTextConverter(bool detail) => _detail = detail;
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not SubagentViewState view)
+        {
+            return null;
+        }
+
+        if (!_detail)
+        {
+            return NcwTexts.Get(view.Status switch
+            {
+                SubagentStatus.Queued => NcwTextKind.SubagentQueued,
+                SubagentStatus.Running => NcwTextKind.SubagentRunning,
+                SubagentStatus.Done => NcwTextKind.SubagentDone,
+                SubagentStatus.Error => NcwTextKind.SubagentError,
+                _ => NcwTextKind.SubagentAborted,
+            });
+        }
+
+        var elapsed = SubagentView.FormatElapsed(view.Elapsed);
+        return view.CurrentTool is { } tool
+            ? NcwTexts.Format(NcwTextKind.SubagentDetailWithTool, tool, view.ToolCalls, elapsed)
+            : NcwTexts.Format(NcwTextKind.SubagentDetail, view.ToolCalls, elapsed);
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>带一个参数的文字:<c>ConverterParameter</c> 是 <see cref="NcwTextKind"/> 的名字,绑定值是参数。</summary>
+public sealed class TextFormatConverter : IValueConverter
+{
+    public static readonly TextFormatConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        parameter is string name && Enum.TryParse<NcwTextKind>(name, out var kind)
+            ? NcwTexts.Format(kind, value)
+            : value?.ToString();
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();

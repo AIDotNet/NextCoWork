@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
@@ -50,8 +51,8 @@
           </StackPanel>
           <ui:NcwButton Grid.Column="2" Classes="icon" Variant="Ghost"
                         Command="{Binding ToggleSidebarCommand}"
-                        AutomationProperties.Name="收起侧边栏"
-                        arc:Tooltip.Tip="收起侧边栏(⌘B)">
+                        AutomationProperties.Name="{l:NcwText CollapseSidebar}"
+                        arc:Tooltip.Tip="{l:NcwText CollapseSidebarHint}">
             <lucide:LucideIcon Kind="PanelLeftClose" Size="16" />
           </ui:NcwButton>
         </Grid>
@@ -81,8 +82,8 @@
             <TextBlock Text="NextCoWork" FontWeight="SemiBold" VerticalAlignment="Center" Margin="14,0,6,0" />
             <ui:NcwButton Classes="icon" Variant="Ghost" Margin="0,0,6,0"
                           Command="{Binding ToggleSidebarCommand}"
-                          AutomationProperties.Name="展开侧边栏"
-                          arc:Tooltip.Tip="展开侧边栏(⌘B)">
+                          AutomationProperties.Name="{l:NcwText ExpandSidebar}"
+                          arc:Tooltip.Tip="{l:NcwText ExpandSidebarHint}">
               <lucide:LucideIcon Kind="PanelLeftOpen" Size="16" />
             </ui:NcwButton>
           </StackPanel>
@@ -104,8 +105,8 @@
                 HorizontalAlignment="Right" VerticalAlignment="Top">
       <ui:NcwButton Classes="icon" Variant="Ghost"
                     Command="{Binding ToggleInspectorCommand}"
-                    AutomationProperties.Name="检查器"
-                    arc:Tooltip.Tip="检查器(⌘⌥I)">
+                    AutomationProperties.Name="{l:NcwText RightPanel}"
+                    arc:Tooltip.Tip="{l:NcwText RightPanelHint}">
         <lucide:LucideIcon Kind="PanelRight" Size="16" />
       </ui:NcwButton>
       <chrome:CaptionButtons x:Name="Captions" Margin="6,0,0,0" IsVisible="False" />

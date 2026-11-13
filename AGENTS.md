@@ -19,6 +19,9 @@ M1 骨架(进行中)。设计文档在 `docs/design/`(M0 已完成);实现必须
 - 业务视图只引用 `Ncw.UI.Controls` 封装,不直接引用 `arc:` 控件(封装层自己除外)。
 - 和 Avalonia 同名的控件(Button、TreeView、Slider……)在 XAML 里必须加 `arc:` 前缀,在 C# 里用别名。
 - 不写死颜色值,一律使用 Arc token(`{arc:ArcDesignTokenResource …}`)。
+- 不写死界面文字:XAML 用 `{l:NcwText Key}`,C# 用 `NcwTexts.Get / Format`。新增文字时在 `src/Ncw.UI/Localization/NcwTextKind.cs`
+  加成员,并在 `en-US.xlf`、`zh-CN.xlf` 各加一条(缺一条构建失败)。`Ncw.Core`、`Ncw.Client` 不产出界面文字,只给结构化数据。
+- 提示用 `arc:Tooltip.Tip`,不要用 Avalonia 的 `ToolTip.Tip`(在 Arc 下没有样式)。
 - 不启用 `InvariantGlobalization`。不使用依赖反射的 MVVM 和序列化,必须兼容 AOT 和裁剪。
 
 ## 3. 状态统一管理(必须)

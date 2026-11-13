@@ -16,8 +16,8 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         Stores = stores;
         Dialogs = dialogs ?? NoDialogs.Instance;
-        Actions = new LayoutActions(stores);
-        Rail = new RailViewModel(stores, Actions, () => Dialogs);
+        Actions = new LayoutActions(stores, () => Text);
+        Rail = new RailViewModel(stores, Actions, () => Dialogs, () => Text);
         Panel = new ProjectPanelViewModel(stores, Actions);
         Workspace = new WorkspaceViewModel(stores);
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System);
@@ -30,6 +30,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>弹窗服务。UI 层装配时换成 Arc Dialog 的实现。</summary>
     public IDialogService Dialogs { get; set; }
+
+    /// <summary>Client 层要给用户看的文字。UI 层装配时换成按当前语言的实现。</summary>
+    public IClientText Text { get; set; } = DefaultClientText.Instance;
 
     public RailViewModel Rail { get; }
 

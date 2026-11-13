@@ -24,11 +24,16 @@ public sealed record SubagentRecord(
     int ToolCalls,
     string? CurrentTool);
 
-/// <summary>子代理在界面上的样子。所有展示点(右侧面板、转录卡片、手机详情页)都用 <see cref="SubagentView.Of"/>。</summary>
+/// <summary>
+/// 子代理在界面上的样子。所有展示点(右侧面板、转录卡片、手机详情页)都用 <see cref="SubagentView.Of"/>。
+/// 这里只给结构化的值,不含任何界面文字:文案由各端按当前语言格式化。
+/// </summary>
 public sealed record SubagentViewState(
-    string Title,
-    string StatusText,
-    string Detail,
+    string AgentType,
+    string Description,
+    SubagentStatus Status,
+    string? CurrentTool,
+    int ToolCalls,
     bool IsActive,
     bool CanStop,
     bool IsTerminal,
@@ -48,24 +53,13 @@ public static class SubagentView
         var end = terminal ? record.EndedAt ?? record.StartedAt : now;
         var elapsed = end > record.StartedAt ? end - record.StartedAt : TimeSpan.Zero;
 
-        var status = record.Status switch
-        {
-            SubagentStatus.Queued => "排队中",
-            SubagentStatus.Running => "运行中",
-            SubagentStatus.Done => "已完成",
-            SubagentStatus.Error => "出错",
-            SubagentStatus.Aborted => "已停止",
-            _ => "",
-        };
-
-        var detail = record.Status == SubagentStatus.Running && record.CurrentTool is { } tool
-            ? $"{tool} · {record.ToolCalls} 次工具调用 · {Format(elapsed)}"
-            : $"{record.ToolCalls} 次工具调用 · {Format(elapsed)}";
-
         return new SubagentViewState(
-            Title: $"{record.AgentType} · {record.Description}",
-            StatusText: status,
-            Detail: detail,
+            AgentType: record.AgentType,
+            Description: record.Description,
+            Status: record.Status,
+            // 只有运行中才显示当前工具
+            CurrentTool: record.Status == SubagentStatus.Running ? record.CurrentTool : null,
+            ToolCalls: record.ToolCalls,
             IsActive: !terminal,
             CanStop: !terminal,
             IsTerminal: terminal,
@@ -95,6 +89,7 @@ public static class SubagentView
         _ => 2,
     };
 
-    private static string Format(TimeSpan elapsed) =>
+    /// <summary>耗时的统一写法:1:15、1:02:03(与语言无关)。</summary>
+    public static string FormatElapsed(TimeSpan elapsed) =>
         elapsed.TotalHours >= 1 ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}" : $"{elapsed.Minutes}:{elapsed.Seconds:00}";
 }

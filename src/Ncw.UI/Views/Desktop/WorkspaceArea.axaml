@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
@@ -33,7 +34,7 @@
                     <ui:PlainButton Width="18" Height="18" CornerRadius="5"
                                     Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.CloseCommand}"
                                     CommandParameter="{Binding}"
-                                    AutomationProperties.Name="关闭标签页">
+                                    AutomationProperties.Name="{l:NcwText CloseTab}">
                       <lucide:LucideIcon Kind="X" Size="11" HorizontalAlignment="Center" />
                     </ui:PlainButton>
                   </StackPanel>
@@ -41,22 +42,22 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="新建标签页" arc:Tooltip.Tip="新建标签页">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText NewTab}" arc:Tooltip.Tip="{l:NcwText NewTab}">
             <lucide:LucideIcon Kind="Plus" Size="15" />
           </ui:NcwButton>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="更多" arc:Tooltip.Tip="更多">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
             <lucide:LucideIcon Kind="Ellipsis" Size="16" />
           </ui:NcwButton>
           <StackPanel Orientation="Horizontal" Spacing="5" Margin="8,0" VerticalAlignment="Center"
-                      arc:Tooltip.Tip="上下文占用">
+                      arc:Tooltip.Tip="{l:NcwText ContextUsage}">
             <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
             <TextBlock Classes="caption">
               <Run Text="{Binding Workspace.ContextPercent}" /><Run Text="%" />
             </TextBlock>
           </StackPanel>
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="向右分屏" arc:Tooltip.Tip="向右分屏">
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText SplitRight}" arc:Tooltip.Tip="{l:NcwText SplitRight}">
             <lucide:LucideIcon Kind="Columns2" Size="16" />
           </ui:NcwButton>
         </StackPanel>
@@ -69,12 +70,12 @@
       <TextBlock HorizontalAlignment="Center"
                  FontSize="{arc:ArcDesignTokenResource TypeLG}"
                  FontWeight="SemiBold"
-                 Text="{Binding Workspace.ActiveTab.Title, FallbackValue=打开一个会话}"
+                 Text="{Binding Workspace.ActiveTab.Title}"
                  TextWrapping="Wrap"
                  TextAlignment="Center" />
       <TextBlock HorizontalAlignment="Center"
                  Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                 Text="会话内容将在 M4 接入设备协议后显示。" />
+                 Text="{l:NcwText SessionContentPlaceholder}" />
     </StackPanel>
 
     <!-- 输入框 -->
@@ -87,9 +88,9 @@
             Background="{arc:ArcDesignTokenResource Surface}"
             MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
       <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
-        <ui:NcwTextArea Text="{Binding Workspace.Draft}" PlaceholderText="输入消息,@ 引用文件,/ 使用命令" FrameMinHeight="56" IsResizable="False" />
+        <ui:NcwTextArea Text="{Binding Workspace.Draft}" PlaceholderText="{l:NcwText ComposerPlaceholder}" FrameMinHeight="56" IsResizable="False" />
         <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
-          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="添加附件">
+          <ui:PlainButton Width="30" Height="30" AutomationProperties.Name="{l:NcwText AddAttachment}" arc:Tooltip.Tip="{l:NcwText AddAttachment}">
             <lucide:LucideIcon Kind="Paperclip" Size="15" HorizontalAlignment="Center" />
           </ui:PlainButton>
           <ui:PlainButton Grid.Column="1" Height="30" Padding="8,0">
@@ -98,7 +99,7 @@
               <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
             </StackPanel>
           </ui:PlainButton>
-          <ui:NcwButton Grid.Column="3" Variant="Primary" Width="34" Height="34" Padding="0" AutomationProperties.Name="发送">
+          <ui:NcwButton Grid.Column="3" Variant="Primary" Width="34" Height="34" Padding="0" AutomationProperties.Name="{l:NcwText Send}" arc:Tooltip.Tip="{l:NcwText Send}">
             <lucide:LucideIcon Kind="ArrowUp" Size="16" />
           </ui:NcwButton>
         </Grid>
