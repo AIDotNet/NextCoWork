@@ -22,6 +22,14 @@
     </Style>
   </UserControl.Styles>
 
+  <Panel>
+  <!-- 没有项目时的空状态:与项目栏的「+」是同一个动作 -->
+  <StackPanel IsVisible="{Binding !HasProject}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Margin="24">
+    <lucide:LucideIcon Kind="FolderPlus" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+    <TextBlock Text="{l:NcwText NoProjectsTitle}" HorizontalAlignment="Center" FontWeight="SemiBold" />
+    <TextBlock Classes="muted" Text="{l:NcwText NoProjectsHint}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+    <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding AddProjectCommand}" Content="{l:NcwText AddFolder}" />
+  </StackPanel>
   <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding HasProject}">
     <!-- 头部:项目名、路径、所在设备与执行环境、分支 -->
     <StackPanel Grid.Row="0" Margin="16,14,16,10" Spacing="4">
@@ -46,7 +54,7 @@
           <lucide:LucideIcon Kind="Link" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
           <TextBlock Classes="muted" Text="{Binding EnvironmentName}" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="4">
+        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Branch, Converter={x:Static ObjectConverters.IsNotNull}}">
           <lucide:LucideIcon Kind="GitBranch" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
           <TextBlock Classes="muted" Text="{Binding Branch}" />
           <lucide:LucideIcon Kind="Check" Size="12" VerticalAlignment="Center"
@@ -137,4 +145,5 @@
       </StackPanel>
     </ScrollViewer>
   </Grid>
+  </Panel>
 </UserControl>

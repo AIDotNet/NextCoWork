@@ -5,5 +5,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Ncw.UI/Ncw.UI.csproj" />
+    <!-- 端到端:界面连接进程内的真实 Agent(只有测试可以同时引用两边) -->
+    <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
   </ItemGroup>
 </Project>

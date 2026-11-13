@@ -70,5 +70,13 @@
     <unit id="SubagentAborted"><segment><source>Stopped</source><target state="translated">已停止</target></segment></unit>
     <unit id="SubagentDetail"><segment><source>{0} tool calls · {1}</source><target state="translated">{0} 次工具调用 · {1}</target></segment></unit>
     <unit id="SubagentDetailWithTool"><segment><source>{0} · {1} tool calls · {2}</source><target state="translated">{0} · {1} 次工具调用 · {2}</target></segment></unit>
+    <unit id="Ok"><segment><source>OK</source><target state="translated">好</target></segment></unit>
+    <unit id="LocalDeviceName"><segment><source>This computer</source><target state="translated">本机</target></segment></unit>
+    <unit id="AddProjectPickTitle"><segment><source>Choose a project folder</source><target state="translated">选择项目文件夹</target></segment></unit>
+    <unit id="AddProjectFailedTitle"><segment><source>Couldn&#x27;t add the project</source><target state="translated">无法添加项目</target></segment></unit>
+    <unit id="DeviceNotConnected"><segment><source>The local agent isn&#x27;t connected yet. Try again in a moment.</source><target state="translated">本机 Agent 尚未连接,请稍后再试。</target></segment></unit>
+    <unit id="NoProjectsTitle"><segment><source>No projects yet</source><target state="translated">还没有项目</target></segment></unit>
+    <unit id="NoProjectsHint"><segment><source>Add a folder on this computer to get started.</source><target state="translated">添加一个本机文件夹开始。</target></segment></unit>
+    <unit id="AddFolder"><segment><source>Add folder</source><target state="translated">添加文件夹</target></segment></unit>
   </file>
 </xliff>

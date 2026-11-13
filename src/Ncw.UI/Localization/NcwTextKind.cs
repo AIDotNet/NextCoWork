@@ -79,4 +79,12 @@ public enum NcwTextKind
     SubagentAborted,
     SubagentDetail,
     SubagentDetailWithTool,
+    Ok,
+    LocalDeviceName,
+    AddProjectPickTitle,
+    AddProjectFailedTitle,
+    DeviceNotConnected,
+    NoProjectsTitle,
+    NoProjectsHint,
+    AddFolder,
 }

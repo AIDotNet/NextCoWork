@@ -110,6 +110,10 @@ public class RenameGroupTests
             LastInitial = initial;
             return Task.FromResult(answer);
         }
+
+        public Task<string?> PickFolderAsync(string title) => Task.FromResult<string?>(null);
+
+        public Task ShowErrorAsync(string title, string message) => Task.CompletedTask;
     }
 
     [Theory]

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 控制端(Ncw.Client)对真实 Agent(Ncw.Agent.Host,进程内)的集成测试。只有测试可以同时引用两边。 -->
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Client/Ncw.Client.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
+  </ItemGroup>
+</Project>

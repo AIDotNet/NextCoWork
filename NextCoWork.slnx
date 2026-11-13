@@ -12,6 +12,7 @@
     <Project Path="tests/Ncw.Core.Tests/Ncw.Core.Tests.csproj" />
     <Project Path="tests/Ncw.Protocol.Tests/Ncw.Protocol.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Host.Tests/Ncw.Agent.Host.Tests.csproj" />
+    <Project Path="tests/Ncw.Integration.Tests/Ncw.Integration.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
   </Folder>

@@ -1,14 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- 桌面宿主:窗口、托盘、sidecar 管理、Velopack 更新(后续里程碑)。 -->
+  <!-- 桌面宿主:窗口、sidecar(本机 Agent)管理;托盘、Velopack 更新在后续里程碑。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>NextCoWork</AssemblyName>
-    <ApplicationManifest Condition="'$(OS)' == 'Windows_NT'">app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />
+    <!--
+      只为了构建顺序和打包 sidecar:不引用 Agent 的代码(ReferenceOutputAssembly=false),
+      客户端与 Agent 之间只通过设备协议通信(AGENTS.md §5)。
+    -->
+    <ProjectReference Include="../Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
+
+  <!-- 开发构建:把 ncw-agent 的输出整目录复制到 <输出>/agent/,和桌面端的依赖互不干扰。发布包里换成 NativeAOT 单文件。 -->
+  <Target Name="CopyAgentSidecar" AfterTargets="Build">
+    <ItemGroup>
+      <_NcwAgentFiles Include="$(MSBuildThisFileDirectory)../Ncw.Agent/bin/$(Configuration)/$(TargetFramework)/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NcwAgentFiles)" DestinationFolder="$(OutDir)agent/%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

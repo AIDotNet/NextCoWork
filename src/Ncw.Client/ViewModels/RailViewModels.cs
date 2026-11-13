@@ -16,9 +16,11 @@ public sealed partial class RailViewModel : ObservableObject
     private readonly LayoutActions _actions;
     private readonly Func<IDialogService> _dialogs;
     private readonly Func<IClientText> _text;
+    private readonly ProjectActions? _projects;
 
-    public RailViewModel(ClientStores stores, LayoutActions actions, Func<IDialogService>? dialogs = null, Func<IClientText>? text = null)
+    public RailViewModel(ClientStores stores, LayoutActions actions, Func<IDialogService>? dialogs = null, Func<IClientText>? text = null, ProjectActions? projects = null)
     {
+        _projects = projects;
         _stores = stores;
         _actions = actions;
         _dialogs = dialogs ?? (() => NoDialogs.Instance);
@@ -30,6 +32,10 @@ public sealed partial class RailViewModel : ObservableObject
     }
 
     public ObservableCollection<RailItemViewModel> Items { get; } = [];
+
+    /// <summary>项目栏底部的「+」。</summary>
+    [RelayCommand]
+    private Task AddProjectAsync() => _projects?.AddLocalProjectAsync() ?? Task.CompletedTask;
 
     /// <summary>当前布局(拖放规划用)。</summary>
     public RailLayout Layout => _stores.Layout.State.Rail;
@@ -178,7 +184,7 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     {
         Name = info?.Name ?? Project.WorkspaceId;
         Glyph = appearance?.Glyph ?? Initials(Name);
-        Color = appearance?.Color ?? "#64748B";
+        Color = appearance?.Color ?? DefaultColor(Project);
         IsSelected = selected;
         IsRunning = activity.IsRunning;
         PendingCount = activity.PendingInteractions;
@@ -189,6 +195,20 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         OnPropertyChanged(nameof(IsCloud));
         IsSsh = info?.Environment == EnvironmentKind.Ssh;
         Tooltip = device is null ? Name : $"{Name} · {device.Name}";
+    }
+
+    private static readonly string[] Palette = ["#0F766E", "#2563EB", "#7C3AED", "#DB2777", "#EA580C", "#059669", "#4F46E5", "#B45309"];
+
+    /// <summary>没有自定义外观时,按项目 id 稳定地选一个颜色(同一个项目每次都一样)。</summary>
+    internal static string DefaultColor(ProjectRef project)
+    {
+        var hash = 2166136261u;
+        foreach (var c in project.ToString())
+        {
+            hash = (hash ^ c) * 16777619u;
+        }
+
+        return Palette[hash % (uint)Palette.Length];
     }
 
     /// <summary>项目名的首字母(中文取首字)。</summary>

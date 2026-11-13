@@ -35,4 +35,12 @@ public sealed class NcwClientText : IClientText
     public string RenameGroupDescription => NcwTexts.Get(NcwTextKind.RenameGroupDescription);
 
     public string NameLabel => NcwTexts.Get(NcwTextKind.NameLabel);
+
+    public string LocalDeviceName => NcwTexts.Get(NcwTextKind.LocalDeviceName);
+
+    public string AddProjectPickTitle => NcwTexts.Get(NcwTextKind.AddProjectPickTitle);
+
+    public string AddProjectFailedTitle => NcwTexts.Get(NcwTextKind.AddProjectFailedTitle);
+
+    public string DeviceNotConnected => NcwTexts.Get(NcwTextKind.DeviceNotConnected);
 }

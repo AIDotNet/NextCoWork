@@ -35,6 +35,7 @@
                         Height="40"
                         Margin="0,6,0,0"
                         HorizontalAlignment="Center"
+                        Command="{Binding AddProjectCommand}"
                         AutomationProperties.Name="{l:NcwText AddProject}" arc:Tooltip.Tip="{l:NcwText AddProject}">
           <lucide:LucideIcon Kind="Plus" Size="18" HorizontalAlignment="Center" />
         </ui:PlainButton>

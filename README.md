@@ -8,25 +8,36 @@ Agent 运行时也用 C# 重写,发布为 NativeAOT 单文件 `ncw-agent`。两�
 
 > 3.0 只做 GUI:不做命令行控制端、插件 CLI,也不做独立部署的设备服务。
 
-> 现阶段:**M1 骨架**(设计文档见下表,M0 已完成)。
+> 现阶段:**M2 协议与 Agent 骨架**(M0 设计、M1 界面骨架已完成)。
 
 ## 开发
 
 需要 .NET 10 SDK(见 `global.json`)。
 
 ```bash
-dotnet build NextCoWork.slnx                       # 构建
-dotnet test NextCoWork.slnx             # 单测 + headless UI 测试(含截图)
-dotnet run --project src/Ncw.Desktop               # 启动桌面端(M1 使用模拟数据)
+dotnet build NextCoWork.slnx                       # 构建(桌面端构建时会把 ncw-agent 复制到 <输出>/agent/)
+dotnet test NextCoWork.slnx                        # 单测 + 集成测试 + headless UI 测试(含截图)
+dotnet run --project src/Ncw.Desktop               # 启动桌面端:自动拉起本机 Agent 并连接
+NCW_MOCK=1 dotnet run --project src/Ncw.Desktop    # 用模拟数据演示界面,不连接 Agent
 ```
+
+| 环境变量 | 作用 |
+|---|---|
+| `NCW_MOCK=1` | 模拟数据模式 |
+| `NCW_AGENT_DATA_ROOT` | 本机 Agent 的数据根,默认 `~/.next-cowork/agent-dev`(2.x 数据接管完成前,不碰 2.x 的 `~/.next-cowork/data`) |
+| `NCW_CLIENT_DIR` | 控制端偏好目录,默认 `~/.next-cowork/client` |
+| `NCW_AGENT_PATH` | 指定 ncw-agent 可执行文件 |
+| `NCW_LANG` | 界面语言(`zh-CN` / `en-US`) |
 
 | 项目 | 内容 |
 |---|---|
-| `src/Ncw.Core` | 领域模型与派生纯函数(客户端和 Agent 共用):项目栏布局、项目活动状态 |
-| `src/Ncw.Client` | Store、Action、ViewModel;M1 的模拟数据 |
-| `src/Ncw.UI` | Avalonia 视图、对 Arc 的封装(`Ncw.UI.Controls`)、桌面三栏外壳 |
-| `src/Ncw.Desktop` | 桌面宿主 |
-| `tests/*` | xunit v3;UI 测试用 Avalonia.Headless + Skia 渲染截图 |
+| `src/Ncw.Core` | 领域模型与派生纯函数(客户端和 Agent 共用) |
+| `src/Ncw.Protocol` | 设备协议 v1:帧、编解码(Nerdbank.MessagePack)、会话(客户端 / 服务端)、本机承载 |
+| `src/Ncw.Client` | Store、Action、ViewModel、DeviceLink(连接设备并同步进 Store);模拟数据 |
+| `src/Ncw.UI` | Avalonia 视图、Arc 封装、桌面外壳、中英文 |
+| `src/Ncw.Desktop` | 桌面宿主:拉起并守护本机 Agent(sidecar) |
+| `src/Ncw.Agent.Host` / `src/Ncw.Agent` | Agent 服务与 `ncw-agent` 可执行文件(NativeAOT) |
+| `tests/*` | xunit v3;集成测试与 UI 端到端测试在真实本机 socket 上连接进程内的 Agent |
 
 ## 设计文档
 

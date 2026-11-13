@@ -12,11 +12,13 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
 {
     private readonly ClientStores _stores;
     private readonly LayoutActions _actions;
+    private readonly ProjectActions? _projects;
 
-    public ProjectPanelViewModel(ClientStores stores, LayoutActions actions)
+    public ProjectPanelViewModel(ClientStores stores, LayoutActions actions, ProjectActions? projects = null)
     {
         _stores = stores;
         _actions = actions;
+        _projects = projects;
         stores.Workspace.Changed += Refresh;
         stores.Selection.Changed += Refresh;
         Refresh();
@@ -38,6 +40,10 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
     public ObservableCollection<SessionItemViewModel> Sessions { get; } = [];
 
     public ObservableCollection<TerminalItemViewModel> Terminals { get; } = [];
+
+    /// <summary>没有项目时空状态里的「添加文件夹」,与项目栏的「+」是同一个动作。</summary>
+    [RelayCommand]
+    private Task AddProjectAsync() => _projects?.AddLocalProjectAsync() ?? Task.CompletedTask;
 
     partial void OnSearchTextChanged(string value) => Refresh();
 

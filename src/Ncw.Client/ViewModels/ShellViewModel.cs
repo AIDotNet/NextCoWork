@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
+using Ncw.Client.Devices;
 using Ncw.Client.Services;
 using Ncw.Client.Stores;
 
@@ -12,13 +13,15 @@ namespace Ncw.Client.ViewModels;
 /// </summary>
 public sealed partial class ShellViewModel : ObservableObject
 {
-    public ShellViewModel(ClientStores stores, TimeProvider? clock = null, IDialogService? dialogs = null)
+    public ShellViewModel(ClientStores stores, TimeProvider? clock = null, IDialogService? dialogs = null, DeviceRegistry? devices = null)
     {
         Stores = stores;
         Dialogs = dialogs ?? NoDialogs.Instance;
+        Devices = devices ?? new DeviceRegistry();
         Actions = new LayoutActions(stores, () => Text);
-        Rail = new RailViewModel(stores, Actions, () => Dialogs, () => Text);
-        Panel = new ProjectPanelViewModel(stores, Actions);
+        Projects = new ProjectActions(stores, Devices, () => Dialogs, () => Text);
+        Rail = new RailViewModel(stores, Actions, () => Dialogs, () => Text, Projects);
+        Panel = new ProjectPanelViewModel(stores, Actions, Projects);
         Workspace = new WorkspaceViewModel(stores);
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System);
         stores.Prefs.Changed += OnPrefsChanged;
@@ -27,6 +30,12 @@ public sealed partial class ShellViewModel : ObservableObject
     public ClientStores Stores { get; }
 
     public LayoutActions Actions { get; }
+
+    /// <summary>项目的增删(经由设备)。</summary>
+    public ProjectActions Projects { get; }
+
+    /// <summary>连着的设备。</summary>
+    public DeviceRegistry Devices { get; }
 
     /// <summary>弹窗服务。UI 层装配时换成 Arc Dialog 的实现。</summary>
     public IDialogService Dialogs { get; set; }

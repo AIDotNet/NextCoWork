@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Ncw.Client.Services;
 using Ncw.UI.Localization;
 using TKCode.Arc;
@@ -26,5 +27,27 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
 
         var result = await dialog.ShowAsync(owner);
         return result is true ? input.Text : null;
+    }
+
+    public async Task<string?> PickFolderAsync(string title)
+    {
+        if (TopLevel.GetTopLevel(owner)?.StorageProvider is not { CanPickFolder: true } storage)
+        {
+            return null;
+        }
+
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false });
+        return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+    }
+
+    public async Task ShowErrorAsync(string title, string message)
+    {
+        var dialog = new Dialog
+        {
+            Title = title,
+            Description = message,
+            Actions = Dialog.BuildActions([new DialogAction(NcwTexts.Get(NcwTextKind.Ok), true, ButtonVariant.Primary)]),
+        };
+        await dialog.ShowAsync(owner);
     }
 }

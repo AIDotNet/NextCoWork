@@ -70,5 +70,13 @@
     <unit id="SubagentAborted"><segment><source>Stopped</source><target state="final">Stopped</target></segment></unit>
     <unit id="SubagentDetail"><segment><source>{0} tool calls · {1}</source><target state="final">{0} tool calls · {1}</target></segment></unit>
     <unit id="SubagentDetailWithTool"><segment><source>{0} · {1} tool calls · {2}</source><target state="final">{0} · {1} tool calls · {2}</target></segment></unit>
+    <unit id="Ok"><segment><source>OK</source><target state="final">OK</target></segment></unit>
+    <unit id="LocalDeviceName"><segment><source>This computer</source><target state="final">This computer</target></segment></unit>
+    <unit id="AddProjectPickTitle"><segment><source>Choose a project folder</source><target state="final">Choose a project folder</target></segment></unit>
+    <unit id="AddProjectFailedTitle"><segment><source>Couldn&#x27;t add the project</source><target state="final">Couldn&#x27;t add the project</target></segment></unit>
+    <unit id="DeviceNotConnected"><segment><source>The local agent isn&#x27;t connected yet. Try again in a moment.</source><target state="final">The local agent isn&#x27;t connected yet. Try again in a moment.</target></segment></unit>
+    <unit id="NoProjectsTitle"><segment><source>No projects yet</source><target state="final">No projects yet</target></segment></unit>
+    <unit id="NoProjectsHint"><segment><source>Add a folder on this computer to get started.</source><target state="final">Add a folder on this computer to get started.</target></segment></unit>
+    <unit id="AddFolder"><segment><source>Add folder</source><target state="final">Add folder</target></segment></unit>
   </file>
 </xliff>
