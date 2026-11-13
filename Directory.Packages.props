@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Arc 1.1.0 按 Avalonia 12.1.5 构建:所有 Avalonia 包必须保持在同一个版本。 -->
+    <!-- 远程连接:TLS 1.3 双向认证 + SRP-6a 配对(纯托管,各平台同一实现,见 docs/design/09 §4) -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="Avalonia" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.5" />

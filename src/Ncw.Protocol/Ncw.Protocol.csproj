@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    设备协议的唯一真源(docs/design/09):帧、方法表、主题、编解码、会话(客户端 / 服务端)、本机承载。
+    设备协议的唯一真源(docs/design/09):帧、方法表、主题、编解码、会话(客户端 / 服务端)、本机和局域网承载、远程安全层(TLS 1.3 + SRP 配对)。
     客户端和 Agent 都直接引用它;不引用 Avalonia,也不引用任何 Ncw.Agent.* / Ncw.Client。
   -->
   <ItemGroup>
     <PackageReference Include="Nerdbank.MessagePack" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />

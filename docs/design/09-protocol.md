@@ -18,7 +18,7 @@
 L4 应用    方法(query / command / stream)、订阅(topic + cursor)、交互
 L3 会话    hello / welcome、版本与能力协商、心跳、续连
 L2 帧      4 字节长度前缀 + MessagePack
-L1 安全    本机:操作系统权限 + 本机令牌;远程:TLS 1.3 双向认证(证书钉扎),ALPN = "ncw/1"
+L1 安全    本机:操作系统权限 + 本机令牌;远程:TLS 1.3 双向认证(证书钉扎),ALPN = "ncw/1",用 BouncyCastle 的纯托管实现(见 §4)
 L0 承载    本机:Unix socket / 命名管道;局域网:TCP;中继(以后):经中继服务器拼接的字节流
 ```
 
@@ -72,13 +72,16 @@ public interface ITransportListener            // 设备:每种承载一个监�
 2. 控制端 TCP 连接 IP:端口,TLS 1.3 握手:双方都出示自签名证书,此时还不信任对方(先记下对方证书)
 3. 在这条 TLS 连接里跑 SRP-6a(用户名 = deviceId,口令 = 配对码),得到共享密钥 K
    —— SRP 是 PAKE:中间人拿不到可以离线暴力破解的数据,只能在线猜,设备端限速 + 5 次失败就换码
-4. 双方用 K 对「TLS exporter 值 + 双方证书指纹」做 HMAC 并交换校验
-   —— 把配对码的验证绑定到这条 TLS 会话和这两张证书上,中间人无法转接
+4. 双方用 K 对「TLS exporter 值(标签 `EXPORTER-ncw-pair`,32 字节)+ 双方公钥指纹」做 HMAC-SHA256 并交换校验
+   —— 把配对码的验证绑定到这条 TLS 会话和这两把公钥上,中间人无法转接
 5. 校验通过:设备保存信任记录 { 控制端证书指纹, 名称, 角色, 时间 };控制端保存 { deviceId, 设备证书指纹, 已知地址 }
 6. 设备弹出通知「新控制端 iPhone(张三)已配对」,带「吊销」按钮;可选开启「新控制端需要在本机确认」
 ```
 
-- SRP-6a 用 BouncyCastle(纯托管)的实现,不手写;M2 验证它在 NativeAOT 下可用。
+- SRP-6a 用 BouncyCastle(纯托管)的实现,不手写:RFC 5054 的 2048 位组,SHA-256。M2 已验证它在 NativeAOT 下可用(零裁剪警告)。
+- **消息**:未配对的控制端也能完成 TLS 握手和 `hello`,但 `welcome.role = "unpaired"`,只能调用 `pair.*`,不能订阅。
+  `pair.begin { clientName } → { salt, b }`;`pair.finish { a, m1, proof } → { m2, proof, role, routeToken }`。
+  设备连续 5 次校验失败就换码;成功后控制端断开,按钉扎的设备指纹重新连接,得到正式角色。
 - 之后再连接:TLS 双向认证时直接按指纹校验,不再需要配对码。设备的 IP 变了也没关系,身份看证书,不看地址。
 
 ### 扫码配对
@@ -90,7 +93,11 @@ public interface ITransportListener            // 设备:每种承载一个监�
 
 - **身份密钥**:ECDSA P-256 自签名证书(.NET 在所有目标平台内置支持)。`deviceId` = 设备公钥的 SHA-256(截断后 base32)。
   设备私钥在数据根里用 `NCK1` 加密存储(云端用 KMS);控制端私钥存在系统钥匙串(Keychain / Keystore / DPAPI / libsecret)。
-- **TLS 校验**:不依赖 CA,`SslStream` 的自定义校验回调按信任记录里的指纹钉扎。**需要验证**:iOS / Android 上的行为(见风险)。
+- **指纹** = 证书里公钥(SubjectPublicKeyInfo)的 SHA-256。按公钥而不是整张证书钉扎,证书到期换发时信任不受影响。
+- **TLS 实现**:用 BouncyCastle 的 TLS 1.3(纯托管),不用 `SslStream`。M2 验证结果:macOS 的 `SslStream` 走 SecureTransport,最高只有 TLS 1.2
+  (Network.framework 模式只接管客户端,服务端仍是 1.2,握手失败);iOS 同样受限;Windows 10 的 SChannel 不支持 TLS 1.3 服务端;
+  .NET 也不提供 TLS exporter。BouncyCastle 在所有平台(含移动端、NativeAOT,零裁剪警告)行为一致,并提供 exporter。
+- **TLS 校验**:不依赖 CA,按信任记录里的指纹钉扎;未配对的控制端在设备上得到 `unpaired` 角色(见 §3)。
 - **控制端记录的设备地址**:`{ lan: [最近成功的 ip:port…], relay?: route }`。连接时并行尝试所有地址,先通的胜出,
   局域网优先;身份由证书保证,所以地址可以随便试。
 - **角色**:`owner`(全部)、`member`(对话、审批;不能改设备设置和权限模式、不能开 `full` 模式)、`viewer`(只读)。
@@ -177,7 +184,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 
 | 领域 | 例子 |
 |---|---|
-| `pair` / `trust` | `pair.begin`(SRP)、`pair.claim`(二维码)、`trust.list`、`trust.revoke`、`trust.setRole` |
+| `pair` / `trust` | `pair.begin` / `pair.finish`(SRP,`unpaired` 可调,仅远程)、`pair.claim`(二维码)、`trust.list`、`trust.revoke`、`trust.setRole`(仅本机通道) |
 | `remote` | `remote.getStatus`、`remote.setEnabled`、`remote.rotateCode`(仅本机通道) |
 | `projects` / `environments` | `projects.list/create/remove`、`environments.list/create/test/browse` |
 | `sessions` / `runs` / `queue` | `sessions.list/get/create/archive`、`runs.start/abort/steer`、`queue.enqueue/promote/remove` |

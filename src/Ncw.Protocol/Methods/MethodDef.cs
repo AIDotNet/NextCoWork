@@ -14,6 +14,8 @@ public enum MethodKind
 /// <summary>控制端角色(docs/design/09 §4)。数值越大权限越高。</summary>
 public enum Role
 {
+    /// <summary>远程连上但还没配对:只能调用 <c>pair.*</c>,不能订阅。</summary>
+    Unpaired = -1,
     Viewer = 0,
     Member = 1,
     Owner = 2,
@@ -39,5 +41,5 @@ public sealed record MethodDef<TParams, TResult>(
     ITypeShape<TParams> ParamsShape,
     ITypeShape<TResult> ResultShape) : MethodDef(Name, Kind, MinRole, Allowed);
 
-/// <summary>主题:快照状态的类型形状。增量事件的数据另按事件类型解码。</summary>
-public sealed record TopicDef<TState>(string Name, ITypeShape<TState> StateShape);
+/// <summary>主题:快照状态的类型形状、订阅所需角色和允许的承载。增量事件的数据另按事件类型解码。</summary>
+public sealed record TopicDef<TState>(string Name, ITypeShape<TState> StateShape, Role MinRole = Role.Viewer, Transports Allowed = Transports.Any);

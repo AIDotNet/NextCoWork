@@ -112,6 +112,55 @@ public sealed class CredentialStore(AgentDatabase database, string dataRoot, ILe
         }
     }
 
+    /// <summary>
+    /// 数据根的主密钥,库还没打开时也能用(例如加密设备私钥)。不存在时只有在库里没有 NCK1 行的情况下才生成;
+    /// 已有 NCK1 行却丢了密钥文件时抛异常:生成新密钥会让同一张表出现两套互不兼容的密文。
+    /// </summary>
+    public static byte[] MasterKeyForDataRoot(string dataRoot)
+    {
+        try
+        {
+            return CredentialCrypto.LoadMasterKey(dataRoot);
+        }
+        catch (FileNotFoundException) when (!HasProgramRows(Path.Combine(dataRoot, AgentDatabase.FileName)))
+        {
+            return CredentialCrypto.LoadOrCreateMasterKey(dataRoot);
+        }
+    }
+
+    private static bool HasProgramRows(string dbPath)
+    {
+        if (!File.Exists(dbPath))
+        {
+            return false;
+        }
+
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString());
+        connection.Open();
+        if (AgentDatabase.Scalar(connection, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'credentials'") is null)
+        {
+            return false;
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT blob FROM credentials";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetValue(0) is byte[] blob && CredentialCrypto.IsProgramEncrypted(blob))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>迁移编排(2.x 的 <c>migrateCredentialRows</c>),依赖注入,便于直接测。</summary>
     public static CredentialMigrationResult MigrateRows(
         IEnumerable<CredentialRow> rows, Action<string, byte[]> put, Func<byte[], string?> decryptLegacy, Func<string, byte[]> encrypt)

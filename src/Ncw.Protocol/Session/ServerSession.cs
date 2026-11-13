@@ -6,8 +6,24 @@ using PolyType;
 
 namespace Ncw.Protocol.Session;
 
-/// <summary>一次调用的上下文:调用者是谁、走的什么承载。</summary>
-public sealed record CallContext(string ClientId, Role Role, Transports Transport);
+/// <summary>远程连接的对端(TLS 握手的结果)。本机连接为 null。</summary>
+/// <param name="Fingerprint">对端公钥指纹(TLS 已证明对端持有私钥)。</param>
+/// <param name="LocalFingerprint">本端(设备)公钥指纹。</param>
+/// <param name="Exporter">TLS exporter 值,配对绑定用。</param>
+public sealed record SessionPeer(byte[] Fingerprint, byte[] LocalFingerprint, byte[] Exporter, System.Net.IPEndPoint? Remote)
+{
+    public string FingerprintHex => Convert.ToHexStringLower(Fingerprint);
+}
+
+/// <summary>一次调用的上下文:调用者是谁、走的什么承载、远程对端是谁,以及这条会话自己的状态(例如进行中的配对)。</summary>
+public sealed record CallContext(string ClientId, Role Role, Transports Transport, SessionPeer? Peer = null)
+{
+    /// <summary>会话级状态,随连接结束丢弃。</summary>
+    public ConcurrentDictionary<string, object> Items { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>调用者的身份范围:本机连接是 local,远程连接是对端公钥指纹。幂等结果按它隔离。</summary>
+    public string Principal => Peer?.FingerprintHex ?? "local";
+}
 
 /// <summary>
 /// 方法路由(docs/design/09 §8):统一检查角色、承载、幂等键,方法实现里不再各自判断(「方法即能力」)。
@@ -56,12 +72,14 @@ public sealed class MethodRouter
             }
 
             // 同一个幂等键只执行一次;重发拿到同一个结果(id 换成这次请求的)。
-            var first = _idempotent.GetOrAdd($"{def.Name}\n{request.Idem}", _ => Execute(request, context, entry.Invoke, ct));
+            // 按调用者隔离:别的控制端重放同一个键,拿不到这个控制端的结果。
+            var key = $"{context.Principal}\n{def.Name}\n{request.Idem}";
+            var first = _idempotent.GetOrAdd(key, _ => Execute(request, context, entry.Invoke, ct));
             var response = await first.ConfigureAwait(false);
             if (response is { Ok: false, Error.Retryable: true })
             {
                 // 可重试的失败不缓存,下次重发真的再执行一次。
-                _idempotent.TryRemove($"{def.Name}\n{request.Idem}", out _);
+                _idempotent.TryRemove(key, out _);
             }
 
             return response with { Id = request.Id };
@@ -109,7 +127,11 @@ public sealed class TopicHub
     private readonly Dictionary<string, Topic> _topics = new(StringComparer.Ordinal);
 
     public void Register<TState>(TopicDef<TState> def, Func<TState> snapshot) =>
-        _topics[def.Name] = new Topic(() => FrameCodec.EncodePayload(snapshot(), def.StateShape));
+        _topics[def.Name] = new Topic(() => FrameCodec.EncodePayload(snapshot(), def.StateShape), def.MinRole, def.Allowed);
+
+    /// <summary>这个调用者能不能订阅这个主题(角色和承载,和方法表同样的规则)。</summary>
+    public bool CanSubscribe(string topic, CallContext context) =>
+        _topics.TryGetValue(topic, out var t) && context.Role >= t.MinRole && (t.Allowed & context.Transport) != 0;
 
     /// <summary>发布一条增量,推给所有订阅者。</summary>
     public void Publish<TData>(string topic, string type, TData data, ITypeShape<TData> shape)
@@ -166,9 +188,13 @@ public sealed class TopicHub
         }
     }
 
-    private sealed class Topic(Func<byte[]> snapshot)
+    private sealed class Topic(Func<byte[]> snapshot, Role minRole, Transports allowed)
     {
         public Func<byte[]> Snapshot { get; } = snapshot;
+
+        public Role MinRole { get; } = minRole;
+
+        public Transports Allowed { get; } = allowed;
 
         public long Seq { get; set; }
 
@@ -183,15 +209,21 @@ public sealed record ServerOptions(
     string DeviceId,
     string DeviceVersion,
     Transports Transport,
-    /// <summary>根据 hello 决定角色;返回 null 拒绝(本机通道核对一次性本机令牌)。</summary>
-    Func<HelloFrame, Role?> Authenticate,
+    /// <summary>
+    /// 根据 hello 和远程对端决定角色;返回 null 拒绝。本机通道核对一次性本机令牌(对端为 null);
+    /// 远程通道按对端公钥指纹查信任记录,没配对的给 <see cref="Role.Unpaired"/>。
+    /// </summary>
+    Func<HelloFrame, SessionPeer?, Role?> Authenticate,
     TimeSpan? IdleTimeout = null);
 
 /// <summary>
 /// 设备端的一条连接:握手 → 读循环(请求并发执行、订阅、心跳)。连接结束时取消所有进行中的请求、注销订阅。
 /// </summary>
-public sealed class ServerSession(FrameStream frames, MethodRouter router, TopicHub topics, ServerOptions options)
+public sealed class ServerSession(FrameStream frames, MethodRouter router, TopicHub topics, ServerOptions options, SessionPeer? peer = null)
 {
+    /// <summary>握手后的调用者(没握手成功为 null)。</summary>
+    public CallContext? Context { get; private set; }
+
     private readonly ConcurrentDictionary<ulong, CancellationTokenSource> _inflight = new();
     private readonly Dictionary<string, (Func<Frame, ValueTask> Sink, Channel<Frame> Queue)> _subscriptions = new(StringComparer.Ordinal);
 
@@ -273,7 +305,7 @@ public sealed class ServerSession(FrameStream frames, MethodRouter router, Topic
             return null;
         }
 
-        if (options.Authenticate(hello) is not { } role)
+        if (options.Authenticate(hello, peer) is not { } role)
         {
             await frames.WriteAsync(new RejectFrame(ErrorCodes.Unauthorized, "Not authorized"), ct).ConfigureAwait(false);
             return null;
@@ -282,7 +314,8 @@ public sealed class ServerSession(FrameStream frames, MethodRouter router, Topic
         await frames.WriteAsync(new WelcomeFrame(
             version, options.DeviceId, options.DeviceVersion, role.ToString().ToLowerInvariant(), [],
             Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), ct).ConfigureAwait(false);
-        return new CallContext(hello.ClientId, role, options.Transport);
+        Context = new CallContext(hello.ClientId, role, options.Transport, peer);
+        return Context;
     }
 
     private void Dispatch(Frame frame, CallContext context, CancellationToken ct)
@@ -316,6 +349,12 @@ public sealed class ServerSession(FrameStream frames, MethodRouter router, Topic
                     running.Cancel();
                 }
 
+                break;
+
+            case SubscribeFrame subscribe when topics.Knows(subscribe.Topic) && !topics.CanSubscribe(subscribe.Topic, context):
+                // 未配对的连接不能看任何状态;remote 主题(含配对码)只给本机 owner。
+                _ = frames.WriteAsync(new ResponseFrame(subscribe.Id, false, null,
+                    new ProtocolError(ErrorCodes.Forbidden, $"Not allowed to subscribe to '{subscribe.Topic}'", false)), ct).AsTask();
                 break;
 
             case SubscribeFrame subscribe:

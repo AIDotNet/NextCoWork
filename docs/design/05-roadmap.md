@@ -6,7 +6,7 @@
 |---|---|---|
 | **M0 设计评审** | 本目录全部文档 | §5 的待定问题都有结论 |
 | **M1 骨架** | 解决方案、集中包管理、接入 Arc、`Ncw.UI.Controls` 薄封装、三栏 Shell 加 mock 数据、主题和中英文、项目栏和分组的交互、首次启动和设置页的界面(mock 数据) | 三个桌面平台都能跑起来;Avalonia.Headless 截图测试覆盖四个断点 |
-| **M2 协议与 Agent 骨架** | `Ncw.Protocol`(全新设计:本机和局域网承载、TLS 双向认证、远程开关、配对码 + SRP-6a、扫码配对、会话与续连、方法路由、订阅);移动端 `SslStream` 双向认证和 BouncyCastle SRP 的 AOT spike;`Ncw.Agent.Storage`(兼容 2.x schema、NCK1、直接接管、解密遗留的 safeStorage);SSH.NET 的 AOT spike;`Ncw.Agent.Host` 骨架;从 2.x 录制 Agent 行为回放素材 | 协议黄金向量冻结并通过;打开远程开关后,局域网里另一台电脑用 `IP:端口` + 配对码连上,并通过中间人测试;C# Agent 接管三个平台上真实的 2.x 数据根(包括 safeStorage 凭据)并列出全部会话;3.0 客户端连上 C# Agent |
+| **M2 协议与 Agent 骨架** | `Ncw.Protocol`(全新设计:本机和局域网承载、TLS 双向认证、远程开关、配对码 + SRP-6a、扫码配对、会话与续连、方法路由、订阅);BouncyCastle TLS 1.3 双向认证和 SRP 的 AOT spike(已完成);`Ncw.Agent.Storage`(兼容 2.x schema、NCK1、直接接管、解密遗留的 safeStorage);SSH.NET 的 AOT spike;`Ncw.Agent.Host` 骨架;从 2.x 录制 Agent 行为回放素材 | 协议黄金向量冻结并通过;打开远程开关后,局域网里另一台电脑用 `IP:端口` + 配对码连上,并通过中间人测试;C# Agent 接管三个平台上真实的 2.x 数据根(包括 safeStorage 凭据)并列出全部会话;3.0 客户端连上 C# Agent |
 | **M3 Agent 内核** | Llm 模型层、Loop 回合循环(先用假上游和假工具单独验收)、权限与审批、交互闸门、执行环境(local + SSH)、Tools、终端(PTY,本机和 SSH)、子代理、压缩、计划、待办、目标;回放对照测试 | 回放对照测试全部通过;2.x 状态相关单测已移植并通过;`docs/parity.md` 中标为 3.0 的模块全部完成 |
 | **M4 核心功能** | 客户端:会话和流式消息、交互、子代理(按状态规则来)、终端、文件、Git 和 Diff、模型和供应商、MCP、Skills、插件、定时任务、设置;Agent:Skills、Hooks、MCP、插件(Jaunt 宿主)、定时任务、开放网关、模型目录(models.dev 自动更新);客户端:登录(`nextcowork://`)、首次启动、设置页、SSH 环境管理;sidecar 打包和守护;`tools/` 下的 C# 工具链 | 功能对齐矩阵里标「3.0」的条目全部完成;全新安装开箱可用 |
 | **M5 移动端** | iOS 和 Android 宿主、`MobileShell`、扫码配对、活动收件箱、推送、附件上传 | 真机上走通「收到审批推送 → 打开 → 长按允许 → Run 继续」 |
@@ -64,7 +64,7 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | Jaunt 用于插件的成熟度(1.0.1,刚发布) | 个别 JS 特性或性能问题影响插件 | 同属 AIDotNet,问题可以直接在上游修;M2 用 2.x 自带插件和 sucrase 做兼容性 spike;插件跑在预算内,出问题不会拖垮 Agent |
 | PuppeteerSharp 和 Playwright 的能力差异 | 浏览器工具的部分行为变化 | 移植时逐条对照 2.x 浏览器工具的用例 |
 | 自研 PTY(forkpty / ConPTY) | 终端是高频功能,边界情况多 | 先评估现成的库;用 2.x 终端的回归用例验证 |
-| 移动端 `SslStream` 用自签名证书做双向认证的行为差异 | 手机连不上设备 | M2 做 spike;不行时改用 Noise(成熟库实现) |
+| ~~移动端 `SslStream` 用自签名证书做双向认证的行为差异~~ | 手机连不上设备 | **已处理**:M2 spike 发现 macOS / iOS 的 `SslStream` 没有 TLS 1.3,改用 BouncyCastle 的纯托管 TLS 1.3,各平台同一实现(09 §4) |
 | 局域网连接被系统防火墙拦截 | 远程开关打开了却连不上 | Windows 安装器预先添加「专用网络」入站规则;macOS 首次监听时弹窗说明;诊断页提供「从另一台设备测试连接」的指引 |
 | SRP-6a 实现(BouncyCastle)的 AOT 兼容性 | 配对码配对不可用 | M2 spike;不行就换成同样现成的 PAKE 库,不手写 |
 | 2.x 开放网关用户 | 升级后脚本失效 | 升级说明写明新接口;OpenAPI 文档自动导出 |

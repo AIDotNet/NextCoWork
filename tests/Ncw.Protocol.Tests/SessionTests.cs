@@ -39,7 +39,7 @@ public sealed class SessionTests : IAsyncLifetime
         _topics.Register(DeviceMethods.DeviceTopic, () => new DeviceTopicState([], _projects.Count));
 
         var options = new ServerOptions("dev-1", "3.0.0-test", Transports.Local,
-            hello => hello.LocalToken == Token ? Role.Owner : hello.LocalToken == "viewer" ? Role.Viewer : null);
+            (hello, _) => hello.LocalToken == Token ? Role.Owner : hello.LocalToken == "viewer" ? Role.Viewer : null);
         _server = Task.Run(async () =>
         {
             await foreach (var stream in LocalTransport.ListenAsync(_endpoint, _cts.Token))

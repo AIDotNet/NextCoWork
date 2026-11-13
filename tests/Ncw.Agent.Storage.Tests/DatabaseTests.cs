@@ -27,12 +27,16 @@ public sealed class DatabaseTests : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>1–37 是 2.x 原样的迁移,38 起是 3.0 的;版本号连续。</summary>
+    private const int Latest = 38;
+
     [Fact]
-    public void Migrations_are_the_37_from_2x_and_contiguous()
+    public void Migrations_are_the_37_from_2x_then_3x_and_contiguous()
     {
-        Assert.Equal(37, AgentDatabase.LatestVersion);
+        Assert.Equal(Latest, AgentDatabase.LatestVersion);
         Assert.Equal("core", AgentDatabase.Migrations[0].Name);
         Assert.Equal("message-fts-rowid", AgentDatabase.Migrations[36].Name);
+        Assert.Equal("controller-trust", AgentDatabase.Migrations[37].Name);
     }
 
     [Fact]
@@ -40,15 +44,15 @@ public sealed class DatabaseTests : IDisposable
     {
         using (var db = AgentDatabase.Open(_root))
         {
-            Assert.Equal(37, db.UserVersion());
-            Assert.Equal(37, Count(db.Connection, "SELECT count(*) FROM migrations"));
+            Assert.Equal(Latest, db.UserVersion());
+            Assert.Equal(Latest, Count(db.Connection, "SELECT count(*) FROM migrations"));
             Assert.Equal(1, Count(db.Connection, "SELECT count(*) FROM sqlite_master WHERE name = 'workspaces'"));
             Assert.Equal(1, Count(db.Connection, "PRAGMA foreign_keys"));
             Assert.Equal("wal", (string)AgentDatabaseTestHelpers.Scalar(db.Connection, "PRAGMA journal_mode")!);
         }
 
         using var again = AgentDatabase.Open(_root);
-        Assert.Equal(37, Count(again.Connection, "SELECT count(*) FROM migrations"));
+        Assert.Equal(Latest, Count(again.Connection, "SELECT count(*) FROM migrations"));
     }
 
     [Fact]
@@ -91,7 +95,7 @@ public sealed class DatabaseTests : IDisposable
 
         using var db = AgentDatabase.Open(_root);
 
-        Assert.Equal(37, db.UserVersion());
+        Assert.Equal(Latest, db.UserVersion());
         Assert.Equal(1, Count(db.Connection, "SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'avalonia'"));
         Assert.Equal(1, Count(db.Connection, "SELECT count(*) FROM messages_fts_rowid WHERE message_id = 'm1'"));
     }
