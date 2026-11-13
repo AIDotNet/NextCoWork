@@ -63,11 +63,33 @@ public static class MockWorkspace
             new TerminalSummary("t-ncw-2", ncw, "zsh", TerminalKind.Shell),
             new TerminalSummary("t-api-1", api, "bash · dev-server", TerminalKind.Shell));
 
+        var files = ImmutableDictionary.CreateRange(new[]
+        {
+            KeyValuePair.Create(ncw, NextCoWorkFiles()),
+            KeyValuePair.Create(api, ImmutableArray.Create(
+                new FileEntry("cmd", true),
+                new FileEntry("cmd/server", true),
+                new FileEntry("cmd/server/main.go", false, GitChange.Modified),
+                new FileEntry("internal", true),
+                new FileEntry("internal/cache", true),
+                new FileEntry("internal/cache/lru.go", false, GitChange.Modified),
+                new FileEntry("go.mod", false),
+                new FileEntry("README.md", false))),
+        });
+
+        var subagents = ImmutableArray.Create(
+            new SubagentRecord("s-ncw-1", "call-1", "code-analyst", "阅读 kernel/upstream", SubagentStatus.Running,
+                now.AddMinutes(-2), null, 14, "Grep"),
+            new SubagentRecord("s-ncw-1", "call-2", "general-purpose", "调研 pi 的设计", SubagentStatus.Done,
+                now.AddMinutes(-9), now.AddMinutes(-3), 45, null));
+
         stores.Workspace.Update(_ => new WorkspaceState(
             ImmutableDictionary.CreateRange(new[] { local, cloud, studio }.Select(d => KeyValuePair.Create(d.DeviceId, d))),
             projects.ToImmutableDictionary(p => p.Ref),
             sessions,
-            terminals));
+            terminals,
+            files,
+            subagents));
 
         var rail = RailLayoutOps.Reconcile(RailLayout.Empty, projects.Select(p => p.Ref));
         rail = RailLayoutOps.CreateGroup(rail, octopus, arc, new ProjectGroup("g-work", "工作", "#3B82F6", false));
@@ -87,4 +109,35 @@ public static class MockWorkspace
         stores.Layout.Update(_ => new LayoutState(rail, appearance));
         stores.Selection.Update(_ => new SelectionState(ncw, "s-ncw-1"));
     }
+
+    private static ImmutableArray<FileEntry> NextCoWorkFiles() => ImmutableArray.Create(
+        new FileEntry(".github", true),
+        new FileEntry(".github/workflows", true),
+        new FileEntry(".github/workflows/ci.yml", false),
+        new FileEntry("docs", true),
+        new FileEntry("docs/design", true),
+        new FileEntry("docs/design/03-ui-layout.md", false, GitChange.Modified),
+        new FileEntry("docs/design/09-protocol.md", false),
+        new FileEntry("src", true),
+        new FileEntry("src/Ncw.Core", true),
+        new FileEntry("src/Ncw.Core/Domain", true),
+        new FileEntry("src/Ncw.Core/Domain/Subagents.cs", false, GitChange.Untracked),
+        new FileEntry("src/Ncw.Core/Layout", true),
+        new FileEntry("src/Ncw.Core/Layout/RailLayout.cs", false),
+        new FileEntry("src/Ncw.Client", true),
+        new FileEntry("src/Ncw.Client/ViewModels", true),
+        new FileEntry("src/Ncw.Client/ViewModels/InspectorViewModel.cs", false, GitChange.Added),
+        new FileEntry("src/Ncw.UI", true),
+        new FileEntry("src/Ncw.UI/Views", true),
+        new FileEntry("src/Ncw.UI/Views/Desktop", true),
+        new FileEntry("src/Ncw.UI/Views/Desktop/InspectorPanel.axaml", false, GitChange.Modified),
+        new FileEntry("src/Ncw.Desktop", true),
+        new FileEntry("src/Ncw.Desktop/Program.cs", false),
+        new FileEntry("tests", true),
+        new FileEntry("tests/Ncw.Core.Tests", true),
+        new FileEntry(".editorconfig", false),
+        new FileEntry("AGENTS.md", false),
+        new FileEntry("Directory.Packages.props", false),
+        new FileEntry("NextCoWork.slnx", false),
+        new FileEntry("README.md", false, GitChange.Modified));
 }

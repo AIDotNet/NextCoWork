@@ -12,6 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- 运行时才确定的 Lucide 图标必须在这里声明,否则画不出来(ARCL002)。 -->
-    <LucideIcon Include="Cloud;Link;Monitor;Bot;SquareTerminal;MessageSquare" />
+    <LucideIcon Include="Cloud;Link;Monitor;Bot;SquareTerminal;MessageSquare;Folder;FolderOpen;File;GitCompare;Gauge;History" />
   </ItemGroup>
 </Project>

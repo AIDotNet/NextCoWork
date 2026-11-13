@@ -81,9 +81,9 @@
         </Panel>
       </Border>
 
-      <!-- 右侧检查器:自己的页签行也在顶部这一行 -->
+      <!-- 右侧面板(默认文件管理器):自己的页签行也在顶部这一行 -->
       <Border x:Name="InspectorColumn" Grid.Column="2" Width="320">
-        <desktop:InspectorPanel x:Name="Inspector" />
+        <desktop:InspectorPanel x:Name="Inspector" DataContext="{Binding Inspector}" />
       </Border>
     </Grid>
 

@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ncw.Core.Tests/Ncw.Core.Tests.csproj" />
+    <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
   </Folder>
 </Solution>

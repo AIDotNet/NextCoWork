@@ -5,12 +5,19 @@
              xmlns:ui="using:Ncw.UI.Controls"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.InspectorPanel"
-             x:DataType="vm:ShellViewModel">
-  <!-- 右侧检查器(可选的第四栏)。内容跟随当前标签页;M1 是占位。 -->
+             x:DataType="vm:InspectorViewModel">
+  <!--
+    右侧面板(docs/design/03 §1):默认是文件管理器;Git、上下文、历史通过「+」添加;
+    当前会话有子代理时自动出现「子代理」页签。页签行就是窗口顶部这一行的右段。
+  -->
   <UserControl.Styles>
     <Style Selector="TextBlock.section">
       <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
       <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
     </Style>
     <Style Selector="Border.card">
@@ -20,86 +27,226 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
     </Style>
+    <Style Selector="TextBlock.hidden">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.letter">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.letter.modified">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Warning}" />
+    </Style>
+    <Style Selector="TextBlock.letter.added">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Success}" />
+    </Style>
+    <Style Selector="TextBlock.letter.deleted">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Danger}" />
+    </Style>
   </UserControl.Styles>
+
   <Grid RowDefinitions="40,*">
-  <!-- 页签行 = 窗口顶部这一行的右段;右端给常驻的检查器开关和窗口按钮让位 -->
-  <Grid x:Name="HeaderRow" ColumnDefinitions="Auto,*" Margin="8,0">
-    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-      <ui:PlainButton Classes="active" Height="28" Padding="8,0">
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <lucide:LucideIcon Kind="LayoutDashboard" Size="14" VerticalAlignment="Center" />
-          <TextBlock x:Name="OverviewLabel" Text="概览" VerticalAlignment="Center" />
+    <!-- 页签行 -->
+    <Grid x:Name="HeaderRow" ColumnDefinitions="Auto,Auto,*" Margin="8,0">
+      <ItemsControl ItemsSource="{Binding Tabs}" VerticalAlignment="Center">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="2" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:InspectorTabViewModel">
+            <ui:PlainButton Height="28" Padding="7,0" MinWidth="28"
+                            Classes.active="{Binding IsActive}"
+                            Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).ActivateCommand}"
+                            CommandParameter="{Binding Kind}"
+                            AutomationProperties.Name="{Binding Title}"
+                            arc:Tooltip.Tip="{Binding Title}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Panel Width="14" VerticalAlignment="Center">
+                  <lucide:LucideIcon Kind="Files" Size="14" IsVisible="{Binding IsFiles}" />
+                  <lucide:LucideIcon Kind="GitCompare" Size="14" IsVisible="{Binding IsGit}" />
+                  <lucide:LucideIcon Kind="Gauge" Size="14" IsVisible="{Binding IsContext}" />
+                  <lucide:LucideIcon Kind="History" Size="14" IsVisible="{Binding IsHistory}" />
+                  <lucide:LucideIcon Kind="Bot" Size="14" IsVisible="{Binding IsSubagents}" />
+                </Panel>
+                <!-- 选中的页签显示名称;其余只显示图标 -->
+                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" IsVisible="{Binding IsActive}" />
+                <Border MinWidth="16" Height="16" Padding="4,0" CornerRadius="8" VerticalAlignment="Center"
+                        Background="{arc:ArcDesignTokenResource AccentSubtle}" IsVisible="{Binding HasCount}">
+                  <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"
+                             VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                </Border>
+                <ui:PlainButton Width="16" Height="16" CornerRadius="4" IsVisible="{Binding ShowsClose}"
+                                Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).CloseCommand}"
+                                CommandParameter="{Binding Kind}"
+                                AutomationProperties.Name="关闭页签">
+                  <lucide:LucideIcon Kind="X" Size="10" HorizontalAlignment="Center" />
+                </ui:PlainButton>
+              </StackPanel>
+            </ui:PlainButton>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <!-- 「+」:添加 Git、上下文、历史 -->
+      <ui:NcwDropdownMenu x:Name="AddMenu" Grid.Column="1" Margin="2,0,0,0" VerticalAlignment="Center"
+                          IsVisible="{Binding HasAddable}">
+        <ui:NcwDropdownMenu.Trigger>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="添加页签" arc:Tooltip.Tip="添加页签">
+            <lucide:LucideIcon Kind="Plus" Size="15" />
+          </ui:NcwButton>
+        </ui:NcwDropdownMenu.Trigger>
+      </ui:NcwDropdownMenu>
+    </Grid>
+
+    <!-- 文件管理器(默认) -->
+    <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding IsFiles}">
+      <Grid ColumnDefinitions="*,Auto" Margin="14,0,8,2" Height="32">
+        <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Files.ProjectName}" arc:Tooltip.Tip="{Binding Files.ProjectPath}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnCollapseAll" AutomationProperties.Name="全部折叠" arc:Tooltip.Tip="全部折叠">
+            <lucide:LucideIcon Kind="ListCollapse" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="刷新" arc:Tooltip.Tip="刷新">
+            <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="更多" arc:Tooltip.Tip="更多">
+            <lucide:LucideIcon Kind="Ellipsis" Size="14" />
+          </ui:NcwButton>
         </StackPanel>
-      </ui:PlainButton>
-      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="变更" arc:Tooltip.Tip="变更">
-        <lucide:LucideIcon Kind="GitCompare" Size="14" HorizontalAlignment="Center" />
-      </ui:PlainButton>
-      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="子代理" arc:Tooltip.Tip="子代理">
-        <lucide:LucideIcon Kind="Bot" Size="14" HorizontalAlignment="Center" />
-      </ui:PlainButton>
-      <ui:PlainButton Width="28" Height="28" AutomationProperties.Name="历史" arc:Tooltip.Tip="历史">
-        <lucide:LucideIcon Kind="History" Size="14" HorizontalAlignment="Center" />
-      </ui:PlainButton>
-    </StackPanel>
-  </Grid>
-  <ScrollViewer Grid.Row="1">
-    <StackPanel Margin="14,6,14,14" Spacing="14">
-      <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="上下文" />
-        <Border Classes="card">
-          <StackPanel Spacing="8">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="已用 102K / 200K" />
-              <TextBlock Grid.Column="1" Foreground="{arc:ArcDesignTokenResource TextMuted}">
-                <Run Text="{Binding Workspace.ContextPercent}" /><Run Text="%" />
-              </TextBlock>
+      </Grid>
+      <ui:NcwTreeView x:Name="Tree" Grid.Row="1" Margin="4,0,4,6" Background="Transparent" BorderThickness="0"
+                      RowHeight="28" ShowIcons="False" ItemsSource="{Binding Files.Roots}">
+        <ui:NcwTreeView.ItemTemplate>
+          <DataTemplate x:DataType="vm:FileNodeViewModel">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+              <Panel Width="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                <lucide:LucideIcon Kind="Folder" Size="15" IsVisible="{Binding IsDirectory}"
+                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                <lucide:LucideIcon Kind="File" Size="15" IsVisible="{Binding IsFile}"
+                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              </Panel>
+              <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center"
+                         Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                         Classes.hidden="{Binding IsHidden}" />
+              <TextBlock Grid.Column="2" Classes="letter" Margin="8,0,6,0" Text="{Binding ChangeLetter}"
+                         IsVisible="{Binding HasChange}"
+                         Foreground="{arc:ArcDesignTokenResource Warning}" />
+              <Ellipse Grid.Column="3" Width="6" Height="6" Margin="8,0" VerticalAlignment="Center"
+                       IsVisible="{Binding HasChangedDescendant}" Fill="{arc:ArcDesignTokenResource Warning}" />
             </Grid>
-            <Grid ColumnDefinitions="51*,49*" Height="6">
-              <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
-              <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
-            </Grid>
-          </StackPanel>
-        </Border>
+          </DataTemplate>
+        </ui:NcwTreeView.ItemTemplate>
+      </ui:NcwTreeView>
+    </Grid>
+
+    <!-- Git 变更 -->
+    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsGit}">
+      <StackPanel Margin="10,0,10,12" Spacing="2">
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,8,4,8">
+          <lucide:LucideIcon Kind="GitBranch" Size="14" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Branch}" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Classes="hint" VerticalAlignment="Center">
+            <Run Text="{Binding GitChanges.Count}" /><Run Text=" 个变更" />
+          </TextBlock>
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding GitChanges}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:GitChangeItemViewModel">
+              <ui:PlainButton Padding="8,6">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="hint" Text="{Binding Directory}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Classes="letter" Text="{Binding Letter}" Margin="4,0,0,0"
+                             Classes.modified="{Binding IsModified}"
+                             Classes.added="{Binding IsAdded}"
+                             Classes.deleted="{Binding IsDeleted}" />
+                </Grid>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
-      <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="待办" />
-        <Border Classes="card">
-          <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <lucide:LucideIcon Kind="CircleCheck" Size="14" Foreground="{arc:ArcDesignTokenResource Success}" />
-              <TextBlock Text="搭建解决方案骨架" />
+    </ScrollViewer>
+
+    <!-- 上下文 -->
+    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsContext}">
+      <StackPanel Margin="14,6,14,14" Spacing="14">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="上下文" />
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="已用 102K / 200K" />
+                <TextBlock Grid.Column="1" Classes="hint" Text="51%" />
+              </Grid>
+              <Grid ColumnDefinitions="51*,49*" Height="6">
+                <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
+                <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+              </Grid>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Accent}" />
-              <TextBlock Text="三栏外壳与项目分组" />
+          </Border>
+        </StackPanel>
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="待办" />
+          <Border Classes="card">
+            <StackPanel Spacing="6">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <lucide:LucideIcon Kind="CircleCheck" Size="14" Foreground="{arc:ArcDesignTokenResource Success}" />
+                <TextBlock Text="搭建解决方案骨架" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <lucide:LucideIcon Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                <TextBlock Text="右侧面板与文件管理器" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <lucide:LucideIcon Kind="Circle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <TextBlock Text="设备协议骨架" />
+              </StackPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <lucide:LucideIcon Kind="Circle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-              <TextBlock Text="设备协议骨架" />
-            </StackPanel>
-          </StackPanel>
-        </Border>
+          </Border>
+        </StackPanel>
       </StackPanel>
-      <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="子代理 (2)" />
-        <Border Classes="card">
-          <StackPanel Spacing="6">
-            <TextBlock Text="code-analyst · 阅读 kernel/upstream" TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="general-purpose · 调研 pi 设计" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-        </Border>
-      </StackPanel>
-      <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="变更文件 (3)" />
-        <Border Classes="card">
-          <StackPanel Spacing="6">
-            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="src/Ncw.Core/Layout/RailLayout.cs" TextTrimming="CharacterEllipsis" />
-            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="src/Ncw.UI/Views/Desktop/DesktopShell.axaml" TextTrimming="CharacterEllipsis" />
-            <TextBlock FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="docs/design/03-ui-layout.md" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-        </Border>
-      </StackPanel>
+    </ScrollViewer>
+
+    <!-- 历史(M4 接入) -->
+    <StackPanel Grid.Row="1" Margin="14,16" Spacing="6" IsVisible="{Binding IsHistory}">
+      <TextBlock Text="历史" FontWeight="SemiBold" />
+      <TextBlock Classes="hint" Text="本会话的文件改动和检查点将在 M4 接入后显示。" TextWrapping="Wrap" />
     </StackPanel>
-  </ScrollViewer>
+
+    <!-- 子代理:状态文案、计时、能否停止都来自 SubagentView.Of -->
+    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsSubagents}">
+      <ItemsControl Margin="10,4,10,12" ItemsSource="{Binding Subagents}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="8" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:SubagentItemViewModel">
+            <Border Classes="card">
+              <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowSpacing="4">
+                <Panel Width="10" Height="10" VerticalAlignment="Center">
+                  <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsActive}" />
+                  <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsTerminal}" />
+                </Panel>
+                <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Classes="hint" Text="{Binding StatusText}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="{Binding Detail}" />
+                <ui:NcwButton Grid.Row="1" Grid.Column="2" Classes="icon" Variant="Ghost" IsVisible="{Binding CanStop}"
+                              AutomationProperties.Name="停止子代理" arc:Tooltip.Tip="停止">
+                  <lucide:LucideIcon Kind="Square" Size="12" />
+                </ui:NcwButton>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
   </Grid>
 </UserControl>

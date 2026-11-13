@@ -8,13 +8,14 @@ namespace Ncw.Client.ViewModels;
 /// <summary>桌面三栏外壳。布局开关(面板收起、检查器)是纯 UI 状态,放在这里而不是 Store。</summary>
 public sealed partial class ShellViewModel : ObservableObject
 {
-    public ShellViewModel(ClientStores stores)
+    public ShellViewModel(ClientStores stores, TimeProvider? clock = null)
     {
         Stores = stores;
         Actions = new LayoutActions(stores);
         Rail = new RailViewModel(stores, Actions);
         Panel = new ProjectPanelViewModel(stores, Actions);
         Workspace = new WorkspaceViewModel(stores);
+        Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System);
     }
 
     public ClientStores Stores { get; }
@@ -27,10 +28,13 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public WorkspaceViewModel Workspace { get; }
 
+    /// <summary>右侧面板:默认文件管理器。</summary>
+    public InspectorViewModel Inspector { get; }
+
     /// <summary>⌘B:收起 / 展开左侧区域(项目栏 + 项目面板)。</summary>
     [ObservableProperty] public partial bool IsSidebarOpen { get; set; } = true;
 
-    /// <summary>⌘⌥I:右侧检查器。</summary>
+    /// <summary>⌘⌥I:右侧面板。</summary>
     [ObservableProperty] public partial bool IsInspectorOpen { get; set; } = true;
 
     [RelayCommand]

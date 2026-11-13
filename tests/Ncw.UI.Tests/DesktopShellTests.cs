@@ -21,7 +21,7 @@ public class DesktopShellTests
     private static (Window Window, DesktopShell Shell, ShellViewModel Vm) Render(double width, double height = 860, WindowChrome? chrome = null)
     {
         Ncw.UI.Converters.RelativeTimeConverter.Clock = new FixedClock(Now);
-        var vm = new ShellViewModel(MockWorkspace.Create(Now));
+        var vm = new ShellViewModel(MockWorkspace.Create(Now), new FixedClock(Now));
         // 截图按 macOS 外框(左上角给红绿灯留 78px);另有一个用例覆盖 Windows / Linux 的窗口按钮。
         var shell = new DesktopShell { DataContext = vm, Chrome = chrome ?? new WindowChrome(78, false) };
         var window = new Window { Width = width, Height = height, Content = shell };
@@ -121,5 +121,31 @@ public class DesktopShellTests
         Assert.True(api.IsSelected);
         Assert.True(work.ContainsSelection);
         Snapshot(window, "shell-1500-ssh-project");
+    }
+
+    [AvaloniaFact]
+    public void Right_panel_defaults_to_file_manager()
+    {
+        var (window, shell, vm) = Render(1500);
+
+        Assert.True(vm.Inspector.IsFiles);
+        Assert.True(shell.FindControl<Ncw.UI.Views.Desktop.InspectorPanel>("Inspector")!
+            .FindControl<Ncw.UI.Controls.NcwTreeView>("Tree")!.IsEffectivelyVisible);
+        Snapshot(window, "panel-files");
+    }
+
+    [AvaloniaFact]
+    public void Plus_adds_git_and_subagents_appear_with_the_session()
+    {
+        var (window, _, vm) = Render(1500);
+
+        vm.Inspector.AddCommand.Execute(Ncw.Client.ViewModels.InspectorTabKind.Git);
+        Dispatch();
+        Snapshot(window, "panel-git");
+
+        vm.Inspector.ActivateCommand.Execute(Ncw.Client.ViewModels.InspectorTabKind.Subagents);
+        Dispatch();
+        Assert.True(vm.Inspector.IsSubagents);
+        Snapshot(window, "panel-subagents");
     }
 }

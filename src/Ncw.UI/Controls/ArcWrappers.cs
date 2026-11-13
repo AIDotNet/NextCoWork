@@ -61,3 +61,15 @@ public class NcwTitleBar : TKCode.Arc.TitleBar
 {
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.TitleBar);
 }
+
+/// <summary>Arc 树(文件管理器)。和 Avalonia 的 TreeView 同名,所以统一经过这个封装。</summary>
+public class NcwTreeView : TKCode.Arc.TreeView
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.TreeView);
+}
+
+/// <summary>Arc 下拉菜单(右侧面板的「+」)。</summary>
+public class NcwDropdownMenu : TKCode.Arc.DropdownMenu
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.DropdownMenu);
+}

@@ -37,6 +37,19 @@ public enum TerminalKind
     ExternalAgent,
 }
 
+/// <summary>工作区里的 Git 变更类型。</summary>
+public enum GitChange
+{
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Untracked,
+}
+
+/// <summary>项目里的一个文件或目录(相对项目根,用 / 分隔)。完整内容由 files.* 方法按需读取。</summary>
+public sealed record FileEntry(string RelativePath, bool IsDirectory, GitChange? Change = null);
+
 /// <summary>用户布局:项目栏、项目外观。通过账户配置同步(决策 D10)。</summary>
 public sealed record LayoutState(RailLayout Rail, ImmutableDictionary<ProjectRef, ProjectAppearance> Appearance)
 {
@@ -48,13 +61,21 @@ public sealed record WorkspaceState(
     ImmutableDictionary<string, DeviceInfo> Devices,
     ImmutableDictionary<ProjectRef, ProjectInfo> Projects,
     ImmutableArray<SessionSummary> Sessions,
-    ImmutableArray<TerminalSummary> Terminals)
+    ImmutableArray<TerminalSummary> Terminals,
+    ImmutableDictionary<ProjectRef, ImmutableArray<FileEntry>> Files,
+    ImmutableArray<SubagentRecord> Subagents)
 {
     public static readonly WorkspaceState Empty = new(
         ImmutableDictionary<string, DeviceInfo>.Empty,
         ImmutableDictionary<ProjectRef, ProjectInfo>.Empty,
         ImmutableArray<SessionSummary>.Empty,
-        ImmutableArray<TerminalSummary>.Empty);
+        ImmutableArray<TerminalSummary>.Empty,
+        ImmutableDictionary<ProjectRef, ImmutableArray<FileEntry>>.Empty,
+        ImmutableArray<SubagentRecord>.Empty);
+
+    /// <summary>某个会话下的子代理(父会话转录里 transcript.subagents 的镜像)。</summary>
+    public IEnumerable<SubagentRecord> SubagentsOf(string sessionId) =>
+        Subagents.Where(s => s.ParentSessionId == sessionId);
 
     /// <summary>项目的活动状态,统一走 <see cref="ProjectActivityView"/>。</summary>
     public ProjectActivity ActivityOf(ProjectRef project) =>
