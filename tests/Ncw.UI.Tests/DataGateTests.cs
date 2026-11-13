@@ -118,6 +118,28 @@ public class DataGateTests
     }
 
     [AvaloniaFact]
+    public void Completed_takeover_lists_keys_to_reenter()
+    {
+        var (window, _, stores) = Render();
+
+        SetData(stores, new DataStatus(DataStates.Ready, null, null, new TakeoverSummary(23, 631, 2)));
+        Dispatch();
+
+        Snapshot(window, "data-gate-completed-reenter");
+    }
+
+    [AvaloniaFact]
+    public void Credentials_step_warns_about_the_keychain()
+    {
+        var (window, _, stores) = Render();
+
+        SetData(stores, new DataStatus(DataStates.TakingOver, DataSteps.Credentials, null, null));
+        Dispatch();
+
+        Snapshot(window, "data-gate-credentials");
+    }
+
+    [AvaloniaFact]
     public void Disconnect_hides_the_page_instead_of_showing_stale_progress()
     {
         var (window, _, stores) = Render();

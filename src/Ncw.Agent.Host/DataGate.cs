@@ -1,4 +1,5 @@
 using Ncw.Agent.Storage;
+using Ncw.Agent.Storage.Credentials;
 using Ncw.Agent.Storage.Takeover;
 using Ncw.Protocol.Methods;
 
@@ -13,8 +14,16 @@ namespace Ncw.Agent.Host;
 /// <item>被挡住(2.x 在运行)或失败后,控制端调用 <c>data.retry</c> 重试;接管提交前的失败已由接管流程自动回退。</item>
 /// </list>
 /// </summary>
-public sealed class DataGate(string dataRoot, string deviceId, TimeProvider clock, TakeoverOptions? takeoverOptions = null) : IDisposable
+public sealed class DataGate(
+    string dataRoot,
+    string deviceId,
+    TimeProvider clock,
+    TakeoverOptions? takeoverOptions = null,
+    Func<ILegacySecretDecryptor>? legacySecrets = null) : IDisposable
 {
+    /// <summary>2.x 可能用过的 App 名:发行版的 productName、开发时的 package name(决定钥匙串条目名)。</summary>
+    private static readonly string[] LegacyAppNames = ["NextCoWork", "nextcowork"];
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TakeoverOptions _takeover = takeoverOptions ?? new TakeoverOptions(clock);
     private DataStatus _status = new(DataStates.Preparing, null, null, null);
@@ -143,11 +152,28 @@ public sealed class DataGate(string dataRoot, string deviceId, TimeProvider cloc
             throw;
         }
 
+        var failedCredentials = MigrateLegacyCredentials(database);
         var projects = new WorkspaceRepository(database, clock).List().Count;
         var sessions = database.SessionCount();
+        BecomeReady(database, new TakeoverSummary(projects, sessions, failedCredentials));
+    }
 
-        // 遗留 safeStorage 凭据的解密(04 §4 第 4 步)还没实现:数量先报 0,解不开的凭据保持原样。
-        BecomeReady(database, new TakeoverSummary(projects, sessions, 0));
+    /// <summary>
+    /// 04 §4 第 4 步:把 2.x 的旧 safeStorage 凭据改存成 NCK1。只在接管时做(macOS 上会弹钥匙串授权框,接管页先说明);
+    /// 解不开的行原样保留,读取时仍会尝试旧格式,并计入「需要重新输入」。
+    /// </summary>
+    private int MigrateLegacyCredentials(AgentDatabase database)
+    {
+        var decryptor = legacySecrets?.Invoke()
+            ?? ChromiumOsCrypt.ForCurrentPlatform(LiveOwnerCheck.RootsFor(dataRoot)[^1], LegacyAppNames);
+        var store = new CredentialStore(database, dataRoot, decryptor);
+        if (store.LegacyCount() == 0)
+        {
+            return 0;
+        }
+
+        Set(new DataStatus(DataStates.TakingOver, DataSteps.Credentials, null, null));
+        return store.MigrateLegacy().Failed;
     }
 
     private void BecomeReady(AgentDatabase database, TakeoverSummary? summary)

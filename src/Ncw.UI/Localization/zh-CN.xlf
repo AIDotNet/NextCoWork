@@ -96,5 +96,7 @@
     <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="translated">欢迎使用 NextCoWork 3.0</target></segment></unit>
     <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="translated">已从 NextCoWork 2.x 迁移 {0} 个项目、{1} 个会话。</target></segment></unit>
     <unit id="Continue"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>
+    <unit id="DataStepCredentials"><segment><source>Converting your saved keys. macOS may ask to allow access to the keychain; choose Allow.</source><target state="translated">正在转换保存的密钥。系统可能会请求访问钥匙串,请选择「允许」。</target></segment></unit>
+    <unit id="DataDoneCredentials"><segment><source>{0} saved keys couldn&#x27;t be moved. Re-enter them in Settings → Models → Providers.</source><target state="translated">有 {0} 个保存的密钥无法迁移,请在「设置 → 模型 → 供应商」里重新输入。</target></segment></unit>
   </file>
 </xliff>

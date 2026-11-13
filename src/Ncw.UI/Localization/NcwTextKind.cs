@@ -105,4 +105,6 @@ public enum NcwTextKind
     DataDoneTitle,
     DataDoneDetail,
     Continue,
+    DataStepCredentials,
+    DataDoneCredentials,
 }

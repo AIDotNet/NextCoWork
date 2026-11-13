@@ -33,7 +33,7 @@
 
   <!-- 整窗遮住;顶部 40px 仍留给拖动窗口(MainWindow 处理没被控件吃掉的按下) -->
   <Border Background="{arc:ArcDesignTokenResource Background}">
-    <StackPanel Width="420" MaxWidth="420" Margin="24" Spacing="12"
+    <StackPanel MaxWidth="480" Margin="24" Spacing="12"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
       <Panel Height="36" HorizontalAlignment="Center">
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="28" IsVisible="{Binding IsBusy}"

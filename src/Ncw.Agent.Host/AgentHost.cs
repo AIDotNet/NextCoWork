@@ -20,14 +20,18 @@ public sealed class AgentHost : IDisposable
     private readonly DataGate _data;
     private ProjectRegistry? _projects;
 
-    public AgentHost(AgentOptions options, TimeProvider? clock = null, Ncw.Agent.Storage.Takeover.TakeoverOptions? takeover = null)
+    public AgentHost(
+        AgentOptions options,
+        TimeProvider? clock = null,
+        Ncw.Agent.Storage.Takeover.TakeoverOptions? takeover = null,
+        Func<Ncw.Agent.Storage.Credentials.ILegacySecretDecryptor>? legacySecrets = null)
     {
         _options = options;
         var time = clock ?? TimeProvider.System;
         Directory.CreateDirectory(options.DataRoot);
         _identity = LoadIdentity(options.DataRoot, time);
 
-        _data = new DataGate(options.DataRoot, _identity.DeviceId, time, takeover);
+        _data = new DataGate(options.DataRoot, _identity.DeviceId, time, takeover, legacySecrets);
 
         // 权威广播:首帧和后续用同一个生成函数(AGENTS.md §3 规则 5)。主题先注册,数据就绪时才能发布。
         _topics.Register(DeviceMethods.DeviceTopic, DeviceState);

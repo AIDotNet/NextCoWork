@@ -179,6 +179,7 @@ public sealed class DataStepConverter : IValueConverter
         Ncw.Protocol.Methods.DataSteps.BackingUp => NcwTexts.Get(NcwTextKind.DataStepBackingUp),
         Ncw.Protocol.Methods.DataSteps.Migrating => NcwTexts.Get(NcwTextKind.DataStepMigrating),
         Ncw.Protocol.Methods.DataSteps.Committing => NcwTexts.Get(NcwTextKind.DataStepCommitting),
+        Ncw.Protocol.Methods.DataSteps.Credentials => NcwTexts.Get(NcwTextKind.DataStepCredentials),
         _ => NcwTexts.Get(NcwTextKind.DataTakingOverHint),
     };
 
@@ -213,7 +214,10 @@ public sealed class TakeoverSummaryConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is Ncw.Protocol.Methods.TakeoverSummary summary
-            ? NcwTexts.Format(NcwTextKind.DataDoneDetail, summary.Projects, summary.Sessions)
+            ? summary.CredentialsToReenter > 0
+                ? NcwTexts.Format(NcwTextKind.DataDoneDetail, summary.Projects, summary.Sessions) + "\n"
+                  + NcwTexts.Format(NcwTextKind.DataDoneCredentials, summary.CredentialsToReenter)
+                : NcwTexts.Format(NcwTextKind.DataDoneDetail, summary.Projects, summary.Sessions)
             : null;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>

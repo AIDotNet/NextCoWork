@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Ncw.Agent.Storage;
+using Ncw.Agent.Storage.Credentials;
 using Ncw.Agent.Storage.Takeover;
 using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
@@ -28,9 +29,14 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
 
     private AgentOptions Options => new(AgentMode.Local, _root, LocalTransport.DefaultEndpoint(_root), Token, null);
 
+    private sealed class FakeLegacy : ILegacySecretDecryptor
+    {
+        public string? TryDecrypt(ReadOnlySpan<byte> blob) => blob.StartsWith("v10"u8) ? "sk-old" : null;
+    }
+
     private AgentHost Start()
     {
-        _host = new AgentHost(Options, takeover: new TakeoverOptions(IsAlive: _ => _legacyAlive));
+        _host = new AgentHost(Options, takeover: new TakeoverOptions(IsAlive: _ => _legacyAlive), legacySecrets: () => new FakeLegacy());
         _run = _host.RunAsync(_cts.Token);
         return _host;
     }
@@ -106,6 +112,36 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
         Assert.Single(list.Projects);
         Assert.Equal(TakeoverPhase.Committed, DataRootTakeover.ReadJournal(_root)?.Phase);
         Assert.True(Directory.Exists(Path.Combine(_root, DataRootTakeover.BackupRoot)));
+    }
+
+    [Fact]
+    public async Task Takeover_converts_legacy_credentials_and_reports_the_ones_to_reenter()
+    {
+        SeedLegacy();
+        using (var db = AgentDatabase.Open(_root))
+        {
+            foreach (var (reference, blob) in new[] { ("provider:a", "v10-legacy"u8.ToArray()), ("provider:b", "v11-keyring"u8.ToArray()) })
+            {
+                using var command = db.Connection.CreateCommand();
+                command.CommandText = "INSERT INTO credentials (ref, blob) VALUES ($r, $b)";
+                command.Parameters.AddWithValue("$r", reference);
+                command.Parameters.Add("$b", Microsoft.Data.Sqlite.SqliteType.Blob).Value = blob;
+                command.ExecuteNonQuery();
+            }
+        }
+
+        Start();
+        await using var client = await Connect();
+        var ready = await WaitFor(client, DataStates.Ready);
+
+        Assert.Equal(1, ready.TakenOver?.CredentialsToReenter);
+        SqliteConnection.ClearAllPools();
+        using var check = new SqliteConnection($"Data Source={Path.Combine(_root, AgentDatabase.FileName)};Mode=ReadOnly;Pooling=False");
+        check.Open();
+        using var read = check.CreateCommand();
+        read.CommandText = "SELECT blob FROM credentials WHERE ref = 'provider:a'";
+        var key = CredentialCrypto.LoadMasterKey(_root);
+        Assert.Equal("sk-old", CredentialCrypto.Decrypt(key, (byte[])read.ExecuteScalar()!));
     }
 
     [Fact]

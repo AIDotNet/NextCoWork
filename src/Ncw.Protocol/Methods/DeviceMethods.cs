@@ -69,6 +69,9 @@ public static class DataSteps
     public const string BackingUp = "backing-up";
     public const string Migrating = "migrating";
     public const string Committing = "committing";
+
+    /// <summary>把 2.x 的旧 safeStorage 凭据转成 NCK1(macOS 上系统可能弹出钥匙串授权框)。</summary>
+    public const string Credentials = "credentials";
 }
 
 public static class DataReasons
