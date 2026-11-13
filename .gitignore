@@ -1,0 +1,17 @@
+# 切回 main 时 2.x 留下的构建产物(main 上本来就被忽略,不要删)
+/node_modules/
+/out/
+/resources/plugin-runtime/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+*.DotSettings.user
+TestResults/
+artifacts/
+
+# 系统
+.DS_Store
