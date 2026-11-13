@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    设备协议的唯一真源(docs/design/09):帧、方法表、主题、编解码、会话(客户端 / 服务端)、本机承载。
+    客户端和 Agent 都直接引用它;不引用 Avalonia,也不引用任何 Ncw.Agent.* / Ncw.Client。
+  -->
+  <ItemGroup>
+    <PackageReference Include="Nerdbank.MessagePack" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+  </ItemGroup>
+</Project>

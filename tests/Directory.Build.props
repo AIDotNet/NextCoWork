@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
+    <!-- xUnit1051:测试里不强制把 TestContext 的取消令牌传给每个异步调用(测试有自己的超时)。 -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Using Include="Xunit" />

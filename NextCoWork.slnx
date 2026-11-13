@@ -1,12 +1,14 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Ncw.Core/Ncw.Core.csproj" />
+    <Project Path="src/Ncw.Protocol/Ncw.Protocol.csproj" />
     <Project Path="src/Ncw.Client/Ncw.Client.csproj" />
     <Project Path="src/Ncw.UI/Ncw.UI.csproj" />
     <Project Path="src/Ncw.Desktop/Ncw.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ncw.Core.Tests/Ncw.Core.Tests.csproj" />
+    <Project Path="tests/Ncw.Protocol.Tests/Ncw.Protocol.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
   </Folder>

@@ -123,7 +123,7 @@
 | `playwright-core` | PuppeteerSharp(纯 C# 的 CDP 客户端) | 不用 Microsoft.Playwright,因为它自带 Node 驱动。Chromium 像 2.x 一样按需下载 |
 | `undici` / `ws` | HttpClient(SocketsHttpHandler)/ ClientWebSocket | |
 | `zod` | System.Text.Json 源生成 + 手写校验 | |
-| `@msgpack/msgpack` | MessagePack-CSharp(源生成) | |
+| `@msgpack/msgpack` | **Nerdbank.MessagePack**(PolyType 源生成) | M2 实测:MessagePack-CSharp 3.x 在 NativeAOT 下有裁剪警告,且多态帧的格式化器没有生成、运行即崩溃;Nerdbank 零警告、多态可用 |
 | `smol-toml` | Tomlyn | |
 | `@peculiar/x509` / `node:crypto` | System.Security.Cryptography | |
 | `unzipper` | System.IO.Compression | |

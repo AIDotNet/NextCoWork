@@ -15,6 +15,8 @@
     <PackageVersion Include="TKCode.Arc.Fonts" Version="1.1.0" />
     <PackageVersion Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- 设备协议的编解码:PolyType 源生成,NativeAOT 零警告(MessagePack-CSharp 3.x 在 AOT 下有警告且多态帧不可用,已实测排除)。 -->
+    <PackageVersion Include="Nerdbank.MessagePack" Version="1.4.104" />
     <!-- 测试 -->
     <!-- Avalonia.Headless.XUnit 12.1.5 基于 xunit v3(extensibility 3.2.x),测试统一用 xunit v3 3.2.x。 -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
