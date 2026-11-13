@@ -5,170 +5,20 @@
              xmlns:ui="using:Ncw.UI.Controls"
              xmlns:cv="using:Ncw.UI.Converters"
              xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:rail="using:Ncw.UI.Views.Desktop.Rail"
              x:Class="Ncw.UI.Views.Desktop.ProjectRail"
              x:DataType="vm:RailViewModel">
   <!-- 栏 1:项目栏(64px)。项目图标 + 项目组胶囊;状态角标统一来自 ProjectActivityView(docs/design/03 §1)。 -->
   <UserControl.DataTemplates>
-    <!-- 单个项目 -->
     <DataTemplate DataType="vm:RailProjectViewModel">
-      <Grid Height="54" ToolTip.Tip="{Binding Tooltip}">
-        <Border Width="3"
-                Height="22"
-                CornerRadius="2"
-                HorizontalAlignment="Left"
-                Background="{arc:ArcDesignTokenResource Foreground}"
-                IsVisible="{Binding IsSelected}" />
-        <ui:PlainButton Classes="tile"
-                        Width="40"
-                        Height="40"
-                        HorizontalAlignment="Center"
-                        Command="{Binding SelectCommand}"
-                        AutomationProperties.Name="{Binding Name}">
-          <Panel>
-            <Border CornerRadius="12"
-                    Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}"
-                    BorderThickness="2"
-                    BorderBrush="Transparent"
-                    Classes.selected="{Binding IsSelected}"
-                    Classes.offline="{Binding IsOffline}">
-              <Border.Styles>
-                <Style Selector="Border.selected">
-                  <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Foreground}" />
-                </Style>
-                <Style Selector="Border.offline">
-                  <Setter Property="Opacity" Value="0.45" />
-                </Style>
-              </Border.Styles>
-              <TextBlock Text="{Binding Glyph}"
-                         HorizontalAlignment="Center"
-                         VerticalAlignment="Center"
-                         FontSize="16"
-                         FontWeight="SemiBold"
-                         Foreground="White" />
-            </Border>
-            <!-- 运行中:右下角的强调色圆点 -->
-            <Border Width="11"
-                    Height="11"
-                    CornerRadius="6"
-                    Margin="0,0,-3,-3"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Bottom"
-                    BorderThickness="2"
-                    BorderBrush="{arc:ArcDesignTokenResource Background}"
-                    Background="{arc:ArcDesignTokenResource Success}"
-                    IsVisible="{Binding IsRunning}" />
-            <!-- 待处理交互数:右上角 -->
-            <Border MinWidth="16"
-                    Height="16"
-                    Padding="4,0"
-                    CornerRadius="8"
-                    Margin="0,-5,-6,0"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Background="{arc:ArcDesignTokenResource Danger}"
-                    IsVisible="{Binding HasPending}">
-              <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountConverter.Instance}}"
-                         FontSize="10"
-                         FontWeight="SemiBold"
-                         Foreground="White"
-                         HorizontalAlignment="Center"
-                         VerticalAlignment="Center" />
-            </Border>
-            <!-- 设备 / 执行环境标记:左上角 -->
-            <Border Width="16"
-                    Height="16"
-                    CornerRadius="8"
-                    Margin="-5,-5,0,0"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    Background="{arc:ArcDesignTokenResource SurfaceRaised}"
-                    IsVisible="{Binding IsCloud}">
-              <lucide:LucideIcon Kind="Cloud" Size="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <Border Width="16"
-                    Height="16"
-                    CornerRadius="8"
-                    Margin="-5,-5,0,0"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    Background="{arc:ArcDesignTokenResource SurfaceRaised}"
-                    IsVisible="{Binding IsSsh}">
-              <lucide:LucideIcon Kind="Link" Size="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-          </Panel>
-        </ui:PlainButton>
-      </Grid>
+      <rail:RailProjectTile />
     </DataTemplate>
-
-    <!-- 项目组:展开时是一块带底色的胶囊,收起时是 2×2 迷你网格 -->
     <DataTemplate DataType="vm:RailGroupViewModel">
-      <Border Margin="8,4"
-              Padding="0,4"
-              CornerRadius="16"
-              Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}, ConverterParameter=0.22}">
-        <StackPanel>
-          <!-- 展开状态 -->
-          <StackPanel IsVisible="{Binding !IsCollapsed}">
-            <ui:PlainButton Height="22"
-                            Margin="6,0"
-                            Command="{Binding ToggleCommand}"
-                            AutomationProperties.Name="{Binding Name}">
-              <lucide:LucideIcon Kind="FolderOpen"
-                                 Size="13"
-                                 HorizontalAlignment="Center"
-                                 Foreground="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}" />
-            </ui:PlainButton>
-            <ItemsControl ItemsSource="{Binding Members}" />
-          </StackPanel>
-          <!-- 收起状态 -->
-          <Grid Height="54" IsVisible="{Binding IsCollapsed}">
-            <ui:PlainButton Classes="tile"
-                            Width="40"
-                            Height="40"
-                            HorizontalAlignment="Center"
-                            Command="{Binding ToggleCommand}"
-                            AutomationProperties.Name="{Binding Name}">
-              <Panel>
-                <Border CornerRadius="12" Background="{arc:ArcDesignTokenResource SurfaceRaised}" Padding="5">
-                  <ItemsControl ItemsSource="{Binding Preview}">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <UniformGrid Columns="2" Rows="2" />
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate DataType="vm:RailProjectViewModel">
-                        <Border Margin="1"
-                                CornerRadius="4"
-                                Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}" />
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </Border>
-                <Border MinWidth="16"
-                        Height="16"
-                        Padding="4,0"
-                        CornerRadius="8"
-                        Margin="0,-5,-6,0"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Background="{arc:ArcDesignTokenResource Danger}"
-                        IsVisible="{Binding HasPending}">
-                  <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountConverter.Instance}}"
-                             FontSize="10"
-                             FontWeight="SemiBold"
-                             Foreground="White"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center" />
-                </Border>
-              </Panel>
-            </ui:PlainButton>
-          </Grid>
-        </StackPanel>
-      </Border>
+      <rail:RailGroupView />
     </DataTemplate>
   </UserControl.DataTemplates>
 
+  <Panel>
   <DockPanel>
     <!-- 底部:账户、设置 -->
     <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12" Spacing="8">
@@ -190,4 +40,12 @@
       </StackPanel>
     </ScrollViewer>
   </DockPanel>
+  <!-- 拖放的落点提示 -->
+  <Canvas x:Name="MarkLayer" IsHitTestVisible="False">
+    <Border x:Name="DropLine" Width="44" Height="2" CornerRadius="1" Canvas.Left="10"
+            Background="{arc:ArcDesignTokenResource Accent}" IsVisible="False" />
+    <Border x:Name="DropRing" CornerRadius="14" BorderThickness="2"
+            BorderBrush="{arc:ArcDesignTokenResource Accent}" IsVisible="False" />
+  </Canvas>
+  </Panel>
 </UserControl>

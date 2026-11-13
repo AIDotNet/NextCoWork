@@ -34,6 +34,27 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>⌘B:收起 / 展开左侧区域(项目栏 + 项目面板)。</summary>
     [ObservableProperty] public partial bool IsSidebarOpen { get; set; } = true;
 
+    public const double SidebarDefaultWidth = 352;
+    public const double SidebarMinWidth = 304;   // 项目栏 64 + 项目面板 240
+    public const double SidebarMaxWidth = 484;   // 项目栏 64 + 项目面板 420
+    public const double InspectorDefaultWidth = 320;
+    public const double InspectorMinWidth = 260;
+    public const double InspectorMaxWidth = 520;
+
+    /// <summary>左侧区域宽度(拖分隔条调整),纯 UI 状态。</summary>
+    public double SidebarWidth
+    {
+        get;
+        set => SetProperty(ref field, Math.Clamp(value, SidebarMinWidth, SidebarMaxWidth));
+    } = SidebarDefaultWidth;
+
+    /// <summary>右侧面板宽度(拖分隔条调整),纯 UI 状态。</summary>
+    public double InspectorWidth
+    {
+        get;
+        set => SetProperty(ref field, Math.Clamp(value, InspectorMinWidth, InspectorMaxWidth));
+    } = InspectorDefaultWidth;
+
     /// <summary>⌘⌥I:右侧面板。</summary>
     [ObservableProperty] public partial bool IsInspectorOpen { get; set; } = true;
 

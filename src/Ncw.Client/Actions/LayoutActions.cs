@@ -9,7 +9,8 @@ namespace Ncw.Client.Actions;
 /// </summary>
 public sealed class LayoutActions(ClientStores stores)
 {
-    private static readonly string[] GroupPalette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#14B8A6"];
+    /// <summary>项目组可选的颜色(用户数据,不是主题色)。</summary>
+    public static readonly IReadOnlyList<string> GroupPalette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#14B8A6"];
 
     public void Select(ProjectRef project) =>
         stores.Selection.Update(s => s.Project == project ? s : new SelectionState(project, null));
@@ -30,12 +31,49 @@ public sealed class LayoutActions(ClientStores stores)
     public void Move(ProjectRef project, RailTarget target) =>
         UpdateRail(rail => RailLayoutOps.Move(rail, project, target));
 
-    public void CreateGroup(ProjectRef onto, ProjectRef dragged, string name)
+    public void CreateGroup(ProjectRef onto, ProjectRef dragged, string name = "新项目组") =>
+        UpdateRail(r => RailLayoutOps.CreateGroup(r, onto, dragged, NewGroup(r, name)));
+
+    /// <summary>右键「新建项目组」:把这个项目包进一个新组。</summary>
+    public void WrapInGroup(ProjectRef project, string name = "新项目组") =>
+        UpdateRail(r => RailLayoutOps.WrapInGroup(r, project, NewGroup(r, name)));
+
+    /// <summary>右键「移出项目组」:放到组的后面。</summary>
+    public void LeaveGroup(ProjectRef project)
     {
         var rail = stores.Layout.State.Rail;
+        if (rail.GroupOf(project) is not { } group)
+        {
+            return;
+        }
+
+        var after = rail.Items.IndexOf(group) + (group.Members.Length > 1 ? 1 : 0);
+        Move(project, new RailTarget.TopLevel(after));
+    }
+
+    public void RecolorGroup(string groupId, string color) => UpdateRail(r => RailLayoutOps.Recolor(r, groupId, color));
+
+    /// <summary>拖放的结果统一从这里落地;规则在 <see cref="RailDropPlanner"/>。</summary>
+    public void Drop(RailDrop drop)
+    {
+        switch (drop)
+        {
+            case RailDrop.MoveProject m:
+                Move(m.Project, m.Target);
+                break;
+            case RailDrop.GroupWith g:
+                CreateGroup(g.Onto, g.Dragged);
+                break;
+            case RailDrop.MoveGroup g:
+                UpdateRail(r => RailLayoutOps.MoveGroup(r, g.GroupId, g.Index));
+                break;
+        }
+    }
+
+    private static ProjectGroup NewGroup(RailLayout rail, string name)
+    {
         var index = rail.Items.OfType<RailNode.Group>().Count();
-        var group = new ProjectGroup($"g{Guid.NewGuid():N}", name, GroupPalette[index % GroupPalette.Length], Collapsed: false);
-        UpdateRail(r => RailLayoutOps.CreateGroup(r, onto, dragged, group));
+        return new ProjectGroup($"g{Guid.NewGuid():N}", name, GroupPalette[index % GroupPalette.Count], Collapsed: false);
     }
 
     public void ToggleGroup(string groupId)

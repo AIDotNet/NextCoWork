@@ -26,6 +26,16 @@ public sealed partial class RailViewModel : ObservableObject
 
     public ObservableCollection<RailItemViewModel> Items { get; } = [];
 
+    /// <summary>当前布局(拖放规划用)。</summary>
+    public RailLayout Layout => _stores.Layout.State.Rail;
+
+    /// <summary>按 <see cref="ProjectRef.ToString"/> 找回项目(拖放数据里只放字符串 id)。</summary>
+    public ProjectRef? FindProject(string id) =>
+        Layout.Projects().Cast<ProjectRef?>().FirstOrDefault(p => p.ToString() == id);
+
+    /// <summary>落地一次拖放(规则在 RailDropPlanner,落地在 LayoutActions)。</summary>
+    public void Drop(RailDrop drop) => _actions.Drop(drop);
+
     /// <summary>
     /// 按 Store 重建。项目栏最多几十项,整批重建比维护增量映射简单,也不会和真源分叉。
     /// 同一个 key 的 ViewModel 原地更新,保住控件状态(焦点、动画)。
@@ -42,12 +52,15 @@ public sealed partial class RailViewModel : ObservableObject
             switch (node)
             {
                 case RailNode.Project p:
-                    next.Add(ProjectTile(p.Ref, layout, workspace, selected));
+                    var tile = ProjectTile(p.Ref, layout, workspace, selected);
+                    tile.IsInGroup = false;
+                    next.Add(tile);
                     break;
                 case RailNode.Group g:
                     var group = Items.OfType<RailGroupViewModel>().FirstOrDefault(x => x.GroupId == g.Info.Id)
                                 ?? new RailGroupViewModel(g.Info.Id, _actions);
                     var members = g.Members.Select(m => ProjectTile(m, layout, workspace, selected)).ToList();
+                    members.ForEach(m => m.IsInGroup = true);
                     var aggregate = ProjectActivityView.Sum(g.Members.Select(workspace.ActivityOf));
                     group.Update(g.Info, members, aggregate);
                     next.Add(group);
@@ -139,10 +152,22 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     [ObservableProperty] public partial bool IsSsh { get; private set; }
     [ObservableProperty] public partial string Tooltip { get; private set; } = "";
 
+    /// <summary>是否在某个项目组里(右键菜单显示「移出项目组」还是「新建项目组」)。</summary>
+    [ObservableProperty] public partial bool IsInGroup { get; internal set; }
+
     public bool IsCloud => DeviceKind == DeviceKind.Cloud;
 
     [RelayCommand]
     private void Select() => _actions.Select(Project);
+
+    [RelayCommand]
+    private void WrapInGroup() => _actions.WrapInGroup(Project);
+
+    [RelayCommand]
+    private void LeaveGroup() => _actions.LeaveGroup(Project);
+
+    [RelayCommand]
+    private void RemoveFromRail() => _actions.RemoveFromRail(Project);
 
     internal void Update(ProjectInfo? info, DeviceInfo? device, ProjectAppearance? appearance, ProjectActivity activity, bool selected)
     {
@@ -206,6 +231,11 @@ public sealed partial class RailGroupViewModel : RailItemViewModel
 
     [RelayCommand]
     private void Dissolve() => _actions.DissolveGroup(GroupId);
+
+    [RelayCommand]
+    private void Recolor(string color) => _actions.RecolorGroup(GroupId, color);
+
+    public IReadOnlyList<string> Palette => LayoutActions.GroupPalette;
 
     internal void Update(ProjectGroup info, IReadOnlyList<RailProjectViewModel> members, ProjectActivity aggregate)
     {

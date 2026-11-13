@@ -76,6 +76,18 @@ public static class RailLayoutOps
         return new RailLayout(Normalize(items.SetItem(index, node)));
     }
 
+    /// <summary>右键「新建项目组」:把一个顶层项目就地包进一个只有它自己的新组。</summary>
+    public static RailLayout WrapInGroup(RailLayout layout, ProjectRef project, ProjectGroup group)
+    {
+        var index = layout.Items.IndexOf(new RailNode.Project(project));
+        if (index < 0 || layout.FindGroup(group.Id) is not null)
+        {
+            return layout;
+        }
+
+        return new RailLayout(layout.Items.SetItem(index, new RailNode.Group(group, ImmutableArray.Create(project))));
+    }
+
     /// <summary>解散组:组内项目按原顺序展开到组原来的位置。</summary>
     public static RailLayout Dissolve(RailLayout layout, string groupId)
     {

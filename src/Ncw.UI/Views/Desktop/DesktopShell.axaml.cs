@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Chrome;
 
@@ -90,6 +91,24 @@ public partial class DesktopShell : UserControl
         }
     }
 
+    /// <summary>拖完分隔条:把实际列宽记回 ViewModel(纯 UI 状态),下次展开沿用。</summary>
+    private void OnSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        if (_vm is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(sender, LeftSplitter))
+        {
+            _vm.SidebarWidth = Main.ColumnDefinitions[0].ActualWidth;
+        }
+        else
+        {
+            _vm.InspectorWidth = Main.ColumnDefinitions[4].ActualWidth;
+        }
+    }
+
     private void ApplyChrome()
     {
         SidebarInset.Width = _chrome.LeftInset;
@@ -109,6 +128,19 @@ public partial class DesktopShell : UserControl
         LeftArea.IsVisible = sidebarOpen && Breakpoint >= ShellBreakpoint.Medium;
         InspectorColumn.IsVisible = inspectorOpen && Breakpoint == ShellBreakpoint.Wide;
         CollapsedLead.IsVisible = !LeftArea.IsVisible;
+        LeftSplitter.IsVisible = LeftArea.IsVisible;
+        RightSplitter.IsVisible = InspectorColumn.IsVisible;
+
+        // 列宽:收起的列宽度为 0;展开时用用户拖出来的宽度,并限制在范围内。
+        var columns = Main.ColumnDefinitions;
+        columns[0].MinWidth = LeftArea.IsVisible ? ShellViewModel.SidebarMinWidth : 0;
+        columns[0].MaxWidth = LeftArea.IsVisible ? ShellViewModel.SidebarMaxWidth : double.PositiveInfinity;
+        columns[0].Width = new GridLength(LeftArea.IsVisible ? _vm?.SidebarWidth ?? ShellViewModel.SidebarDefaultWidth : 0);
+        columns[1].Width = new GridLength(LeftArea.IsVisible ? 4 : 0);
+        columns[3].Width = new GridLength(InspectorColumn.IsVisible ? 4 : 0);
+        columns[4].MinWidth = InspectorColumn.IsVisible ? ShellViewModel.InspectorMinWidth : 0;
+        columns[4].MaxWidth = InspectorColumn.IsVisible ? ShellViewModel.InspectorMaxWidth : double.PositiveInfinity;
+        columns[4].Width = new GridLength(InspectorColumn.IsVisible ? _vm?.InspectorWidth ?? ShellViewModel.InspectorDefaultWidth : 0);
 
         CollapsedLead.Measure(Size.Infinity);
         var lead = CollapsedLead.IsVisible ? CollapsedLead.DesiredSize.Width : 0;

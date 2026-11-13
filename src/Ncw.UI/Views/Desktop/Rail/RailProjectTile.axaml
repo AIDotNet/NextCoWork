@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:rail="using:Ncw.UI.Views.Desktop.Rail"
+             x:Class="Ncw.UI.Views.Desktop.Rail.RailProjectTile"
+             x:DataType="vm:RailProjectViewModel">
+  <!-- 项目栏上的一个项目图标(右键菜单在 code-behind 里挂) -->
+  <Grid Height="54" arc:Tooltip.Tip="{Binding Tooltip}">
+    <Border Width="3"
+            Height="22"
+            CornerRadius="2"
+            HorizontalAlignment="Left"
+            Background="{arc:ArcDesignTokenResource Foreground}"
+            IsVisible="{Binding IsSelected}" />
+    <ui:PlainButton Classes="tile"
+                    Width="40"
+                    Height="40"
+                    HorizontalAlignment="Center"
+                    Command="{Binding SelectCommand}"
+                    AutomationProperties.Name="{Binding Name}">
+      <Panel>
+        <Border CornerRadius="12"
+                Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}"
+                BorderThickness="2"
+                BorderBrush="Transparent"
+                Classes.selected="{Binding IsSelected}"
+                Classes.offline="{Binding IsOffline}">
+          <Border.Styles>
+            <Style Selector="Border.selected">
+              <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Foreground}" />
+            </Style>
+            <Style Selector="Border.offline">
+              <Setter Property="Opacity" Value="0.45" />
+            </Style>
+          </Border.Styles>
+          <TextBlock Text="{Binding Glyph}"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     Foreground="White" />
+        </Border>
+        <!-- 运行中:右下角的强调色圆点 -->
+        <Border Width="11"
+                Height="11"
+                CornerRadius="6"
+                Margin="0,0,-3,-3"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                BorderThickness="2"
+                BorderBrush="{arc:ArcDesignTokenResource Background}"
+                Background="{arc:ArcDesignTokenResource Success}"
+                IsVisible="{Binding IsRunning}" />
+        <!-- 待处理交互数:右上角 -->
+        <Border MinWidth="16"
+                Height="16"
+                Padding="4,0"
+                CornerRadius="8"
+                Margin="0,-5,-6,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="{arc:ArcDesignTokenResource Danger}"
+                IsVisible="{Binding HasPending}">
+          <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountConverter.Instance}}"
+                     FontSize="10"
+                     FontWeight="SemiBold"
+                     Foreground="White"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center" />
+        </Border>
+        <!-- 设备 / 执行环境标记:左上角 -->
+        <Border Width="16"
+                Height="16"
+                CornerRadius="8"
+                Margin="-5,-5,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="{arc:ArcDesignTokenResource SurfaceRaised}"
+                IsVisible="{Binding IsCloud}">
+          <lucide:LucideIcon Kind="Cloud" Size="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <Border Width="16"
+                Height="16"
+                CornerRadius="8"
+                Margin="-5,-5,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="{arc:ArcDesignTokenResource SurfaceRaised}"
+                IsVisible="{Binding IsSsh}">
+          <lucide:LucideIcon Kind="Link" Size="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </Panel>
+    </ui:PlainButton>
+  </Grid>
+</UserControl>

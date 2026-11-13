@@ -32,9 +32,9 @@
   </UserControl.KeyBindings>
 
   <Grid x:Name="Root" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
-    <Grid ColumnDefinitions="Auto,*,Auto">
+    <Grid x:Name="Main" ColumnDefinitions="352,4,*,4,320">
       <!-- 左侧区域:头部 + 项目栏 + 项目面板 -->
-      <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*" Width="352">
+      <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*">
         <Grid x:Name="SidebarLead" ColumnDefinitions="Auto,*,Auto" Margin="0,0,8,0">
           <Border x:Name="SidebarInset" Width="0" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
@@ -59,8 +59,12 @@
         </Grid>
       </Grid>
 
+      <!-- 拖动调整左侧区域宽度 -->
+      <GridSplitter x:Name="LeftSplitter" Grid.Column="1" Background="Transparent"
+                    ResizeDirection="Columns" DragCompleted="OnSplitterDragCompleted" />
+
       <!-- 主工作区:标签栏就是顶部这一行 -->
-      <Border Grid.Column="1"
+      <Border Grid.Column="2"
               Background="{arc:ArcDesignTokenResource Background}"
               BorderThickness="1,0,1,0"
               BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
@@ -82,7 +86,11 @@
       </Border>
 
       <!-- 右侧面板(默认文件管理器):自己的页签行也在顶部这一行 -->
-      <Border x:Name="InspectorColumn" Grid.Column="2" Width="320">
+      <!-- 拖动调整右侧面板宽度 -->
+      <GridSplitter x:Name="RightSplitter" Grid.Column="3" Background="Transparent"
+                    ResizeDirection="Columns" DragCompleted="OnSplitterDragCompleted" />
+
+      <Border x:Name="InspectorColumn" Grid.Column="4">
         <desktop:InspectorPanel x:Name="Inspector" DataContext="{Binding Inspector}" />
       </Border>
     </Grid>

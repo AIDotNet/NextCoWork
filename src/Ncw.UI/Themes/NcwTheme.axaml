@@ -39,4 +39,21 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
   </ControlTheme>
+
+  <!-- 分隔条:Arc 不提供 GridSplitter 的模板,没有模板就点不中。透明的拖动区,悬停时显示一条强调色的线。 -->
+  <ControlTheme x:Key="{x:Type GridSplitter}" TargetType="GridSplitter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Cursor" Value="SizeWestEast" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}">
+          <Border Name="PART_Line" Width="2" HorizontalAlignment="Center" Background="Transparent" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#PART_Line">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}" />
+    </Style>
+  </ControlTheme>
 </ResourceDictionary>

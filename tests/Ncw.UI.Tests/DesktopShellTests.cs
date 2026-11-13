@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -147,5 +148,40 @@ public class DesktopShellTests
         Dispatch();
         Assert.True(vm.Inspector.IsSubagents);
         Snapshot(window, "panel-subagents");
+    }
+
+    /// <summary>真的在「+」上点一下:菜单打开、点选 Git 后页签出现。</summary>
+    [AvaloniaFact]
+    public void Clicking_plus_opens_menu_and_choosing_git_adds_the_tab()
+    {
+        var (window, shell, vm) = Render(1500);
+        var panel = shell.FindControl<InspectorPanel>("Inspector")!;
+        var menu = panel.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("AddMenu")!;
+
+        Click(window, menu);
+        Assert.True(menu.IsOpen);
+        Snapshot(window, "panel-plus-menu");
+
+        var entry = window.GetVisualDescendants().Concat(TopLevelPopups(window))
+            .OfType<TKCode.Arc.MenuEntry>()
+            .First(e => (e.Header as string) == "Git");
+        Click(window, entry);
+
+        Assert.True(vm.Inspector.IsGit);
+    }
+
+    private static IEnumerable<Avalonia.Visual> TopLevelPopups(Window window) =>
+        window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
+            .Where(p => p.Child is not null)
+            .SelectMany(p => p.Child!.GetVisualDescendants().Prepend(p.Child!));
+
+    private static void Click(Window window, Avalonia.Visual target)
+    {
+        var center = target.TranslatePoint(new Avalonia.Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)
+                     ?? throw new InvalidOperationException("target is not in the window");
+        window.MouseMove(center);
+        window.MouseDown(center, Avalonia.Input.MouseButton.Left);
+        window.MouseUp(center, Avalonia.Input.MouseButton.Left);
+        Dispatch();
     }
 }
