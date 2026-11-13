@@ -7,6 +7,7 @@
              xmlns:cv="using:Ncw.UI.Converters"
              xmlns:vm="using:Ncw.Client.ViewModels"
              xmlns:rail="using:Ncw.UI.Views.Desktop.Rail"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
              x:Class="Ncw.UI.Views.Desktop.ProjectRail"
              x:DataType="vm:RailViewModel">
   <!-- 栏 1:项目栏(64px)。项目图标 + 项目组胶囊;状态角标统一来自 ProjectActivityView(docs/design/03 §1)。 -->
@@ -24,7 +25,9 @@
     <!-- 底部:账户、设置 -->
     <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,12" Spacing="8">
       <ui:NcwAvatar HorizontalAlignment="Center" DisplayName="Token" Status="Online" />
-      <ui:PlainButton Width="36" Height="36" HorizontalAlignment="Center" AutomationProperties.Name="{l:NcwText Settings}" arc:Tooltip.Tip="{l:NcwText Settings}">
+      <ui:PlainButton x:Name="SettingsButton" Width="36" Height="36" HorizontalAlignment="Center"
+                      Command="{Binding $parent[desktop:DesktopShell].((vm:ShellViewModel)DataContext).Settings.OpenCommand}"
+                      AutomationProperties.Name="{l:NcwText Settings}" arc:Tooltip.Tip="{l:NcwText Settings}">
         <lucide:LucideIcon Kind="Settings" Size="18" HorizontalAlignment="Center" />
       </ui:PlainButton>
     </StackPanel>

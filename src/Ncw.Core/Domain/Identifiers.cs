@@ -25,6 +25,9 @@ public enum DeviceConnection
     Offline,
     /// <summary>云端 Agent 休眠中,点击即唤醒。</summary>
     Sleeping,
+
+    /// <summary>设备不再信任本控制端(被吊销),需要重新配对;不再自动重连。</summary>
+    Revoked,
 }
 
 /// <summary>项目所在的执行环境类型(docs/design/06)。</summary>

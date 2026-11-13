@@ -13,6 +13,7 @@ public sealed class LocalBackend : INcwBackend
 {
     private readonly LocalAgentSidecar _sidecar = new(LocalAgentSidecar.DefaultDataRoot);
     private DeviceLink? _link;
+    private RemoteDeviceManager? _remote;
 
     public void Start(ClientStores stores, DeviceRegistry devices, IUiDispatcher ui, IClientText text)
     {
@@ -28,10 +29,21 @@ public sealed class LocalBackend : INcwBackend
                 LocalToken: _sidecar.Token));
         devices.Local = _link;
         _link.Start();
+
+        // 配对过的远程设备:控制端身份放系统钥匙串,设备列表放客户端目录(docs/design/09 §3、§4)。
+        _remote = new RemoteDeviceManager(stores, ui, new ControllerKeyStore(NcwApp.ClientDirectory),
+            new JsonFileDeviceBook(Path.Combine(NcwApp.ClientDirectory, "devices.json")), Environment.MachineName);
+        devices.Remote = _remote;
+        _remote.Start();
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_remote is not null)
+        {
+            await _remote.DisposeAsync().ConfigureAwait(false);
+        }
+
         if (_link is not null)
         {
             await _link.DisposeAsync().ConfigureAwait(false);

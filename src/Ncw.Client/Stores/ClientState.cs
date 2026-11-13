@@ -19,13 +19,23 @@ public sealed record ProjectAppearance(string? Glyph, string Color);
 
 /// <summary>控制端看到的一台设备。</summary>
 /// <param name="Data">设备数据状态(<c>data</c> 主题的镜像);没连上时为 null(未知)。</param>
+/// <param name="Remote">远程开关和已配对的控制端(<c>remote</c> 主题的镜像,只有本机设备有);没连上时为 null。</param>
 public sealed record DeviceInfo(
     string DeviceId,
     string Name,
     DeviceKind Kind,
     DeviceConnection Connection,
     ActiveRunIndex? Index,
-    Ncw.Protocol.Methods.DataStatus? Data = null);
+    Ncw.Protocol.Methods.DataStatus? Data = null,
+    Ncw.Protocol.Methods.RemoteState? Remote = null);
+
+/// <summary>
+/// 本控制端配对过的一台设备(docs/design/09 §3 第 5 步):设备 id、钉扎的公钥指纹、已知地址。
+/// 这是控制端自己的事实,真源是 <see cref="ClientStores.Paired"/>,持久化在客户端目录。
+/// </summary>
+/// <param name="Fingerprint">设备公钥指纹(小写十六进制),连接时钉扎。</param>
+/// <param name="RouteToken">中继路由令牌(中继上线后使用)。</param>
+public sealed record SavedDevice(string DeviceId, string Name, string Fingerprint, string Host, int Port, string Role, string RouteToken, long PairedAt);
 
 /// <summary>会话列表里的一行(完整会话由 session/&lt;id&gt; 主题提供)。</summary>
 public sealed record SessionSummary(string Id, ProjectRef Project, string Title, DateTimeOffset UpdatedAt);
@@ -110,4 +120,7 @@ public sealed class ClientStores
 
     /// <summary>本机界面偏好(持久化见 <see cref="Services.PrefsPersistence"/>)。</summary>
     public Store<UiPrefs> Prefs { get; } = new(UiPrefs.Default);
+
+    /// <summary>本控制端配对过的远程设备(持久化见 <see cref="Services.IDeviceBook"/>)。</summary>
+    public Store<ImmutableArray<SavedDevice>> Paired { get; } = new(ImmutableArray<SavedDevice>.Empty);
 }

@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.DevicesSettingsPage"
+             x:DataType="vm:DevicesSettingsViewModel">
+  <!-- 设置 · 本应用 · 设备:配对过的设备 + 添加设备(地址 + 配对码),docs/design/09 §3 -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,18,0,6" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="6">
+    <TextBlock Text="{l:NcwText SettingsDevices}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+    <TextBlock Classes="muted" Text="{l:NcwText DevicesHint}" />
+
+    <!-- 已配对的设备 -->
+    <TextBlock Classes="muted" Margin="0,12,0,0" Text="{l:NcwText NoDevices}" IsVisible="{Binding !HasItems}" />
+    <ItemsControl ItemsSource="{Binding Items}" Margin="0,8,0,0">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:PairedDeviceItem">
+          <Border Padding="12,10" Margin="0,0,0,6" CornerRadius="10"
+                  BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <lucide:LucideIcon Kind="Monitor" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <StackPanel Grid.Column="1" Margin="12,0" Spacing="2">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="muted" Text="{Binding Address}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
+                  <TextBlock Classes="muted" Text="·" />
+                  <TextBlock Classes="muted" Text="{Binding Connection, Converter={x:Static cv:DeviceConnectionTextConverter.Instance}}" />
+                </StackPanel>
+              </StackPanel>
+              <ui:NcwButton Grid.Column="2" Variant="Ghost" VerticalAlignment="Center" Content="{l:NcwText RemoveDevice}"
+                            Command="{Binding $parent[ItemsControl].((vm:DevicesSettingsViewModel)DataContext).RemoveCommand}"
+                            CommandParameter="{Binding DeviceId}" />
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- 添加设备 -->
+    <StackPanel IsVisible="{Binding CanAdd}" Spacing="10">
+      <TextBlock Classes="section" Text="{l:NcwText AddDeviceTitle}" />
+      <TextBlock Classes="muted" Text="{l:NcwText AddDeviceHint}" />
+      <Grid ColumnDefinitions="*,12,180" Margin="0,4,0,0">
+        <ui:NcwInput x:Name="AddressInput" Label="{l:NcwText DeviceAddressLabel}" Placeholder="192.168.1.23:7810"
+                     Text="{Binding Address}" />
+        <ui:NcwInput x:Name="CodeInput" Grid.Column="2" Label="{l:NcwText PairingCodeLabel}" Placeholder="123 456"
+                     Text="{Binding Code}" MaxLength="7" />
+      </Grid>
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <ui:NcwButton Variant="Primary" Command="{Binding PairCommand}" IsEnabled="{Binding !IsPairing}">
+          <Panel>
+            <TextBlock Text="{l:NcwText PairDevice}" IsVisible="{Binding !IsPairing}" />
+            <TextBlock Text="{l:NcwText PairingInProgress}" IsVisible="{Binding IsPairing}" />
+          </Panel>
+        </ui:NcwButton>
+        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520"
+                   Foreground="{arc:ArcDesignTokenResource Danger}"
+                   IsVisible="{Binding LastError, Converter={x:Static ObjectConverters.IsNotNull}}"
+                   Text="{Binding LastError, Converter={x:Static cv:PairOutcomeConverter.Instance}}" />
+        <TextBlock VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Success}"
+                   IsVisible="{Binding JustPaired}" Text="{l:NcwText PairSucceeded}" />
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

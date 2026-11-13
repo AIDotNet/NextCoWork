@@ -93,6 +93,9 @@ public interface ITransportListener            // 设备:每种承载一个监�
 
 - **身份密钥**:ECDSA P-256 自签名证书(.NET 在所有目标平台内置支持)。`deviceId` = 设备公钥的 SHA-256(截断后 base32)。
   设备私钥在数据根里用 `NCK1` 加密存储(云端用 KMS);控制端私钥存在系统钥匙串(Keychain / Keystore / DPAPI / libsecret)。
+- **控制端身份的保存**(桌面端,`Ncw.Desktop/ControllerKeyStore`):macOS 存钥匙串的通用口令(服务「NextCoWork Controller」),
+  Windows 用 DPAPI(当前用户)加密的文件;Linux 的 libsecret 尚未接入,在那之前拒绝保存(配对时提示),不降级为明文。
+  已配对设备列表(设备 id、钉扎指纹、地址、路由令牌,不含私钥)存在客户端目录的 `devices.json`(0600)。
 - **指纹** = 证书里公钥(SubjectPublicKeyInfo)的 SHA-256。按公钥而不是整张证书钉扎,证书到期换发时信任不受影响。
 - **TLS 实现**:用 BouncyCastle 的 TLS 1.3(纯托管),不用 `SslStream`。M2 验证结果:macOS 的 `SslStream` 走 SecureTransport,最高只有 TLS 1.2
   (Network.framework 模式只接管客户端,服务端仍是 1.2,握手失败);iOS 同样受限;Windows 10 的 SChannel 不支持 TLS 1.3 服务端;

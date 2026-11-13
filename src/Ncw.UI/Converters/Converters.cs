@@ -223,3 +223,61 @@ public sealed class TakeoverSummaryConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>添加设备的结果(<see cref="Ncw.Client.Actions.PairOutcome"/>)→ 提示文字。</summary>
+public sealed class PairOutcomeConverter : IValueConverter
+{
+    public static readonly PairOutcomeConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        Ncw.Client.Actions.PairOutcome.InvalidAddress => NcwTexts.Get(NcwTextKind.PairInvalidAddress),
+        Ncw.Client.Actions.PairOutcome.InvalidCode => NcwTexts.Get(NcwTextKind.PairInvalidCode),
+        Ncw.Client.Actions.PairOutcome.Unreachable => NcwTexts.Get(NcwTextKind.PairUnreachable),
+        Ncw.Client.Actions.PairOutcome.NotADevice => NcwTexts.Get(NcwTextKind.PairNotADevice),
+        Ncw.Client.Actions.PairOutcome.WrongCode => NcwTexts.Get(NcwTextKind.PairWrongCode),
+        Ncw.Client.Actions.PairOutcome.DeviceNotVerified => NcwTexts.Get(NcwTextKind.PairNotVerified),
+        Ncw.Client.Actions.PairOutcome.RemoteDisabled => NcwTexts.Get(NcwTextKind.PairRemoteDisabled),
+        Ncw.Client.Actions.PairOutcome.KeyStoreUnavailable => NcwTexts.Get(NcwTextKind.PairKeyStoreUnavailable),
+        _ => null,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>设备连接状态 → 文字。</summary>
+public sealed class DeviceConnectionTextConverter : IValueConverter
+{
+    public static readonly DeviceConnectionTextConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        DeviceConnection.Connected => NcwTexts.Get(NcwTextKind.DeviceConnected),
+        DeviceConnection.Connecting => NcwTexts.Get(NcwTextKind.DeviceConnecting),
+        DeviceConnection.Offline => NcwTexts.Get(NcwTextKind.DeviceOffline),
+        DeviceConnection.Sleeping => NcwTexts.Get(NcwTextKind.DeviceSleeping),
+        DeviceConnection.Revoked => NcwTexts.Get(NcwTextKind.DeviceRevoked),
+        _ => null,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>远程开关打开失败的原因代码 → 文字。</summary>
+public sealed class RemoteErrorConverter : IValueConverter
+{
+    public static readonly RemoteErrorConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        "port-unavailable" => NcwTexts.Get(NcwTextKind.RemotePortUnavailable),
+        string => NcwTexts.Get(NcwTextKind.RemotePortUnavailable),
+        _ => null,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+

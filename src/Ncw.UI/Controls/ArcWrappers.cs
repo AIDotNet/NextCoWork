@@ -73,3 +73,15 @@ public class NcwDropdownMenu : TKCode.Arc.DropdownMenu
 {
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.DropdownMenu);
 }
+
+/// <summary>Arc 单行输入框(带标签、说明和错误行)。</summary>
+public class NcwInput : TKCode.Arc.Input
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.Input);
+}
+
+/// <summary>Arc 开关(设置里立即生效的选项)。</summary>
+public class NcwSwitch : TKCode.Arc.Switch
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.Switch);
+}

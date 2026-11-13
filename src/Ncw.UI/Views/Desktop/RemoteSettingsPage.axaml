@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.RemoteSettingsPage"
+             x:DataType="vm:RemoteSettingsViewModel">
+  <!-- 设置 · 设备(本机)· 连接与远程:远程开关、地址、配对码、已配对的控制端(docs/design/09 §3) -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,18,0,6" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="6">
+    <TextBlock Text="{l:NcwText SettingsRemote}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+    <TextBlock Classes="muted" Text="{l:NcwText RemoteUnavailable}" IsVisible="{Binding !IsAvailable}" Margin="0,8,0,0" />
+
+    <StackPanel IsVisible="{Binding IsAvailable}" Spacing="6">
+      <!-- 开关 -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{l:NcwText RemoteToggle}" />
+          <TextBlock Classes="muted" Text="{l:NcwText RemoteToggleHint}" />
+        </StackPanel>
+        <ui:NcwSwitch x:Name="RemoteSwitch" Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0"
+                      IsChecked="{Binding Enabled}" IsEnabled="{Binding !IsBusy}"
+                      AutomationProperties.Name="{l:NcwText RemoteToggle}" />
+      </Grid>
+      <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap"
+                 IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 Text="{Binding Error, Converter={x:Static cv:RemoteErrorConverter.Instance}}" />
+
+      <!-- 地址 + 配对码 -->
+      <Grid ColumnDefinitions="*,24,*" IsVisible="{Binding PairingCode, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel>
+          <TextBlock Classes="section" Text="{l:NcwText RemoteAddresses}" />
+          <TextBlock Classes="muted" Text="{l:NcwText RemoteNoAddress}" IsVisible="{Binding !HasAddresses}" />
+          <ItemsControl ItemsSource="{Binding Addresses}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <SelectableTextBlock Text="{Binding}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Margin="0,2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Classes="section" Text="{l:NcwText PairingCodeLabel}" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <SelectableTextBlock x:Name="CodeText" Text="{Binding PairingCode}" FontSize="26" FontWeight="SemiBold"
+                                 FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" VerticalAlignment="Center" />
+            <ui:NcwButton Variant="Ghost" VerticalAlignment="Center" Command="{Binding RotateCodeCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+                <TextBlock Text="{l:NcwText RotateCode}" />
+              </StackPanel>
+            </ui:NcwButton>
+          </StackPanel>
+          <TextBlock Classes="muted" Text="{l:NcwText RemoteCodeHint}" Margin="0,4,0,0" />
+        </StackPanel>
+      </Grid>
+
+      <!-- 已配对的控制端 -->
+      <TextBlock Classes="section" Text="{l:NcwText PairedControllers}" />
+      <TextBlock Classes="muted" Text="{l:NcwText NoControllers}" IsVisible="{Binding !HasControllers}" />
+      <ItemsControl ItemsSource="{Binding Controllers}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:ControllerItem">
+            <Border Padding="12,10" Margin="0,0,0,6" CornerRadius="10"
+                    BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <lucide:LucideIcon Kind="Smartphone" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                <StackPanel Grid.Column="1" Margin="12,0" Spacing="2">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <ui:NcwBadge IsVisible="{Binding Connected}" Content="{l:NcwText ControllerOnline}" />
+                  </StackPanel>
+                  <TextBlock Classes="muted" Text="{Binding ShortFingerprint}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
+                </StackPanel>
+                <ui:NcwButton Grid.Column="2" Variant="Ghost" VerticalAlignment="Center" Content="{l:NcwText Revoke}"
+                              Command="{Binding $parent[ItemsControl].((vm:RemoteSettingsViewModel)DataContext).RevokeCommand}"
+                              CommandParameter="{Binding Fingerprint}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

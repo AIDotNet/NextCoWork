@@ -25,6 +25,8 @@ public sealed partial class ShellViewModel : ObservableObject
         Workspace = new WorkspaceViewModel(stores);
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System);
         DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
+        DeviceActions = new DeviceActions(Devices);
+        Settings = new SettingsViewModel(stores, Devices, DeviceActions);
         stores.Prefs.Changed += OnPrefsChanged;
     }
 
@@ -55,6 +57,12 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>启动时的数据页(接管 2.x 数据的进度、被挡住时的重试)。</summary>
     public DataGateViewModel DataGate { get; }
+
+    /// <summary>设备相关的意图(添加 / 移除设备、远程开关)。</summary>
+    public DeviceActions DeviceActions { get; }
+
+    /// <summary>设置页。</summary>
+    public SettingsViewModel Settings { get; }
 
     private UiPrefs Prefs => Stores.Prefs.State;
 

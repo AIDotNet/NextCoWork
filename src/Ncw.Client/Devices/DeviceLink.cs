@@ -22,15 +22,18 @@ public sealed class DeviceLink : IAsyncDisposable
     private readonly Func<CancellationToken, Task<Stream>> _connect;
     private readonly ClientHello _hello;
     private readonly DeviceKind _kind;
-    private readonly string _displayName;
+    private readonly string? _displayName;
+    private readonly string? _initialName;
     private readonly CancellationTokenSource _lifetime = new();
     private Task _loop = Task.CompletedTask;
     private DeviceClient? _client;
 
     /// <param name="placeholderId">连上之前用来显示的设备 id;连上后换成设备报告的真实 id。</param>
-    public DeviceLink(ClientStores stores, IUiDispatcher ui, string placeholderId, DeviceKind kind, string displayName,
-        Func<CancellationToken, Task<Stream>> connect, ClientHello hello)
+    /// <param name="displayName">显示名;为 null 时用设备自己报告的名字(远程设备)。</param>
+    public DeviceLink(ClientStores stores, IUiDispatcher ui, string placeholderId, DeviceKind kind, string? displayName,
+        Func<CancellationToken, Task<Stream>> connect, ClientHello hello, string? initialName = null)
     {
+        _initialName = initialName;
         _stores = stores;
         _ui = ui;
         _connect = connect;
@@ -45,6 +48,13 @@ public sealed class DeviceLink : IAsyncDisposable
 
     /// <summary>当前是否已连接。</summary>
     public bool IsConnected => _client is not null;
+
+    public DeviceKind Kind => _kind;
+
+    /// <summary>调用设备上的一个方法(各个 Actions 用)。没连上时抛可重试的 unavailable。</summary>
+    public Task<TResult> CallAsync<TParams, TResult>(MethodDef<TParams, TResult> method, TParams parameters, CancellationToken ct = default) =>
+        (_client ?? throw new ProtocolException(ErrorCodes.Unavailable, "Device is not connected", retryable: true))
+            .CallAsync(method, parameters, ct);
 
     /// <summary>每次连上并完成首次同步后触发(测试和启动流程用)。</summary>
     public event Action? Synced;
@@ -85,6 +95,14 @@ public sealed class DeviceLink : IAsyncDisposable
                 var client = await DeviceClient.ConnectAsync(stream, _hello, _lifetime.Token).ConfigureAwait(false);
                 await using (client.ConfigureAwait(false))
                 {
+                    if (client.Welcome.Role == "unpaired")
+                    {
+                        // 设备不再信任本控制端(被吊销):重连也没用,标出来让用户重新配对。
+                        _client = null;
+                        SetConnection(DeviceConnection.Revoked);
+                        return;
+                    }
+
                     // 先让动作可用,再在 Store 里显示「已连接」:否则界面已经显示连上,用户此刻的操作却会报「未连接」。
                     _client = client;
                     await SyncAsync(client).ConfigureAwait(false);
@@ -135,7 +153,7 @@ public sealed class DeviceLink : IAsyncDisposable
             var existing = state.Devices.GetValueOrDefault(info.DeviceId);
             return state with
             {
-                Devices = devices.SetItem(info.DeviceId, new DeviceInfo(info.DeviceId, _displayName, _kind, DeviceConnection.Connected, existing?.Index)),
+                Devices = devices.SetItem(info.DeviceId, new DeviceInfo(info.DeviceId, _displayName ?? info.Name, _kind, DeviceConnection.Connected, existing?.Index)),
             };
         }));
 
@@ -174,12 +192,35 @@ public sealed class DeviceLink : IAsyncDisposable
                 }
             }, _lifetime.Token).ConfigureAwait(false);
 
+        if (_kind == DeviceKind.Local)
+        {
+            // 远程开关和配对码只给本机通道(remote 主题限制为本机 owner)。
+            await client.SubscribeAsync(DeviceMethods.RemoteTopic,
+                (state, _) => _ui.Post(() => ApplyRemote(state)),
+                evt =>
+                {
+                    if (evt.Type == RemoteEvents.Changed)
+                    {
+                        var state = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<RemoteState>());
+                        _ui.Post(() => ApplyRemote(state));
+                    }
+                }, _lifetime.Token).ConfigureAwait(false);
+        }
+
         var initial = await first.Task.WaitAsync(TimeSpan.FromSeconds(10), _lifetime.Token).ConfigureAwait(false);
         if (initial.State == DataStates.Ready)
         {
             var projects = await client.CallAsync(DeviceMethods.ProjectsList, Unit.Value, _lifetime.Token).ConfigureAwait(false);
             _ui.Post(() => ApplyProjects(projects));
         }
+    }
+
+    private void ApplyRemote(RemoteState state)
+    {
+        var deviceId = DeviceId;
+        _stores.Workspace.Update(s => s.Devices.TryGetValue(deviceId, out var device) && device.Remote != state
+            ? s with { Devices = s.Devices.SetItem(deviceId, device with { Remote = state }) }
+            : s);
     }
 
     private void ApplyData(DataStatus status)
@@ -230,12 +271,14 @@ public sealed class DeviceLink : IAsyncDisposable
         _ui.Post(() => _stores.Workspace.Update(state =>
         {
             var device = state.Devices.GetValueOrDefault(DeviceId)
-                         ?? new DeviceInfo(DeviceId, _displayName, _kind, connection, null);
+                         ?? new DeviceInfo(DeviceId, _displayName ?? _initialName ?? DeviceId, _kind, connection, null);
             // 断开后设备的数据状态未知(AGENTS.md §3 规则 7),不沿用旧值。
-            var data = connection == DeviceConnection.Connected ? device.Data : null;
-            return device.Connection == connection && device.Data == data && state.Devices.ContainsKey(DeviceId)
+            var connected = connection == DeviceConnection.Connected;
+            var data = connected ? device.Data : null;
+            var remote = connected ? device.Remote : null;
+            return device.Connection == connection && device.Data == data && device.Remote == remote && state.Devices.ContainsKey(DeviceId)
                 ? state
-                : state with { Devices = state.Devices.SetItem(DeviceId, device with { Connection = connection, Data = data }) };
+                : state with { Devices = state.Devices.SetItem(DeviceId, device with { Connection = connection, Data = data, Remote = remote }) };
         }));
 
     public async ValueTask DisposeAsync()

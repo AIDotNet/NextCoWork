@@ -98,5 +98,45 @@
     <unit id="Continue"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>
     <unit id="DataStepCredentials"><segment><source>Converting your saved keys. macOS may ask to allow access to the keychain; choose Allow.</source><target state="translated">正在转换保存的密钥。系统可能会请求访问钥匙串,请选择「允许」。</target></segment></unit>
     <unit id="DataDoneCredentials"><segment><source>{0} saved keys couldn&#x27;t be moved. Re-enter them in Settings → Models → Providers.</source><target state="translated">有 {0} 个保存的密钥无法迁移,请在「设置 → 模型 → 供应商」里重新输入。</target></segment></unit>
+    <unit id="CloseSettings"><segment><source>Close settings</source><target state="translated">关闭设置</target></segment></unit>
+    <unit id="SettingsAppGroup"><segment><source>This app</source><target state="translated">本应用</target></segment></unit>
+    <unit id="SettingsDeviceGroup"><segment><source>Device · this computer</source><target state="translated">设备 · 本机</target></segment></unit>
+    <unit id="SettingsDevices"><segment><source>Devices</source><target state="translated">设备</target></segment></unit>
+    <unit id="SettingsRemote"><segment><source>Connections &amp; remote</source><target state="translated">连接与远程</target></segment></unit>
+    <unit id="DevicesHint"><segment><source>Other computers this app connects to over your local network. Their projects appear in the rail.</source><target state="translated">这个应用通过局域网连接的其他电脑。它们上面的项目会出现在项目栏里。</target></segment></unit>
+    <unit id="NoDevices"><segment><source>No other devices yet.</source><target state="translated">还没有其他设备。</target></segment></unit>
+    <unit id="AddDeviceTitle"><segment><source>Add a device</source><target state="translated">添加设备</target></segment></unit>
+    <unit id="AddDeviceHint"><segment><source>On the other computer, open Settings → Connections &amp; remote and turn on remote connections. Then enter the address and pairing code it shows.</source><target state="translated">在另一台电脑上打开「设置 → 连接与远程」,打开「允许远程连接」,然后在这里输入它显示的地址和配对码。</target></segment></unit>
+    <unit id="DeviceAddressLabel"><segment><source>Address</source><target state="translated">地址</target></segment></unit>
+    <unit id="PairingCodeLabel"><segment><source>Pairing code</source><target state="translated">配对码</target></segment></unit>
+    <unit id="PairDevice"><segment><source>Pair</source><target state="translated">配对</target></segment></unit>
+    <unit id="PairingInProgress"><segment><source>Pairing…</source><target state="translated">正在配对…</target></segment></unit>
+    <unit id="PairSucceeded"><segment><source>Paired. Its projects will appear in the rail.</source><target state="translated">配对成功,它上面的项目会出现在项目栏里。</target></segment></unit>
+    <unit id="RemoveDevice"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="PairInvalidAddress"><segment><source>Enter an address like 192.168.1.23:7810.</source><target state="translated">请输入类似 192.168.1.23:7810 的地址。</target></segment></unit>
+    <unit id="PairInvalidCode"><segment><source>The pairing code is 6 digits.</source><target state="translated">配对码是 6 位数字。</target></segment></unit>
+    <unit id="PairUnreachable"><segment><source>Couldn&#x27;t reach that address. Check that remote connections are on and both computers are on the same network.</source><target state="translated">连不上这个地址。请确认对方已打开远程连接,并且两台电脑在同一个网络里。</target></segment></unit>
+    <unit id="PairNotADevice"><segment><source>That address isn&#x27;t a NextCoWork device.</source><target state="translated">这个地址不是 NextCoWork 设备。</target></segment></unit>
+    <unit id="PairWrongCode"><segment><source>The pairing code is wrong. Check the code shown on the other computer.</source><target state="translated">配对码不对,请核对另一台电脑上显示的配对码。</target></segment></unit>
+    <unit id="PairNotVerified"><segment><source>The device couldn&#x27;t be verified. The connection may be intercepted.</source><target state="translated">无法验证这台设备,连接可能被拦截。</target></segment></unit>
+    <unit id="PairRemoteDisabled"><segment><source>Remote connections are turned off on that computer.</source><target state="translated">那台电脑没有打开远程连接。</target></segment></unit>
+    <unit id="PairKeyStoreUnavailable"><segment><source>This computer can&#x27;t store pairing keys securely yet.</source><target state="translated">这台电脑暂时无法安全保存配对密钥。</target></segment></unit>
+    <unit id="DeviceConnected"><segment><source>Connected</source><target state="translated">已连接</target></segment></unit>
+    <unit id="DeviceConnecting"><segment><source>Connecting…</source><target state="translated">正在连接…</target></segment></unit>
+    <unit id="DeviceOffline"><segment><source>Offline</source><target state="translated">离线</target></segment></unit>
+    <unit id="DeviceSleeping"><segment><source>Sleeping</source><target state="translated">休眠中</target></segment></unit>
+    <unit id="DeviceRevoked"><segment><source>Removed by that computer. Pair again to reconnect.</source><target state="translated">已被对方移除,需要重新配对。</target></segment></unit>
+    <unit id="RemoteToggle"><segment><source>Allow remote connections</source><target state="translated">允许远程连接</target></segment></unit>
+    <unit id="RemoteToggleHint"><segment><source>Other computers on your local network can connect with an address and pairing code below.</source><target state="translated">局域网里的其他电脑可以用下面的地址和配对码连接这台电脑。</target></segment></unit>
+    <unit id="RemoteAddresses"><segment><source>Addresses</source><target state="translated">地址</target></segment></unit>
+    <unit id="RemoteNoAddress"><segment><source>No local network address found.</source><target state="translated">没有找到局域网地址。</target></segment></unit>
+    <unit id="RemoteCodeHint"><segment><source>Changes after each pairing and after 5 wrong tries.</source><target state="translated">每次配对成功或连续输错 5 次后自动更换。</target></segment></unit>
+    <unit id="RotateCode"><segment><source>New code</source><target state="translated">换一个</target></segment></unit>
+    <unit id="RemotePortUnavailable"><segment><source>Couldn&#x27;t open a port. Another app may be using it.</source><target state="translated">无法打开端口,可能被其他应用占用。</target></segment></unit>
+    <unit id="RemoteUnavailable"><segment><source>The local agent isn&#x27;t ready yet.</source><target state="translated">本机 Agent 还没就绪。</target></segment></unit>
+    <unit id="PairedControllers"><segment><source>Paired controllers</source><target state="translated">已配对的控制端</target></segment></unit>
+    <unit id="NoControllers"><segment><source>Nothing has paired with this computer yet.</source><target state="translated">还没有控制端和这台电脑配对。</target></segment></unit>
+    <unit id="Revoke"><segment><source>Revoke</source><target state="translated">吊销</target></segment></unit>
+    <unit id="ControllerOnline"><segment><source>Online</source><target state="translated">在线</target></segment></unit>
   </file>
 </xliff>

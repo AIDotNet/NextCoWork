@@ -100,16 +100,25 @@
       </Border>
     </Grid>
 
+    <!-- 设置页:整窗覆盖(数据页优先,所以排在它前面) -->
+    <desktop:SettingsOverlay DataContext="{Binding Settings}" />
+
     <!-- 启动时的数据页:本机数据没就绪(接管 2.x 数据中 / 被挡住)时盖住整个窗口 -->
     <desktop:DataGateOverlay DataContext="{Binding DataGate}" />
 
     <!-- 右上角常驻:检查器开关 + (Windows / Linux)窗口按钮 -->
     <StackPanel x:Name="TopRight" Orientation="Horizontal" Height="40" Spacing="2" Margin="0,0,8,0"
                 HorizontalAlignment="Right" VerticalAlignment="Top">
-      <ui:NcwButton Classes="icon" Variant="Ghost" IsVisible="{Binding !DataGate.IsVisible}"
+      <ui:NcwButton Classes="icon" Variant="Ghost"
                     Command="{Binding ToggleInspectorCommand}"
                     AutomationProperties.Name="{l:NcwText RightPanel}"
                     arc:Tooltip.Tip="{l:NcwText RightPanelHint}">
+        <ui:NcwButton.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="!DataGate.IsVisible" />
+            <Binding Path="!Settings.IsOpen" />
+          </MultiBinding>
+        </ui:NcwButton.IsVisible>
         <lucide:LucideIcon Kind="PanelRight" Size="16" />
       </ui:NcwButton>
       <chrome:CaptionButtons x:Name="Captions" Margin="6,0,0,0" IsVisible="False" />

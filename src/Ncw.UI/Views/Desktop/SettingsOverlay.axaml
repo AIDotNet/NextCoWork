@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.SettingsOverlay"
+             x:DataType="vm:SettingsViewModel"
+             IsVisible="{Binding IsOpen}">
+  <!--
+    设置页(docs/design/07):整窗覆盖,左侧导航 220px + 内容区(最大 760)。顶部 40px 留给拖动窗口和 macOS 红绿灯。
+    先有「本应用 · 设备」和「设备 · 本机 · 连接与远程」两页,其余分组随功能加入。Esc 关闭。
+  -->
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
+  </UserControl.KeyBindings>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.group">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="Margin" Value="12,14,12,4" />
+    </Style>
+    <Style Selector="ui|PlainButton.nav">
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ui|PlainButton.nav.active">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid ColumnDefinitions="220,*" Background="{arc:ArcDesignTokenResource Background}">
+    <!-- 左侧导航 -->
+    <Border Background="{arc:ArcDesignTokenResource SurfaceMuted}" BorderThickness="0,0,1,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <StackPanel Margin="8,40,8,8">
+        <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,6">
+          <TextBlock Text="{l:NcwText Settings}" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}" VerticalAlignment="Center" />
+          <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseCommand}"
+                        AutomationProperties.Name="{l:NcwText CloseSettings}" arc:Tooltip.Tip="{l:NcwText CloseSettings}">
+            <lucide:LucideIcon Kind="X" Size="16" />
+          </ui:NcwButton>
+        </Grid>
+
+        <TextBlock Classes="group" Text="{l:NcwText SettingsAppGroup}" />
+        <ui:PlainButton Classes="nav" Classes.active="{Binding IsDevicesSection}"
+                        Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Devices}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="Monitor" Size="15" />
+            <TextBlock Text="{l:NcwText SettingsDevices}" />
+          </StackPanel>
+        </ui:PlainButton>
+
+        <TextBlock Classes="group" Text="{l:NcwText SettingsDeviceGroup}" />
+        <ui:PlainButton Classes="nav" Classes.active="{Binding IsRemoteSection}"
+                        Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Remote}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="Wifi" Size="15" />
+            <TextBlock Text="{l:NcwText SettingsRemote}" />
+          </StackPanel>
+        </ui:PlainButton>
+      </StackPanel>
+    </Border>
+
+    <!-- 内容区 -->
+    <ScrollViewer Grid.Column="1" Margin="0,40,0,0">
+      <Panel MaxWidth="760" Margin="32,8,32,32" HorizontalAlignment="Stretch">
+        <desktop:DevicesSettingsPage DataContext="{Binding Devices}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsDevicesSection}" />
+        <desktop:RemoteSettingsPage DataContext="{Binding Remote}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsRemoteSection}" />
+      </Panel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
