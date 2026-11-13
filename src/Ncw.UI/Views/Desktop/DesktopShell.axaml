@@ -33,8 +33,12 @@
 
   <Grid x:Name="Root" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
     <Grid x:Name="Main" ColumnDefinitions="352,4,*,4,320">
-      <!-- 左侧区域:头部 + 项目栏 + 项目面板 -->
-      <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*">
+      <!-- 窄窗口下抽屉打开时的遮罩:点一下关闭抽屉 -->
+      <Border x:Name="DrawerScrim" Grid.Column="0" Grid.ColumnSpan="5" ZIndex="9" IsVisible="False"
+              Background="{arc:ArcDesignTokenResource Scrim}" PointerPressed="OnScrimPressed" />
+
+      <!-- 左侧区域:头部 + 项目栏 + 项目面板。窄窗口下作为抽屉跨列覆盖在工作区上。 -->
+      <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
         <Grid x:Name="SidebarLead" ColumnDefinitions="Auto,*,Auto" Margin="0,0,8,0">
           <Border x:Name="SidebarInset" Width="0" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">

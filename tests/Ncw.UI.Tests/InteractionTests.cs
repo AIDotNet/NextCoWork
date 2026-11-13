@@ -74,7 +74,7 @@ public class InteractionTests
         window.MouseMove(start + new Point(400, 0), RawInputModifiers.LeftMouseButton);
         window.MouseUp(start + new Point(400, 0), MouseButton.Left);
         Dispatch();
-        Assert.Equal(ShellViewModel.SidebarMaxWidth, vm.SidebarWidth);
+        Assert.Equal(Ncw.Client.Stores.UiPrefs.SidebarMaxWidth, vm.SidebarWidth);
         Snapshot(window, "resize-sidebar-max");
     }
 
@@ -144,5 +144,59 @@ public class InteractionTests
         {
             ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark));
         }
+    }
+
+    [AvaloniaFact]
+    public void Narrow_window_opens_sidebar_as_drawer_and_scrim_closes_it()
+    {
+        var (window, shell, vm) = Render(900);
+        Assert.False(shell.IsSidebarVisible);
+
+        vm.ToggleSidebarCommand.Execute(null);
+        Dispatch();
+        Assert.True(shell.IsDrawerVisible);
+        Assert.True(shell.IsSidebarVisible);
+        Snapshot(window, "shell-900-drawer");
+
+        // 点遮罩(抽屉右边的工作区位置)关闭
+        window.MouseDown(new Point(800, 400), MouseButton.Left);
+        window.MouseUp(new Point(800, 400), MouseButton.Left);
+        Dispatch();
+        Assert.False(shell.IsDrawerVisible);
+        Assert.False(vm.IsDrawerOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Rename_group_shows_arc_dialog_and_saves()
+    {
+        var (window, _, vm) = Render();
+        var group = vm.Rail.Items.OfType<RailGroupViewModel>().First();
+
+        var pending = group.RenameCommand.ExecuteAsync(null);
+        Dispatch();
+
+        var popupVisuals = window.GetVisualDescendants()
+            .Concat(window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
+                .Where(p => p.Child is not null).SelectMany(p => p.Child!.GetVisualDescendants()))
+            .ToList();
+        var input = popupVisuals.OfType<Input>().Single();
+        Assert.Equal("工作", input.Text);
+        Snapshot(window, "rename-dialog");
+
+        input.Text = "前端";
+        var save = popupVisuals.OfType<TKCode.Arc.Button>().First(b => b.Content as string == "保存");
+        Click(window, save);
+        await pending;
+
+        Assert.Equal("前端", vm.Rail.Items.OfType<RailGroupViewModel>().First().Name);
+    }
+
+    private static void Click(Window window, Visual target)
+    {
+        var at = Center(target, window);
+        window.MouseMove(at);
+        window.MouseDown(at, MouseButton.Left);
+        window.MouseUp(at, MouseButton.Left);
+        Dispatch();
     }
 }

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
 using Ncw.Core.Layout;
@@ -13,11 +14,13 @@ public sealed partial class RailViewModel : ObservableObject
 {
     private readonly ClientStores _stores;
     private readonly LayoutActions _actions;
+    private readonly Func<IDialogService> _dialogs;
 
-    public RailViewModel(ClientStores stores, LayoutActions actions)
+    public RailViewModel(ClientStores stores, LayoutActions actions, Func<IDialogService>? dialogs = null)
     {
         _stores = stores;
         _actions = actions;
+        _dialogs = dialogs ?? (() => NoDialogs.Instance);
         stores.Layout.Changed += Rebuild;
         stores.Workspace.Changed += Rebuild;
         stores.Selection.Changed += Rebuild;
@@ -58,7 +61,7 @@ public sealed partial class RailViewModel : ObservableObject
                     break;
                 case RailNode.Group g:
                     var group = Items.OfType<RailGroupViewModel>().FirstOrDefault(x => x.GroupId == g.Info.Id)
-                                ?? new RailGroupViewModel(g.Info.Id, _actions);
+                                ?? new RailGroupViewModel(g.Info.Id, _actions, _dialogs);
                     var members = g.Members.Select(m => ProjectTile(m, layout, workspace, selected)).ToList();
                     members.ForEach(m => m.IsInGroup = true);
                     var aggregate = ProjectActivityView.Sum(g.Members.Select(workspace.ActivityOf));
@@ -204,11 +207,13 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
 public sealed partial class RailGroupViewModel : RailItemViewModel
 {
     private readonly LayoutActions _actions;
+    private readonly Func<IDialogService> _dialogs;
 
-    public RailGroupViewModel(string groupId, LayoutActions actions)
+    public RailGroupViewModel(string groupId, LayoutActions actions, Func<IDialogService> dialogs)
     {
         GroupId = groupId;
         _actions = actions;
+        _dialogs = dialogs;
     }
 
     public string GroupId { get; }
@@ -234,6 +239,17 @@ public sealed partial class RailGroupViewModel : RailItemViewModel
 
     [RelayCommand]
     private void Recolor(string color) => _actions.RecolorGroup(GroupId, color);
+
+    /// <summary>右键「重命名」:弹窗输入新名字;取消或空名字不改。</summary>
+    [RelayCommand]
+    private async Task RenameAsync()
+    {
+        var name = await _dialogs().PromptTextAsync("重命名项目组", "名字会同步到你的所有设备。", "名称", Name);
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            _actions.RenameGroup(GroupId, name.Trim());
+        }
+    }
 
     public IReadOnlyList<string> Palette => LayoutActions.GroupPalette;
 

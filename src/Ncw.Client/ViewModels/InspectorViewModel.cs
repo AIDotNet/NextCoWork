@@ -14,7 +14,9 @@ public sealed partial class InspectorViewModel : ObservableObject
 {
     private readonly ClientStores _stores;
     private readonly TimeProvider _clock;
-    private readonly List<InspectorTabKind> _added = [];
+
+    /// <summary>用户通过「+」添加的页签,持久化在 Prefs 里(本机界面偏好的唯一真源)。</summary>
+    private IReadOnlyList<InspectorTabKind> Added => _stores.Prefs.State.InspectorTabs;
 
     public InspectorViewModel(ClientStores stores, TimeProvider clock)
     {
@@ -22,6 +24,7 @@ public sealed partial class InspectorViewModel : ObservableObject
         _clock = clock;
         stores.Workspace.Changed += Refresh;
         stores.Selection.Changed += Refresh;
+        stores.Prefs.Changed += Refresh;
         Refresh();
     }
 
@@ -67,24 +70,24 @@ public sealed partial class InspectorViewModel : ObservableObject
     [RelayCommand]
     private void Add(InspectorTabKind kind)
     {
-        if (!_added.Contains(kind) && InspectorTabs.Addable.Contains(kind))
+        Active = kind;
+        if (!Added.Contains(kind) && InspectorTabs.Addable.Contains(kind))
         {
-            _added.Add(kind);
+            _stores.Prefs.Update(p => p with { InspectorTabs = p.InspectorTabs.Add(kind) });
         }
 
-        Active = kind;
         Refresh();
     }
 
     [RelayCommand]
     private void Close(InspectorTabKind kind)
     {
-        _added.Remove(kind);
         if (Active == kind)
         {
             Active = InspectorTabKind.Files;
         }
 
+        _stores.Prefs.Update(p => p with { InspectorTabs = p.InspectorTabs.Remove(kind) });
         Refresh();
     }
 
@@ -96,7 +99,7 @@ public sealed partial class InspectorViewModel : ObservableObject
             ? workspace.SubagentsOf(sessionId).ToList()
             : [];
 
-        var kinds = InspectorTabs.Compose(_added, subagents.Count > 0);
+        var kinds = InspectorTabs.Compose(Added, subagents.Count > 0);
         if (!kinds.Contains(Active))
         {
             // 子代理页签随会话消失时回到文件管理器。
@@ -112,7 +115,7 @@ public sealed partial class InspectorViewModel : ObservableObject
         SyncTabs();
 
         Addable.Clear();
-        foreach (var kind in InspectorTabs.Remaining(_added))
+        foreach (var kind in InspectorTabs.Remaining(Added))
         {
             Addable.Add(kind);
         }

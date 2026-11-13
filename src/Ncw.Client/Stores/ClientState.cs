@@ -105,4 +105,7 @@ public sealed class ClientStores
     public Store<WorkspaceState> Workspace { get; } = new(WorkspaceState.Empty);
 
     public Store<SelectionState> Selection { get; } = new(SelectionState.None);
+
+    /// <summary>本机界面偏好(持久化见 <see cref="Services.PrefsPersistence"/>)。</summary>
+    public Store<UiPrefs> Prefs { get; } = new(UiPrefs.Default);
 }

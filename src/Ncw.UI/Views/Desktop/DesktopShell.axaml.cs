@@ -2,7 +2,11 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Controls;
 using Ncw.UI.Chrome;
 
 namespace Ncw.UI.Views.Desktop;
@@ -78,6 +82,8 @@ public partial class DesktopShell : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged += OnViewModelChanged;
+            // 弹窗盖在这个外壳所在的窗口上。
+            _vm.Dialogs = new NcwDialogService(this);
         }
 
         ApplyLayout();
@@ -85,13 +91,23 @@ public partial class DesktopShell : UserControl
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ShellViewModel.IsSidebarOpen) or nameof(ShellViewModel.IsInspectorOpen))
+        if (e.PropertyName is nameof(ShellViewModel.IsSidebarOpen) or nameof(ShellViewModel.IsInspectorOpen)
+            or nameof(ShellViewModel.SidebarWidth) or nameof(ShellViewModel.InspectorWidth) or nameof(ShellViewModel.IsDrawerOpen))
         {
             ApplyLayout();
         }
     }
 
-    /// <summary>拖完分隔条:把实际列宽记回 ViewModel(纯 UI 状态),下次展开沿用。</summary>
+    /// <summary>窄窗口下抽屉是否打开(测试用)。</summary>
+    public bool IsDrawerVisible { get; private set; }
+
+    private void OnScrimPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _vm?.CloseDrawerCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>拖完分隔条:把实际列宽写回偏好(Prefs Store),下次启动沿用。</summary>
     private void OnSplitterDragCompleted(object? sender, VectorEventArgs e)
     {
         if (_vm is null)
@@ -124,23 +140,38 @@ public partial class DesktopShell : UserControl
     {
         var sidebarOpen = _vm?.IsSidebarOpen ?? true;
         var inspectorOpen = _vm?.IsInspectorOpen ?? true;
+        var compact = Breakpoint < ShellBreakpoint.Medium;
+        if (_vm is not null)
+        {
+            _vm.IsCompact = compact;
+        }
 
-        LeftArea.IsVisible = sidebarOpen && Breakpoint >= ShellBreakpoint.Medium;
+        var drawer = compact && (_vm?.IsDrawerOpen ?? false);
+        IsDrawerVisible = drawer;
+        DrawerScrim.IsVisible = drawer;
+        Grid.SetColumnSpan(LeftArea, drawer ? 3 : 1);
+        LeftArea.ZIndex = drawer ? 10 : 0;
+        LeftArea.HorizontalAlignment = drawer ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        LeftArea.Width = drawer ? _vm?.SidebarWidth ?? UiPrefs.SidebarDefaultWidth : double.NaN;
+        LeftArea.Effect = drawer ? new DropShadowEffect { BlurRadius = 24, OffsetY = 0, Opacity = 0.35 } : null;
+
+        LeftArea.IsVisible = drawer || (sidebarOpen && !compact);
         InspectorColumn.IsVisible = inspectorOpen && Breakpoint == ShellBreakpoint.Wide;
-        CollapsedLead.IsVisible = !LeftArea.IsVisible;
-        LeftSplitter.IsVisible = LeftArea.IsVisible;
+        LeftSplitter.IsVisible = LeftArea.IsVisible && !drawer;
         RightSplitter.IsVisible = InspectorColumn.IsVisible;
 
         // 列宽:收起的列宽度为 0;展开时用用户拖出来的宽度,并限制在范围内。
         var columns = Main.ColumnDefinitions;
-        columns[0].MinWidth = LeftArea.IsVisible ? ShellViewModel.SidebarMinWidth : 0;
-        columns[0].MaxWidth = LeftArea.IsVisible ? ShellViewModel.SidebarMaxWidth : double.PositiveInfinity;
-        columns[0].Width = new GridLength(LeftArea.IsVisible ? _vm?.SidebarWidth ?? ShellViewModel.SidebarDefaultWidth : 0);
-        columns[1].Width = new GridLength(LeftArea.IsVisible ? 4 : 0);
+        var docked = LeftArea.IsVisible && !drawer;
+        CollapsedLead.IsVisible = !docked;
+        columns[0].MinWidth = docked ? UiPrefs.SidebarMinWidth : 0;
+        columns[0].MaxWidth = docked ? UiPrefs.SidebarMaxWidth : double.PositiveInfinity;
+        columns[0].Width = new GridLength(docked ? _vm?.SidebarWidth ?? UiPrefs.SidebarDefaultWidth : 0);
+        columns[1].Width = new GridLength(docked ? 4 : 0);
         columns[3].Width = new GridLength(InspectorColumn.IsVisible ? 4 : 0);
-        columns[4].MinWidth = InspectorColumn.IsVisible ? ShellViewModel.InspectorMinWidth : 0;
-        columns[4].MaxWidth = InspectorColumn.IsVisible ? ShellViewModel.InspectorMaxWidth : double.PositiveInfinity;
-        columns[4].Width = new GridLength(InspectorColumn.IsVisible ? _vm?.InspectorWidth ?? ShellViewModel.InspectorDefaultWidth : 0);
+        columns[4].MinWidth = InspectorColumn.IsVisible ? UiPrefs.InspectorMinWidth : 0;
+        columns[4].MaxWidth = InspectorColumn.IsVisible ? UiPrefs.InspectorMaxWidth : double.PositiveInfinity;
+        columns[4].Width = new GridLength(InspectorColumn.IsVisible ? _vm?.InspectorWidth ?? UiPrefs.InspectorDefaultWidth : 0);
 
         CollapsedLead.Measure(Size.Infinity);
         var lead = CollapsedLead.IsVisible ? CollapsedLead.DesiredSize.Width : 0;
