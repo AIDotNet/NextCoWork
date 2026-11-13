@@ -10,11 +10,58 @@ namespace Ncw.Protocol.Transport;
 /// </summary>
 public static class LocalTransport
 {
-    /// <summary>本机端点:Unix 上是 socket 文件路径,Windows 上是管道名。</summary>
-    public static string DefaultEndpoint(string dataRoot) =>
-        OperatingSystem.IsWindows()
-            ? $"ncw-agent-{Environment.UserName}-{Fnv1a(dataRoot):x8}"
-            : Path.Combine(dataRoot, "run", "agent.sock");
+    /// <summary>Unix socket 路径的安全长度(macOS 上限 104 字节,Linux 108,留出余量)。</summary>
+    private const int MaxSocketPathBytes = 100;
+
+    /// <summary>
+    /// 本机端点:Unix 上是 socket 文件路径,Windows 上是管道名。Agent 和桌面端用同一个数据根算出同一个端点。
+    /// 数据根太深时 socket 放到只有当前用户能访问的短目录里 —— hello 里带着本机令牌,
+    /// socket 绝不能放在别人能抢先占用的地方。
+    /// </summary>
+    public static string DefaultEndpoint(string dataRoot)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return $"ncw-agent-{Environment.UserName}-{Fnv1a(dataRoot):x8}";
+        }
+
+        var preferred = Path.Combine(dataRoot, "run", "agent.sock");
+        if (System.Text.Encoding.UTF8.GetByteCount(preferred) <= MaxSocketPathBytes)
+        {
+            return preferred;
+        }
+
+        return Path.Combine(PrivateShortDirectory(), $"ncw-{Fnv1a(dataRoot):x8}.sock");
+    }
+
+    /// <summary>
+    /// 当前用户私有的短目录:macOS 的 $TMPDIR 本来就是每用户 0700;Linux 优先 $XDG_RUNTIME_DIR,
+    /// 否则 /tmp/ncw-&lt;uid&gt;,建成 0700 并核对属主,不是自己的就拒绝。
+    /// </summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static string PrivateShortDirectory()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.GetTempPath();
+        }
+
+        if (Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtime && Directory.Exists(runtime))
+        {
+            return runtime;
+        }
+
+        var dir = Path.Combine("/tmp", $"ncw-{Environment.UserName}");
+        Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var mode = File.GetUnixFileMode(dir);
+        if ((mode & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+                     UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute)) != 0)
+        {
+            throw new IOException($"{dir} is accessible by other users; refusing to place the agent socket there");
+        }
+
+        return dir;
+    }
 
     /// <summary>确定性的哈希(string.GetHashCode 每个进程不同,Agent 和桌面端会算出不同的管道名)。</summary>
     private static uint Fnv1a(string text)

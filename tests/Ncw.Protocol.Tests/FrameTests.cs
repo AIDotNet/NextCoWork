@@ -98,3 +98,22 @@ public class FrameTests
         protected override void Dispose(bool disposing) { }
     }
 }
+
+public class LocalEndpointTests
+{
+    [Fact]
+    public void Long_data_roots_get_a_short_private_socket_path_and_both_sides_agree()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var deep = Path.Combine(Path.GetTempPath(), new string('x', 120));
+        var endpoint = Ncw.Protocol.Transport.LocalTransport.DefaultEndpoint(deep);
+
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(endpoint) <= 100);
+        Assert.Equal(endpoint, Ncw.Protocol.Transport.LocalTransport.DefaultEndpoint(deep));
+        Assert.NotEqual(endpoint, Ncw.Protocol.Transport.LocalTransport.DefaultEndpoint(deep + "y"));
+    }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ncw-agent 可执行文件(local / cloud 两种模式)。发布时 NativeAOT,零裁剪警告(AGENTS.md §5)。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ncw-agent</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And '$(Configuration)' == 'Release'">
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
+  </ItemGroup>
+</Project>
