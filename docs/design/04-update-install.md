@@ -95,6 +95,17 @@
 
 ### 接管步骤(启动页上显示进度,没有命令行入口)
 
+实现位置:`Ncw.Agent.Storage/Takeover/`(移植自 2.x 的 `main/migration/takeover.ts` 和 `db/takeover.ts`),
+由 `Ncw.Agent.Host/DataGate` 在 Agent 启动时自动执行;进度和结果通过协议的 `data` 主题推给控制端(09 §8.2),
+被挡住或失败时控制端调 `data.retry`。补充约定:
+
+- **每次启动**都检查 2.x 是否在用这份数据,不只是接管时(2.x 不认识所有权标记)。`SingletonLock` 同时查数据根和它的上一级
+  (2.x 的 Electron profile 根是 `~/.next-cowork`,锁落在那里;2.x 自己只查数据根会漏)。
+- 全新的数据根在建库时也写入所有权标记(`journal_id` 为空),以后不会被误当成 2.x 数据再接管。
+- 数据根里没有库、但扁平布局或 Electron 默认目录里有 2.x 的库时,不在 3.0 里重做 2.x 的搬家逻辑,
+  而是提示用户先用最新的 2.x 打开一次(`blocked/unsupported-layout`)。
+- 迁移版本号和 2.x 共用一个序列(1–37 是 2.x 的,38 起是 3.0 的),所以**桥接版 2.9 不能再新增数据库迁移**。
+
 1. **检查 2.x 是否在运行**:Chromium 的 `SingletonLock` 指向活进程,或者服务锁被占用时,界面提示「请先退出 NextCoWork 2.x」,
    并提供「帮我退出」按钮。不抢锁。
 2. **一致性备份**:`VACUUM INTO` 到备份目录,同时复制凭据主密钥和供应商文件;做完整性检查,逐表核对行数。

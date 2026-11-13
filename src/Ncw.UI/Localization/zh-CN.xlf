@@ -78,5 +78,23 @@
     <unit id="NoProjectsTitle"><segment><source>No projects yet</source><target state="translated">还没有项目</target></segment></unit>
     <unit id="NoProjectsHint"><segment><source>Add a folder on this computer to get started.</source><target state="translated">添加一个本机文件夹开始。</target></segment></unit>
     <unit id="AddFolder"><segment><source>Add folder</source><target state="translated">添加文件夹</target></segment></unit>
+    <unit id="DataPreparingTitle"><segment><source>Getting your data ready…</source><target state="translated">正在准备数据…</target></segment></unit>
+    <unit id="DataTakingOverTitle"><segment><source>Moving your NextCoWork 2.x data</source><target state="translated">正在迁移 NextCoWork 2.x 的数据</target></segment></unit>
+    <unit id="DataTakingOverHint"><segment><source>Your data stays on this computer and is used in place. A backup is made first.</source><target state="translated">数据留在这台电脑上原地使用,迁移前会先做一份备份。</target></segment></unit>
+    <unit id="DataStepBackingUp"><segment><source>Backing up your data. A long history can take a minute.</source><target state="translated">正在备份数据,历史较多时可能需要一分钟。</target></segment></unit>
+    <unit id="DataStepMigrating"><segment><source>Upgrading the database…</source><target state="translated">正在升级数据库…</target></segment></unit>
+    <unit id="DataStepCommitting"><segment><source>Finishing up…</source><target state="translated">即将完成…</target></segment></unit>
+    <unit id="DataBlockedTitle"><segment><source>Your data can&#x27;t be moved yet</source><target state="translated">暂时无法迁移数据</target></segment></unit>
+    <unit id="DataFailedTitle"><segment><source>Your data couldn&#x27;t be opened</source><target state="translated">无法打开数据</target></segment></unit>
+    <unit id="DataReasonLegacyAppRunning"><segment><source>NextCoWork 2.x is still running. Quit it, then try again.</source><target state="translated">NextCoWork 2.x 仍在运行。请先退出它,然后重试。</target></segment></unit>
+    <unit id="DataReasonLegacyServiceRunning"><segment><source>A NextCoWork 2.x device service is using this data. Stop it, then try again.</source><target state="translated">NextCoWork 2.x 的设备服务正在使用这份数据。请先停止它,然后重试。</target></segment></unit>
+    <unit id="DataReasonOwnerUnknown"><segment><source>Couldn&#x27;t tell whether NextCoWork 2.x is running. Make sure it&#x27;s closed, then try again.</source><target state="translated">无法确定 NextCoWork 2.x 是否在运行。请确认它已经退出,然后重试。</target></segment></unit>
+    <unit id="DataReasonUnsupportedLayout"><segment><source>Your 2.x data is stored the old way. Open the latest NextCoWork 2.x once, quit it, then try again.</source><target state="translated">你的 2.x 数据还是旧的存放方式。请先用最新版 NextCoWork 2.x 打开一次再退出,然后重试。</target></segment></unit>
+    <unit id="DataReasonNewerSchema"><segment><source>This data was saved by a newer version of NextCoWork. Update NextCoWork to open it.</source><target state="translated">这份数据来自更新版本的 NextCoWork,请先更新 NextCoWork。</target></segment></unit>
+    <unit id="DataReasonGeneric"><segment><source>Your existing data was left as it was. Try again; if it keeps failing, contact us.</source><target state="translated">现有数据已原样保留。请重试;如果仍然失败,请联系我们。</target></segment></unit>
+    <unit id="Retry"><segment><source>Try again</source><target state="translated">重试</target></segment></unit>
+    <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="translated">欢迎使用 NextCoWork 3.0</target></segment></unit>
+    <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="translated">已从 NextCoWork 2.x 迁移 {0} 个项目、{1} 个会话。</target></segment></unit>
+    <unit id="Continue"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>
   </file>
 </xliff>

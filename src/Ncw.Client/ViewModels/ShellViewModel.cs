@@ -24,6 +24,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Panel = new ProjectPanelViewModel(stores, Actions, Projects);
         Workspace = new WorkspaceViewModel(stores);
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System);
+        DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
         stores.Prefs.Changed += OnPrefsChanged;
     }
 
@@ -51,6 +52,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>右侧面板:默认文件管理器。</summary>
     public InspectorViewModel Inspector { get; }
+
+    /// <summary>启动时的数据页(接管 2.x 数据的进度、被挡住时的重试)。</summary>
+    public DataGateViewModel DataGate { get; }
 
     private UiPrefs Prefs => Stores.Prefs.State;
 

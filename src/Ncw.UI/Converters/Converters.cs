@@ -149,3 +149,73 @@ public sealed class TextFormatConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>接管页的标题(按 <see cref="DataGateMode"/>)。</summary>
+public sealed class DataGateTitleConverter : IValueConverter
+{
+    public static readonly DataGateTitleConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        DataGateMode.Preparing => NcwTexts.Get(NcwTextKind.DataPreparingTitle),
+        DataGateMode.TakingOver => NcwTexts.Get(NcwTextKind.DataTakingOverTitle),
+        DataGateMode.Blocked => NcwTexts.Get(NcwTextKind.DataBlockedTitle),
+        DataGateMode.Failed => NcwTexts.Get(NcwTextKind.DataFailedTitle),
+        DataGateMode.Completed => NcwTexts.Get(NcwTextKind.DataDoneTitle),
+        _ => null,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>接管步骤(<see cref="Ncw.Protocol.Methods.DataSteps"/>)的说明。</summary>
+public sealed class DataStepConverter : IValueConverter
+{
+    public static readonly DataStepConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        Ncw.Protocol.Methods.DataSteps.BackingUp => NcwTexts.Get(NcwTextKind.DataStepBackingUp),
+        Ncw.Protocol.Methods.DataSteps.Migrating => NcwTexts.Get(NcwTextKind.DataStepMigrating),
+        Ncw.Protocol.Methods.DataSteps.Committing => NcwTexts.Get(NcwTextKind.DataStepCommitting),
+        _ => NcwTexts.Get(NcwTextKind.DataTakingOverHint),
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>被挡住或失败的原因(<see cref="Ncw.Protocol.Methods.DataReasons"/>)的说明。</summary>
+public sealed class DataReasonConverter : IValueConverter
+{
+    public static readonly DataReasonConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        Ncw.Protocol.Methods.DataReasons.LegacyAppRunning => NcwTexts.Get(NcwTextKind.DataReasonLegacyAppRunning),
+        Ncw.Protocol.Methods.DataReasons.LegacyServiceRunning => NcwTexts.Get(NcwTextKind.DataReasonLegacyServiceRunning),
+        Ncw.Protocol.Methods.DataReasons.OwnerUnknown => NcwTexts.Get(NcwTextKind.DataReasonOwnerUnknown),
+        Ncw.Protocol.Methods.DataReasons.UnsupportedLayout => NcwTexts.Get(NcwTextKind.DataReasonUnsupportedLayout),
+        Ncw.Protocol.Methods.DataReasons.NewerSchema => NcwTexts.Get(NcwTextKind.DataReasonNewerSchema),
+        null => null,
+        _ => NcwTexts.Get(NcwTextKind.DataReasonGeneric),
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>接管完成的摘要:「已从 2.x 迁移 N 个项目、M 个会话」。</summary>
+public sealed class TakeoverSummaryConverter : IValueConverter
+{
+    public static readonly TakeoverSummaryConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is Ncw.Protocol.Methods.TakeoverSummary summary
+            ? NcwTexts.Format(NcwTextKind.DataDoneDetail, summary.Projects, summary.Sessions)
+            : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

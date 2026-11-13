@@ -5,7 +5,11 @@ using Microsoft.Data.Sqlite;
 namespace Ncw.Agent.Storage;
 
 /// <summary>存储层的失败(数据库比本程序新、迁移失败等)。</summary>
-public sealed class StorageException(string message, Exception? inner = null) : Exception(message, inner);
+public sealed class StorageException(string message, Exception? inner = null, bool newerSchema = false) : Exception(message, inner)
+{
+    /// <summary>数据库比本程序新(例如回退了版本):不认识的结构不能碰。</summary>
+    public bool NewerSchema { get; } = newerSchema;
+}
 
 /// <summary>一条迁移。版本号与 2.x 共用一个序列:1–37 是 2.x 的,38 起是 3.0 的。</summary>
 public sealed record Migration(int Version, string Name, string Sql);
@@ -67,6 +71,15 @@ public sealed partial class AgentDatabase : IDisposable
 
     public int UserVersion() => Convert.ToInt32(Scalar(Connection, "PRAGMA user_version"));
 
+    /// <summary>会话总数(接管摘要用)。</summary>
+    public long SessionCount()
+    {
+        lock (Gate)
+        {
+            return Convert.ToInt64(Scalar(Connection, "SELECT COUNT(*) FROM sessions"));
+        }
+    }
+
     public void Dispose()
     {
         lock (Gate)
@@ -108,7 +121,7 @@ public sealed partial class AgentDatabase : IDisposable
         if (applied.Count > 0 && applied.Max() > LatestVersion)
         {
             throw new StorageException(
-                $"The database is at schema v{applied.Max()}, newer than this agent understands (v{LatestVersion}).");
+                $"The database is at schema v{applied.Max()}, newer than this agent understands (v{LatestVersion}).", newerSchema: true);
         }
 
         foreach (var migration in Migrations)

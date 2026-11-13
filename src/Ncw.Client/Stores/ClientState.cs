@@ -18,12 +18,14 @@ public sealed record ProjectInfo(
 public sealed record ProjectAppearance(string? Glyph, string Color);
 
 /// <summary>控制端看到的一台设备。</summary>
+/// <param name="Data">设备数据状态(<c>data</c> 主题的镜像);没连上时为 null(未知)。</param>
 public sealed record DeviceInfo(
     string DeviceId,
     string Name,
     DeviceKind Kind,
     DeviceConnection Connection,
-    ActiveRunIndex? Index);
+    ActiveRunIndex? Index,
+    Ncw.Protocol.Methods.DataStatus? Data = null);
 
 /// <summary>会话列表里的一行(完整会话由 session/&lt;id&gt; 主题提供)。</summary>
 public sealed record SessionSummary(string Id, ProjectRef Project, string Title, DateTimeOffset UpdatedAt);

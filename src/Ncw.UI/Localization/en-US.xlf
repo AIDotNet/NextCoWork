@@ -78,5 +78,23 @@
     <unit id="NoProjectsTitle"><segment><source>No projects yet</source><target state="final">No projects yet</target></segment></unit>
     <unit id="NoProjectsHint"><segment><source>Add a folder on this computer to get started.</source><target state="final">Add a folder on this computer to get started.</target></segment></unit>
     <unit id="AddFolder"><segment><source>Add folder</source><target state="final">Add folder</target></segment></unit>
+    <unit id="DataPreparingTitle"><segment><source>Getting your data ready…</source><target state="final">Getting your data ready…</target></segment></unit>
+    <unit id="DataTakingOverTitle"><segment><source>Moving your NextCoWork 2.x data</source><target state="final">Moving your NextCoWork 2.x data</target></segment></unit>
+    <unit id="DataTakingOverHint"><segment><source>Your data stays on this computer and is used in place. A backup is made first.</source><target state="final">Your data stays on this computer and is used in place. A backup is made first.</target></segment></unit>
+    <unit id="DataStepBackingUp"><segment><source>Backing up your data. A long history can take a minute.</source><target state="final">Backing up your data. A long history can take a minute.</target></segment></unit>
+    <unit id="DataStepMigrating"><segment><source>Upgrading the database…</source><target state="final">Upgrading the database…</target></segment></unit>
+    <unit id="DataStepCommitting"><segment><source>Finishing up…</source><target state="final">Finishing up…</target></segment></unit>
+    <unit id="DataBlockedTitle"><segment><source>Your data can&#x27;t be moved yet</source><target state="final">Your data can&#x27;t be moved yet</target></segment></unit>
+    <unit id="DataFailedTitle"><segment><source>Your data couldn&#x27;t be opened</source><target state="final">Your data couldn&#x27;t be opened</target></segment></unit>
+    <unit id="DataReasonLegacyAppRunning"><segment><source>NextCoWork 2.x is still running. Quit it, then try again.</source><target state="final">NextCoWork 2.x is still running. Quit it, then try again.</target></segment></unit>
+    <unit id="DataReasonLegacyServiceRunning"><segment><source>A NextCoWork 2.x device service is using this data. Stop it, then try again.</source><target state="final">A NextCoWork 2.x device service is using this data. Stop it, then try again.</target></segment></unit>
+    <unit id="DataReasonOwnerUnknown"><segment><source>Couldn&#x27;t tell whether NextCoWork 2.x is running. Make sure it&#x27;s closed, then try again.</source><target state="final">Couldn&#x27;t tell whether NextCoWork 2.x is running. Make sure it&#x27;s closed, then try again.</target></segment></unit>
+    <unit id="DataReasonUnsupportedLayout"><segment><source>Your 2.x data is stored the old way. Open the latest NextCoWork 2.x once, quit it, then try again.</source><target state="final">Your 2.x data is stored the old way. Open the latest NextCoWork 2.x once, quit it, then try again.</target></segment></unit>
+    <unit id="DataReasonNewerSchema"><segment><source>This data was saved by a newer version of NextCoWork. Update NextCoWork to open it.</source><target state="final">This data was saved by a newer version of NextCoWork. Update NextCoWork to open it.</target></segment></unit>
+    <unit id="DataReasonGeneric"><segment><source>Your existing data was left as it was. Try again; if it keeps failing, contact us.</source><target state="final">Your existing data was left as it was. Try again; if it keeps failing, contact us.</target></segment></unit>
+    <unit id="Retry"><segment><source>Try again</source><target state="final">Try again</target></segment></unit>
+    <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="final">Welcome to NextCoWork 3.0</target></segment></unit>
+    <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="final">Moved {0} projects and {1} sessions from NextCoWork 2.x.</target></segment></unit>
+    <unit id="Continue"><segment><source>Continue</source><target state="final">Continue</target></segment></unit>
   </file>
 </xliff>

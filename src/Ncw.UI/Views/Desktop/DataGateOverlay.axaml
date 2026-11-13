@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.DataGateOverlay"
+             x:DataType="vm:DataGateViewModel"
+             IsVisible="{Binding IsVisible}">
+  <!--
+    启动时的数据页(docs/design/04 §4、07 §1):本机数据没就绪时盖住整个窗口。
+    接管中显示步骤,被挡住 / 失败时显示原因和「重试」,刚接管完显示迁移摘要和「继续」。
+  -->
+  <UserControl.Styles>
+    <Style Selector="lucide|LucideIcon.spin">
+      <Setter Property="RenderTransform" Value="rotate(0deg)" />
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="Infinite">
+          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="TextBlock.detail">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 整窗遮住;顶部 40px 仍留给拖动窗口(MainWindow 处理没被控件吃掉的按下) -->
+  <Border Background="{arc:ArcDesignTokenResource Background}">
+    <StackPanel Width="420" MaxWidth="420" Margin="24" Spacing="12"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+      <Panel Height="36" HorizontalAlignment="Center">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="28" IsVisible="{Binding IsBusy}"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <lucide:LucideIcon Kind="TriangleAlert" Size="28" IsVisible="{Binding CanRetry}"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <lucide:LucideIcon Kind="CircleCheckBig" Size="28" IsVisible="{Binding IsCompleted}"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      </Panel>
+
+      <TextBlock x:Name="Title" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"
+                 Text="{Binding Mode, Converter={x:Static cv:DataGateTitleConverter.Instance}}" />
+
+      <TextBlock Classes="detail" IsVisible="{Binding IsBusy}"
+                 Text="{Binding Step, Converter={x:Static cv:DataStepConverter.Instance}}" />
+      <TextBlock Classes="detail" IsVisible="{Binding CanRetry}"
+                 Text="{Binding Reason, Converter={x:Static cv:DataReasonConverter.Instance}}" />
+      <TextBlock Classes="detail" IsVisible="{Binding IsCompleted}"
+                 Text="{Binding Summary, Converter={x:Static cv:TakeoverSummaryConverter.Instance}}" />
+
+      <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Margin="0,6,0,0"
+                    IsVisible="{Binding CanRetry}" IsEnabled="{Binding !IsRetrying}"
+                    Command="{Binding RetryCommand}" Content="{l:NcwText Retry}" />
+      <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Margin="0,6,0,0"
+                    IsVisible="{Binding IsCompleted}"
+                    Command="{Binding ContinueCommand}" Content="{l:NcwText Continue}" />
+    </StackPanel>
+  </Border>
+</UserControl>

@@ -159,6 +159,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `session/<id>` | 已提交的消息、排队消息、标题、目标状态 | 会话元数据 + 最近一页消息 |
 | `run/<id>` | Agent 事件(见 [08.02 §3](08-agent-runtime/02-loop.md#3-事件流)),自动包含后代 Run | Run 状态 + 挂起交互 + 子 Run + 日志 |
 | `interactions` | 本设备所有挂起的交互 | 全部挂起交互 |
+| `data` | 设备数据状态:`preparing` / `taking-over`(带步骤)/ `ready` / `blocked` / `failed`(带原因),刚完成 2.x 接管时附摘要 | 当前状态;事件 `data.changed` 用同一个类型(见 [04 §4](04-update-install.md#4-数据接管直接接管-2x-数据)) |
 | `terminal/<id>` | 终端输出(二进制) | 最近的滚动缓冲 |
 
 - 同一主题内严格按 `seq` 有序;不同主题之间不保证顺序。
@@ -185,6 +186,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `catalog` / `providers` | `catalog.query`、`catalog.refresh`、`providers.list/upsert` |
 | `extensions` | `skills.*`、`mcp.*`、`plugins.*`、`hooks.*` |
 | `settings` / `diagnostics` | `settings.get/set`、`diagnostics.logs`(stream)、`diagnostics.bundle` |
+| `data` | `data.status`(query,viewer)、`data.retry`(command,owner,仅本机通道)。数据没就绪时,依赖数据的方法返回 `unavailable`(可重试) |
 | `account` / `push` | `account.attachDelegatedToken`(仅本机通道)、`push.register` |
 
 每个方法在 `Ncw.Protocol` 里声明:种类、参数和结果类型、所需角色、所需能力、允许的承载
