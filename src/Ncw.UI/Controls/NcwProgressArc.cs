@@ -23,7 +23,9 @@ public sealed class NcwProgressArc : Control
     public static readonly StyledProperty<double> ThicknessProperty = AvaloniaProperty.Register<NcwProgressArc, double>(nameof(Thickness), 3);
 
     private MotionValue<double>? _motion;
+    private MotionValue<double>? _sweepMotion;
     private double _display;
+    private double _sweep = 1;
     private bool _finishing;
 
     static NcwProgressArc()
@@ -65,11 +67,102 @@ public sealed class NcwProgressArc : Control
     /// <summary>弧长动画正在进行(测试与诊断用)。</summary>
     public bool IsMoving => _motion is { IsAnimating: true };
 
+    /// <summary>
+    /// 入场时轨道「画出来」的比例 0–1(平时是 1)。轨道从十二点钟方向顺时针被画出来;进度弧不会跑在轨道前面(取两者较小的),所以入场时是轨道和已有的进度一起被画出来。
+    /// 测试断言入场的中间帧用它。
+    /// </summary>
+    public double TrackSweep => _sweep;
+
+    /// <summary>入场的扫画还在进行(测试与诊断用)。</summary>
+    public bool IsSweeping => _sweepMotion is { IsAnimating: true };
+
+    /// <summary>
+    /// 播放入场:轨道从十二点钟方向顺时针被画出来(Arc 的 <c>Considered</c> 时长 + 进入缓动,<paramref name="delay"/> 用于和其他部分编排)。
+    /// 只有完整级别才画;减弱 / 关闭级别直接就位(减弱级别由外层的短淡入负责出现)。已经在进行的会从头来。
+    /// </summary>
+    public void PlayEntrance(TimeSpan delay = default)
+    {
+        if (!this.IsAttachedToVisualTree() || NcwMotion.EffectiveLevel(this) != TKCode.Arc.Motion.ArcMotionLevel.Full)
+        {
+            ReleaseSweep();
+            SetSweep(1);
+            return;
+        }
+
+        if (_sweepMotion is null)
+        {
+            _sweepMotion = new MotionValue<double>(this, 1, MotionVectors.Double);
+            _sweepMotion.Changed += OnSweepStep;
+        }
+
+        _finishing = true;
+        try
+        {
+            _sweepMotion.Jump(0);
+        }
+        finally
+        {
+            _finishing = false;
+        }
+
+        SetSweep(0);
+        _sweepMotion.AnimateTo(1, NcwMotion.EnterSpec(NcwMotionTier.Slow, delay));
+    }
+
+    private void OnSweepStep(double value)
+    {
+        if (_finishing)
+        {
+            return;
+        }
+
+        if (value >= 0.9995)
+        {
+            _finishing = true;
+            try
+            {
+                _sweepMotion?.Jump(1);
+            }
+            finally
+            {
+                _finishing = false;
+            }
+
+            SetSweep(1);
+            return;
+        }
+
+        SetSweep(Math.Clamp(value, 0, 1));
+    }
+
+    private void SetSweep(double value)
+    {
+        if (Math.Abs(value - _sweep) < double.Epsilon)
+        {
+            return;
+        }
+
+        _sweep = value;
+        InvalidateVisual();
+    }
+
+    private void ReleaseSweep()
+    {
+        if (_sweepMotion is { } motion)
+        {
+            _sweepMotion = null;
+            motion.Changed -= OnSweepStep;
+            motion.Dispose();
+        }
+    }
+
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         // 离开界面树:落到目标并释放运动值(不留订阅、不再请求帧)
         Release();
+        ReleaseSweep();
+        SetSweep(1);
         SetDisplay(Math.Clamp(Progress, 0, 1));
     }
 
@@ -154,22 +247,32 @@ public sealed class NcwProgressArc : Control
         var center = new Point(Bounds.Width / 2, Bounds.Height / 2);
         if (TrackStroke is { } track)
         {
-            context.DrawEllipse(null, new Pen(track, thickness), center, radius, radius);
+            DrawArc(context, new Pen(track, thickness, lineCap: PenLineCap.Round), center, radius, _sweep);
         }
 
-        if (Stroke is not { } stroke || _display < 0.0005)
+        var shown = Math.Min(_display, _sweep);   // 入场时进度弧不会跑在轨道前面
+        if (Stroke is not { } stroke || shown < 0.0005)
         {
             return;
         }
 
-        var pen = new Pen(stroke, thickness, lineCap: PenLineCap.Round);
-        if (_display >= 0.9995)
+        DrawArc(context, new Pen(stroke, thickness, lineCap: PenLineCap.Round), center, radius, shown);
+    }
+
+    private static void DrawArc(DrawingContext context, Pen pen, Point center, double radius, double fraction)
+    {
+        if (fraction < 0.0005)
+        {
+            return;
+        }
+
+        if (fraction >= 0.9995)
         {
             context.DrawEllipse(null, pen, center, radius, radius);
             return;
         }
 
-        var sweep = _display * 2 * Math.PI;
+        var sweep = fraction * 2 * Math.PI;
         var start = new Point(center.X, center.Y - radius);   // 十二点钟方向
         var end = new Point(center.X + radius * Math.Sin(sweep), center.Y - radius * Math.Cos(sweep));
         var geometry = new StreamGeometry();

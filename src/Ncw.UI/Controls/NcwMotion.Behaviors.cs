@@ -24,6 +24,12 @@ public enum NcwArrival
 
     /// <summary>从右边缘滑入 + 淡入:右侧检查器。</summary>
     SlideFromRight,
+
+    /// <summary>
+    /// 从略小的尺寸放大到原大小 + 淡入(只动 RenderTransform 的缩放,以中心为原点;起始比例 <see cref="NcwMotion.GrowFrom"/>):启动加载界面的标识、「阶段完成」的勾。
+    /// 减弱级别下退化成只淡入。
+    /// </summary>
+    Grow,
 }
 
 /// <summary>「忙」指示的种类(运行中图标 / 圆点)。</summary>
@@ -46,6 +52,12 @@ public static partial class NcwMotion
 
     /// <summary>呼吸圆点的最大缩放。</summary>
     public const double BreatheScale = 1.25;
+
+    /// <summary>
+    /// <see cref="NcwArrival.Grow"/> 的起始比例。和 <see cref="RiseOffset"/> 一样是本封装自己的取值(Arc 没有公开对应的 token):只用于标识 / 勾这种小而醒目的元素,
+    /// 幅度小到不抢眼,够让「长出来」被感知到。
+    /// </summary>
+    public const double GrowFrom = 0.84;
 
     // ───────────────────────── 出现 / 消失(带退出) ─────────────────────────
 
@@ -137,8 +149,11 @@ public static partial class NcwMotion
     /// <summary>
     /// 立即播放一次进入动画(淡入,或淡入 + 上移)。用于「刚到的」元素:对话里新追加的行、新出现的卡片。
     /// 关闭级别下什么都不做;再次调用会打断上一次并从头来;元素的原有透明度 / 变换在动画结束时恢复。
+    /// <paramref name="delay"/> 是编排错峰用的延迟(元素在延迟期间保持在起始状态:透明);<paramref name="tier"/> 是进入的时长档位。
+    /// 这两个只在完整级别生效:减弱级别永远是没有延迟的短淡入(<see cref="NcwMotionTier.Fast"/>),关闭级别立即就位。
     /// </summary>
-    public static void Arrive(Control element, NcwArrival kind = NcwArrival.Rise, bool continueFromCurrent = false) => Enter(element, kind, continueFromCurrent);
+    public static void Arrive(Control element, NcwArrival kind = NcwArrival.Rise, bool continueFromCurrent = false, TimeSpan delay = default, NcwMotionTier tier = NcwMotionTier.Base) =>
+        Enter(element, kind, continueFromCurrent, delay, tier);
 
     /// <summary>
     /// 播放退出动画(淡出,带位移的种类同时反向位移),结束时调用 <paramref name="completed"/>——由调用方在那里把元素隐藏 / 恢复布局。
@@ -166,7 +181,7 @@ public static partial class NcwMotion
         state.Run(0, exit: true);
     }
 
-    private static void Enter(Control element, NcwArrival kind, bool continueFromCurrent)
+    private static void Enter(Control element, NcwArrival kind, bool continueFromCurrent, TimeSpan delay = default, NcwMotionTier tier = NcwMotionTier.Base)
     {
         if (kind == NcwArrival.None || NcwMotion.EffectiveLevel(element) == ArcMotionLevel.Off)
         {
@@ -187,6 +202,8 @@ public static partial class NcwMotion
         state.Kind = kind;
         state.HideAtZero = false;
         state.OnHidden = null;
+        state.Delay = delay;
+        state.Tier = tier;
         state.Run(1);
     }
 
@@ -241,6 +258,7 @@ public static partial class NcwMotion
         private readonly double _restOpacity;
         private readonly ITransform? _restTransform;
         private readonly TranslateTransform _translate = new();
+        private readonly ScaleTransform _scale = new();
         private MotionValue<double>? _p;
         private bool _finishing;
 
@@ -256,6 +274,12 @@ public static partial class NcwMotion
         public NcwArrival Kind { get; set; } = NcwArrival.Rise;
 
         public bool HideAtZero { get; set; }
+
+        /// <summary>进入前的延迟(编排错峰;只在完整级别生效)。</summary>
+        public TimeSpan Delay { get; set; }
+
+        /// <summary>进入的时长档位(只在完整级别生效;减弱级别固定用 Fast)。</summary>
+        public NcwMotionTier Tier { get; set; } = NcwMotionTier.Base;
 
         /// <summary>退出到 0 时的回调(调用方在这里隐藏元素)。</summary>
         public Action? OnHidden { get; set; }
@@ -282,7 +306,9 @@ public static partial class NcwMotion
             }
 
             var level = NcwMotion.EffectiveLevel(_owner);
-            _p.AnimateTo(target, exit ? NcwMotion.ExitSpec : NcwMotion.EnterSpec(level == ArcMotionLevel.Reduced ? NcwMotionTier.Fast : NcwMotionTier.Base));
+            _p.AnimateTo(target, exit
+                ? NcwMotion.ExitSpec
+                : NcwMotion.EnterSpec(level == ArcMotionLevel.Full ? Tier : NcwMotionTier.Fast, level == ArcMotionLevel.Full ? Delay : TimeSpan.Zero));
         }
 
         private void OnStep(double value)
@@ -333,9 +359,16 @@ public static partial class NcwMotion
                 return;
             }
 
-            // 位移只动 RenderTransform(合成层,不触发布局)
+            // 位移 / 缩放只动 RenderTransform(合成层,不触发布局)
+            ITransform transform = _translate;
             switch (Kind)
             {
+                case NcwArrival.Grow:
+                    var scale = NcwMotion.GrowFrom + (1 - NcwMotion.GrowFrom) * p;
+                    _scale.ScaleX = scale;
+                    _scale.ScaleY = scale;
+                    transform = _scale;
+                    break;
                 case NcwArrival.Rise:
                     _translate.X = 0;
                     _translate.Y = (1 - p) * NcwMotion.RiseOffset;
@@ -350,16 +383,16 @@ public static partial class NcwMotion
                     break;
             }
 
-            if (!ReferenceEquals(_owner.RenderTransform, _translate))
+            if (!ReferenceEquals(_owner.RenderTransform, transform))
             {
-                _owner.SetCurrentValue(Visual.RenderTransformProperty, _translate);
+                _owner.SetCurrentValue(Visual.RenderTransformProperty, transform);
             }
         }
 
         private void Restore()
         {
             _owner.SetCurrentValue(Visual.OpacityProperty, _restOpacity);
-            if (ReferenceEquals(_owner.RenderTransform, _translate))
+            if (ReferenceEquals(_owner.RenderTransform, _translate) || ReferenceEquals(_owner.RenderTransform, _scale))
             {
                 _owner.SetCurrentValue(Visual.RenderTransformProperty, _restTransform);
             }

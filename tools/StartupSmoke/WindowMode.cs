@@ -182,7 +182,8 @@ internal sealed class SmokeApp : NcwApp
             window.RequestAnimationFrame(Frame);
 
             // 盯着 ViewModel 的几个时刻
-            double? contentAt = null, revealAt = null, releasedAt = null, awaitingAt = null;
+            double? contentAt = null, revealAt = null, releasedAt = null, awaitingAt = null, entranceDoneAt = null;
+            var shotEntrance = false;
             var shot2 = false;
             var shot3 = false;
             var shotReveal = false;
@@ -203,6 +204,18 @@ internal sealed class SmokeApp : NcwApp
                 {
                     contentAt = Now;
                     Note("content visible");
+                }
+
+                if (contentAt is not null && entranceDoneAt is null && overlay is { IsEntering: false } && Now - contentAt > 100)
+                {
+                    entranceDoneAt = Now;
+                    Note("entrance finished");
+                }
+
+                if (!shotEntrance && contentAt is not null && Now - contentAt > 110)
+                {
+                    shotEntrance = true;
+                    Capture("02a-entrance-mid");
                 }
 
                 if (!shot2 && s.IsContentVisible && Now - (contentAt ?? Now) > 120)
@@ -274,6 +287,13 @@ internal sealed class SmokeApp : NcwApp
             double[] Gaps(double from, double to) => _frames.Where(f => f.T >= from && f.T <= to).Select(f => f.Gap).Order().ToArray();
             string Describe(double[] g) => g.Length == 0 ? "no frames" : $"frames={g.Length} median={g[g.Length / 2]:F1} p95={g[(int)(g.Length * 0.95)]:F1} max={g[^1]:F1} ms, gaps over 33 ms={g.Count(x => x > 33)}";
             Console.WriteLine($"SMOKE note frames while loading ({openedAt:F0}..{revealAt - 1:F0}): {Describe(Gaps(openedAt, (revealAt ?? Now) - 1))}");
+            if (contentAt is not null)
+            {
+                var entrance = Gaps(contentAt.Value, (entranceDoneAt ?? contentAt.Value + 700));
+                Console.WriteLine($"SMOKE note frames during the entrance ({contentAt:F0}..{entranceDoneAt?.ToString("F0") ?? "?"}): {Describe(entrance)}");
+                Report("window.entrance", entranceDoneAt is not null && entrance.Length >= 5, $"entrance ran {(entranceDoneAt - contentAt):F0} ms (script length is 640 ms at the full level; polled every 8 ms); {Describe(entrance)}");
+            }
+
             if (revealAt is not null && releasedAt is not null)
             {
                 var fade = Gaps(revealAt.Value, releasedAt.Value + 50);

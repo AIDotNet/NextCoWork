@@ -62,8 +62,14 @@ public static partial class NcwMotion
     /// </summary>
     public static MotionSpec ExpandSpec => MotionSpec.Spring(ExpandSpring, TimeSpan.Zero);
 
-    /// <summary>进入的淡入(档位时长 + 进入缓动)。</summary>
-    public static MotionSpec EnterSpec(NcwMotionTier tier = NcwMotionTier.Base) => MotionSpec.Tween(Duration(tier), EnterEasing, TimeSpan.Zero);
+    /// <summary>进入的淡入(档位时长 + 进入缓动)。<paramref name="delay"/> 用于编排错峰(Arc 的 <c>Stagger*</c> token,见 <see cref="StaggerItem"/> / <see cref="StaggerLine"/>)。</summary>
+    public static MotionSpec EnterSpec(NcwMotionTier tier = NcwMotionTier.Base, TimeSpan delay = default) => MotionSpec.Tween(Duration(tier), EnterEasing, delay);
+
+    /// <summary>列表里相邻两项进入的错峰间隔(Arc <c>StaggerItem</c>,35 ms)。</summary>
+    public static TimeSpan StaggerItem => ArcMotionPresets.StaggerItem;
+
+    /// <summary>相邻两「行 / 块」进入的错峰间隔(Arc <c>StaggerLine</c>,80 ms)。</summary>
+    public static TimeSpan StaggerLine => ArcMotionPresets.StaggerLine;
 
     /// <summary>退出的淡出(退出时长 + 退出缓动)。</summary>
     public static MotionSpec ExitSpec => MotionSpec.Tween(ExitDuration, ExitEasing, TimeSpan.Zero);

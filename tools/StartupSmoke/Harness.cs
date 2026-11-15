@@ -134,23 +134,28 @@ internal sealed class Harness : IAsyncDisposable
             // 视图的一次性 UI 定时器:ViewModel 给出下一次需要重算的时刻,到点调 Tick(这里没有视图,所以由 Harness 代做,行为和 StartupOverlay 一致)
             h.Shell.Startup.PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(StartupViewModel.NextWake) && h.Shell.Startup.UntilWake is { } until)
+                if (e.PropertyName == nameof(StartupViewModel.NextWake))
                 {
-                    _ = Task.Delay(until).ContinueWith(_ => h.Ui.Post(() => h.Shell.Startup.Tick()), TaskScheduler.Default);
+                    h.ArmWake();
                 }
             };
-            Arm();   // 构造时给出的第一个 NextWake(延迟出现)在订阅之前就发出了,和 StartupOverlay.Attach 一样先武装一次
+            h.ArmWake();   // 构造时给出的第一个 NextWake(延迟出现)在订阅之前就发出了,和 StartupOverlay.Attach 一样先武装一次
             h.Backend.Start(h.Stores, h.Devices, h.Ui, DefaultClientText.Instance);
-
-            void Arm()
-            {
-                if (h.Shell.Startup.UntilWake is { } until)
-                {
-                    _ = Task.Delay(until).ContinueWith(_ => h.Ui.Post(() => h.Shell.Startup.Tick()), TaskScheduler.Default);
-                }
-            }
         });
         return h;
+    }
+
+    /// <summary>和 <c>StartupOverlay</c> 的一次性定时器一样:到点调 Tick,调完再武装一次(定时器可能早几毫秒响)。</summary>
+    private void ArmWake()
+    {
+        if (Shell.Startup.UntilWake is { } until)
+        {
+            _ = Task.Delay(until + TimeSpan.FromMilliseconds(1)).ContinueWith(_ => Ui.Post(() =>
+            {
+                Shell.Startup.Tick();
+                ArmWake();
+            }), TaskScheduler.Default);
+        }
     }
 
     private string? _lastDetail;

@@ -404,6 +404,65 @@ public class MotionTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void Arrive_with_a_delay_waits_transparent_at_the_start_then_runs_the_tier_duration_and_ends_at_rest()
+    {
+        var box = new Border { Width = 100, Height = 40 };
+        Show(new StackPanel { Children = { box } });
+
+        NcwMotion.Arrive(box, NcwArrival.Rise, delay: NcwMotion.StaggerLine * 2, tier: NcwMotionTier.Slow);   // 160 ms 延迟,480 ms 时长
+
+        Assert.Equal(0, box.Opacity);                                // 延迟期间就在起点(透明),不会先闪一下完整的样子
+        Advance(128);
+        Assert.Equal(0, box.Opacity);                                // 还没到延迟
+        Advance(96);                                                 // 约 224 ms:动画跑了约 64 ms
+        Assert.InRange(box.Opacity, 0.01, 0.95);                     // 进入缓动(EaseEnter)是减速曲线,起步很快
+        Advance(200);                                                // 约 424 ms:跑了约 264 ms,过半
+        Assert.InRange(box.Opacity, 0.5, 1);
+        Advance(700);
+        Assert.Equal(1, box.Opacity);
+        Assert.Null(box.RenderTransform);
+        Assert.False(NcwMotion.IsArriving(box));
+    }
+
+    [AvaloniaFact]
+    public void Grow_scales_from_the_start_ratio_to_one_around_the_center_and_leaves_no_transform_behind()
+    {
+        var box = new Border { Width = 100, Height = 40 };
+        Show(new StackPanel { Children = { box } });
+
+        NcwMotion.Arrive(box, NcwArrival.Grow);
+        var start = Assert.IsType<ScaleTransform>(box.RenderTransform);
+        Assert.Equal(NcwMotion.GrowFrom, start.ScaleX, 6);           // 起点:略小,透明
+        Assert.Equal(0, box.Opacity);
+
+        Advance(80);
+        var mid = Assert.IsType<ScaleTransform>(box.RenderTransform);
+        Assert.InRange(mid.ScaleX, NcwMotion.GrowFrom + 0.005, 0.999);
+        Assert.Equal(mid.ScaleX, mid.ScaleY);                        // 等比
+        Assert.InRange(box.Opacity, 0.01, 0.99);
+
+        Advance(500);
+        Assert.Null(box.RenderTransform);                            // 恢复
+        Assert.Equal(1, box.Opacity);
+    }
+
+    [AvaloniaFact]
+    public void At_the_reduced_level_the_delay_and_the_tier_are_ignored_and_grow_is_only_a_short_fade()
+    {
+        var box = new Border { Width = 100, Height = 40 };
+        Show(new StackPanel { Children = { box } });
+        NcwMotion.Apply(UiMotionLevel.Reduced);
+
+        NcwMotion.Arrive(box, NcwArrival.Grow, delay: TimeSpan.FromSeconds(1), tier: NcwMotionTier.Slow);
+        Advance(48);
+
+        Assert.InRange(box.Opacity, 0.01, 0.99);                     // 没有 1 秒延迟
+        Assert.Null(box.RenderTransform);                            // 没有缩放
+        Advance(200);                                                // Fast = 160 ms,不是 Slow = 480 ms
+        Assert.Equal(1, box.Opacity);
+    }
+
+    [AvaloniaFact]
     public void Restarting_an_arrival_mid_flight_and_resting_a_recycled_container_leave_no_residue()
     {
         var box = new Border { Width = 100, Height = 40 };

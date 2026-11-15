@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using Ncw.Client.Devices;
 using Ncw.Client.Services;
@@ -572,6 +573,254 @@ public class StartupOverlayTests : IDisposable
         Assert.Null(rig.Overlay);
         Assert.Equal(before, shell.Bounds);               // 释放之后也没有跳动
         Snapshot(rig.Window, "revealed", width, dark, "-matrix");
+    }
+
+    // ───────────────────────── 入场编排(docs/design/03 §10.4) ─────────────────────────
+
+    private static Control Part(StartupOverlay overlay, string name) => overlay.FindControl<Control>(name)!;
+
+    private static List<Panel> RowShells(StartupOverlay overlay) =>
+        overlay.GetVisualDescendants().OfType<Panel>().Where(p => p.Classes.Contains("rowShell")).ToList();
+
+    private static Rig ShownAt(UiMotionLevel level, double width = 1200, bool dark = true)
+    {
+        var rig = new Rig(width, dark, level);
+        return rig;
+    }
+
+    [AvaloniaFact]
+    public void The_entrance_script_is_built_from_arc_tokens_only_and_runs_top_to_bottom()
+    {
+        var rig = ShownAt(UiMotionLevel.Full);
+        Frames(64);
+        rig.Wait(300);                                    // 内容出现:入场开始
+        var steps = rig.Overlay!.LastEntrance;
+
+        Assert.Equal(TimeSpan.FromMilliseconds(80), NcwMotion.StaggerLine);   // 就是 Arc 的 token,不是这里的数字
+        Assert.Equal(TimeSpan.FromMilliseconds(35), NcwMotion.StaggerItem);
+        Assert.Equal(TimeSpan.FromMilliseconds(480), NcwMotion.Duration(NcwMotionTier.Slow));
+
+        var mark = steps[0];
+        Assert.Equal((NcwArrival.Grow, TimeSpan.Zero, NcwMotionTier.Slow), (mark.Kind, mark.Delay, mark.Tier));
+        Assert.Same(Part(rig.Overlay, "Mark"), mark.Part);
+
+        var title = steps[1];
+        Assert.Equal((NcwArrival.Rise, NcwMotion.StaggerLine), (title.Kind, title.Delay));
+        Assert.Same(Part(rig.Overlay, "Title"), title.Part);
+
+        var rows = steps.Where(x => x.Part.Classes.Contains("rowShell")).ToList();
+        Assert.Equal(5, rows.Count);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            Assert.Equal(NcwMotion.StaggerLine * 2 + NcwMotion.StaggerItem * i, rows[i].Delay);   // 一行一行错峰往下
+            Assert.Equal(NcwArrival.Rise, rows[i].Kind);
+        }
+
+        Assert.Same(RowShells(rig.Overlay)[0], rows[0].Part);   // 顺序就是清单从上到下
+
+        var detail = steps.Single(x => ReferenceEquals(x.Part, Part(rig.Overlay, "DetailStack")));
+        Assert.Equal(NcwMotion.StaggerLine * 2 + NcwMotion.StaggerItem * 5, detail.Delay);   // 清单进完之后
+        var comet = steps.Single(x => ReferenceEquals(x.Part, Part(rig.Overlay, "CometHost")));
+        Assert.Equal(NcwMotion.Duration(NcwMotionTier.Slow), comet.Delay);                   // 轨道画完之后才开始转
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_entrance_unfolds_in_order_and_ends_exactly_at_rest(bool dark)
+    {
+        var rig = ShownAt(UiMotionLevel.Full, 1200, dark);
+        Frames(64);
+        rig.Wait(300);                                    // 内容出现:入场在这一刻开始(此时还没有任何一帧动画时钟)
+        var overlay = rig.Overlay!;
+        var mark = Part(overlay, "Mark");
+        var title = Part(overlay, "Title");
+        var ring = overlay.FindControl<NcwProgressArc>("Ring")!;
+        var rows = RowShells(overlay);
+        var comet = Part(overlay, "CometHost");
+
+        // t = 0:一切都在起点(透明),轨道还没画;没有「已经完整可见」的一帧
+        Assert.True(overlay.FindControl<StackPanel>("ContentRoot")!.IsVisible);
+        Assert.Equal(0, mark.Opacity);
+        Assert.Equal(0, title.Opacity);
+        Assert.All(rows, r => Assert.Equal(0, r.Opacity));
+        Assert.Equal(0, ring.TrackSweep);
+        Assert.True(overlay.IsEntering);
+        Snapshot(rig.Window, "entrance-000ms", 1200, dark);
+
+        // t ≈ 96:标识已经在长出来(缩放在 GrowFrom 和 1 之间),标题刚开始,清单还没开始(第一行的延迟是 160)
+        Frames(96);
+        Assert.InRange(mark.Opacity, 0.01, 0.99);
+        var scale = Assert.IsType<ScaleTransform>(mark.RenderTransform);
+        Assert.InRange(scale.ScaleX, NcwMotion.GrowFrom + 0.001, 0.999);
+        Assert.InRange(title.Opacity, 0.001, 0.99);
+        Assert.True(title.Opacity < mark.Opacity, "the title starts after the mark");
+        Assert.All(rows, r => Assert.Equal(0, r.Opacity));
+        Assert.InRange(ring.TrackSweep, 0.01, 0.99);
+        Snapshot(rig.Window, "entrance-096ms", 1200, dark);
+
+        // t ≈ 224:第一行已经进来了,最后一行(延迟 300)还没开始;一行比一行晚
+        Frames(128);
+        Assert.InRange(rows[0].Opacity, 0.01, 0.99);
+        Assert.Equal(0, rows[4].Opacity);
+        Assert.True(rows[0].Opacity >= rows[1].Opacity && rows[1].Opacity >= rows[2].Opacity, "rows come in one after another");
+        Snapshot(rig.Window, "entrance-224ms", 1200, dark);
+
+        // t ≈ 368:大部分到位,最后一行刚开始进来
+        Frames(144);
+        Assert.InRange(rows[4].Opacity, 0.01, 0.99);
+        Snapshot(rig.Window, "entrance-368ms", 1200, dark);
+
+        // t ≈ 512:轨道已经画完,短弧刚开始淡入
+        Frames(144);
+        Assert.Equal(1, ring.TrackSweep);
+        Snapshot(rig.Window, "entrance-512ms", 1200, dark);
+
+        // 全部走完:精确落在静止状态(不透明度、变换都恢复成原来的),没有进行中的动画
+        Frames(600);
+        Assert.False(overlay.IsEntering);
+        Assert.Equal(1, mark.Opacity);
+        Assert.Null(mark.RenderTransform);
+        Assert.Equal(1, title.Opacity);
+        Assert.Null(title.RenderTransform);
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(1, r.Opacity);
+            Assert.Null(r.RenderTransform);
+        });
+        Assert.Equal(1, comet.Opacity);
+        Assert.False(ring.IsSweeping);
+        Snapshot(rig.Window, "entrance-final", 1200, dark);
+    }
+
+    [AvaloniaFact]
+    public void At_the_reduced_level_the_entrance_is_one_short_fade_with_no_stagger_no_scale_no_sweep()
+    {
+        var rig = ShownAt(UiMotionLevel.Reduced);
+        Frames(64);
+        rig.Wait(300);
+        var overlay = rig.Overlay!;
+        var mark = Part(overlay, "Mark");
+        var title = Part(overlay, "Title");
+        var rows = RowShells(overlay);
+        var ring = overlay.FindControl<NcwProgressArc>("Ring")!;
+
+        Assert.Equal(1, ring.TrackSweep);                       // 轨道不画,直接就位
+        Frames(64);
+        Assert.InRange(mark.Opacity, 0.01, 0.99);               // 短淡入(Fast 档):所有部分一起,没有错峰
+        Assert.Equal(mark.Opacity, title.Opacity, 3);
+        Assert.Equal(mark.Opacity, rows[4].Opacity, 3);
+        Assert.Null(mark.RenderTransform);                      // 没有缩放、没有位移
+        Assert.Null(title.RenderTransform);
+
+        Frames(200);                                            // Fast = 160 ms:全部落定
+        Assert.Equal(1, mark.Opacity);
+        Assert.Equal(1, title.Opacity);
+        Assert.All(rows, r => Assert.Equal(1, r.Opacity));
+    }
+
+    [AvaloniaFact]
+    public void At_the_off_level_the_entrance_is_instant()
+    {
+        var rig = ShownAt(UiMotionLevel.Off);
+        rig.Wait(300);
+        var overlay = rig.Overlay!;
+
+        Assert.Equal(1, Part(overlay, "Mark").Opacity);
+        Assert.Equal(1, Part(overlay, "Title").Opacity);
+        Assert.All(RowShells(overlay), r => Assert.Equal(1, r.Opacity));
+        Assert.Equal(1, overlay.FindControl<NcwProgressArc>("Ring")!.TrackSweep);
+        Assert.False(overlay.IsEntering);
+        Assert.Null(Part(overlay, "Mark").RenderTransform);
+    }
+
+    [AvaloniaFact]
+    public void The_entrance_plays_once_and_does_not_replay_when_the_layer_yields_and_comes_back()
+    {
+        var rig = ShownAt(UiMotionLevel.Full);
+        Frames(64);
+        rig.ReachAgent();
+        rig.Wait(300);
+        Frames(900);
+        var script = rig.Overlay!.LastEntrance;
+        Assert.NotEmpty(script);
+
+        rig.Device(DeviceConnection.Connected, new DataStatus(DataStates.Blocked, null, DataReasons.LegacyAppRunning, null));   // 让位给数据页
+        Frames(400);
+        rig.Device(DeviceConnection.Connected, Taking(DataSteps.BackingUp));                                                  // 用户点了「重试」,加载层接回来
+        Frames(400);
+
+        Assert.Same(script, rig.Overlay!.LastEntrance);         // 同一份脚本,没有重播
+        Assert.False(rig.Overlay.IsEntering);
+        Assert.Equal(1, Part(rig.Overlay, "Mark").Opacity);
+        Assert.Equal(1, Part(rig.Overlay, "Title").Opacity);
+    }
+
+    [AvaloniaFact]
+    public void A_failure_that_arrives_with_the_content_enters_as_the_mark_and_the_panel_only()
+    {
+        var rig = ShownAt(UiMotionLevel.Full);
+        Frames(64);
+        rig.AppReady();
+        rig.Sidecar(StartupSidecarPhase.Failed, "agent-not-found");   // 失败立刻显示内容,不等延迟
+
+        var steps = rig.Overlay!.LastEntrance;
+
+        Assert.Equal(2, steps.Count);
+        Assert.Same(Part(rig.Overlay, "Mark"), steps[0].Part);
+        Assert.Same(Part(rig.Overlay, "FailurePanel"), steps[1].Part);
+        Assert.Equal(NcwMotion.StaggerLine, steps[1].Delay);
+        Frames(64);
+        Assert.InRange(steps[0].Part.Opacity, 0.01, 0.99);
+        Frames(600);
+        Assert.Equal(1, steps[1].Part.Opacity);
+    }
+
+    [AvaloniaFact]
+    public void The_comet_has_a_fading_tail_and_the_check_grows_in()
+    {
+        var rig = ShownAt(UiMotionLevel.Full);
+        Frames(64);
+        rig.Wait(300);
+        Frames(900);
+        var overlay = rig.Overlay!;
+        var tail = overlay.FindControl<NcwProgressArc>("CometTail")!;
+        var head = overlay.FindControl<NcwProgressArc>("Comet")!;
+
+        Assert.True(tail.Progress > head.Progress);             // 拖尾比彗头长
+        Assert.True(tail.Opacity < 1);                          // 而且淡
+        Assert.NotNull(tail.RenderTransform);                   // 拖尾转到彗头后面(XAML 里的 rotate(-72deg))
+
+        rig.AppReady();                                         // 第一阶段完成:勾「长出来」(缩放 + 淡入)
+        Frames(60);
+        var cell = RowShells(overlay)[0].GetVisualDescendants().OfType<Panel>().First(x => x.Width == 16 && x.Height == 16);
+        var check = (Panel)cell.Children[0];
+        var scale = Assert.IsType<ScaleTransform>(check.RenderTransform);
+        Assert.InRange(scale.ScaleX, NcwMotion.GrowFrom, 0.999);
+        Frames(500);
+        Assert.Null(check.RenderTransform);
+        Assert.Equal(1, check.Opacity);
+    }
+
+    [AvaloniaFact]
+    public void A_timer_that_fires_a_little_early_does_not_strand_the_layer()
+    {
+        // 真窗口冒烟里出现过:UI 定时器比 ViewModel 的时钟早响几毫秒,重算出来的「下一个时刻」没变、不发通知,如果不再武装,最短停留永远等不到头
+        var rig = new Rig(1200, true);
+        rig.Wait(300);                                    // 内容在 300 ms 出现(ContentShownAt),最短停留到 900 ms
+        rig.LoadEverything();
+        PumpUntil(() => rig.Stores.Startup.State.Facts!.Has(StartupMilestone.ShellLaidOut));
+        var overlay = rig.Overlay!;
+        Assert.False(rig.Startup.IsRevealing);
+
+        rig.Clock.Advance(599);                           // 899 ms:定时器早响了
+        overlay.RunWake();
+
+        Assert.False(rig.Startup.IsRevealing);            // 还没到
+        Assert.True(overlay.IsWaitingForWake);            // 但是已经再武装了
+        rig.Clock.Advance(1);
+        overlay.RunWake();
+        Assert.True(rig.Stores.Startup.State.Facts!.Has(StartupMilestone.Interactive) || rig.Startup.IsRevealing);   // 到点了:开始淡出(关闭级别立即走完)
     }
 
     [AvaloniaFact]
