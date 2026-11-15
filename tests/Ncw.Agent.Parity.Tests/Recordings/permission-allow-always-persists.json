@@ -1,0 +1,969 @@
+{
+  "schema": 1,
+  "kind": "orchestration",
+  "id": "permission-allow-always-persists",
+  "description": "「ask」档位下用户在弹窗上选「以后都允许」(项目作用域):这一次放行并把建议的规则 Write(a.txt) 写进 .next-cowork/settings.local.json;下一个 Run 同样的写入不再弹窗。",
+  "covers": [
+    "parity 85 审批策略 allow_always",
+    "approval.ts addLocalPermissionRule",
+    "local-settings.ts"
+  ],
+  "source": {
+    "repository": "NextCoWork (2.x, branch main)",
+    "commit": "1cb3770a494d18e2d1c65358cfa153e680b5962b",
+    "recordedAt": "2026-11-15",
+    "node": "v24.16.0",
+    "recorder": "external to the repository; see docs/parity.md \"回放对照的录制方法\""
+  },
+  "input": {
+    "model": {
+      "alias": "claude-sonnet-4",
+      "providerId": "p1",
+      "upstreamModel": "claude-sonnet-4-20250514",
+      "contextWindow": 200000,
+      "maxOutputTokens": 8192,
+      "thinking": true,
+      "vision": true
+    },
+    "extraModels": [],
+    "providers": [
+      {
+        "id": "p1",
+        "protocol": "anthropic",
+        "baseUrl": "https://p1.example.com",
+        "priority": 0
+      }
+    ],
+    "settings": {},
+    "tools": [],
+    "toolBehaviors": {},
+    "files": {},
+    "routes": [
+      {
+        "key": "main",
+        "firstUser": "write a"
+      }
+    ],
+    "upstream": {
+      "main": [
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"c1\",\"name\":\"Write\",\"input\":{}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":\\\"a.txt\\\",\\\"co\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"ntent\\\":\\\"one\\\\\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"n\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"First wr\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ite done\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\".\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"r1\",\"name\":\"Read\",\"input\":{}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":\\\"a.txt\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"c2\",\"name\":\"Write\",\"input\":{}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":\\\"a.txt\\\",\\\"co\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"ntent\\\":\\\"two\\\\\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"n\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Second w\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"rite don\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"e.\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "run": "p1",
+        "session": "main",
+        "input": "write a",
+        "permission": "ask"
+      },
+      {
+        "run": "p2",
+        "session": "main",
+        "input": "write a again",
+        "permission": "ask"
+      }
+    ],
+    "interactions": [
+      {
+        "kind": "tool_permission",
+        "callId": "c1",
+        "decision": {
+          "kind": "allow_always"
+        }
+      }
+    ],
+    "actions": [],
+    "focusTools": [
+      "Write"
+    ]
+  },
+  "expected": {
+    "runs": [
+      {
+        "run": "p1",
+        "status": "done"
+      },
+      {
+        "run": "p2",
+        "status": "done"
+      }
+    ],
+    "interactions": [
+      {
+        "kind": "tool_permission",
+        "callId": "c1",
+        "toolName": "Write",
+        "readOnly": false,
+        "destructive": true,
+        "suggestedRule": "Write(a.txt)"
+      }
+    ],
+    "files": {
+      ".next-cowork/settings.local.json": "{\n  \"version\": 1,\n  \"permissions\": {\n    \"allow\": [\n      \"Write(a.txt)\"\n    ],\n    \"ask\": [],\n    \"deny\": []\n  }\n}\n",
+      "a.txt": "two\n"
+    },
+    "events": [
+      {
+        "e": "run",
+        "run": "p1"
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "u-p1",
+        "parts": [
+          {
+            "type": "text",
+            "text": "write a"
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m1",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c1",
+            "name": "Write",
+            "input": {
+              "file_path": "a.txt",
+              "content": "one\n"
+            }
+          }
+        ]
+      },
+      {
+        "e": "tool_start",
+        "callId": "c1",
+        "name": "Write",
+        "input": {
+          "file_path": "a.txt",
+          "content": "one\n"
+        }
+      },
+      {
+        "e": "tool_end",
+        "callId": "c1",
+        "isError": false,
+        "content": "Created a.txt (2 lines, 4 B)."
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "m2",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c1",
+            "output": {
+              "content": "Created a.txt (2 lines, 4 B)."
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m3",
+        "parts": [
+          {
+            "type": "text",
+            "text": "First write done."
+          }
+        ]
+      },
+      {
+        "e": "run_end",
+        "status": "done"
+      },
+      {
+        "e": "run",
+        "run": "p2"
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "u-p2",
+        "parts": [
+          {
+            "type": "text",
+            "text": "write a again"
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m4",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "r1",
+            "name": "Read",
+            "input": {
+              "file_path": "a.txt"
+            }
+          }
+        ]
+      },
+      {
+        "e": "tool_start",
+        "callId": "r1",
+        "name": "Read",
+        "input": {
+          "file_path": "a.txt"
+        }
+      },
+      {
+        "e": "tool_end",
+        "callId": "r1",
+        "isError": false,
+        "content": "     1\tone\n     2\t"
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "m5",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "r1",
+            "output": {
+              "content": "     1\tone\n     2\t"
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m6",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c2",
+            "name": "Write",
+            "input": {
+              "file_path": "a.txt",
+              "content": "two\n"
+            }
+          }
+        ]
+      },
+      {
+        "e": "tool_start",
+        "callId": "c2",
+        "name": "Write",
+        "input": {
+          "file_path": "a.txt",
+          "content": "two\n"
+        }
+      },
+      {
+        "e": "tool_end",
+        "callId": "c2",
+        "isError": false,
+        "content": "Overwrote a.txt (2 lines, 4 B)."
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "m7",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c2",
+            "output": {
+              "content": "Overwrote a.txt (2 lines, 4 B)."
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m8",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Second write done."
+          }
+        ]
+      },
+      {
+        "e": "run_end",
+        "status": "done"
+      }
+    ],
+    "rows": [
+      {
+        "session": "main"
+      },
+      {
+        "role": "user",
+        "id": "u-p1",
+        "parts": [
+          {
+            "type": "text",
+            "text": "write a"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m1",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c1",
+            "name": "Write",
+            "input": {
+              "file_path": "a.txt",
+              "content": "one\n"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "id": "m2",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c1",
+            "output": {
+              "content": "Created a.txt (2 lines, 4 B)."
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m3",
+        "parts": [
+          {
+            "type": "text",
+            "text": "First write done."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "id": "u-p2",
+        "parts": [
+          {
+            "type": "text",
+            "text": "write a again"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m4",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "r1",
+            "name": "Read",
+            "input": {
+              "file_path": "a.txt"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "id": "m5",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "r1",
+            "output": {
+              "content": "     1\tone\n     2\t"
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m6",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c2",
+            "name": "Write",
+            "input": {
+              "file_path": "a.txt",
+              "content": "two\n"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "id": "m7",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c2",
+            "output": {
+              "content": "Overwrote a.txt (2 lines, 4 B)."
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m8",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Second write done."
+          }
+        ]
+      }
+    ],
+    "requests": [
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-BUZBxb/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: ask\n- Reading and searching: run without asking\n- Writing files and running commands: wait for user approval before execution\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "Write"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "Write",
+                  "input": {
+                    "file_path": "a.txt",
+                    "content": "one\n"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "Created a.txt (2 lines, 4 B).",
+                  "is_error": false
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-BUZBxb/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: ask\n- Reading and searching: run without asking\n- Writing files and running commands: wait for user approval before execution\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "Write"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "Write",
+                  "input": {
+                    "file_path": "a.txt",
+                    "content": "one\n"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "Created a.txt (2 lines, 4 B).",
+                  "is_error": false
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "First write done."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a again"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-BUZBxb/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: ask\n- Reading and searching: run without asking\n- Writing files and running commands: wait for user approval before execution\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "Write"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "Write",
+                  "input": {
+                    "file_path": "a.txt",
+                    "content": "one\n"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "Created a.txt (2 lines, 4 B).",
+                  "is_error": false
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "First write done."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a again"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "r1",
+                  "name": "Read",
+                  "input": {
+                    "file_path": "a.txt"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "r1",
+                  "content": "     1\tone\n     2\t",
+                  "is_error": false
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-BUZBxb/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: ask\n- Reading and searching: run without asking\n- Writing files and running commands: wait for user approval before execution\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "Write"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "Write",
+                  "input": {
+                    "file_path": "a.txt",
+                    "content": "one\n"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "Created a.txt (2 lines, 4 B).",
+                  "is_error": false
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "First write done."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "write a again"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "r1",
+                  "name": "Read",
+                  "input": {
+                    "file_path": "a.txt"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "r1",
+                  "content": "     1\tone\n     2\t",
+                  "is_error": false
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c2",
+                  "name": "Write",
+                  "input": {
+                    "file_path": "a.txt",
+                    "content": "two\n"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c2",
+                  "content": "Overwrote a.txt (2 lines, 4 B).",
+                  "is_error": false
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-BUZBxb/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: ask\n- Reading and searching: run without asking\n- Writing files and running commands: wait for user approval before execution\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "Write"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      }
+    ]
+  }
+}

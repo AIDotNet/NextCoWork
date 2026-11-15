@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Ncw.Agent.Extensions.Interactions;
 using Ncw.Agent.Kernel.Loop;
+using Ncw.Agent.Kernel.Subagents;
 using Ncw.Agent.Kernel.Session;
 using Ncw.Agent.Llm;
 using Ncw.Agent.Storage.Sessions;
@@ -78,7 +80,13 @@ public static class TraceBuilder
                     }
 
                     continue;
-                case ToolProgressEvent:
+                case ToolProgressEvent { Progress.Details: { } details } progress when details.ValueKind == System.Text.Json.JsonValueKind.Object
+                    && details.TryGetProperty("kind", out var kind) && kind.GetString() == "queued":
+                    // 子代理排队的排位(「前面还有 N 个」):2.x 一侧是同一个 tool_progress 的文字,录制脚本把它投影成同样的 queued 条目。
+                    Flush();
+                    output.Add(new JsonObject { ["e"] = "queued", ["callId"] = progress.CallId, ["ahead"] = details.GetProperty("ahead").GetInt32() });
+                    continue;
+                case ToolProgressEvent or SubagentUpdateEvent or InteractionRequestEvent or InteractionResolvedEvent:
                     continue;
             }
 
@@ -154,6 +162,33 @@ public static class TraceBuilder
                     break;
                 case RunSettledEvent:
                     output.Add(new JsonObject { ["e"] = "run_settled" });
+                    break;
+                case SubagentStartEvent start:
+                    output.Add(new JsonObject
+                    {
+                        ["e"] = "subagent_start",
+                        ["callId"] = start.CallId,
+                        ["childRunId"] = start.ChildRunId.Value,
+                        ["childSessionId"] = start.ChildSessionId,
+                        ["description"] = start.Description,
+                        ["subagentType"] = start.AgentType,
+                        ["model"] = start.Model,
+                        ["background"] = start.Background,
+                    });
+                    break;
+                case SubagentEndEvent end:
+                    var subEnd = new JsonObject { ["e"] = "subagent_end", ["callId"] = end.CallId, ["childRunId"] = end.ChildRunId.Value, ["status"] = end.Status.ToString().ToLowerInvariant() };
+                    if (end.Summary is { } summary)
+                    {
+                        subEnd["summary"] = summary;
+                    }
+
+                    if (end.Error is { } subError)
+                    {
+                        subEnd["error"] = new JsonObject { ["code"] = Normalize.SnakeCase(subError.Code.ToString()) };
+                    }
+
+                    output.Add(subEnd);
                     break;
                 default:
                     output.Add(new JsonObject { ["e"] = ev.GetType().Name });

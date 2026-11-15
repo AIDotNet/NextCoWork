@@ -415,6 +415,19 @@ public sealed class ProposeGoalToolTests : IDisposable
     }
 
     [Fact]
+    public async Task The_result_the_model_reads_keeps_non_ascii_and_html_characters_as_they_are()
+    {
+        // 回放对照抓到的缺陷:结果 JSON 用默认编码器写,中文条件和 ' < > & + 全被写成 \uXXXX,模型逐字读到的是转义序列(2.x 的 JSON.stringify 不这么做)。
+        const string condition = "don't break <api> & 全部测试通过";
+        var r = await Run(Args(condition, askUser: false));
+
+        Assert.False(r.IsError);
+        Assert.Contains($"\"condition\":\"{condition}\"", Text(r));
+        Assert.Contains("A kickoff message follows — keep working", Text(r)); // 破折号也不被转义
+        Assert.DoesNotContain("\\u", Text(r));
+    }
+
+    [Fact]
     public async Task A_condition_that_is_empty_once_normalized_is_refused_and_not_forwarded()
     {
         // ★ 一串零宽空格看起来是「写了东西」,判定器收到的却是一个空条件

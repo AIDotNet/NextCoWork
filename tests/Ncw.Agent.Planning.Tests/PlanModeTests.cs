@@ -201,6 +201,19 @@ public sealed class PlanModeTests : IDisposable
     }
 
     [Fact]
+    public async Task The_receipt_the_model_reads_keeps_non_ascii_feedback_as_it_is()
+    {
+        // 回放对照抓到的缺陷:回执 JSON 用默认编码器写,中文反馈被写成 \uXXXX(2.x 的 JSON.stringify 不这么做)。
+        var (plans, active) = await Entered();
+        File.WriteAllText(active.Absolute.Value, "# Draft plan");
+
+        var result = await Respond(new ExitPlanModeTool(plans), _fx.Ctx(_run), new PlanApprovalResponse(PlanApprovalAction.RequestRevision, "加上测试,don't skip <edge> cases"));
+
+        Assert.Contains("\"feedback\":\"加上测试,don't skip <edge> cases\"", Text(result));
+        Assert.DoesNotContain("\\u", Text(result));
+    }
+
+    [Fact]
     public async Task Rejection_also_ends_the_plan_and_the_run()
     {
         var (plans, active) = await Entered();

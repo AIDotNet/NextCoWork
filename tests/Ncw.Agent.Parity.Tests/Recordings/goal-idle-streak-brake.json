@@ -1,0 +1,2901 @@
+{
+  "schema": 1,
+  "kind": "orchestration",
+  "id": "goal-idle-streak-brake",
+  "description": "空转刹车:目标一直判「没达成」而模型连续回复纯文字(没有工具调用):连续 8 个无工具回合之后 Run 以警告(goal.warn.idleStreak)结束,不再续跑。",
+  "covers": [
+    "05 §7 目标 空转刹车",
+    "GOAL_IDLE_STREAK_CAP"
+  ],
+  "source": {
+    "repository": "NextCoWork (2.x, branch main)",
+    "commit": "1cb3770a494d18e2d1c65358cfa153e680b5962b",
+    "recordedAt": "2026-11-15",
+    "node": "v24.16.0",
+    "recorder": "external to the repository; see docs/parity.md \"回放对照的录制方法\""
+  },
+  "input": {
+    "model": {
+      "alias": "claude-sonnet-4",
+      "providerId": "p1",
+      "upstreamModel": "claude-sonnet-4-20250514",
+      "contextWindow": 200000,
+      "maxOutputTokens": 8192,
+      "thinking": true,
+      "vision": true
+    },
+    "extraModels": [],
+    "providers": [
+      {
+        "id": "p1",
+        "protocol": "anthropic",
+        "baseUrl": "https://p1.example.com",
+        "priority": 0
+      }
+    ],
+    "settings": {
+      "modelProposedGoals": "auto"
+    },
+    "tools": [],
+    "toolBehaviors": {},
+    "files": {},
+    "routes": [
+      {
+        "key": "judge",
+        "systemIncludes": "You are evaluating a stop-condition hook"
+      },
+      {
+        "key": "main",
+        "firstUser": "never finish"
+      }
+    ],
+    "upstream": {
+      "main": [
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"c1\",\"name\":\"ProposeGoal\",\"input\":{}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"condition\\\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":\\\"the imposs\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"ible is done\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\",\\\"ask_user\\\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":false}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"1).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"2).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"3).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"4).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"5).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"6).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"7).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"8).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"9).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"10).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"11).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Still th\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inking (\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"12).\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        }
+      ],
+      "judge": [
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (1\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (2\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (3\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (4\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (5\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (6\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (7\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (8\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (9\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\").\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (1\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"0).\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (1\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"1).\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        },
+        {
+          "kind": "sse",
+          "chunks": [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-20250514\",\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"ok\\\":fa\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lse,\\\"rea\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"son\\\":\\\"No\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"t yet (1\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"2).\\\"}\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "run": "p1",
+        "session": "main",
+        "input": "never finish"
+      }
+    ],
+    "interactions": [],
+    "actions": [],
+    "focusTools": [
+      "ProposeGoal"
+    ]
+  },
+  "expected": {
+    "runs": [
+      {
+        "run": "p1",
+        "status": "done"
+      }
+    ],
+    "interactions": [],
+    "files": {},
+    "events": [
+      {
+        "e": "run",
+        "run": "p1"
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "u-p1",
+        "parts": [
+          {
+            "type": "text",
+            "text": "never finish"
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m1",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c1",
+            "name": "ProposeGoal",
+            "input": {
+              "condition": "the impossible is done",
+              "ask_user": false
+            }
+          }
+        ]
+      },
+      {
+        "e": "tool_start",
+        "callId": "c1",
+        "name": "ProposeGoal",
+        "input": {
+          "condition": "the impossible is done",
+          "ask_user": false
+        }
+      },
+      {
+        "e": "tool_end",
+        "callId": "c1",
+        "isError": false,
+        "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}"
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "id": "m2",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c1",
+            "output": {
+              "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}"
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m3",
+        "parts": [
+          {
+            "type": "text",
+            "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m4",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (1)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m4",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (1)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN1",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (1).",
+            "iterations": 1
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m5",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m6",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (2)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m6",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (2)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN2",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (2).",
+            "iterations": 2
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m7",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m8",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (3)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m8",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (3)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN3",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (3).",
+            "iterations": 3
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m9",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m10",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (4)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m10",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (4)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN4",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (4).",
+            "iterations": 4
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m11",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m12",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (5)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m12",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (5)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN5",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (5).",
+            "iterations": 5
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m13",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m14",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (6)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m14",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (6)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN6",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (6).",
+            "iterations": 6
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m15",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (6)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m16",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (7)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m16",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (7)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN7",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (7).",
+            "iterations": 7
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m17",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (7)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m18",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (8)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m18",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (8)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN8",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (8).",
+            "iterations": 8
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "user",
+        "internal": true,
+        "id": "m19",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (8)."
+          }
+        ]
+      },
+      {
+        "e": "ctx_usage",
+        "window": 200000,
+        "shouldCompact": false
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m20",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (9)."
+          }
+        ]
+      },
+      {
+        "e": "commit",
+        "role": "assistant",
+        "id": "m20",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (9)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN9",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (9).",
+            "iterations": 9
+          }
+        ]
+      },
+      {
+        "e": "notification",
+        "key": "goal.warn.idleStreak"
+      },
+      {
+        "e": "run_end",
+        "status": "done"
+      }
+    ],
+    "rows": [
+      {
+        "session": "main"
+      },
+      {
+        "role": "user",
+        "id": "u-p1",
+        "parts": [
+          {
+            "type": "text",
+            "text": "never finish"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m1",
+        "parts": [
+          {
+            "type": "tool_call",
+            "callId": "c1",
+            "name": "ProposeGoal",
+            "input": {
+              "condition": "the impossible is done",
+              "ask_user": false
+            }
+          },
+          {
+            "type": "goal_status",
+            "met": false,
+            "set": true,
+            "condition": "the impossible is done",
+            "origin": "proposal_direct",
+            "iterations": 0,
+            "id": "PLAN10"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "id": "m2",
+        "parts": [
+          {
+            "type": "tool_result",
+            "callId": "c1",
+            "output": {
+              "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}"
+            },
+            "isError": false
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m3",
+        "parts": [
+          {
+            "type": "text",
+            "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m4",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (1)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN1",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (1).",
+            "iterations": 1
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m5",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m6",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (2)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN2",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (2).",
+            "iterations": 2
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m7",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m8",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (3)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN3",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (3).",
+            "iterations": 3
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m9",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m10",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (4)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN4",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (4).",
+            "iterations": 4
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m11",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m12",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (5)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN5",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (5).",
+            "iterations": 5
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m13",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m14",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (6)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN6",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (6).",
+            "iterations": 6
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m15",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (6)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m16",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (7)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN7",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (7).",
+            "iterations": 7
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m17",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (7)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m18",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (8)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN8",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (8).",
+            "iterations": 8
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "internal": true,
+        "id": "m19",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Stop hook feedback:\n[the impossible is done]: Not yet (8)."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "id": "m20",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Still thinking (9)."
+          },
+          {
+            "type": "goal_status",
+            "id": "PLAN9",
+            "met": false,
+            "condition": "the impossible is done",
+            "reason": "Not yet (9).",
+            "iterations": 9
+          }
+        ]
+      }
+    ],
+    "requests": [
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (4)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (4)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (5)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (4)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (5)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (6)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (6)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (4)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (5)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (6)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (6)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (7)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (7)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "main",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 32000,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "never finish"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "c1",
+                  "name": "ProposeGoal",
+                  "input": {
+                    "condition": "the impossible is done",
+                    "ask_user": false
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "c1",
+                  "content": "{\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}",
+                  "is_error": false
+                },
+                {
+                  "type": "text",
+                  "text": "A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (1)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (1)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (2)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (2)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (3)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (3)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (4)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (4)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (5)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (5)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (6)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (6)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (7)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (7)."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Still thinking (8)."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Stop hook feedback:\n[the impossible is done]: Not yet (8)."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are the coding assistant in NextCoWork, a desktop app running on the user's own machine.\n\n# Tone and style\n- Be concise. Keep prose under 4 lines unless the user asks for detail or the task genuinely needs more. Code, diffs, and tool output do not count toward that.\n- No preamble, no postamble. Do not open with \"Here's what I found\" or \"Great question\". Do not close with a summary of what you just did unless the user asks. Answer, then stop.\n<example>user: what port does the dev server use? / assistant: 5173 — vite.config.ts:12</example>\n<example>user: is this function async? / assistant: No.</example>\n- Reply in the language the user writes in.\n- Output is rendered as GitHub-flavored Markdown in a chat pane.\n- Reference code as `path/to/file.ts:42` so the user can jump straight to it. Quote only the lines that matter — never paste back a whole file the user already has.\n- Explain a command before you run it when it changes the user's machine or takes real time.\n\n# Proactiveness\nDo what the user asked, completely — and stop there.\n- NEVER refactor, rename, reformat, upgrade, or \"clean up\" code the task did not require. Notice it, say so in one line, and let the user decide.\n- NEVER create a file the user did not ask for, and NEVER write documentation (*.md, README) unless asked for it.\n- When the user asks a QUESTION, answer it. Do not start editing because the answer implies an edit.\n\n# Following conventions\n- Before you change code, read enough of the surrounding file to match it: its naming, its idioms, its typing style, and how much it comments.\n- NEVER assume a library is available. Check the manifest (package.json, Cargo.toml, pyproject.toml…) or find an existing import of it first.\n- NEVER assume a command is available either. The test, lint, build, and run commands are whatever THIS repo defines — read its package.json scripts or its README. Do not guess `npm test`.\n- NEVER commit, push, or publish anything unless the user asks you to.\n\n# Doing the work\n- Prefer editing an existing file over creating a new one.\n- Keep users informed when a multi-step task changes state.\n- Batch independent tool calls into a single reply. Several searches at once beats one per turn.\n- Verify when verifying is cheap: run the test, run the typechecker, re-read the line you edited. NEVER report that something passes when you did not run it.\n- Finish the whole task. If one part is genuinely blocked, do everything else and say plainly what you left out and why.\n- If you used a task list for this task and its tool is still available, reconcile it with verified progress before your final answer and send a full update if needed. An already accurate list needs no duplicate call. Writing that something is done is not an update, and never mark an item complete that you did not verify.\n\n# When things go wrong\n- If a call fails twice the same way, STOP repeating it — a third identical attempt fails too. Change the approach, or tell the user what is blocking you.\n- READ the error before you react to it. Tool errors here are written to tell you what to do next; most of them name the fix.\n- Report what actually happened. If a test fails, show the failure. If you skipped a step, say so. NEVER describe work you did not do.\n\n# Permissions\nEvery tool call is checked against the permission mode the user chose for this workspace.\nIf a call is denied, do NOT route around it: do not retry it, do not reach for a different tool\nthat does the same thing, and do not use Bash to do what the denied tool would have done.\nStop and tell the user which permission you need.\n\n# Environment\n\nWorkspace root: /private/var/folders/_6/_2r911b95k39p33yrhrynjqr0000gn/T/ncw-parity-rt-ZSQEgw/workspace\nPlatform: darwin (27.2.0)\nShell: /bin/zsh\nToday's date: 2027-01-15 (UTC)\nPermission mode: full\n- Reading and searching: run without asking\n- Writing files and running commands: run without asking\n- File tools are not fenced to the workspace: an absolute path anywhere on this machine resolves, and the rules above are what governs it\n- Web search and web fetch (WebFetch, web_search): denied — the network switch is off for this workspace, and Bash cannot be used to route around it",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "ProposeGoal"
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (4).\nassistant: Still thinking (5).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (4).\nassistant: Still thinking (5).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (5).\nassistant: Still thinking (6).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (4).\nassistant: Still thinking (5).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (5).\nassistant: Still thinking (6).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (6).\nassistant: Still thinking (7).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (4).\nassistant: Still thinking (5).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (5).\nassistant: Still thinking (6).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (6).\nassistant: Still thinking (7).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (7).\nassistant: Still thinking (8).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "key": "judge",
+        "url": "https://p1.example.com/v1/messages",
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user: never finish\nassistant: ProposeGoal {\"condition\":\"the impossible is done\",\"ask_user\":false}\nuser: c1 [ok] {\"condition\":\"the impossible is done\",\"askUser\":false,\"status\":\"set\",\"message\":\"The goal is set for this session. A kickoff message follows — keep working; do not stop and do not wait for anything.\"}\nuser: A session-scoped Stop hook is now active with condition: \"the impossible is done\". Briefly acknowledge the goal, then immediately start (or continue) working toward it — treat the condition itself as your directive and do not pause to ask the user what to do. The hook will block stopping until the condition holds. It auto-clears once the condition is met — do not tell the user to run /goal clear after success; that's only for clearing a goal early.\nassistant: Still thinking (1).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (1).\nassistant: Still thinking (2).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (2).\nassistant: Still thinking (3).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (3).\nassistant: Still thinking (4).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (4).\nassistant: Still thinking (5).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (5).\nassistant: Still thinking (6).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (6).\nassistant: Still thinking (7).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (7).\nassistant: Still thinking (8).\nuser: Stop hook feedback:\n[the impossible is done]: Not yet (8).\nassistant: Still thinking (9).\n\nBased on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.\nCondition: the impossible is done"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are evaluating a stop-condition hook in Claude Code. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.\nYour response must be a JSON object with one of these shapes:\n- {\"ok\": true, \"reason\": \"<quote evidence from the transcript that satisfies the condition>\"}\n- {\"ok\": false, \"reason\": \"<quote what is missing or what blocks the condition>\"}\n- {\"ok\": false, \"impossible\": true, \"reason\": \"<explain why the condition can never be satisfied>\"}\nAlways include a \"reason\" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {\"ok\": false, \"reason\": \"insufficient evidence in transcript\"}.\nOnly use {\"ok\": false, \"impossible\": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {\"ok\": false} without \"impossible\".",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "metadata": {
+            "user_id": "ws-1"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ]
+  }
+}

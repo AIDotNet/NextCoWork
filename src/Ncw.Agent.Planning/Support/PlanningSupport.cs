@@ -80,10 +80,14 @@ internal static class DetailsJson
         return doc.RootElement.Clone();
     }
 
+    /// <summary>
+    /// 发给<b>模型</b>看的结果 JSON(ProposeGoal 的结果、EnterPlanMode / ExitPlanMode 的回执)。不能用默认编码器:它把所有非 ASCII 字符和 <c>' &lt; &gt; &amp; +</c> 都写成 <c>\uXXXX</c>,
+    /// 中文的目标条件 / 计划反馈会被模型逐字读成转义序列(token 成倍增加、可读性下降);2.x 的 <c>JSON.stringify</c> 只转义引号、反斜杠和控制字符,这里的宽松编码器与它一致。
+    /// </summary>
     public static string Compact(Action<Utf8JsonWriter> body)
     {
         var buffer = new ArrayBufferWriter<byte>(256);
-        using (var w = new Utf8JsonWriter(buffer))
+        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
         {
             w.WriteStartObject();
             body(w);

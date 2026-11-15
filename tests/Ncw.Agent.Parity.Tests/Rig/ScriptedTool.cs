@@ -7,7 +7,7 @@ using Ncw.Agent.Llm.Json;
 namespace Ncw.Agent.Parity.Tests.Rig;
 
 /// <summary>测试内的假工具:行为按录制里 <c>toolBehaviors[callId]</c> 给(缺省:返回「&lt;名字&gt; ran」)。执行开始时先触发 <c>{tool, phase: start}</c> 用户操作。</summary>
-public sealed class ScriptedTool(JsonObject spec, JsonObject behaviors, Action<JsonObject> fire) : IAgentTool
+public sealed class ScriptedTool(JsonObject spec, JsonObject behaviors, Action<JsonObject> fire, Func<string, Task>? gate = null) : IAgentTool
 {
     public ToolSpec Info { get; } = new(
         spec["name"]!.GetValue<string>(),
@@ -37,6 +37,10 @@ public sealed class ScriptedTool(JsonObject spec, JsonObject behaviors, Action<J
                 throw new InvalidOperationException(behavior["message"]!.GetValue<string>());
             case "big":
                 return ToolResult.Text(new string('x', behavior["chars"]!.GetValue<int>()));
+            case "waitGate":
+                // 等一道闸门被放行才返回(整机回放:让下一回合晚于某个用户操作的处理)
+                await gate!(behavior["gate"]!.GetValue<string>()).WaitAsync(ct).ConfigureAwait(false);
+                return ToolResult.Text($"{Info.InternalId} ran");
             case "hang":
                 await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
                 return ToolResult.Text(string.Empty);

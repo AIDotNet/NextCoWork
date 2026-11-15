@@ -41,8 +41,7 @@ public sealed class RuleRegistryTests
         var used = new HashSet<string>();
         foreach (var recording in Recording.LoadAll())
         {
-            using var rig = new ReplayRig(recording);
-            var replayed = await rig.RunAsync();
+            var replayed = await Replay.RunAsync(recording);
             var (_, ledger) = Comparer.Compare(recording, replayed);
             used.UnionWith(ledger.Applied.Keys);
         }

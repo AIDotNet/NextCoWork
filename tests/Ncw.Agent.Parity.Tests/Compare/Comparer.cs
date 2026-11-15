@@ -203,13 +203,61 @@ public static class Comparer
         return map;
     }
 
-    private static string Compact(JsonNode node) => node.ToJsonString();
+    /// <summary>行级比较用的紧凑文本:对象成员按名字排序(JSON 对象的成员顺序不是契约,两边各自的序列化器顺序不同不算差异);数组顺序保留。</summary>
+    private static string Compact(JsonNode node)
+    {
+        var sb = new StringBuilder();
+        Canonical(node, sb);
+        return sb.ToString();
+    }
+
+    private static void Canonical(JsonNode? node, StringBuilder sb)
+    {
+        switch (node)
+        {
+            case JsonObject o:
+                sb.Append('{');
+                var first = true;
+                foreach (var (key, value) in o.OrderBy(m => m.Key, StringComparer.Ordinal))
+                {
+                    if (!first)
+                    {
+                        sb.Append(',');
+                    }
+
+                    first = false;
+                    sb.Append(JsonValue.Create(key)!.ToJsonString()).Append(':');
+                    Canonical(value, sb);
+                }
+
+                sb.Append('}');
+                break;
+            case JsonArray a:
+                sb.Append('[');
+                for (var i = 0; i < a.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.Append(',');
+                    }
+
+                    Canonical(a[i], sb);
+                }
+
+                sb.Append(']');
+                break;
+            default:
+                sb.Append(node?.ToJsonString() ?? "null");
+                break;
+        }
+    }
 }
 
-/// <summary>把生成出来的消息 id(<c>m1</c>、<c>m2</c>…)在规则之后重新按首次出现的顺序编号;事件和消息行共用一份映射。</summary>
+/// <summary>把生成出来的消息 id(<c>m1</c>、<c>m2</c>…)和目标标记 id(<c>PLAN1</c>…,录制时按首次出现编的 ULID)在规则之后重新按首次出现的顺序编号;事件和消息行共用一份映射。</summary>
 internal sealed class Renumber
 {
     private readonly Dictionary<string, string> _map = [];
+    private readonly Dictionary<string, string> _marks = [];
 
     public void Apply(List<JsonNode> nodes)
     {
@@ -229,6 +277,17 @@ internal sealed class Renumber
                 {
                     mapped = $"m{_map.Count + 1}";
                     _map[id] = mapped;
+                }
+
+                o["id"] = mapped;
+            }
+
+            else if (o["id"] is JsonValue pv && pv.TryGetValue<string>(out var markId) && System.Text.RegularExpressions.Regex.IsMatch(markId, "^PLAN[0-9]+$"))
+            {
+                if (!_marks.TryGetValue(markId, out var mapped))
+                {
+                    mapped = $"PLAN{_marks.Count + 1}";
+                    _marks[markId] = mapped;
                 }
 
                 o["id"] = mapped;

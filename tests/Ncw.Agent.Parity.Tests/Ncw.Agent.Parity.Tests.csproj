@@ -7,6 +7,10 @@
     <ProjectReference Include="../../src/Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
     <!-- 真实的权限扩展 / 交互闸门(审批场景)和待办扩展(清单补报场景),经 Planning 传递引用 Extensions 与 Tools。 -->
     <ProjectReference Include="../../src/Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
+    <!-- 子代理(Task 工具、SubagentService)和编排层(RunRegistry):整机回放场景用。 -->
+    <ProjectReference Include="../../src/Ncw.Agent.Subagents/Ncw.Agent.Subagents.csproj" />
+    <!-- Hooks(PreToolUse 在权限链里的位置):整机回放场景用。 -->
+    <ProjectReference Include="../../src/Ncw.Agent.Hooks/Ncw.Agent.Hooks.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- 从 2.x 录制的场景(纯数据):上游 SSE 原文、工具结果、用户操作,以及 2.x 产出的规范化事件序列和落库行。 -->

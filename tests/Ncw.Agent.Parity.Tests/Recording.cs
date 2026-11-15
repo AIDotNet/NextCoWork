@@ -21,6 +21,9 @@ public sealed class Recording
 
     public string Id => Root["id"]!.GetValue<string>();
 
+    /// <summary>"orchestration" = 整机回放(子代理 / 计划 / 目标 / 审批落盘,<see cref="Rig.OrchestrationRig"/>);缺省 = 单会话循环层回放(<see cref="Rig.ReplayRig"/>)。</summary>
+    public string Kind => Root["kind"]?.GetValue<string>() ?? "single";
+
     public string Description => Root["description"]!.GetValue<string>();
 
     public JsonObject Source => Root["source"]!.AsObject();

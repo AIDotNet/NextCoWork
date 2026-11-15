@@ -16,8 +16,7 @@ public sealed class ParityTests
     public async Task The_csharp_agent_replays_the_recording_like_2x(string id)
     {
         var recording = Recording.ById(id);
-        using var rig = new ReplayRig(recording);
-        var replayed = await rig.RunAsync();
+        var replayed = await Replay.RunAsync(recording);
         if (Environment.GetEnvironmentVariable("NCW_PARITY_DUMP") is { Length: > 0 } dump)
         {
             // 调试用:把 C# 回放的原始规范化结果写出来,和录制里的 expected 对着看。
@@ -44,5 +43,21 @@ public sealed class ParityTests
                 {string.Join("\n\n", mismatches.Select(m => $"── {m.Section} (- 2.x only, + C# only) ──\n{m.Report}"))}
                 """);
         }
+    }
+}
+
+/// <summary>按录制的种类选台架:单会话循环层回放(<see cref="ReplayRig"/>)或整机回放(<see cref="OrchestrationRig"/>)。</summary>
+public static class Replay
+{
+    public static async Task<Replayed> RunAsync(Recording recording)
+    {
+        if (recording.Kind == "orchestration")
+        {
+            using var rig = new OrchestrationRig(recording);
+            return await rig.RunAsync();
+        }
+
+        using var single = new ReplayRig(recording);
+        return await single.RunAsync();
     }
 }
