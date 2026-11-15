@@ -8,7 +8,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 (但真实 2.x 数据根与 safeStorage 凭据只在 macOS 上验证过)。M3 / M4 的 Agent 侧(模型层、回合循环、权限、执行环境、工具、终端、子代理、压缩、计划、待办、目标、Skills、Hooks、MCP、插件宿主、定时任务、开放网关、模型目录)
 和桌面界面主体已完成,M4 的 sidecar 打包守护与 `tools/Ncw.Build` 在 macOS 上跑通;M5 只完成共享层;M6 只完成中继(`Ncw.Relay` 与中继承载)。
 **尚未完成**:云端 Agent 模式(`--mode cloud`)、2.x 回放对照测试、iOS / Android 宿主与真机验证、真实后端(账户、更新 feed、推送中继、云端编排)、正式签名与公证、Windows / Linux 真机验证、
-升级链路演练(M7)、CI 工作流(已写但没在真实 GitHub Actions 上跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
+升级链路的其余部分(M7:桌面自更新运行时已接入并在 macOS 上本机演练过,后端 feed、2.9 桥接、正式签名与公证、Windows / Linux 未做)、CI 工作流(已写但没在真实 GitHub Actions 上跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
 设计文档在 `docs/design/`;实现必须与设计一致,偏离时先改设计文档。
 
 ## 1. 范围(必须)
@@ -86,5 +86,6 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
   - `dotnet run --project tools/Ncw.Build -- sign --rid osx-arm64`:codesign / signtool;凭据只读环境变量,缺失就跳过并说明,CI 的正式发布加 `--require` 改为失败(`--notarize` 公证);
   - `dotnet run --project tools/Ncw.Build -- velopack --rid osx-arm64 --channel stable`:用 `.config/dotnet-tools.json` 里固定版本的 `vpk` 打安装包和更新包;
   - `dotnet run --project tools/Ncw.Build -- manifest --scan artifacts/velopack/osx-arm64/stable --rid osx-arm64`:生成发布清单,有 `NCW_RELEASE_SIGNING_KEY` / `NCW_RELEASE_SIGNING_KEY_FILE` 才做 Ed25519 签名(`keygen`、`manifest-verify` 配套)。
+  - 自更新演练(仅开发,macOS):`publish-desktop` 前设 `NCW_RELEASE_PUBLIC_KEYS=<kid>:<base64 公钥>`(构建时内置的信任根;不设则该构建的自更新拒绝一切清单),`velopack` 对第二个版本加 `--keep-output`(feed 累积版本、生成增量包),用 `keygen` 生成的仓库外私钥签 `manifest`;应用内的无界面演练只认环境变量 `NCW_DEV_UPDATE_REHEARSAL` / `NCW_UPDATE_FEED`(不是用户入口);自动化为可选测试 `NCW_REHEARSAL_ROOT=<准备好的目录> dotnet test tests/Ncw.Desktop.Tests --filter RealUpdateRehearsalTests`(默认跳过;准备步骤见 `docs/design/04-update-install.md` §7.5);
   - `dotnet run --project tools/Ncw.Build -- build-relay [--rid <rid>] [--aot] [--framework-dependent]`:发布服务器中继 `ncw-relay`(服务端部署物;默认自包含、`--aot` 为 NativeAOT、IL / 裁剪警告规则同 `publish-agent`),再对产物自检:启动 → `/healthz` → `/metrics` → 非 WebSocket 请求得 426 → 关 stdin 与(Unix)SIGTERM 两种方式优雅退出且退出码 0;`--skip-check` 跳过自检;
 - 工具链与守护的测试:`dotnet test tests/Ncw.Build.Tests`、`dotnet test tests/Ncw.Desktop.Tests`(含真实 `ncw-agent` 冒烟;没有构建产物时自动跳过,`NCW_SKIP_AGENT_SMOKE=1` 强制跳过,`NCW_AGENT_PATH` 指向别的产物)。
