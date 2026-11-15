@@ -11,7 +11,7 @@ using Ncw.Protocol.Transport;
 //   --lifeline stdin   标准输入关闭(EOF)就优雅退出:桌面端用「关掉 stdin」做跨平台的优雅关闭,Windows 上也一样可用。
 // 云端模式:ncw-agent --mode cloud。没有本机通道,也没有 NCW_LOCAL_TOKEN;启动配置由编排服务注入(环境变量 NCW_CLOUD_CONFIG 指向的配置文件 +
 //   NCW_ACCOUNT_TOKEN / NCW_ACCOUNT_TOKEN_FILE 里的账户身份令牌),全部不在命令行上、不进日志。远程连接只经中继;休眠 / 升级时优雅退出(退出码 0)。详见 docs/design/02 A6。
-// 退出码:0 正常结束(含云端休眠 / 升级);2 参数错误;65 身份 / 主密钥不符(挂错了卷);69 依赖不可用(KMS、数据根);75 同一数据根已有另一个 Agent(单实例锁);78 启动配置不合法。
+// 退出码:0 正常结束(含云端休眠 / 升级);2 参数错误;65 身份 / 主密钥不符(云端:挂错了卷;本机:数据根里有加密数据却没有可用的 credential.key,绝不生成新密钥);69 依赖不可用(KMS、数据根);75 同一数据根已有另一个 Agent(单实例锁);78 启动配置不合法。
 // 信号:SIGINT / SIGTERM 优雅关闭;SIGHUP 忽略(「关窗后继续运行」时,终端关闭不能带走它)。
 if (IsCloudMode(args))
 {
@@ -68,7 +68,20 @@ if (lifelineStdin)
     });
 }
 
-var host = new AgentHost(options);
+AgentHost host;
+try
+{
+    host = new AgentHost(options);
+}
+catch (CloudStartupException e)
+{
+    // 本机模式的结构化启动失败(数据根里有加密数据,却没有可用的主密钥,见 LocalStartupCodes):一行,只有稳定 key 和字段名(密钥文件名),
+    // 没有任何值、没有堆栈。绝不生成新密钥。桌面端的守护据此直接停在「失败」,不当崩溃去重启。只接这一种异常,其它未预期的异常保持原样。
+    Console.Error.WriteLine($"ncw-agent startup-failed {e.Code} {e.Field ?? "-"}");
+    Console.Error.Flush();
+    return e.ExitCode;
+}
+
 // 只有端点真的可以连接之后才报告 ready;桌面端等这一行再连接。
 await host.RunAsync(cts.Token, onListening: () =>
 {

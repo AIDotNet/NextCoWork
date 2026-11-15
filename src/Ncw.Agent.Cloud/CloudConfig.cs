@@ -20,7 +20,10 @@ public static class CloudExitCodes
     /// <summary>依赖不可用(EX_UNAVAILABLE):KMS 连不上 / 拒绝解开密钥。可以退避后重启。</summary>
     public const int Dependency = 69;
 
-    /// <summary>身份不符(挂错了卷):数据根里的设备身份和编排服务期望的不一致(EX_DATAERR)。重启也不会好。</summary>
+    /// <summary>
+    /// 身份不符(挂错了卷):数据根里的设备身份和编排服务期望的不一致(EX_DATAERR)。重启也不会好。
+    /// 本机模式也用它表示「数据根里有数据却没有可用的主密钥」(<see cref="LocalStartupCodes"/>):同样是「这份数据和手上的密钥对不上」,重启也不会好。
+    /// </summary>
     public const int Identity = 65;
 }
 
@@ -47,6 +50,19 @@ public static class CloudStartupCodes
     public const string KeyMissing = "cloud.kms.keyMissing";
     public const string IdentityMismatch = "cloud.identity.mismatch";
     public const string BindingMismatch = "cloud.identity.bindingMismatch";
+}
+
+/// <summary>
+/// 本机模式(<c>--mode local</c>)启动失败的稳定 key,和云端同一个形态:<c>ncw-agent startup-failed &lt;key&gt; &lt;字段名&gt;</c>(只有 key 和字段名,绝无值),退出码 <see cref="CloudExitCodes.Identity"/>。
+/// 字段名是主密钥的文件名(<c>credential.key</c>),不是它的内容。桌面端的守护按这个 key 映射成给用户的原因(<c>master-key-missing</c> / <c>master-key-unreadable</c>)。
+/// </summary>
+public static class LocalStartupCodes
+{
+    /// <summary>数据根里已经有数据 / 加密凭据(<c>device.json</c> 里的设备私钥、<c>credentials</c> 表里的 NCK1 密文),但 <c>credential.key</c> 不存在。绝不生成新密钥。</summary>
+    public const string MasterKeyMissing = "agent.masterKey.missing";
+
+    /// <summary><c>credential.key</c> 存在,但读不了(权限 / 不是普通文件)、已损坏(长度不对),或者解不开这份数据里的密文(不是这份数据的密钥)。</summary>
+    public const string MasterKeyUnreadable = "agent.masterKey.unreadable";
 }
 
 /// <summary>出网策略(启动配置里的一段,见 <see cref="HostAllowlistEgress"/>)。</summary>

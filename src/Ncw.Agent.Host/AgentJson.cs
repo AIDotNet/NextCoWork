@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ncw.Agent.Cloud;
 using Ncw.Agent.Storage.Credentials;
 using Ncw.Protocol.Security;
 
@@ -39,10 +40,22 @@ public sealed record DeviceIdentity(string Name, PeerIdentity Keys)
 
         if (file is { V: 2, Certificate: { } cert, PrivateKey: { } sealedKey })
         {
-            var master = CredentialStore.MasterKeyForDataRoot(dataRoot);
+            // 私钥已经用主密钥加密过了:主密钥只能读已有的,绝不生成新的(新密钥解不开它,还会留下一把永远对不上的 credential.key)。
+            var master = OpenMasterKey(dataRoot, allowCreate: false);
             try
             {
-                var pkcs8 = Convert.FromBase64String(CredentialCrypto.Decrypt(master, Convert.FromBase64String(sealedKey)));
+                string pkcs8Text;
+                try
+                {
+                    pkcs8Text = CredentialCrypto.Decrypt(master, Convert.FromBase64String(sealedKey));
+                }
+                catch (CryptographicException e)
+                {
+                    // 密钥文件读得出来,却解不开这份数据的私钥:不是这份数据的密钥(或 device.json 被改过)
+                    throw MasterKeyFailure(LocalStartupCodes.MasterKeyUnreadable, e);
+                }
+
+                var pkcs8 = Convert.FromBase64String(pkcs8Text);
                 return new DeviceIdentity(file.Name, PeerIdentity.Load(Convert.FromBase64String(cert), pkcs8));
             }
             finally
@@ -53,7 +66,7 @@ public sealed record DeviceIdentity(string Name, PeerIdentity Keys)
 
         name ??= Environment.MachineName;
         var keys = PeerIdentity.Create(name, clock);
-        var key = CredentialStore.MasterKeyForDataRoot(dataRoot);
+        var key = OpenMasterKey(dataRoot, allowCreate: true);
         try
         {
             var sealedPrivate = Convert.ToBase64String(CredentialCrypto.Encrypt(key, Convert.ToBase64String(keys.PrivateKey)));
@@ -68,6 +81,51 @@ public sealed record DeviceIdentity(string Name, PeerIdentity Keys)
 
         return new DeviceIdentity(name, keys);
     }
+
+    /// <summary>
+    /// 打开数据根的主密钥(<c>credential.key</c>)。<paramref name="allowCreate"/> 时沿用 <see cref="CredentialStore.MasterKeyForDataRoot"/> 的保护:
+    /// 全新的数据根生成密钥,库里已经有 NCK1 密文却没有密钥就拒绝。失败一律是结构化的启动失败(<see cref="CloudStartupException"/>:稳定 key + 字段名,
+    /// 退出码 <see cref="CloudExitCodes.Identity"/>,没有任何值、没有堆栈),只映射「主密钥缺失 / 读不了」这两种,别的异常保持原样。
+    /// </summary>
+    private static byte[] OpenMasterKey(string dataRoot, bool allowCreate)
+    {
+        try
+        {
+            return CredentialCrypto.LoadMasterKey(dataRoot);
+        }
+        catch (FileNotFoundException e) when (IsMasterKeyFile(e))
+        {
+            if (!allowCreate)
+            {
+                throw MasterKeyFailure(LocalStartupCodes.MasterKeyMissing, e);
+            }
+
+            try
+            {
+                // 全新的数据根:生成;库里已经有 NCK1 密文:它拒绝(再抛一次 FileNotFoundException)。生成过程自己的失败(磁盘满……)不在映射范围内,保持原样。
+                return CredentialStore.MasterKeyForDataRoot(dataRoot);
+            }
+            catch (FileNotFoundException again) when (IsMasterKeyFile(again))
+            {
+                throw MasterKeyFailure(LocalStartupCodes.MasterKeyMissing, again);
+            }
+        }
+        catch (Exception e) when (e is CryptographicException or IOException or UnauthorizedAccessException)
+        {
+            throw MasterKeyFailure(LocalStartupCodes.MasterKeyUnreadable, e);
+        }
+    }
+
+    private static bool IsMasterKeyFile(FileNotFoundException e) => e.FileName is { } name && Path.GetFileName(name) == CredentialCrypto.MasterKeyFileName;
+
+    private static CloudStartupException MasterKeyFailure(string code, Exception inner) => new(
+        code,
+        CredentialCrypto.MasterKeyFileName,
+        CloudExitCodes.Identity,
+        code == LocalStartupCodes.MasterKeyMissing
+            ? "The credential master key is missing; refusing to create a new one for data that is already encrypted."
+            : "The credential master key cannot be used for this data.",
+        inner);
 }
 
 internal static class AtomicFile
