@@ -74,6 +74,12 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
     public event Action<SidecarStatus>? StatusChanged;
 
     /// <summary>
+    /// 本机 Agent 进程拉起来了(在守护线程上触发;接上上次留下的 Agent 不算)。启动时间线用它区分「进程拉起」和「握手成功」两个真实的里程碑
+    /// (docs/design/03 §10)。订阅者抛出的异常不影响守护。
+    /// </summary>
+    public event Action? Spawned;
+
+    /// <summary>
     /// 开发阶段的数据根:<c>~/.next-cowork/agent-dev</c>(<c>NCW_AGENT_DATA_ROOT</c> 可改)。
     /// 2.x 数据接管(04 §4)做好之前,不碰 2.x 的 <c>~/.next-cowork/data</c>。
     /// </summary>
@@ -99,6 +105,18 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
         lock (_gate)
         {
             _retry.TrySetResult();
+        }
+    }
+
+    private void RaiseSpawned()
+    {
+        try
+        {
+            Spawned?.Invoke();
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            // 通知失败不能影响守护
         }
     }
 
@@ -147,7 +165,7 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
                     {
                         // 找不到 Agent:界面显示离线。隔一会儿再找(开发时可能还在构建)。
                         SetStatus(new SidecarStatus(SidecarPhase.Failed, SidecarIssue.AgentNotFound, RestartCount: restarts));
-                        await DelayAsync(_deps.Timings.NotFoundRetry, ct).ConfigureAwait(false);
+                        await DelayOrRetryAsync(_deps.Timings.NotFoundRetry, ct).ConfigureAwait(false);   // 用户点「重试」立刻再找(装好了 / 改了 NCW_AGENT_PATH)
                         continue;
                     }
 
@@ -155,6 +173,7 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
                     {
                         process = Spawn(executable);
                         spawned = true;
+                        RaiseSpawned();
                     }
                     catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException)
                     {

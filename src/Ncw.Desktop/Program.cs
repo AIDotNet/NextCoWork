@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Avalonia;
 using Ncw.Client.Updates;
+using Ncw.Core.Domain;
 using Ncw.Desktop.Updates;
 using Ncw.UI;
 using Velopack;
@@ -13,6 +14,10 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // 启动时间线(docs/design/03 §10):进程创建时间是用户感知的起点,进入 Main 是运行时自己启动完成的时刻。越早记越准,所以排在最前面。
+        var mainEntered = DateTimeOffset.UtcNow;
+        var processStarted = ProcessStartTime(mainEntered);
+
         // Velopack 的启动钩子必须是进程里最先做的事(docs/design/04 §3):安装 / 更新 / 卸载时它按命令行里的 --veloapp-* 执行钩子并直接退出;
         // 更新器重启应用时也经过这里。所以它在单实例、协议链接注册、Avalonia 之前 —— 钩子进程不能去抢单实例锁或建窗口。
         // 已下载但还没装的更新在这里(没有窗口、sidecar 还没起)应用并重启,是安全的时机。开发时直接 dotnet run 不是安装出来的应用,什么都不做。
@@ -53,12 +58,21 @@ internal static class Program
             NcwLinkInbox.Submit(SingleInstance.LinkPrefix + link);
         }
 
+        // Avalonia 起来之前发生的事,界面起来后一并写进启动事实
+        NcwApp.EarlyMilestones =
+        [
+            (StartupMilestone.ProcessStarted, processStarted),
+            (StartupMilestone.MainEntered, mainEntered),
+            (StartupMilestone.InstanceReady, DateTimeOffset.UtcNow),
+        ];
+
         _ = UrlSchemeRegistration.EnsureRegistered();
         LocalBackend? backend = null;
         NcwApp.BackendFactory = () => backend = new LocalBackend();
         NcwApp.UpdateServiceFactory = context => CreateUpdateService(context, () => backend?.Sidecar);
         NcwApp.RefreshTokenVaultFactory = static () => new AccountVault(NcwApp.ClientDirectory);
         Ncw.UI.Controls.NcwMotion.SystemReducesMotionProbe = SystemMotionProbe.ReducesMotion;   // 「动效 · 跟随系统」读系统的「减少动态效果」
+        NcwApp.NativeWindowBackground = NativeWindowBackground.Apply;   // 窗口第一帧就是加载界面的底色(docs/design/03 §10.6)
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
     }
@@ -72,6 +86,21 @@ internal static class Program
     }
 
     private static void Log(string message) => Trace.WriteLine(message);
+
+    /// <summary>进程创建时间(操作系统记的);读不到时用进入 Main 的时间。</summary>
+    private static DateTimeOffset ProcessStartTime(DateTimeOffset fallback)
+    {
+        try
+        {
+            using var self = Process.GetCurrentProcess();
+            var started = new DateTimeOffset(self.StartTime.ToUniversalTime());
+            return started <= fallback ? started : fallback;
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            return fallback;
+        }
+    }
 
     // 也供 IDE 的 XAML 预览器使用。
     public static AppBuilder BuildAvaloniaApp() =>

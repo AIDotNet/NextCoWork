@@ -354,13 +354,6 @@ public sealed class DeviceLink : IAsyncDisposable
         var deviceId = DeviceId;
         // 会话列表跟着项目走:每个项目拉一次 sessions.list(设备没有「会话列表」主题,变化靠下面几处触发重拉)
         var refreshes = list.Projects.Select(p => RefreshSessionsAsync(p.WorkspaceId)).ToList();
-        if (!_sessionsTracked)
-        {
-            // 启动时间线:第一份项目列表写进镜像之后,等这些会话列表都拉回来(RefreshSessionsAsync 在完成前已把结果投递到 UI 线程,
-            // 所以这里再投递的里程碑一定排在它们的 Store 更新之后);失败的不拖住启动(列表保持原样)
-            _sessionsTracked = true;
-            _ = Task.WhenAll(refreshes).ContinueWith(_ => _startup.Milestone(StartupMilestone.SessionsLoaded), TaskScheduler.Default);
-        }
 
         var refs = list.Projects.Select(p => new ProjectRef(deviceId, p.WorkspaceId)).ToList();
         _stores.Workspace.Update(state =>
@@ -383,6 +376,13 @@ public sealed class DeviceLink : IAsyncDisposable
         }
 
         _stores.Startup.Reach(StartupMilestone.ProjectsLoaded);   // 项目列表(哪怕是空的)已经写进镜像
+        if (!_sessionsTracked)
+        {
+            // 启动时间线:第一份项目列表写进镜像之后,等这些会话列表都拉回来(RefreshSessionsAsync 在完成前已把结果投递到 UI 线程,
+            // 所以这里再投递的里程碑一定排在它们的 Store 更新之后;放在项目列表写入之后,是因为没有会话要拉时延续会立刻执行);失败的不拖住启动(列表保持原样)
+            _sessionsTracked = true;
+            _ = Task.WhenAll(refreshes).ContinueWith(_ => _startup.Milestone(StartupMilestone.SessionsLoaded), TaskScheduler.Default);
+        }
     }
 
     /// <summary>
