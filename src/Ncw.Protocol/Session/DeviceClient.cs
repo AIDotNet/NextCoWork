@@ -163,7 +163,7 @@ public sealed class DeviceClient : IAsyncDisposable
     {
         _reader = Task.Run(ReadLoopAsync);
         _pinger = Task.Run(PingLoopAsync);
-        _watchdog = Task.CompletedTask; // TEMP-REVERT
+        _watchdog = Task.Run(WatchdogAsync);
     }
 
     private async Task ReadLoopAsync()

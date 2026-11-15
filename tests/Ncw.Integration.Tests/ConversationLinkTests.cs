@@ -322,6 +322,7 @@ public sealed class ConversationLinkTests : IAsyncLifetime
         Assert.True(a.Workspace.ActivityOf(project).Unknown);
 
         // 断线期间 B 批准,Run 跑完
+        await WaitUntil(() => b.State.InteractionsOf(run.DeviceId).Pending.Length == 1, "B's mirror has the pending approval"); // B 的镜像经自己的订阅异步追上,不能假设此刻已到
         var pendingForB = b.State.InteractionsOf(run.DeviceId).Pending[0];
         Assert.Equal(InteractionOutcome.Answered, (await b.Actions.RespondAsync(run.DeviceId, pendingForB, new ToolPermissionResponseDto(PermissionChoices.AllowOnce))).Outcome);
 

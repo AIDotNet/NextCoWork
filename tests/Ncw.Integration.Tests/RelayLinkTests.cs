@@ -653,12 +653,13 @@ public sealed class RelayLinkTests : IAsyncLifetime
 
         await WaitUntil(() => { lock (streams) return streams.Count == 2; }, "reconnected over a new connection");
         await WaitUntil(() => ConnectionIs(paired.DeviceId, DeviceConnection.Connected), "connected again");
+        // 「已连接」先于 data 主题的首个快照写进 Store(SyncAsync 先标 Connected,再订阅):数据状态要等重新同步到达。
+        await WaitUntil(() => { lock (_ui.Gate) return _stores.Workspace.State.Devices[paired.DeviceId].Data is not null; }, "data state re-synced");
         Assert.True(streams[0].IsDisposed); // 死连接被关掉了
         Assert.False(streams[1].IsDisposed);
         lock (_ui.Gate)
         {
             Assert.DoesNotContain(history, h => h.Connection is DeviceConnection.Offline or DeviceConnection.Revoked);
-            Assert.NotNull(_stores.Workspace.State.Devices[paired.DeviceId].Data); // 重连后重新同步
         }
     }
 

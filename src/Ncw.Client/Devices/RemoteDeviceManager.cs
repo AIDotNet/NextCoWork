@@ -211,4 +211,43 @@ public sealed class RemoteDeviceManager(
             await link.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// 手机进入后台 / 网络消失:断开所有设备,设备标为「状态未知」。已配对列表不动。之后用 <see cref="Resume"/> 重新连接;可以反复调用。
+    /// </summary>
+    public async Task SuspendAsync()
+    {
+        List<DeviceLink> links;
+        lock (_gate)
+        {
+            links = [.. _links.Values];
+            _links.Clear();
+        }
+
+        foreach (var link in links)
+        {
+            await link.SuspendAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>从 <see cref="SuspendAsync"/> 恢复:重新读出已配对设备并连接(同 <see cref="Start"/>)。</summary>
+    public void Resume()
+    {
+        lock (_gate)
+        {
+            if (_links.Count > 0)
+            {
+                return; // 已经在连(重复调用不重复建连接)
+            }
+        }
+
+        Start();
+    }
+
+    /// <summary>丢弃现有连接并立刻重连(网络切换、长时间后台之后连接可能已经失效)。</summary>
+    public async Task ReconnectAsync()
+    {
+        await SuspendAsync().ConfigureAwait(false);
+        Resume();
+    }
 }

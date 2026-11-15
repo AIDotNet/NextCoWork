@@ -616,4 +616,15 @@ public sealed class DeviceLink : IAsyncDisposable
 
         _lifetime.Dispose();
     }
+
+    /// <summary>
+    /// 暂停(手机进入后台 / 网络没了,docs/design/11 §2):断开、停止重连,并把这台设备标成断开 —— 状态未知,不判成结束(规则 7)。
+    /// 用完即弃(不能再 <see cref="Start"/>);恢复时由 <see cref="RemoteDeviceManager.Resume"/> 新建连接。
+    /// </summary>
+    public async Task SuspendAsync()
+    {
+        await DisposeAsync().ConfigureAwait(false);
+        _client = null;
+        SetConnection(DeviceConnection.Offline);
+    }
 }
