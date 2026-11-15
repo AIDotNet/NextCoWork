@@ -1,0 +1,42 @@
+{
+  "publisher": "ncw",
+  "name": "bilibili",
+  "kind": "webapp",
+  "displayName": "哔哩哔哩",
+  "description": "把哔哩哔哩带进工作区:侧边栏一个入口,点开就是登录好的 B 站",
+  "version": "0.1.0",
+  "license": "MIT",
+  "categories": ["娱乐"],
+  "keywords": ["bilibili", "video", "webapp"],
+  "engines": { "nextcowork": "^0.3.0" },
+  "l10n": "./l10n",
+  "activationEvents": ["onWebApp:home"],
+  "permissions": [],
+  "optionalPermissions": [],
+  "hostPermissions": [
+    "https://www.bilibili.com/*",
+    "https://t.bilibili.com/*",
+    "https://space.bilibili.com/*",
+    "https://search.bilibili.com/*"
+  ],
+  "contributes": {
+    "webApps": [
+      {
+        "id": "home",
+        "title": "%app.home%",
+        "icon": "tv",
+        "url": "https://www.bilibili.com/",
+        "open": "tab",
+        "entry": "sidebar"
+      },
+      {
+        "id": "feed",
+        "title": "%app.feed%",
+        "icon": "bookmark",
+        "url": "https://t.bilibili.com/",
+        "open": "right",
+        "entry": "sidebar"
+      }
+    ]
+  }
+}

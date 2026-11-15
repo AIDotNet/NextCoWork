@@ -1,0 +1,15 @@
+{
+  "name": "card",
+  "publisher": "acme",
+  "displayName": "Card",
+  "description": "An interactive tool: it pushes a live card with buttons and waits for the user to click one.",
+  "version": "0.2.0",
+  "engines": { "nextcowork": "^0.3.0" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onTool:pick_one"],
+  "permissions": [],
+  "contributes": {
+    "tools": [{ "name": "pick_one", "title": "%tool.pick%", "shape": "orchestration" }]
+  }
+}

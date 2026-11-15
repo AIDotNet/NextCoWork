@@ -1,0 +1,16 @@
+{
+  "cmd.hello": "打个招呼",
+  "cmd.read": "读文件",
+  "cmd.write": "写文件",
+  "cmd.exec": "运行命令",
+  "cmd.fetch": "请求网址",
+  "cmd.ask": "问用户",
+  "cmd.perm": "申请权限",
+  "cmd.config": "读配置",
+  "config.title": "你好",
+  "config.greeting": "问候语",
+  "config.loud": "大声",
+  "config.retries": "重试次数",
+  "config.mode": "模式",
+  "greeted": "你好!这是第 {count} 次问候。"
+}

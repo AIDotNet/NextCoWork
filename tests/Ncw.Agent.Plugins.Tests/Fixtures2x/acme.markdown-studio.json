@@ -1,0 +1,82 @@
+{
+  "name": "markdown-studio",
+  "publisher": "acme",
+  "displayName": "Markdown Studio",
+  "description": "接管 Markdown 文件的打开:CM6 编辑器 + 分屏实时预览(GFM/公式/mermaid/代码高亮)、工具栏、大纲、自动保存",
+  "version": "0.2.3",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "categories": [
+    "编辑器"
+  ],
+  "keywords": [
+    "markdown",
+    "editor",
+    "preview",
+    "gfm",
+    "katex",
+    "mermaid"
+  ],
+  "engines": {
+    "nextcowork": ">=0.3.1"
+  },
+  "main": "./dist/extension.js",
+  "source": "src/extension.ts",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onCustomEditor:markdown-studio.editor"
+  ],
+  "permissions": [],
+  "optionalPermissions": [],
+  "hostPermissions": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "markdown-studio.editor",
+        "displayName": "%editor.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "views": [
+      {
+        "id": "markdown-studio.editor",
+        "title": "%editor.displayName%",
+        "icon": "file-text",
+        "path": "dist/view/index.html"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/language-data": "^6.5.2",
+    "@lezer/highlight": "^1.2.1",
+    "@milkdown/kit": "^7.22.1",
+    "@milkdown/plugin-math": "^7.5.9",
+    "@milkdown/react": "^7.22.1",
+    "@uiw/react-codemirror": "^4.25.11",
+    "esbuild": "^0.25.0",
+    "katex": "^0.16.47",
+    "mermaid": "^11.17.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

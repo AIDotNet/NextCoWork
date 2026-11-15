@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Hooks</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Hooks.Tests" />
+  </ItemGroup>
+</Project>

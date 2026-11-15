@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Widgets/Ncw.Agent.Widgets.csproj" />
+  </ItemGroup>
+</Project>

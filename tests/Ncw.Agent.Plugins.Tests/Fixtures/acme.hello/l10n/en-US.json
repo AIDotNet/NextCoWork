@@ -1,0 +1,16 @@
+{
+  "cmd.hello": "Say hello",
+  "cmd.read": "Read a file",
+  "cmd.write": "Write a file",
+  "cmd.exec": "Run a command",
+  "cmd.fetch": "Fetch a URL",
+  "cmd.ask": "Ask the user",
+  "cmd.perm": "Ask for permissions",
+  "cmd.config": "Read the configuration",
+  "config.title": "Hello",
+  "config.greeting": "Greeting",
+  "config.loud": "Shout",
+  "config.retries": "Retries",
+  "config.mode": "Mode",
+  "greeted": "Hello! That is greeting number {count}."
+}

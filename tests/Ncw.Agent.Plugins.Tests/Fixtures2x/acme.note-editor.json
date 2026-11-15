@@ -1,0 +1,42 @@
+{
+  "publisher": "acme",
+  "name": "note-editor",
+  "displayName": "Note Editor",
+  "description": "用宿主控件写的 .note 编辑器 —— 示范插件如何用 React 写界面而**不自带 React**",
+  "version": "0.1.0",
+  "license": "MIT",
+  "categories": ["编辑器"],
+  "keywords": ["react", "ui", "custom-editor", "example"],
+  "engines": { "nextcowork": "^0.3.0" },
+  "main": "./dist/extension.js",
+  "source": "src/extension.ts",
+  "l10n": "./l10n",
+  "activationEvents": ["onCustomEditor:note-editor.editor"],
+  "permissions": [],
+  "optionalPermissions": [],
+  "hostPermissions": [],
+  "views": {
+    "view/editor.tsx": "dist/view/editor.js"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "note-editor.editor",
+        "displayName": "%editor.displayName%",
+        "selector": [{ "filenamePattern": "*.note" }],
+        "priority": "default"
+      }
+    ],
+    "views": [
+      {
+        "id": "note-editor.view",
+        "title": "%editor.displayName%",
+        "icon": "notebook-pen",
+        "path": "dist/view/editor.html"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

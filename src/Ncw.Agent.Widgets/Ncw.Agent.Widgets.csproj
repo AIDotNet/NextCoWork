@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    内联可视化工具(docs/design/08-agent-runtime/03-tools-permissions.md §10):visualize_read_me / visualize_show_widget / visualize_edit_widget / visualize_update_widget,
+    小组件载荷的服务端消毒、手机端静态快照、预先声明的动作(绑定参数)。
+    依赖规则:只引用 Ncw.Agent.Kernel(工具协议)、Ncw.Agent.Tools(BuiltinTool / 参数校验)、Ncw.Agent.Extensions(交互闸门:widget_submit)和 Ncw.Agent.Environments(环境标识);
+    不引用 Ncw.Protocol、Ncw.Agent.Storage、Avalonia、客户端项目。转录和动作执行都是注入的接口(Host 实现)。
+    不用反射序列化:HTML 消毒是手写的分词器,JSON 用 Utf8JsonWriter / JsonDocument 手写;设计规范是常量字符串,NativeAOT 下不读资源。
+    本层不产出界面文字:发给模型的文字是英文常量;Details 只给结构化数据(稳定 key / 规则 id)。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Widgets</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Widgets.Tests" />
+  </ItemGroup>
+</Project>

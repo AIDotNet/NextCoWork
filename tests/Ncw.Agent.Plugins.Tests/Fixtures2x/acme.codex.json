@@ -1,0 +1,79 @@
+{
+  "name": "codex",
+  "publisher": "acme",
+  "displayName": "Codex",
+  "description": "在标签「+」菜单里一键启动 Codex CLI:在当前工作区根目录打开一个终端,自动带上你在下方配置的接入信息(baseURL / API Key 以环境变量注入,模型经 -m 参数传入;不落盘、不改 ~/.codex 全局配置),并直接进入 codex 交互会话。零遥测、不联网(配置只在本机与终端子进程之间传递)。注意:终端里对 env 的查看等同于你自己 export 过。需要本机已安装 Codex CLI(codex 命令可用)。SSH 远程工作区暂不支持。",
+  "version": "0.1.1",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "categories": [
+    "开发工具"
+  ],
+  "keywords": [
+    "codex",
+    "openai",
+    "terminal",
+    "ai"
+  ],
+  "engines": {
+    "nextcowork": ">=0.3.1"
+  },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onCommand:acme.codex.launch"
+  ],
+  "permissions": [
+    "process"
+  ],
+  "allowedCommands": [
+    "codex"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "acme.codex.launch",
+        "title": "%cmd.launch%",
+        "iconFile": "assets/codex.svg"
+      }
+    ],
+    "menus": {
+      "tabBar/new": [
+        {
+          "command": "acme.codex.launch",
+          "group": "tools@40"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "title": "%config.baseUrl%",
+          "default": ""
+        },
+        "model": {
+          "type": "string",
+          "title": "%config.model%",
+          "default": ""
+        },
+        "apiKey": {
+          "type": "string",
+          "title": "%config.apiKey%",
+          "default": ""
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

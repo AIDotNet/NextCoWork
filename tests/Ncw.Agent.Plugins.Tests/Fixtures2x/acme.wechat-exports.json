@@ -1,0 +1,32 @@
+{
+  "name": "wechat-exports",
+  "publisher": "acme",
+  "displayName": "WeChat Export Reader",
+  "description": "让 Agent 读取和搜索你主动导出的微信聊天记录。用法：① 在微信里把聊天记录导出为 TXT 或 ZIP（也可以用 WeChatBridge 分享导出）；② 把文件放进当前工作区的 wechat-exports/ 目录；③ 在对话里直接问，比如「总结 wechat-exports 里和张三的聊天」「搜索导出记录里提到“报价”的消息」。Agent 会调用 3 个只读工具：list_exports 列出导出文件，read_export 读取某个文件的内容片段，search_exports 按关键词搜索并返回匹配行（每次最多 20 条）。安全边界：只读 wechat-exports/ 下的 .txt/.zip，单个 TXT 不超过 2 MB、ZIP 不超过 8 MB，只解出其中的 TXT、忽略图片等附件；不读取微信数据库、不解密、不联网、不发送消息。注意：被读取的聊天内容会发送给你当前选择的模型服务。",
+  "version": "0.1.1",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "engines": { "nextcowork": ">=0.3.1" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onTool:list_exports", "onTool:read_export", "onTool:search_exports"],
+  "permissions": ["workspace.read"],
+  "contributes": {
+    "tools": [
+      { "name": "list_exports", "title": "%tool.list%", "icon": "files", "shape": "read" },
+      { "name": "read_export", "title": "%tool.read%", "icon": "file-text", "shape": "read" },
+      { "name": "search_exports", "title": "%tool.search%", "icon": "search", "shape": "search" }
+    ]
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "esbuild": "^0.25.0",
+    "fflate": "^0.8.2",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

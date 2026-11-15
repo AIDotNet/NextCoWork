@@ -1,0 +1,20 @@
+{
+  "name": "think",
+  "publisher": "acme",
+  "displayName": "Think",
+  "description": "A structured deep-thinking tool with zero side effects: no files, no network, no state.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "categories": ["Developer tools"],
+  "keywords": ["think", "reasoning"],
+  "engines": { "nextcowork": ">=0.3.1" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onTool:think"],
+  "permissions": [],
+  "contributes": {
+    "tools": [
+      { "name": "think", "title": "%tool.think%", "shape": "reasoning", "card": { "summary": "%tool.think.summary%" } }
+    ]
+  }
+}

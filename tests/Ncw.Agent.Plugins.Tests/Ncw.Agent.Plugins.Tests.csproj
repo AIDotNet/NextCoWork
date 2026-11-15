@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Plugins/Ncw.Agent.Plugins.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 真实风格的插件夹具(按 esbuild 输出风格写的单文件 ESM + 清单 + l10n + skills):从 2.x 的内置 / 示例插件移植 -->
+    <None Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 2.x 自带 / 示例插件的真实清单(从 main 分支原样拷来,只有 package.json):兼容性验证用,见 CompatibilityTests -->
+    <None Include="Fixtures2x/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

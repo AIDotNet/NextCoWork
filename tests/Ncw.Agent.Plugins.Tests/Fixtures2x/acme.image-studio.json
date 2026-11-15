@@ -1,0 +1,87 @@
+{
+  "name": "image-studio",
+  "publisher": "acme",
+  "displayName": "Image Studio",
+  "description": "接管图片文件的打开:标签页内预览 + 完整编辑(裁剪/旋转/翻转/缩放/滤镜/画笔/文字/撤销重做)",
+  "version": "0.1.2",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "categories": [
+    "图像"
+  ],
+  "keywords": [
+    "image",
+    "editor",
+    "photo",
+    "crop",
+    "filter",
+    "paint"
+  ],
+  "engines": {
+    "nextcowork": ">=0.3.1"
+  },
+  "main": "./dist/extension.js",
+  "source": "src/extension.ts",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onCustomEditor:image-studio.editor"
+  ],
+  "permissions": [],
+  "optionalPermissions": [],
+  "hostPermissions": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "image-studio.editor",
+        "displayName": "%editor.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.png"
+          },
+          {
+            "filenamePattern": "*.jpg"
+          },
+          {
+            "filenamePattern": "*.jpeg"
+          },
+          {
+            "filenamePattern": "*.webp"
+          },
+          {
+            "filenamePattern": "*.gif"
+          },
+          {
+            "filenamePattern": "*.bmp"
+          },
+          {
+            "filenamePattern": "*.avif"
+          },
+          {
+            "filenamePattern": "*.ico"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "views": [
+      {
+        "id": "image-studio.editor",
+        "title": "%editor.displayName%",
+        "icon": "image",
+        "path": "dist/view/index.html"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "esbuild": "^0.25.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

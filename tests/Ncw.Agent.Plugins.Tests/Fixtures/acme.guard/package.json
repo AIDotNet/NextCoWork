@@ -1,0 +1,16 @@
+{
+  "name": "guard",
+  "publisher": "acme",
+  "displayName": "Guard",
+  "description": "A policy plugin: it contributes a Skill, vetoes dangerous tool calls (it can only tighten) and adds a short context note to every turn.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "engines": { "nextcowork": "^0.3.0" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onStartup"],
+  "permissions": ["agent.intercept", "agent.context"],
+  "contributes": {
+    "skills": [{ "path": "skills/guard-style" }]
+  }
+}

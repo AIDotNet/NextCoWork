@@ -1,0 +1,36 @@
+{
+  "name": "think",
+  "publisher": "acme",
+  "displayName": "深度思考 (Think)",
+  "description": "给 Agent 一个只做一件事的深度思考工具 think:让它在动手之前先把问题想清楚。零权限、无副作用——不读文件、不联网、不写入任何数据;工具的全部价值在于强迫模型把分析显式写下来,思考内容随调用进入对话,在聊天里展开即可查看完整推理过程。它会引导 Agent 按固定框架思考:① 先复述用户的整体任务目标,所有结论锚定总目标,而不是当前片段;② 完整解析需求——显式约束与隐含约束(环境、既有约定、兼容性、用户没说但显然期待的);③ 具体化细节:边界、空值、错误路径、并发、i18n 等,逐条点名;④ 显式列出假设与风险;⑤ 多方案时对比取舍并说明理由;⑥ 定义「完成」的可验证标准。适用场景:复杂改动前的方案分析、需求模糊需要澄清、多实现路径取舍、发现自己在凭假设行动时。工具卡以 reasoning 形态渲染,折叠行显示本次思考锚定的目标;返回的确认语会再次提醒 Agent 对齐整体目标再行动。无需任何权限批准,装完即用;模型可见的提示词为英文,界面文案支持中英文。",
+  "version": "0.1.0",
+  "license": "MIT",
+  "categories": ["开发工具"],
+  "keywords": ["think", "reasoning", "深度思考", "规划", "agent"],
+  "icon": "assets/icon.png",
+  "engines": { "nextcowork": ">=0.3.1" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onTool:think"],
+  "permissions": [],
+  "contributes": {
+    "tools": [
+      {
+        "name": "think",
+        "title": "%tool.think%",
+        "shape": "reasoning",
+        "card": { "summary": "%tool.think.summary%" }
+      }
+    ]
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

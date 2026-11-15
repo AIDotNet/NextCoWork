@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    开发 / CI 用的最小程序(不对用户发布,不进 NextCoWork.slnx):验证 Ncw.Agent.Plugins(含 Jaunt)能 NativeAOT 发布并且零裁剪 / AOT 警告,
+    而且发布出来的原生二进制真的能装、激活、运行一个插件(命令 / 工具 / 异步 / 预算超限)。
+    用法:dotnet publish tools/PluginAotProbe -c Release -r <rid> -o <dir>,然后运行 <dir>/PluginAotProbe(退出码 0 = 全部通过)。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PublishAot>true</PublishAot>
+    <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Plugins/Ncw.Agent.Plugins.csproj" />
+  </ItemGroup>
+</Project>

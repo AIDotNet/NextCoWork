@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Hooks/Ncw.Agent.Hooks.csproj" />
+    <!-- 端到端:真 AgentSession / RunRegistry + 真 SQLite + 真工具 + 真权限扩展 + 计划 / 待办 / 目标(Stop 钩子与目标共存的用例) -->
+    <ProjectReference Include="../../src/Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Runs/Ncw.Agent.Runs.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+  </ItemGroup>
+</Project>

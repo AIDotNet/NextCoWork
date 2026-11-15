@@ -1,0 +1,59 @@
+{
+  "name": "excalidraw",
+  "publisher": "acme",
+  "displayName": "Excalidraw",
+  "description": "在标签页里新建并编辑 .excalidraw 手绘白板",
+  "version": "0.1.5",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "categories": ["可视化"],
+  "keywords": ["diagram", "excalidraw", "drawing", "whiteboard"],
+  "engines": { "nextcowork": ">=0.1.24" },
+  "main": "./dist/extension.js",
+  "source": "src/extension.ts",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onStartup",
+    "onCommand:excalidraw.new",
+    "onCustomEditor:excalidraw.editor"
+  ],
+  "permissions": ["workspace.read", "workspace.write"],
+  "optionalPermissions": [],
+  "hostPermissions": [],
+  "contributes": {
+    "commands": [
+      { "command": "excalidraw.new", "title": "%cmd.new%", "icon": "pen-tool" }
+    ],
+    "menus": {
+      "tabBar/new": [{ "command": "excalidraw.new", "group": "create@20" }]
+    },
+    "customEditors": [
+      {
+        "viewType": "excalidraw.editor",
+        "displayName": "%editor.displayName%",
+        "selector": [{ "filenamePattern": "*.excalidraw" }],
+        "priority": "default"
+      }
+    ],
+    "views": [
+      {
+        "id": "excalidraw.canvas",
+        "title": "%editor.displayName%",
+        "icon": "pen-tool",
+        "path": "dist/view/index.html"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "esbuild": "^0.25.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "node build.mjs --package"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "claude-code",
+  "publisher": "acme",
+  "displayName": "Claude Code",
+  "description": "在标签「+」菜单里一键启动 Claude Code:在当前工作区根目录打开一个终端,自动带上你在下方配置的接入信息(baseURL / 模型 / API Key,以环境变量注入,不落盘),并直接进入 claude 交互会话。无需手动 export、不改 ~/.claude 全局配置;取消会话即消失。零遥测、不联网(配置只在本机与终端子进程之间传递)。注意:终端里对 env 的查看等同于你自己 export 过。需要本机已安装 Claude Code CLI(claude 命令可用)。SSH 远程工作区暂不支持。",
+  "version": "0.1.1",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "categories": [
+    "开发工具"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "anthropic",
+    "terminal",
+    "ai"
+  ],
+  "engines": {
+    "nextcowork": ">=0.3.1"
+  },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onCommand:acme.claude-code.launch"
+  ],
+  "permissions": [
+    "process"
+  ],
+  "allowedCommands": [
+    "claude"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "acme.claude-code.launch",
+        "title": "%cmd.launch%",
+        "iconFile": "assets/claude.svg"
+      }
+    ],
+    "menus": {
+      "tabBar/new": [
+        {
+          "command": "acme.claude-code.launch",
+          "group": "tools@30"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "title": "%config.baseUrl%",
+          "default": ""
+        },
+        "model": {
+          "type": "string",
+          "title": "%config.model%",
+          "default": ""
+        },
+        "apiKey": {
+          "type": "string",
+          "title": "%config.apiKey%",
+          "default": ""
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@aidotnet/plugin-api": "file:../../packages/plugin-api",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "node build.mjs --package"
+  }
+}

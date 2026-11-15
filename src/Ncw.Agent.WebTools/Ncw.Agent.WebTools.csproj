@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    联网工具(docs/design/08-agent-runtime/03-tools-permissions.md §2、§13):WebFetch、web_search,以及它们共用的 SSRF 防护与 HTTP 出口。
+    依赖规则:只引用 Ncw.Agent.Kernel(工具协议)、Ncw.Agent.Tools(BuiltinTool、参数 schema)和 Ncw.Agent.Environments(Details 里的执行环境标识);
+    不引用 Ncw.Protocol、Ncw.Agent.Storage、Avalonia、客户端项目。搜索提供方的配置与密钥是注入的接口(Host 接到库和 NCK1 凭据上)。
+    网络只经 IWebHttp 出去(可注入;默认实现把「解析 → 校验 → 钉死 IP → 连接」做在同一个 ConnectCallback 里,防 DNS 重绑定)。
+    本项目不碰文件和进程;JSON 全部用 Utf8JsonWriter / JsonDocument 手写,HTML 转文本自己实现,不用反射型库,可裁剪、可 NativeAOT。
+    本层不产出界面文字:发给模型的文字是英文常量;Details 只给结构化数据。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.WebTools</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.WebTools.Tests" />
+  </ItemGroup>
+</Project>

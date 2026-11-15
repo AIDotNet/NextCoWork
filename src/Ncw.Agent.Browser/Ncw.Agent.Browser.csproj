@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    浏览器工具(docs/design/08-agent-runtime/03-tools-permissions.md §10):Agent 驱动一个无头 Chrome / Edge / Chromium。
+    决定(D15 修订):不用 PuppeteerSharp,自己实现最小 CDP 客户端 —— 实测 PuppeteerSharp 25.17.1 在 NativeAOT / 裁剪下有 IL2026 / IL2075 / IL2090 / IL2091 / IL3050 / IL3000 系列警告
+    (CDP 连接的收发本身就走反射 JSON),而且它自己 Process.Start 浏览器,绕过 IExecutionEnvironment。
+    依赖规则:只引用 Ncw.Agent.Kernel(工具协议)、Ncw.Agent.Tools(BuiltinTool / schema 构造器 / ToolRuntime)、Ncw.Agent.Environments;不引用 Ncw.Protocol、Ncw.Agent.Storage、Avalonia、客户端项目。
+    浏览器进程只经 IExecutionEnvironment.OpenProcessAsync 启动,可执行文件、profile 目录经 IEnvironmentFs 探测 / 创建;本项目没有 System.IO 的文件 API、没有 System.Diagnostics.Process、不读环境变量(经注入的函数)。
+    CDP 的收发全部用 Utf8JsonWriter / JsonDocument 手写,不走反射序列化,可裁剪、可 NativeAOT。
+    本层不产出界面文字:发给模型的文字是英文常量;失败带稳定的 errorKey(Details),控制端按 key 翻译。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Browser</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Browser.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+{
+  "name": "exports",
+  "publisher": "acme",
+  "displayName": "Chat Export Reader",
+  "description": "Read-only tools that list, read and search chat exports the user dropped into the workspace's chat-exports/ directory.",
+  "version": "0.1.1",
+  "license": "MIT",
+  "engines": { "nextcowork": ">=0.3.1" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onTool:list_exports", "onTool:read_export", "onTool:search_exports"],
+  "permissions": ["workspace.read"],
+  "contributes": {
+    "tools": [
+      { "name": "list_exports", "title": "%tool.list%", "icon": "files", "shape": "read" },
+      { "name": "read_export", "title": "%tool.read%", "icon": "file-text", "shape": "read" },
+      { "name": "search_exports", "title": "%tool.search%", "icon": "search", "shape": "search" }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    插件宿主(M4,docs/design/02 A7 / 08.06):清单、安装、权限、配置、市场,以及 Jaunt 里的 JS 运行时。
+    这是仓库里唯一引用 Jaunt 的项目(AGENTS.md §6),也是唯一允许创建 JsEngine 的地方。
+    不引用 Ncw.Protocol / Avalonia / 客户端 / Host:协议 DTO 的映射在 Host(Ncw.Agent.Host/Plugins)。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Plugins</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Jaunt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Skills/Ncw.Agent.Skills.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Plugins.Tests" />
+  </ItemGroup>
+</Project>

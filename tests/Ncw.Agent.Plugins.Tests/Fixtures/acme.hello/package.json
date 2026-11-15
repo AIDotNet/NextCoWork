@@ -1,0 +1,42 @@
+{
+  "name": "hello",
+  "publisher": "acme",
+  "displayName": "Hello",
+  "description": "The smallest useful plugin: commands, storage, configuration and the permission-gated host APIs.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "categories": ["Other"],
+  "engines": { "nextcowork": "^0.3.0" },
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": ["onCommand:acme.hello.hello"],
+  "permissions": ["storage"],
+  "optionalPermissions": ["workspace.read", "workspace.write", "process", "net", "window.notify", "secrets"],
+  "hostPermissions": ["https://api.example.com/*"],
+  "allowedCommands": ["echo", "git"],
+  "contributes": {
+    "commands": [
+      { "command": "acme.hello.hello", "title": "%cmd.hello%", "icon": "sparkles" },
+      { "command": "acme.hello.read", "title": "%cmd.read%" },
+      { "command": "acme.hello.write", "title": "%cmd.write%" },
+      { "command": "acme.hello.exec", "title": "%cmd.exec%" },
+      { "command": "acme.hello.fetch", "title": "%cmd.fetch%" },
+      { "command": "acme.hello.ask", "title": "%cmd.ask%" },
+      { "command": "acme.hello.perm", "title": "%cmd.perm%" },
+      { "command": "acme.hello.config", "title": "%cmd.config%" }
+    ],
+    "menus": {
+      "tabBar/new": [{ "command": "acme.hello.hello", "group": "create@10" }]
+    },
+    "slashCommands": [{ "name": "hello", "command": "acme.hello.hello", "title": "%cmd.hello%" }],
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "greeting": { "type": "string", "title": "%config.greeting%", "default": "Hello" },
+        "loud": { "type": "boolean", "title": "%config.loud%", "default": false },
+        "retries": { "type": "number", "title": "%config.retries%", "default": 3 },
+        "mode": { "type": "enum", "title": "%config.mode%", "enum": ["fast", "safe"], "default": "safe" }
+      }
+    }
+  }
+}
