@@ -4,17 +4,24 @@
 
 ## 0. 当前阶段
 
-M2 协议与 Agent 骨架(进行中;M1 已完成)。设计文档在 `docs/design/`(M0 已完成);实现必须与设计一致,偏离时先改设计文档。
+M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成:协议(含黄金向量)、本机与局域网承载、配对、C# Agent、2.x 数据接管、控制端连真实 Agent 都有测试
+(但真实 2.x 数据根与 safeStorage 凭据只在 macOS 上验证过)。M3 / M4 的 Agent 侧(模型层、回合循环、权限、执行环境、工具、终端、子代理、压缩、计划、待办、目标、Skills、Hooks、MCP、插件宿主、定时任务、开放网关、模型目录)
+和桌面界面主体已完成,M4 的 sidecar 打包守护与 `tools/Ncw.Build` 在 macOS 上跑通;M5 只完成共享层;M6 只完成中继(`Ncw.Relay` 与中继承载)。
+**尚未完成**:云端 Agent 模式(`--mode cloud`)、2.x 回放对照测试、iOS / Android 宿主与真机验证、真实后端(账户、更新 feed、推送中继、云端编排)、正式签名与公证、Windows / Linux 真机验证、
+升级链路演练(M7)、CI 工作流(已写但没在真实 GitHub Actions 上跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
+设计文档在 `docs/design/`;实现必须与设计一致,偏离时先改设计文档。
 
 ## 1. 范围(必须)
 
 - 3.0 只做 GUI。不新增任何面向用户的命令行入口(命令行控制端、插件 CLI、`ncw-agent` 的用户子命令)。
   `tools/` 下的构建和发布脚本只给开发和 CI 用,不对用户发布。
+  服务器中继 `src/Ncw.Relay` 是**服务端部署物**(配置全部来自环境变量,没有命令行参数),不是用户命令行,同样不对用户发布。
 - 3.0 的 Agent 只有两种部署形态:桌面内置(`--mode local`)和云端(`--mode cloud`)。不做独立设备服务。
 
 ## 2. 技术栈(必须)
 
 - .NET 10(`global.json`);Avalonia **锁定** `12.1.5`(Arc 按这个版本构建,所有 Avalonia 包保持一致);TKCode.Arc **锁定** `1.1.0`。所有版本只写在 `Directory.Packages.props` 里。
+- 唯一的例外:内联可视化的 WebView 用官方 MIT 包 `Avalonia.Controls.WebView`(版本号与 Avalonia 核心包不同步,单独锁 12.1.2,同样只写在 `Directory.Packages.props`);整个仓库只有 `src/Ncw.UI/Controls/NcwWidgetSurface.cs` 可以引用 `NativeWebView`(评估见 `docs/design/03-ui-layout.md` §8)。
 - 注册方式是 `AppBuilder.UseArc(arc => arc.UseArcControls() …)`,`App.axaml` 里不放 Fluent 或 Simple 主题。
 - 业务视图只引用 `Ncw.UI.Controls` 封装,不直接引用 `arc:` 控件(封装层自己除外)。
 - 和 Avalonia 同名的控件(Button、TreeView、Slider……)在 XAML 里必须加 `arc:` 前缀,在 C# 里用别名。
@@ -68,3 +75,16 @@ M2 协议与 Agent 骨架(进行中;M1 已完成)。设计文档在 `docs/design
 - 测试:`dotnet test NextCoWork.slnx`(UI 测试的截图输出在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`)
 - 桌面运行:`dotnet run --project src/Ncw.Desktop`
 - Agent 运行:`dotnet run --project src/Ncw.Agent -- --mode local`
+- CI:`.github/workflows/ci.yml`(三平台:构建零警告、测试、UI 截图、`publish-agent` 零裁剪警告、`build-relay`)与 `release.yml`(tag / 手动触发的发布流水线);均未在真实 GitHub Actions 上运行过
+- 中继(开发用,部署物):`NCW_RELAY_URLS=http://127.0.0.1:8080 dotnet run --project src/Ncw.Relay`(配置见 `docs/design/09-protocol.md` §9.3)
+- 插件宿主的 NativeAOT 探针(开发 / CI,零警告 + 原生二进制里实跑一个插件):`dotnet publish tools/PluginAotProbe -c Release -r <rid> -o <dir>`,运行 `<dir>/PluginAotProbe`(退出码 0 = 通过)
+- 构建与发布工具链(`tools/Ncw.Build`,只给开发和 CI 用;每个子命令 `--help` 看选项,产物都在被忽略的 `artifacts/` 下)。下面是 macOS arm64 上完整走一遍的命令(耗时和产物大小见 `docs/design/04-update-install.md` §7):
+  - `dotnet run --project tools/Ncw.Build -- publish-agent --rid osx-arm64`:`ncw-agent` NativeAOT 发布,输出里有任何 IL / 裁剪警告就失败(clang 模块缓存 `.pcm` 的环境警告在白名单里);发布产物里出现开发用 KMS 提供者(`NCW_DEV_KMS_KEY`)也失败,云端模式的真进程冒烟要加 `--dev-kms` 发布一份不可分发的冒烟二进制,用 `NCW_AGENT_BINARY` 指给 `Ncw.Agent.Cloud.Tests`;
+  - `dotnet run --project tools/Ncw.Build -- publish-desktop --rid osx-arm64`:Avalonia 桌面自包含发布;
+  - `dotnet run --project tools/Ncw.Build -- bundle --rid osx-arm64`:把 `ncw-agent` 放进桌面应用的 `agent/` 约定目录(macOS 是 `.app`),写 `bundle.json`;
+  - `dotnet run --project tools/Ncw.Build -- verify --rid osx-arm64`:启动包里的 `ncw-agent` 冒烟(本机通道握手、版本、单实例锁、优雅退出);
+  - `dotnet run --project tools/Ncw.Build -- sign --rid osx-arm64`:codesign / signtool;凭据只读环境变量,缺失就跳过并说明,CI 的正式发布加 `--require` 改为失败(`--notarize` 公证);
+  - `dotnet run --project tools/Ncw.Build -- velopack --rid osx-arm64 --channel stable`:用 `.config/dotnet-tools.json` 里固定版本的 `vpk` 打安装包和更新包;
+  - `dotnet run --project tools/Ncw.Build -- manifest --scan artifacts/velopack/osx-arm64/stable --rid osx-arm64`:生成发布清单,有 `NCW_RELEASE_SIGNING_KEY` / `NCW_RELEASE_SIGNING_KEY_FILE` 才做 Ed25519 签名(`keygen`、`manifest-verify` 配套)。
+  - `dotnet run --project tools/Ncw.Build -- build-relay [--rid <rid>] [--aot] [--framework-dependent]`:发布服务器中继 `ncw-relay`(服务端部署物;默认自包含、`--aot` 为 NativeAOT、IL / 裁剪警告规则同 `publish-agent`),再对产物自检:启动 → `/healthz` → `/metrics` → 非 WebSocket 请求得 426 → 关 stdin 与(Unix)SIGTERM 两种方式优雅退出且退出码 0;`--skip-check` 跳过自检;
+- 工具链与守护的测试:`dotnet test tests/Ncw.Build.Tests`、`dotnet test tests/Ncw.Desktop.Tests`(含真实 `ncw-agent` 冒烟;没有构建产物时自动跳过,`NCW_SKIP_AGENT_SMOKE=1` 强制跳过,`NCW_AGENT_PATH` 指向别的产物)。

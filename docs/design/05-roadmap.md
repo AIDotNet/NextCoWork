@@ -15,6 +15,36 @@
 | **M8 扩展对齐** | 内联可视化、内置浏览器、Office 文档(用 WebView 承载) | 按矩阵分到 3.0 或 3.1 |
 | **Beta → GA** | beta 通道灰度,收集崩溃和指标 | 崩溃率和升级成功率达标 |
 
+**M6 进度(中继与云端 Agent 的 Agent 侧已做,后端与客户端引导未做)**:
+- **中继**:`Ncw.Relay`(Kestrel + WebSocket,无状态哑管道、设备挑战签名注册、路由令牌哈希、限流 / 背压 / 空闲 / 带宽、指标)、`Ncw.Protocol` 的 `RelayTransport` / `RelayRegistration`(控制端 / 设备端承载)、控制端「局域网优先」的并行竞速、吊销同步作废中继令牌、设置页的中继地址;线上格式冻结(`GoldenRelay`),L1 以上没有任何改动。详见 [09 §9](09-protocol.md#9-中继m6已实现ncwrelay--relaytransport)。
+- **云端 Agent 的 Agent 侧**(`ncw-agent --mode cloud`,设计与确定方案见 [02 A6.1](02-agent.md#a61-云端-agent-的-agent-侧实现m6)):无头启动与配置校验(环境注入、结构化失败退出码)、设备身份注册与编排服务签发的身份绑定、**编排控制通道**(签名指令:信任下发 / 吊销 / 整体替换、配额、休眠、升级、令牌轮换,Ed25519 验签 + 序号防重放 + 有效期,类型在 `Ncw.Protocol/Orchestration`,契约见 [09 §13](09-protocol.md#13-编排控制通道m6agent--编排服务))、KMS 包裹主密钥(`IKeyWrap` 接口与适配点,NCK1 不变)、空闲检测与休眠收尾(Run / Shell / 终端 / 浏览器 / WAL 检查点 / 中继注销 / 通知)、唤醒恢复、配额(Run 发起前检查,`quota.exceeded`)与幂等的用量上报、Git 接力(`projects.add` 克隆 + `git.credentials.*`)、出网策略钩子(Git 已接线)、`cloud.getStatus`。用假编排服务 / 假 KMS / 进程内中继 / 真实 AgentHost 端到端测试(`Ncw.Agent.Cloud.Tests`),`ncw-agent` NativeAOT 发布零裁剪警告并用发布出来的二进制跑过冒烟。
+- **还没做**:编排服务、沙箱镜像、持久卷与快照、真实 KMS 适配、账户 API(B6–B9、B12,假设与待对齐项见 [§6.1](#61-编排服务接口契约与待对齐的假设m6));客户端的「创建云端 Agent」引导、唤醒状态、用量显示、Git 接力界面;「控制端连接 → 唤醒沙箱」的触发链路;出网钩子在 WebFetch / 浏览器 / MCP / SSH / 插件出口的接线;SSH 部署密钥;云端数据导出;中继的多实例部署与容量验证。
+
+**M5 进度(共享层已做,宿主和真机验证未做)**:`MobileShell` + `AdaptiveShell`(按宽度切换)、活动收件箱(Core 纯函数 `ActivityInboxView` + `InboxViewModel`)、设备页、扫码配对状态机(`IQrScanner` 抽象 + 手动粘贴备用入口)、
+推送令牌登记(协议 `push.register`、Agent 存令牌、`IPushRegistration` 抽象)、附件选择与上传进度(`IAttachmentPicker`)、审批「长按允许」、设置导航栈,均在 Avalonia.Headless 下验证,详见 [03 §7](03-ui-layout.md#7-移动端m5-共享层实现说明)。
+**还没做**:`Ncw.Mobile.iOS` / `Ncw.Mobile.Android` 宿主项目(本机没有 workload,设计见 [11](11-mobile-hosts.md))、相机 / 推送 / 选择器的平台实现、后端推送中继(B4)、真机验收「收到审批推送 → 打开 → 长按允许 → Run 继续」。
+
+### 当前进度(以 `docs/parity.md` 为准;只写能证实的,「没在真机 / 真实后端上验证」的地方一律写明)
+
+本节是对上面里程碑表的**状态标注**,不改验收标准。「完成」= 有单测或集成测试通过;「已验证」只指在这台 macOS arm64 开发机上跑过。
+没有任何一个里程碑的**验收标准**已经满足(验收都要求真机、真实后端或回放对照),下面逐项写完成度与缺口。
+
+| 里程碑 | 完成度 | 已完成(有测试) | 未完成 / 无法在本机验证 |
+|---|---|---|---|
+| **M0 设计评审** | 完成 | `docs/design/` 全部文档;§5 的待定问题已有结论 | — |
+| **M1 骨架** | 完成 | 解决方案、集中包管理、Arc 接入、`Ncw.UI.Controls` 封装、三栏 Shell、主题与中英文、项目栏与分组、首次启动与设置页;Headless 截图覆盖断点 | 「三个桌面平台都能跑起来」只在 macOS 上验证;Windows / Linux 没有真机 |
+| **M2 协议与 Agent 骨架** | 基本完成 | `Ncw.Protocol`(黄金向量冻结、本机与局域网承载、TLS 1.3 双向认证、SRP-6a 配对、扫码配对、会话与续连、方法路由、订阅);`Ncw.Agent.Storage`(2.x schema、NCK1、接管、safeStorage 转换);SSH.NET 与 BouncyCastle 的 AOT spike;`Ncw.Agent.Host`;控制端连真实 Agent(`Ncw.Integration.Tests`) | **2.x 回放对照测试**(「从 2.x 录制 Agent 行为回放素材」及对照)未完成,由另一条线进行中;三平台上真实 2.x 数据根与 safeStorage 凭据的接管只在 macOS 上验证过(Windows DPAPI、Linux 的 v10 / v11 没有真机);「局域网里另一台电脑用 `IP:端口` + 配对码连上」只用进程内与回环测过,没有两台真机 |
+| **M3 Agent 内核** | Agent 侧主体完成 | Llm 模型层、Loop、权限与审批、交互闸门、执行环境(local + SSH,SSH 用户态 sshd 夹具)、Tools、终端(PTY)、子代理、压缩、计划、待办、目标、编排层(`Ncw.Agent.Runs`,含看门狗放弃后不再写库);2.x 的状态相关单测按 `docs/parity.md` 逐条移植 | **回放对照测试**已建立并通过(`Ncw.Agent.Parity.Tests`,49 个场景,覆盖循环 / 工具 / 审批 / 中止 / 插话 / 孤儿修复 / 压缩 / 待办补报 / 写入围栏 / 断流续传与重试 / 跨模型切换,见 `docs/parity.md`「回放对照」);子代理派发、目标、Hooks、插件、MCP 等还没有录制场景,验收标准的「全部通过」以此为界;parity 中仍有「部分」项(见 `docs/parity.md` 各行的「未完成」:如供应商登录流程里的各家 issuers、子代理回执里没有子会话 id、自动标题、`LlmRouter` 的 `IImageResolver` 接线);`--mode cloud` 不属于本里程碑 |
+| **M4 核心功能** | Agent 侧与桌面界面主体完成,发布工具链在 macOS 上跑通 | Skills、Hooks、MCP、插件宿主(Jaunt)、定时任务、开放网关、模型目录;客户端的会话 / 交互 / 子代理 / 终端 / 文件 / Git / 模型与供应商 / MCP / Skills / 插件 / 定时任务 / 设置 / 首次启动 / SSH 环境管理界面;sidecar 打包与守护;`tools/Ncw.Build`(`publish-agent` / `publish-desktop` / `bundle` / `verify` / `sign` / `velopack` / `manifest` / `build-relay`);`.github/workflows/ci.yml` 与 `release.yml` 已写 | 登录(`nextcowork://` 回跳)需要真实后端,只测了客户端一侧;**CI 工作流没有在真实 GitHub Actions 上运行过**;Windows / Linux 的打包、签名、`nextcowork://` 注册、PTY 没有真机;MCP 的 OAuth、`agents` 的「AI 生成」、托盘常驻等小项未做;「全新安装开箱可用」没有在干净机器上演练 |
+| **M5 移动端** | 共享层完成,宿主未做 | `MobileShell` + `AdaptiveShell`、活动收件箱、设备页、扫码配对状态机、`push.register`、附件上传进度、「长按允许」,均在 Headless 下验证 | `Ncw.Mobile.iOS` / `Ncw.Mobile.Android` 宿主项目(本机没有 workload)、相机 / 推送 / 选择器的平台实现、后端推送中继(B4)、真机验收 |
+| **M6 云端 Agent** | 中继与 Agent 侧完成,后端与客户端未做 | `Ncw.Relay` 与中继承载(见上);`--mode cloud` 的 Agent 侧:启动配置、身份与信任(签名指令、防重放、吊销立即断开)、KMS 包裹主密钥、空闲休眠与唤醒恢复(未完成的 Run / 排队消息 / 定时任务 / 会话不丢)、配额与用量上报、Git 克隆与凭据、出网钩子、`cloud.getStatus`;`Ncw.Agent.Cloud.Tests`(假编排服务 + 假 KMS + 进程内中继 + 真实 AgentHost + 控制端经中继,含真实 `ncw-agent` 进程冒烟)、NativeAOT 发布零裁剪警告 | 后端(编排服务、沙箱镜像、持久卷、真实 KMS 适配、账户 API、固定出口 IP)不在本仓库,Agent 侧对后端的假设见 §6.1;客户端「创建云端 Agent」引导、唤醒状态、用量显示、Git 接力界面;「控制端连接 → 唤醒沙箱」触发链路;出网钩子除 Git 外未接线;SSH 部署密钥;云端数据导出;M6 验收的端到端(注册 → 创建 → 克隆 → 对话 → 推送)需要真实后端;中继多实例部署与容量验证 |
+| **M7 升级链路** | 工具链与自动化起步,链路未演练 | `Ncw.Build` 的 `velopack` / `manifest` / Ed25519 清单签名(RFC 8032 向量)、macOS 上 ad-hoc 签名后的完整流水线;CI / 发布工作流已写 | 桌面端没接 Velopack 运行时(自更新);2.9 桥接版在 `main` 上(不在本分支);Developer ID 签名与公证、Windows Authenticode 没有证书 / 真机;后端 v3 feed 与 `tools/Ncw.Release` 上传;「2.8 → 2.9 → 3.0 → 3.0.1」等演练一条都没做 |
+| **M8 扩展对齐** | 内联可视化完成(桌面端 WebView;手机静态快照),其余未做 | 内联可视化的 Agent 侧(`Ncw.Agent.Widgets`:四个 `visualize_*` 工具、消毒、静态快照、动作)**与客户端渲染**:WebView 方案评估与选型([03 §8](03-ui-layout.md#8-内联可视化m8webview-评估与渲染宿主):Avalonia 官方 `Avalonia.Controls.WebView` 的 `NativeWebView`,macOS 上用真实 WKWebView 实测)、外壳页面 + CSP + `window.ncw` 宿主桥、桥消息白名单与限速、导航 / 弹窗全拦、状态镜像、静态快照降级、`NcwWidgetHost` / `WidgetCard`;恶意载荷测试、四断点 × 深浅主题截图、真实 WebView 冒烟(`tools/WidgetSmoke`) | **Windows WebView2 / Linux WebKitGTK / WPE 的真实渲染没有机器可测**;macOS 上 WebView 在滚动列表里的合成 / 裁剪、透明背景、键盘焦点只验证了逻辑、没有目测;不做边写边渲染;手机端快照是文字不是图;内置浏览器的客户端、Office 编辑器未做 |
+| **Beta → GA** | 未开始 | — | beta 通道、崩溃与指标收集需要真实后端与用户 |
+
+**测试现状**(本节写成时的一次全量运行;个别并发敏感的用例在整套并行时偶发失败,单独重跑通过,见 `docs/parity.md`):`dotnet build NextCoWork.slnx` 零警告;`dotnet test NextCoWork.slnx` 全绿(此后新增的回放对照项目 `Ncw.Agent.Parity.Tests` 另算,它自己全绿),共 6947 个测试、31 个测试项目(含 Headless UI 截图测试与对真实 `ncw-agent` / `ncw-relay` 进程的冒烟)。
+并发不稳定的测试已逐个定因修复,见 `docs/parity.md`「并发不稳定测试的根因与修复」。这些测试都跑在 macOS 开发机上;其他平台的结果未知。
+
 M1 和 M2 可以并行。**M3(Agent 内核重写)是整个 3.0 的关键路径**,M2 一完成就要投入最多人力。
 M6 的后端部分(编排、沙箱)工期也长,应该和 M1 同时启动。
 M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺开。
@@ -37,15 +67,15 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | 设置页 | ♻️ 重新设计 | 改成标签页,分三种作用域(07) |
 | 2.x 数据 | ✅ 直接接管 | 任何安装方式都可以(04 §4) |
 | 局域网远程连接、配对 | ♻️ 全新设计 | 远程开关 + `IP:端口` + 配对码;不兼容 2.x,2.x 的配对记录不迁移(09 §3) |
-| 中继 | ⏳ 随服务器上线(M6) | 协议已预留,只新增承载;配对时就生成路由令牌,上线后老配对直接可用(09 §9) |
+| 中继 | 🟡 M6:承载与中继服务已做,部署未做 | `Ncw.Relay` + `RelayTransport`(09 §9)已实现并有测试;配对时就生成的路由令牌让老配对直接可用;还没有生产部署(B5 的多实例 / 容量 / 运维) |
 | 独立设备服务(NAS / 服务器部署) | ➖ 3.0 不做 | 2.9 升级前提示受影响的用户 |
 | 命令行控制端、`ncw-device-service` 的各个子命令 | ➖ 3.0 不做 | 3.0 只做 GUI |
 | 开放网关(Agent HTTP API) | ♻️ 重新设计 | 方法表的 HTTP 映射,不兼容 2.x 的 `/v1`(09 §10) |
-| 内联 HTML/SVG 可视化 | ⚠️ 3.0 桌面端 | 依赖 WebView;手机端降级为静态快照 |
+| 内联 HTML/SVG 可视化 | ⚠️ 3.0 桌面端 | 依赖 WebView;手机端降级为静态快照。**Agent 侧已做**(`Ncw.Agent.Widgets`:`visualize_*` 四个工具、载荷消毒、静态快照字段、动作与 `widgets.runAction`,见 [08.03](08-agent-runtime/03-tools-permissions.md));**不做 TSX**(2.x 用 sucrase 编译,AGENTS.md §6 不允许);**客户端渲染已做**(桌面端 WebView 外壳 + `window.ncw` 宿主桥 + 手机静态快照,见 [03 §8](03-ui-layout.md#8-内联可视化m8webview-评估与渲染宿主))|
 | 插件系统(命令、菜单、Agent 工具、Skills) | ✅ 3.0 | 插件 JS 跑在 Jaunt 里(D14),`nextcowork` API 的非 UI 部分保持兼容 |
-| 浏览器工具 | ✅ 3.0 | 改用 PuppeteerSharp(D15) |
+| 浏览器工具 | ✅ 3.0 | 自研最小 CDP 客户端,驱动设备上已有的 Chrome / Edge / Chromium(D15 修订;PuppeteerSharp 实测 AOT 不可行,见 08.03 §14) |
 | 中继服务、构建发布脚本 | ♻️ C# 重写 | D16 |
-| 插件 CLI(`plugin-cli`、`create-nextcowork-plugin`) | ➖ 3.0 不做 | 插件作者直接写 JS/TS,Agent 加载时处理 |
+| 插件 CLI(`plugin-cli`、`create-nextcowork-plugin`) | ➖ 3.0 不做 | 插件作者写 JS(TypeScript 自己在仓库之外编译成单文件 ESM,Agent 不转译,见 02 A7.1) |
 | 插件的 React 视图和自定义编辑器 | ➖ 暂不考虑 | 不在 3.0 范围,以后再评估 |
 | (新增)云端 Agent | ✅ 3.0 | 见 [02 A6](02-agent.md#a6-云端-agent) |
 | 内置浏览器(按工作区分区) | ⏳ 3.1 | 取决于 WebView 方案 |
@@ -57,13 +87,13 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | 风险 | 影响 | 应对 |
 |---|---|---|
 | TKCode.Arc 还是 preview 版本 | API 可能变,也可能有 bug | 锁定版本;业务视图只用 `Ncw.UI.Controls` 封装;每次升级 Arc 都跑截图回归 |
-| `TKCode.Arc.Mobile` 文档注明「尚未在真机上验证」 | 移动端组件可能不可用 | M1 就做一次真机 spike(iOS 和 Android 各一台)。不行的话,移动端改用 Arc 核心组件加自己写的导航 |
-| Avalonia 上的 WebView 方案 | 影响浏览器、Office、可视化 | M1 做 spike,评估 Avalonia 12 的 WebView 控件和各平台原生 WebView 的嵌入方式 |
+| `TKCode.Arc.Mobile` 文档注明「尚未在真机上验证」 | 移动端组件可能不可用 | M1 就做一次真机 spike(iOS 和 Android 各一台)。不行的话,移动端改用 Arc 核心组件加自己写的导航。**进度**:共享层已经用 `TKCode.Arc.Mobile` 1.1.0 做完(`NavigationStack` / `Page` / `Navbar` / `Tabbar` / `PullToRefresh` / `ListGroup`,封装在 `Ncw.UI/Controls/MobileControls.cs`),Headless 里版式和状态都对;**真机 spike 仍没做**(手势、安全区、软键盘),替换范围就是那个封装文件和 `MobileShell` |
+| Avalonia 上的 WebView 方案 | 影响浏览器、Office、可视化 | **M8 已评估并落地(可视化)**([03 §8](03-ui-layout.md#8-内联可视化m8webview-评估与渲染宿主)):Avalonia 12.1.5 核心包没有 WebView,官方 MIT 包 `Avalonia.Controls.WebView`(12.1.2)的 `NativeWebView` 用系统引擎(macOS WKWebView / Windows WebView2 / Linux WebKitGTK + WPE),支持内联 HTML、导航拦截、JS ↔ C# 双向消息、非持久存储、透明背景;没有设响应头的入口(CSP 写 meta);**macOS 上真实窗口实测**加载脚本、双向桥、CSP、导航 / 弹窗拦截都通过;**iOS 目标不存在**(手机降级为静态快照);Windows / Linux 同一份代码但没有机器验证;原生视图的「空域」问题(盖住 Avalonia 覆盖层)用挂起机制规避。浏览器面板(3.1)与 Office 编辑器可复用这个包,但它们对「滚动合成」和「键盘焦点」的要求更高,开工前先在真机上目测这两项 |
 | **Agent 用 C# 重写的工作量和行为回归** | 2.x Agent 侧约 6.5 万行 TS;工期最长,最容易出现「看起来能用、细节不一样」 | 回放对照测试 + 单测移植 + `docs/parity.md` 对照清单;按 [01 §4](01-architecture.md#4-agent-移植策略) 的顺序推进,每一步都有可验证的验收标准 |
 | NativeAOT 兼容性 | MCP SDK 等第三方库可能用到反射,AOT 下会失败 | M2 先做 AOT spike,把所有依赖都过一遍;不兼容的换库或自己实现 |
-| Jaunt 用于插件的成熟度(1.0.1,刚发布) | 个别 JS 特性或性能问题影响插件 | 同属 AIDotNet,问题可以直接在上游修;M2 用 2.x 自带插件和 sucrase 做兼容性 spike;插件跑在预算内,出问题不会拖垮 Agent |
-| PuppeteerSharp 和 Playwright 的能力差异 | 浏览器工具的部分行为变化 | 移植时逐条对照 2.x 浏览器工具的用例 |
-| 自研 PTY(forkpty / ConPTY) | 终端是高频功能,边界情况多 | 先评估现成的库;用 2.x 终端的回归用例验证 |
+| Jaunt 用于插件的成熟度(1.0.x,刚发布) | 个别 JS 特性或性能问题影响插件 | **M4 已评估并落地**(02 A7.1):NuGet 1.0.3,NativeAOT 零警告且原生二进制实跑通过,`JsLimits` / `Hardened` 实测可用,用 2.x 的 12 份真实清单和移植的三个插件夹具验证过兼容性;**「sucrase」那半条取消**(2.x 插件本来就是打好的单文件 ESM,sucrase 只用于 widget 的 TSX)。已知约束:引擎同一时刻一次根执行(插件内调用串行)、执行结束不能有未汇合的异步宿主操作(前导已兜住)、`MaxTrackedBytes` 是累计计数(接近预算时透明重建引擎)。同属 AIDotNet,问题可以直接在上游修;插件跑在预算内,出问题不会拖垮 Agent |
+| ~~PuppeteerSharp 和 Playwright 的能力差异~~ | 浏览器工具的部分行为变化 | **已处理**:PuppeteerSharp 25.17.1 在 NativeAOT 下有 11 类裁剪 / AOT 警告且绕过执行环境起进程,改为自研最小 CDP 客户端(`Ncw.Agent.Browser`,零第三方依赖、零警告);2.x 浏览器工具逐条对照见 08.03 §14。已知缺口:浏览器只支持本机环境(SSH 环境给结构化错误)、没有内置浏览器面板(3.1)、设备上没装 Chrome / Edge / Chromium 时不会自动下载 |
+| 自研 PTY(posix_spawn / ConPTY) | 终端是高频功能,边界情况多 | **已评估并实现**:现成的库(Pty.Net、Porta.Pty、MiniPty、Ghostflyby.Pty 等)都不合适,见 06 §9.1;2.x 终端的回归用例已移植(`docs/parity.md`),POSIX 真 PTY 在 macOS 与 Linux(glibc / musl)上通过;**Windows ConPTY 没有真机验证**,第一次在 Windows CI 上跑时预计需要微调 |
 | ~~移动端 `SslStream` 用自签名证书做双向认证的行为差异~~ | 手机连不上设备 | **已处理**:M2 spike 发现 macOS / iOS 的 `SslStream` 没有 TLS 1.3,改用 BouncyCastle 的纯托管 TLS 1.3,各平台同一实现(09 §4) |
 | 局域网连接被系统防火墙拦截 | 远程开关打开了却连不上 | Windows 安装器预先添加「专用网络」入站规则;macOS 首次监听时弹窗说明;诊断页提供「从另一台设备测试连接」的指引 |
 | SRP-6a 实现(BouncyCastle)的 AOT 兼容性 | 配对码配对不可用 | M2 spike;不行就换成同样现成的 PAKE 库,不手写 |
@@ -76,7 +106,7 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | 2.x 和 3.0 同时打开同一份数据 | 数据损坏 | 接管时卸载或提示删除 2.x;2.9 起认所有权标记 |
 | Linux 上 `nextcowork://` 注册不生效 | 登录卡住 | 提供登录码备用方式 |
 | 云端冷启动慢 | 手机端体验差 | 预热镜像池、卷快照;界面显示唤醒进度 |
-| 签名和公证流水线 | 公证被拒或运行时被系统杀掉 | M2 出第一个 `ncw-agent` 二进制时就接入签名和公证,别留到 M7 |
+| 签名和公证流水线 | 公证被拒或运行时被系统杀掉 | M2 出第一个 `ncw-agent` 二进制时就接入签名和公证,别留到 M7。**进度**:`tools/Ncw.Build` 的 `sign`(codesign / notarytool / signtool)已接入,macOS 上用 ad-hoc 身份把「逐文件签 → verify → vpk 打包 → 从包里解出的 .app 再验证」走通;Developer ID 与公证需要证书和账户,尚未实跑(04 §7.1) |
 | 移植期间 2.x 还在修 bug | C# 版漏掉修复 | 2.x 的每个 Agent 侧修复都登记到 `docs/parity.md`,作为 C# 版的待办 |
 
 ## 4. 测试策略
@@ -109,7 +139,7 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | Q12 | 首次启动和登录 | ✅ 保留,浏览器登录后用 `nextcowork://` 跳回(07,D18) |
 | Q13 | 设置页 | ✅ 重新设计(07,D21) |
 | Q14 | 模型数据 | ✅ 定时从 models.dev 自动更新(02 A8,D19) |
-| Q15 | 2.x 的 IPC 通道(约 415 个)和全部功能,哪些要迁成协议方法、哪些只在客户端本地处理、哪些不要了? | **待做**:盘点后写成 `10-inventory.md`,同时补全协议方法表(09 §7.4) |
+| Q15 | 2.x 的 IPC 通道(约 415 个)和全部功能,哪些要迁成协议方法、哪些只在客户端本地处理、哪些不要了? | ✅ 已盘点:359 个调用通道(351 invoke + 8 send),217 个进 Agent 协议、67 个拆分、21 个客户端本地、39 个放 3.1、15 个不做;见 [10 盘点](10-inventory.md) |
 | Q16 | 项目指令文件是否兼容 `CLAUDE.md`(pi 按 `AGENTS.override.md` → `AGENTS.md` → `CLAUDE.md` 取第一个;2.x 只读 `AGENTS.md`)? | ✅ 按 pi 兼容读取(08-agent-runtime/04 §2) |
 | Q17 | 工具预检从 2.x 的「并行里各自审批」改为 pi 的「顺序预检、并行执行」,可以吗? | ✅ 跟 pi 一样:顺序预检、并行执行(08-agent-runtime/02 §4、03 §3) |
 | Q18 | 设备协议是否沿用 2.x? | ✅ 不参考 2.x,全新设计(09,D4) |
@@ -122,11 +152,41 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 | B2 | `/api/client/updates/v3/manifest`:3.0 各平台产物、sha256、Ed25519 签名 | 2.9 → 3.0 | M7 |
 | B3 | Velopack feed `/api/client/updates/v3/{channel}/`,上传接口支持 Velopack 产物,沿用 mandatory / minimumSupportedVersion / graceUntil | 3.x 自更新 | M7 |
 | B4 | 推送中继:注册 APNs / FCM 令牌,只转发不透明的事件 id | 移动端推送 | M5 |
-| B5 | 全新部署 C# 中继服务 `Ncw.Relay`(09 §9);无状态、按 deviceId 粘性路由;容量要能支撑手机和云端的长连接 | 局域网外连接、云端 | M6 |
-| B6 | 云端 Agent 编排服务:创建、唤醒、休眠、升级、删除;沙箱镜像;持久卷和快照 | 云端 Agent | M6 |
-| B7 | 账户 API:注册控制端证书公钥,把信任记录下发给云端设备,向控制端返回云端设备证书指纹(09 §4) | 云端配对 | M6 |
-| B8 | KMS:云端密钥包裹 | 云端密钥 | M6 |
-| B9 | ~~计费~~(暂不考虑支付)。只需要按账户设置配额,并提供用量查询接口 | 云端配额 | M6 |
+| B5 | 全新部署 C# 中继服务 `Ncw.Relay`(09 §9);无状态、按 deviceId 粘性路由;容量要能支撑手机和云端的长连接 | 局域网外连接、云端 | M6。**状态:服务本体与两端承载已完成**(单实例内存实现、哈希路由接口 + 421、限流 / 背压 / 空闲 / 带宽上限、指标与健康检查、结构化日志,`tests/Ncw.Relay.Tests` + `RelayLinkTests`)。**未做**:多实例部署与实例间转发(靠负载均衡器按 `d=` 粘性路由)、容量压测、TLS 证书与运维脚本(`Ncw.Build` 的 `build-relay`)、云端设备的路由下发(B7) |
+| B6 | 云端 Agent 编排服务:创建、唤醒、休眠、升级、删除;沙箱镜像;持久卷和快照 | 云端 Agent | M6。**Agent 侧已完成**:编排通道的 5 个 HTTP 端点和指令格式是契约([09 §13](09-protocol.md#13-编排控制通道m6agent--编排服务)),后端实现它们;假设见 §6.1 |
+| B7 | 账户 API:注册控制端证书公钥,把信任记录下发给云端设备,向控制端返回云端设备证书指纹(09 §4) | 云端配对 | M6。**Agent 侧已完成**:后端把「注册控制端公钥」翻译成 `trust.put` 指令(指纹 + 名称 + 角色 + 路由令牌哈希);设备证书指纹来自设备 `hello`(§6.1 A4) |
+| B8 | KMS:云端密钥包裹 | 云端密钥 | M6。**Agent 侧只有接口与适配点**:`IKeyWrap`(`Wrap` / `Unwrap` 数据主密钥,带加密上下文)+ `CloudBoot.CreateKeyWrap`;真实云厂商适配由后端写(§6.1 A10) |
+| B9 | ~~计费~~(暂不考虑支付)。只需要按账户设置配额,并提供用量查询接口 | 云端配额 | M6。**Agent 侧已完成**:`quota.set` 指令下发上限、Agent 在 Run 发起前检查、`/v1/agent/usage` 批量幂等上报;后端存用量并提供查询(§6.1 A5 / A6) |
 | B10 | 账户配置同步新增 `RailLayout`(项目组和顺序) | 跨端分组 | M4 |
 | B11 | OAuth:为桌面和手机的 client_id 允许 `nextcowork://auth/callback` 回调,支持 PKCE(S256);提供设备授权码端点(RFC 8628);iOS Universal Links 和 Android App Links 的域名关联文件 | 登录 | M4 |
-| B12 | 云端 Agent 使用固定的出口 IP 并公开,SSH 目标走出网白名单 | 云端 SSH | M6 |
+| B12 | 云端 Agent 使用固定的出口 IP 并公开,SSH 目标走出网白名单 | 云端 SSH | M6。出网白名单与固定出口 IP 是基础设施;Agent 侧只有 `IEgressPolicy` 钩子(Git 克隆已接,其它出口待接,§6.1 A11) |
+| B13 | **委托令牌交换**(RFC 8693 `urn:ietf:params:oauth:grant-type:token-exchange`,`POST /api/client/oauth/delegate`):用访问令牌换一枚 `audience = ncw-agent`、scope 只含模型 / 配置同步 / 技能与插件市场的短期令牌,交给本机 Agent。**没有它时客户端退回把访问令牌本身交给 Agent**(07 §2「实现状态」),功能不受影响,只是权限没有收窄 | 本机 Agent 的账户授权 | M4 |
+| B14 | **控制端会话列表与撤销**:`GET /api/client/sessions`(`id`、`name`、`platform`、`lastActiveAt`、`isCurrent`)、`DELETE /api/client/sessions/{id}`(撤销那个控制端的刷新令牌),用于设置页「已登录的控制端」 | 账户页 | M4 |
+| B15 | B11 的补充约定(后端目前不存在,客户端对着这些约定实现并用假后端测):授权页 `/oauth/authorize`、`client_id = ncw-desktop`(手机另一个)、设备授权端点 `POST /api/client/oauth/device_authorization`、令牌端点的 `device_code` 授权类型;scope 串对后端是**全等匹配**,以客户端 `AccountEndpoints.Scope` 为准 | 登录 | M4 |
+
+### 6.1 编排服务接口契约与待对齐的假设(M6)
+
+Agent 侧(本仓库)对着下面的契约实现并用假编排服务测试;**后端目前不存在**,以下每条都是「我们假设后端这样做」,需要和后端对齐(对不上的改后端或改 Agent 侧适配,类型都在 `Ncw.Protocol/Orchestration`)。
+
+**契约**(详见 [09 §13](09-protocol.md#13-编排控制通道m6agent--编排服务)):Agent → 编排服务的 5 个端点(`hello`、`commands` 长轮询、`ack`、`usage`、`lifecycle`),`Authorization: Bearer <账户身份令牌>` + `X-Ncw-Device`;编排服务 → Agent 只有一种东西:**签名指令**(经 `hello` 响应和 `commands` 长轮询送达)。
+对应 B6(编排:创建 / 唤醒 / 休眠 / 升级 / 删除)、B7(账户 API:注册控制端公钥 → `trust.put`;返回设备指纹和中继路由)、B8(KMS)、B9(配额与用量)、B12(出口 IP 与白名单)。
+
+| # | 假设 | 若不成立的影响 |
+|---|---|---|
+| A1 | **传输**:Agent 作为 HTTP 客户端访问编排服务(`https`;仅回环允许 `http`),长轮询 25 秒拉指令;沙箱不需要入站端口 | 后端更想用 WebSocket / SSE / 推送:换一个 `IOrchestrationChannel` 实现,指令与回执的类型不变 |
+| A2 | **账户身份令牌**由编排服务在启动时注入(`NCW_ACCOUNT_TOKEN` 或 `_FILE`),同一枚既是编排通道的 Bearer,又作为模型通道 / 配置同步的委托令牌(`DelegatedAccount`);到期时间由配置 `accountTokenExpiresAt` 给(缺省启动后 1 小时),轮换用 `account.token` 指令 | 后端要求两枚不同的令牌(例如 B13 的 `audience = ncw-agent` 令牌单独签发):在 `AccountTokenGrant` 加字段、通道的 Bearer 与委托令牌分开持有 |
+| A3 | **编排密钥**:Ed25519,验证公钥(`kid:base64`)随启动配置注入,多个 `kid` 并存以轮换;私钥只在编排服务(或 HSM) | 用别的签名算法:`EnvelopeSigning` 一处替换,信封格式不变 |
+| A4 | **身份注册的时序**:`deviceId` 由设备公钥派生,所以编排服务不能预先分配;流程是「创建云端 Agent → 沙箱启动 → 设备 `hello`(带持有私钥证明)→ 后端记下指纹 → 账户 API 才能把设备指纹和中继路由返回给控制端」。客户端必须等 `awake` 之后才拿得到指纹 | 后端要预先分配设备身份:需要改成编排服务签发密钥(私钥离开设备),与「私钥永不离开设备」冲突,不建议 |
+| A5 | **配额**:字段见 `QuotaLimits`;日 / 月窗口按 **UTC** 自然日 / 月;token = 输入 + 输出 + 缓存读写;「计算时长」= Agent 醒着的秒数(后端可用沙箱运行时间核对);超限由 Agent 自己拒绝(后端不在线时仍有效);`quota.set` 整体替换 | 后端按账户时区计窗口:两边的「今天」不一致,需要在 `QuotaLimits` 加窗口偏移;后端要别的维度:加可选字段(旧 Agent 忽略) |
+| A6 | **用量上报幂等**:后端按 `BatchId` 去重并至少保留 Agent 的重试期;已见过的批次回 `2xx` + `duplicate: true`;批次是增量,不是累计;后端提供用量查询接口(给客户端「用量显示」和账户页) | 后端要累计值而不是增量:Agent 本来就有累计值(账本),改 `UsageBatch` 加字段即可 |
+| A7 | **休眠 / 唤醒**:收到 `lifecycle: sleeping` **或**进程以退出码 0 退出,后端即可停掉沙箱、保留持久卷(并拍快照,在 Agent 退出之后拍,WAL 已检查点);`wakeAt` 到点唤醒(Agent 已减去 2 分钟提前量);**控制端连接触发唤醒的链路目前没有任何实现**:假设是控制端经账户 API 请求唤醒(客户端显示「正在唤醒云端…」),后端拉起沙箱,Agent 注册中继后控制端重试(中继对离线设备回 `device_offline`) | 想让中继直接触发唤醒:中继收到对云端 `deviceId` 的 `connect` 时回调编排服务(中继侧小改动,`device_offline` 路径上加一个钩子),Agent 侧不变 |
+| A8 | **指令队列**:后端为每台设备保存**未确认**的指令,序号每设备单调递增、**跨沙箱重建也不回退**(Agent 把已应用的最大序号存在数据根里,后端若重置序号会被当成重放拒绝);`hello.LastSeq` 之后的积压随 `hello` 响应送达;收到 `duplicate` / `rejected` 的回执后停止重发,`busy` 的稍后重发同一条;休眠期间到达的指令保留到下次 `hello` | 后端序号不单调:需要在 `hello` 里带一个「纪元」让 Agent 重置序号(Agent 侧小改) |
+| A9 | **持久卷**:数据根和 `workspacesRoot` 都在卷上;同一卷同一时间只挂一个沙箱(Agent 另有 `run/agent.lock` 兜底,第二个实例以 75 退出);卷在沙箱之间迁移时 `expectedDeviceId` 防止挂错卷(退出码 65) | — |
+| A10 | **KMS**:后端提供 `IKeyWrap` 实现(包裹端点 / 云厂商 KMS),加密上下文 = 配置的 `kms.context`(建议含账户 id + 沙箱 id),`keyId` 随包裹文件保存并在解开时传回;Agent 启动时解开**一次**并缓存在内存。**密钥轮换(用新 KMS 密钥重新包裹)没有做**:现在要换只能由后端在沙箱外重写 `credential.key.kms`。KMS 不可用 = 启动失败(退出码 69,可退避重启) | 想要运行中重新包裹:`KmsMasterKeySource` 加 `RewrapAsync`(格式已带 `keyId`) |
+| A11 | **出网**:沙箱网络策略强制白名单与固定出口 IP;模型通道、Git 托管、包管理源在白名单里。Agent 的 `egress` 配置只是提前拒绝 + 审计;SSH 目标(B12)由基础设施约束 | — |
+| A12 | **路由令牌**:编排服务生成 256 位随机令牌,只交给控制端,设备只存哈希 = `SHA-256(ASCII 令牌)` 的小写十六进制(`RelayProtocol.HashToken`);中继地址在启动配置里,和账户 API 返回给控制端的路由一致 | 哈希算法不同:`TrustEntry.RouteTokenHash` 必须和中继、设备同一种,三方一起改(中继协议已冻结) |
+| A13 | **角色**:账户所有者的控制端下发 `owner`(个人版);团队共享(`member` / `viewer`)后续再说,协议已支持 | — |
+| A14 | **升级**:`upgrade.request` 后 Agent 通知 `upgrading` 并以 0 退出,后端换二进制后在同一数据根重新拉起;协议 N / N-1 兼容保证新旧客户端都能连 | — |
+| A15 | **健康检查**:沙箱探针用配置里的内网地址 / 端口访问 `GET /healthz`(`200` = 就绪,`503` = 还在收尾 / 未打招呼);不配置则没有这个端点 | — |
+| A16 | **时钟**:沙箱时钟由后端保证 NTP;指令有效期容忍 5 分钟偏差,休眠唤醒后设备时钟偏差更大时指令会被当成过期拒绝(编排服务据 `rejected: expired` 重新签发) | — |
+

@@ -43,7 +43,7 @@
 | D1 | 客户端和 Agent 分成两个进程,中间只走「设备协议」 | 移动端和云端只能远程连接。本机和远程走同一条路径,移动端就不需要额外开发;Agent 也能在关窗后继续运行 | 桌面端把 Agent 放进客户端进程:同语言后技术上可行,但本机和远程会变成两套逻辑,崩溃也会互相拖垮 |
 | D2 | 桌面端安装包内置本机 Agent(sidecar),用回环地址加本机令牌连接 | 用户感知不到多了一个进程,开箱即用 | 让用户自己装设备服务:门槛太高 |
 | D3 | **Agent 用 C#(.NET 10)重写**,NativeAOT 发布为原生可执行文件(外加 e_sqlite3 原生库)。2.x 的 TS 实现只作为参考实现和行为基准,不迁入本分支 | 一种语言;客户端和 Agent 共享领域模型、派生函数和协议类型;不再内置 Node,包更小,签名和公证更简单;云端也是同一个二进制 | 继续用 TS:两种语言、协议要双实现、Node sidecar 的签名和公证复杂。代价是重写的工作量(见 [01 §4](01-architecture.md#4-agent-移植策略)) |
-| D4 | 协议**全新设计,不参考 2.x**(见 [09](09-protocol.md))。3.0 先做局域网直连:打开远程开关,用 `IP:端口` + 配对码连接;服务器中继以后加,只新增承载、不改协议。定义只有一个来源:`Ncw.Protocol` 程序集,客户端和 Agent 直接引用同一份类型;远程安全层用 TLS 1.3 双向认证,经中继时隧道内再跑 TLS;对外导出 JSON Schema / OpenAPI | 两端同一种语言,不需要代码生成,也不会漂移 | 维护单独的 schema 再生成代码:多一层,没有必要 |
+| D4 | 协议**全新设计,不参考 2.x**(见 [09](09-protocol.md))。3.0 先做局域网直连:打开远程开关,用 `IP:端口` + 配对码连接;服务器中继(M6 已加)只新增承载、没有改协议。定义只有一个来源:`Ncw.Protocol` 程序集,客户端和 Agent 直接引用同一份类型;远程安全层用 TLS 1.3 双向认证,经中继时隧道内再跑 TLS;对外导出 JSON Schema / OpenAPI | 两端同一种语言,不需要代码生成,也不会漂移 | 维护单独的 schema 再生成代码:多一层,没有必要 |
 | D5 | UI 用 TKCode.Arc,但业务视图只引用我们自己的薄封装 `Ncw.UI.*` | Arc 还是 preview 版本,封装一层可以隔离它的破坏性变更 | 业务视图直接用 Arc:升级时改动面太大 |
 | D6 | MVVM 用 CommunityToolkit.Mvvm;序列化用 System.Text.Json 和 MessagePack 的源生成器;全栈不依赖反射 | iOS 和 Agent 都要 NativeAOT,桌面端也希望启动快 | ReactiveUI:较重,依赖反射的地方多 |
 | D7 | 状态统一管理规则在 C# 里照搬(见 [01 §5](01-architecture.md#5-状态统一管理c-版)),而且派生函数由 Agent 和客户端共用 | 2.x 踩过的「四份状态互相打架」不能再来一次 | — |
@@ -53,9 +53,9 @@
 | D11 | 云端 Agent 和本机、自有设备用**同一个 ncw-agent 运行时、同一套协议**,nextco.work 只额外提供托管编排 | 客户端不需要为云端写第二套逻辑;云端和本机的行为一致 | 云端单独做一套多租户服务:等于维护两个 Agent |
 | D12 | 3.0 起各平台正式签名:macOS 用 Developer ID 签名并公证,Windows 用 Authenticode(证书已具备) | Gatekeeper 和 SmartScreen 不再拦截;Velopack 在 macOS 上依赖签名 | 继续 ad-hoc 签名:3.x 自更新和首次打开都有问题 |
 | D13 | C# Agent **直接读写 2.x 的 SQLite schema 和 `NCK1` 凭据格式**,在其上做增量迁移 | 升级时数据原地接管,不用导出导入 | 新库再导入:慢,还容易丢数据 |
-| D14 | **JS 执行统一用 Jaunt**(纯托管、兼容 NativeAOT 的 JS 引擎)。2.x 插件的非 UI 部分(命令、Agent 工具、Skills)继续可用:插件 JS 在 Agent 进程内的 Jaunt 隔离 realm 里运行,有执行预算,宿主 API 按权限显式绑定(见 [02 A7](02-agent.md#a7-插件与-js-执行jaunt)) | 2.x 插件本来就跑在没有 Node API 的沙箱 iframe 里,只通过 RPC 调宿主,和 Jaunt 的模型一致;不引入 Node,AOT 下也能运行 | 插件全改成 MCP 服务器:破坏现有插件生态;ClearScript(V8):原生依赖重,iOS 不可用;Jint:不兼容 AOT,性能也不如 Jaunt |
-| D15 | 浏览器工具改用 PuppeteerSharp(纯 C# 的 CDP 客户端),不用 Playwright | Microsoft.Playwright 自带 Node 驱动,和「全栈 C#」冲突 | Playwright:要带一个 Node 进程 |
-| D16 | 中继服务、构建发布脚本也用 C# 重写:中继用 ASP.NET Core,构建发布脚本用单文件程序(`dotnet run app.cs`),只给开发和 CI 用,不对用户发布 | 一种语言、一套工具链,CI 只需要 .NET SDK | 保留 2.x 的 Node 脚本:仓库里会长期存在两套工具链 |
+| D14 | **JS 执行统一用 Jaunt**(纯托管、兼容 NativeAOT 的 JS 引擎;**M4 已评估并落地**:NuGet 1.0.3,NativeAOT 零警告且原生二进制实跑通过,见 [02 A7.1](02-agent.md#a71-jaunt-评估与实现m4))。2.x 插件的非 UI 部分(命令、Agent 工具、Skills)继续可用:插件 JS 在 Agent 进程内的 Jaunt 隔离 realm 里运行,有执行预算,宿主 API 按权限显式绑定(见 [02 A7](02-agent.md#a7-插件与-js-执行jaunt)) | 2.x 插件本来就跑在没有 Node API 的沙箱 iframe 里,只通过 RPC 调宿主,和 Jaunt 的模型一致;不引入 Node,AOT 下也能运行 | 插件全改成 MCP 服务器:破坏现有插件生态;ClearScript(V8):原生依赖重,iOS 不可用;Jint:不兼容 AOT,性能也不如 Jaunt |
+| D15 | 浏览器工具**自己实现最小 CDP 客户端**(`Ncw.Agent.Browser`:ClientWebSocket + CDP JSON-RPC,Utf8JsonWriter / JsonDocument 手写),驱动设备上已有的 Chrome / Edge / Chromium;**不用 PuppeteerSharp,不用 Playwright**。原决定是 PuppeteerSharp,M4 实测不成立(见 [08.03 §14](08-agent-runtime/03-tools-permissions.md#14-实现注srcncwagentbrowser浏览器工具)):PuppeteerSharp 25.17.1 在 NativeAOT 下有 IL2026 / IL2075 / IL2090 / IL2091 / IL3000 / IL3050 共 11 类警告(CDP 连接的收发本身走反射 JSON),且自己 `Process.Start` 浏览器、绕过 `IExecutionEnvironment`、还要自己下载 Chromium | Playwright 自带 Node 驱动,和「全栈 C#」冲突;PuppeteerSharp 违反「AOT 零裁剪警告」和「进程只经执行环境」 | Playwright:要带一个 Node 进程;PuppeteerSharp:AOT 不可行,见左;自动下载 Chromium:引入网络与签名问题 |
+| D16 | 中继服务、构建发布脚本也用 C# 重写:中继用 ASP.NET Core,构建发布脚本用 C# 控制台项目(`tools/Ncw.Build`;原计划的单文件程序装不下十几个文件、协议引用和单测,见 04 §7.1),只给开发和 CI 用,不对用户发布 | 一种语言、一套工具链,CI 只需要 .NET SDK | 保留 2.x 的 Node 脚本:仓库里会长期存在两套工具链 |
 | D17 | 区分「控制端 / 设备 / 执行环境」三层。SSH 连接从设备发起;所有工具只通过 `IExecutionEnvironment` 访问文件和进程 | 同一个工具在本机、SSH、云端行为一致;手机控制时也清楚命令在哪执行 | 工具直接操作本地文件系统,SSH 另写一套:两套逻辑必然分歧 |
 | D18 | 登录用授权码 + PKCE,浏览器通过 `nextcowork://auth/callback` 跳回应用;以设备授权码作为备用 | 不再需要占用本机端口;桌面和手机用同一套流程 | 沿用 2.x 的本机回调端口:手机上不可用,还会被防火墙和端口占用干扰 |
 | D19 | 模型目录由 Agent 定时从 models.dev 拉取,带条件请求、异常数据保护和内置快照兜底;价格自动采用,只用于估算 | 模型数据始终是新的,又不会因为一次坏数据出问题 | 每次发版内置一份:数据会过时 |

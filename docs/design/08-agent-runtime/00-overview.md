@@ -36,8 +36,8 @@
 |---|---|---|---|
 | 模型层 | `Ncw.Agent.Llm`(原规划的 `Ncw.Agent.Providers` 改名) | `pi-ai` | `kernel/upstream/*`、`kernel/oauth/*` |
 | 循环层 | `Ncw.Agent.Kernel.Loop` | `pi-agent-core` 的 `agentLoop` | `agent-session.ts` 的 `loop/turn/executeAll` |
-| 会话层 | `Ncw.Agent.Kernel.Session` | `pi-coding-agent` 的 `AgentSession` | `agent-session.ts` 其余部分、`context-assembler.ts`、`compaction/*` |
-| 编排层 | `Ncw.Agent.Kernel.Runs` | (pi 没有) | `run-registry.ts`、`services/agent.ts`、`session-runtime.ts`、`subagent-queue.ts`、`goal/*` |
+| 会话层 | `Ncw.Agent.Session`(命名空间 `Ncw.Agent.Kernel.Session`;单独成项目,因为循环层不引用 Storage / Environments,见 [04](04-session-context.md)) | `pi-coding-agent` 的 `AgentSession` | `agent-session.ts` 其余部分、`context-assembler.ts`、`compaction/*`、`instructions.ts`、`git-context.ts` |
+| 编排层 | `Ncw.Agent.Runs`(命名空间 `Ncw.Agent.Kernel.Runs`;单独成项目,在会话层、存储、工具层之上,见 [05](05-orchestration.md)) | (pi 没有) | `run-registry.ts`、`services/agent.ts`、`session-runtime.ts`、`subagent-queue.ts`、`goal/*` |
 | 扩展 | `Ncw.Agent.Extensions` | pi 的 Extension API | `approval.ts`、`hooks.ts`、`plan-run.ts`、`todo-reconciliation.ts` 等 |
 
 **依赖规则**:下层不引用上层。`Loop` 只依赖 `Llm` 和工具接口;`Session` 不知道协议;`Host` 是唯一知道 `Ncw.Protocol` 的层。
@@ -92,14 +92,16 @@
 
 ```csharp
 // 模型层
-public sealed record ModelRef(string ProviderId, string Alias);
+public sealed record ModelRef(string? ProviderId /* 非空 = 用户固定了供应商,硬约束 */, string Alias);
 public sealed record LlmRequest(string System, IReadOnlyList<Message> Messages, IReadOnlyList<ToolInfo> Tools,
                                 GenerationOptions Options);
+public interface ILlmClient { IAsyncEnumerable<LlmEvent> StreamAsync(ModelRef model, LlmRequest request, RequestContext context, CancellationToken ct); }
 public abstract record LlmEvent;                                     // 见 01 §2
 
 // 循环层
-public interface IAgentTool { ToolInfo Info { get; } ValueTask<ToolResult> ExecuteAsync(ToolInvocation call, ToolContext ctx, CancellationToken ct); }
-public sealed class AgentLoop { public IAsyncEnumerable<AgentEvent> RunAsync(LoopInput input, LoopHooks hooks, CancellationToken ct); }
+public interface IAgentTool { ToolSpec Info { get; } ValueTask<ToolResult> ExecuteAsync(ToolInvocation call, ToolContext ctx, CancellationToken ct); }   // 完整定义见 03 §1
+public sealed class AgentLoop(ILlmClient llm, IIdGenerator ids, TimeProvider clock, IDelayer delayer, AgentLoopOptions? options = null, ILoopDiagnostics? diagnostics = null)
+{ public IAsyncEnumerable<AgentEvent> RunAsync(LoopInput input, LoopHooks hooks, CancellationToken ct); }   // 已实现,见 02
 
 // 会话层
 public sealed class AgentSession { public Task<RunOutcome> RunAsync(RunRequest req, IRunSink sink, CancellationToken ct); }
@@ -108,5 +110,5 @@ public sealed class AgentSession { public Task<RunOutcome> RunAsync(RunRequest r
 public sealed class RunRegistry { RunHandle Create(...); Snapshot Snapshot(RunId id, long sinceSeq); ActiveIndex ActiveIndex(); }
 
 // 扩展
-public interface IAgentExtension { string Id { get; } void Register(IExtensionRegistry r); }
+public interface IAgentExtension { string Id { get; } int Order { get; } void Register(IExtensionRegistry r); }
 ```
