@@ -13,9 +13,29 @@ public sealed record ActiveRun(
     string WorkspaceId,
     int PendingInteractions);
 
-/// <summary>一台设备的活动 Run 索引快照。首帧和后续广播是同一个类型(AGENTS.md §3 规则 5)。</summary>
+/// <summary>
+/// 设备权威广播里的一条运行中的子 Run(<c>activeRuns</c> 的 <c>subagents</c> 半边)。
+/// <see cref="SessionId"/> 是<b>父</b>会话(子代理卡片住在那里);父 Run 已被回收时退回 <c>ParentSessionId</c>。
+/// </summary>
+public sealed record ActiveSubagent(
+    string DeviceId,
+    string RunId,
+    string ParentRunId,
+    string SessionId,
+    string WorkspaceId,
+    DateTimeOffset StartedAt);
+
+/// <summary>
+/// 一台设备的活动 Run 索引快照。首帧和后续广播是同一个类型(AGENTS.md §3 规则 5),由 <see cref="ActiveRunIndexBuilder"/> 这一个函数生成。
+/// <see cref="Runs"/> 只含顶层 Run(角标不数子代理);子 Run 在 <see cref="Subagents"/> 里。
+/// <see cref="Rev"/> 单调递增:广播可能乱序到达,控制端只收更新的那份(0 = 不带版本,例如 Mock 数据)。
+/// </summary>
 public sealed record ActiveRunIndex(string DeviceId, ImmutableArray<ActiveRun> Runs)
 {
+    public ImmutableArray<ActiveSubagent> Subagents { get; init; } = ImmutableArray<ActiveSubagent>.Empty;
+
+    public long Rev { get; init; }
+
     public static ActiveRunIndex Empty(string deviceId) => new(deviceId, ImmutableArray<ActiveRun>.Empty);
 }
 
