@@ -91,7 +91,8 @@ public sealed class OrchestrationRig : IDisposable
         _maxOutput = 32000;
         _actions = _input["actions"]!.AsArray();
         _answers = [.. _input["interactions"]!.AsArray().Select(a => a!.AsObject())];
-        _stepRuns = [.. _input["steps"]!.AsArray().Select(s => s!["run"]!.GetValue<string>())];
+        // 目标步骤(用户手动设 / 清目标)的 Run 是 kickoff 起的内部 Run:按内部 Run 编号(<会话键>#internalN),不算「步骤 Run」。
+        _stepRuns = [.. _input["steps"]!.AsArray().Where(s => s!["goal"] is null).Select(s => s!["run"]!.GetValue<string>())];
         foreach (var step in _input["steps"]!.AsArray())
         {
             var key = step!["session"]!.GetValue<string>();
@@ -275,6 +276,14 @@ public sealed class OrchestrationRig : IDisposable
                     _registry.Abort(handle.RunId, cascade: true);
                 }
             }
+            else if (what["detach"] is { } detach)
+            {
+                // 用户在子代理卡片上点「转去后台」(2.x:detachForegroundSubagent)。
+                if (HandleByLabel(detach.GetValue<string>()) is { } child)
+                {
+                    _subagents.DetachForeground(child.RunId);
+                }
+            }
             else if (what["abortSession"] is { } session)
             {
                 if (_registry.ActiveTopLevelRun(_sessionIds[session.GetValue<string>()]) is { } active)
@@ -369,6 +378,13 @@ public sealed class OrchestrationRig : IDisposable
             var thinking = Thinking(step["thinking"]?.GetValue<string>() ?? "off");
             var text = step["input"]!.GetValue<string>();
             var model = ModelRef.Unpinned(_alias);
+            if (step["goal"] is JsonObject goal)
+            {
+                ApplyGoalStep(goal, sessionId, new SendOptions(model, thinking, false, mode, permission));
+                await QuiesceAsync().ConfigureAwait(false);
+                continue;
+            }
+
             Message[] messages = text.Length == 0 ? [] : [new Message(new MessageId($"u-{runId}"), Role.User, [new TextPart(text)], DateTimeOffset.UtcNow)];
             _modes[new RunId(runId)] = mode;
             var request = MakeRequest(new RunId(runId), messages, model, thinking);
@@ -392,6 +408,30 @@ public sealed class OrchestrationRig : IDisposable
         await responderStop.CancelAsync().ConfigureAwait(false);
         await responder.ConfigureAwait(false);
         return Collect();
+    }
+
+    /// <summary>
+    /// 用户对目标的手动操作(2.x:<c>goal:set</c> / <c>goal:clear</c> 两个 IPC,kickoff 由渲染层再当内部消息发出去;3.0:<c>GoalService.SetByUser</c> 自己把 kickoff 当内部输入交付,
+    /// 档位由 Host 的 <c>goal.set</c> 处理器先记在会话上——这里照做)。<c>kickoff: false</c> 只设立不起 Run。
+    /// </summary>
+    private void ApplyGoalStep(JsonObject goal, string sessionId, SendOptions options)
+    {
+        switch (goal["op"]!.GetValue<string>())
+        {
+            case "clear":
+                _kit.Goals.Clear(sessionId);
+                break;
+            case "set" when goal["kickoff"]?.GetValue<bool>() == false:
+                _kit.Goals.CancelProposals(sessionId);
+                _kit.Goals.Activate(sessionId, goal["condition"]!.GetValue<string>(), GoalOrigin.User);
+                break;
+            case "set":
+                _registry.RememberOptions(sessionId, options);
+                Assert.IsType<GoalSetResult.Ok>(_kit.Goals.SetByUser(sessionId, goal["condition"]!.GetValue<string>()));
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown goal op '{goal["op"]}'.");
+        }
     }
 
     /// <summary>这条会话里最近一次 <c>EnterPlanMode</c> 的结果带着的计划引用(下一步「执行计划」用;2.x 一侧同一份做法)。</summary>

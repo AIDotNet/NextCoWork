@@ -180,11 +180,12 @@ public static partial class Rules
 
         new("GOAL-STATUS-OUT-OF-BAND", Section.Events,
             new(Parity, "**不再发一次 `message_commit`**"),
-            "目标的 goal_status 标记:2.x 把标记并进最后一条助手消息后重新发一次 message_commit(同 id、parts 末尾多一个 goal_status),3.0 带外写库、不发事件(界面走 goal 主题);只去掉 2.x 一侧「同 id 重发、且带 goal_status 块」的那种 commit,落库的行(Rows)仍逐项比较。",
-            (l, _, _, _) =>
+            "目标的 goal_status 标记:2.x 把标记并进最后一条助手消息后重新发一次 message_commit(同 id、parts 末尾多一个 goal_status),3.0 带外写库、不发事件(界面走 goal 主题);"
+            + "只去掉 2.x 一侧「同 id 重发、且带 goal_status 块」的那种 commit,以及「还没有助手消息时排队的标记并进第一次 commit」的那些 goal_status 块(仅当 C# 一侧同 id 的 commit 不带它们时);落库的行(Rows)仍逐项比较。",
+            (l, r, _, _) =>
             {
                 var seen = new HashSet<string>(StringComparer.Ordinal);
-                return l.RemoveAll(n =>
+                var changed = l.RemoveAll(n =>
                 {
                     if (E(n) != "commit" || Str(n, "id") is not { } id)
                     {
@@ -194,6 +195,23 @@ public static partial class Rules
                     var again = !seen.Add(id);
                     return again && n["parts"] is JsonArray parts && parts.Any(p => Str(p, "type") == "goal_status");
                 });
+
+                // 排队的标记(设立发生在第一条助手消息之前)并进了 2.x 第一次 commit 的 parts;3.0 的 commit 不带(标记带外落库,Rows 比较)。
+                var plain = r.Where(n => E(n) == "commit" && Str(n, "id") is not null && n["parts"] is JsonArray p && !p.Any(x => Str(x, "type") == "goal_status")).Select(n => Str(n, "id")!).ToHashSet(StringComparer.Ordinal);
+                foreach (var n in l.Where(n => E(n) == "commit" && Str(n, "id") is { } id && plain.Contains(id) && n["parts"] is JsonArray p && p.Any(x => Str(x, "type") == "goal_status")))
+                {
+                    var parts = n["parts"]!.AsArray();
+                    for (var i = parts.Count - 1; i >= 0; i--)
+                    {
+                        if (Str(parts[i], "type") == "goal_status")
+                        {
+                            parts.RemoveAt(i);
+                            changed++;
+                        }
+                    }
+                }
+
+                return changed;
             }),
 
         EditBoth("REQ-GOAL-JUDGE-THINKING", Section.Requests,

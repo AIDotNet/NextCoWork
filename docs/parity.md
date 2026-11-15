@@ -423,7 +423,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 
 ### 场景与结果
 
-71 个场景(`Recordings/*.json`:49 个单会话 + 22 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
+78 个场景(`Recordings/*.json`:49 个单会话 + 29 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
 
 | 场景 | 说明 |
 | --- | --- |
@@ -451,6 +451,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `permission-ask-deny` | 同上,用户在弹窗上拒绝(不带理由):工具不执行,模型看到默认的拒绝话术。 |
 | `permission-read-only-needs-no-prompt` | 只读工具在「询问」档位下直接放行,不弹窗。 |
 | `permission-subagent-denied` | 子代理(depth 1)调用需要审批的工具:它没有人可问,策略当场拒绝并给出说明,而不是挂起。 |
+| `plan-approve-new-session` | (整机)计划审批「在新会话里执行」:Run 在 ExitPlanMode 之后结束、回执 action 为 `approve_new_session`、围栏撤掉;另一条全新会话里以 code 模式带计划引用执行(计划文件在工作区里、不在新会话历史里),Write 不受围栏。 |
 | `plan-mode-write-fence` | 计划模式的写入围栏只允许改一个计划文件:Write 一个围栏外的文件被拒(带提示、没有任何文件被改),Write 围栏里的计划文件成功。 |
 | `retry-before-first-byte` | 首字节之前 503:路由器退避重试(provider_retry),重试成功后正常完成。 |
 | `retry-network-error-before-first-byte` | 连接建立前就网络错误(fetch 抛异常):路由器重试。 |
@@ -477,6 +478,11 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `tool-unknown-name` | 模型调用了不存在的工具:当作工具错误回给模型,不崩溃。 |
 | `write-outside-plan-mode-is-unrestricted` | 没有围栏时(普通模式)同一个 Write 正常创建文件。 |
 | `goal-idle-streak-brake` | (整机)目标一直判「没达成」、模型连续纯文字:第 8 个无工具回合之后以 `goal.warn.idleStreak` 警告结束。 |
+| `goal-impossible` | (整机)判定器判「不可能」:目标收口为失败(`failed` 标记)、Run 结束、不再续跑。 |
+| `goal-judge-http-error-skips` | (整机)判定请求被上游拒绝(HTTP 400,不重试):同样是 skipped——不判定、不续跑、Run 正常结束。 |
+| `goal-judge-unparseable-skips` | (整机)判定器回的不是 JSON(skipped):没有判定标记、不续跑,Run 照常结束,目标留着。 |
+| `goal-manual-clear` | (整机)用户手动设目标、再设一个(旧的被顶掉)、再清除:标记并进最后一条助手消息(设立 / 设立 / 已清除);清掉之后再发一句话,判定器一次不调。 |
+| `goal-manual-set-until-met` | (整机)用户手动设目标(空会话:「已设立」标记先排队、等第一条助手消息再并上去);kickoff 作为内部消息起一轮;判定器先「没达成」→ 续跑 → 再「达成」→ 收口。 |
 | `goal-propose-ask-approved` | (整机)`ProposeGoal`(ask_user)工具立刻返回「待批准」,用户批准后设立 + kickoff 注入,判定器确认达成后收口。 |
 | `goal-propose-ask-declined` | (整机)用户拒绝自提的目标:没有目标、没有 kickoff、模型不被告知、判定器一次不调。 |
 | `goal-propose-direct-until-met` | (整机)自提目标(auto 策略、ask_user=false)直接设立;判定器先说「没达成」→ 续跑反馈 → 再判「达成」→ 收口。 |
@@ -491,6 +497,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `plan-request-changes` | (整机)「要求修改」(带中英文混合、含 `'` `<` 的反馈):Run 继续,计划与围栏保留,改后再次 ExitPlanMode 批准;反馈原样进回执。 |
 | `subagent-background-report` | (整机)后台子代理:Task 立即返回;父 Run 先结束,子代理随后完成,全文报告作为内部消息交回父会话(起内部 Run),回执变为 reported。 |
 | `subagent-child-upstream-error` | (整机)子代理上游 401:子 Run 以错误结束,父代理收到「子代理失败」的工具错误和回执,父 Run 照常完成。 |
+| `subagent-detach-foreground` | (整机)前台子代理被用户转去后台:父代理的 Task 当场以「已转后台」收场并继续、结束 Run;子代理随后完成,报告作为内部消息交回父会话,回执变为 reported。 |
 | `subagent-foreground` | (整机)同步子代理:子会话里跑一次工具,最后一条消息成为父会话的工具结果(带回执);父会话里没有子代理的内部对话。 |
 | `subagent-nesting-limit` | (整机)嵌套两层:父 → 子 → 孙都派得出,孙再派被拒;结果一层层交回。 |
 | `subagent-parent-abort-cascades` | (整机)父 Run 中止时前台子代理卡在工具上:子 Run 一并中止,父会话无孤儿 tool_call。 |
@@ -569,7 +576,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 - 被动压缩(上游 `context_length` 拒绝)的边界上,`preTokens` 是装配后请求的本地估算,含系统提示词和工具段;3.0 的提示词更短,数字相应更小(自动压缩读上游真值时两边相同)。
 - 压缩的摘要请求在显式关闭思考(`off`)时发 `thinking: disabled`(设计 01 §6:显式关闭必须发出关闭参数、不能省略);2.x 的摘要请求省略该字段,正文请求(2.x 也发 disabled)与此不一致,是 2.x 的疏漏。
 - 目标判定器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`,2.x 的判定请求省略该字段(与压缩摘要请求同一类:2.x 的旁路请求显式关闭思考时不发关闭参数、正文请求才发;判定器传的是 `thinkingLevel: 'off'`,录制用的别名声明了思考能力,所以不是录制环境的假象,是 2.x 的疏漏)。判定请求的其余部分(模型、输出额度、无工具、转录 / 问题文案)逐项比较。
-- 目标的 `goal_status` 标记(「已设立」「第 N 次判定未达成 / 已达成」)在 3.0 上是**带外**写进最后一条助手消息的(不新增消息、**不再发一次 `message_commit`**,界面经 `goal` 主题的变更拿到它,见 05 §7);2.x 把标记并进那条助手消息后重新发一次 `message_commit`(同 id、parts 末尾多一个 `goal_status`)。落库的消息行两边逐项相同。
+- 目标的 `goal_status` 标记(「已设立」「第 N 次判定未达成 / 已达成」)在 3.0 上是**带外**写进最后一条助手消息的(不新增消息、**不再发一次 `message_commit`**,界面经 `goal` 主题的变更拿到它,见 05 §7);2.x 把标记并进那条助手消息后重新发一次 `message_commit`(同 id、parts 末尾多一个 `goal_status`);还没有助手消息时设立(用户手动设目标于空会话),2.x 把「已设立」标记排队、并进第一条助手消息**那一次** `message_commit` 的 parts 里,3.0 同样带外落库、那次 commit 不带它(`goal-manual-set-until-met` 抓到)。落库的消息行两边逐项相同。
 - `Read` 的输出文件以换行结尾时:2.x 按 `split('\n')` 切行,末尾多出一个空的编号行(`     2\t`);3.0 不多出这个空行(03 §`Read` 已登记:「文件以换行结尾时不多出一个空行」),与上面 `Write` 行数的差一同一个原因。
 - 项目 `deny` 规则命中时给模型的话:2.x 写死「in the workspace's .next-cowork/settings.local.json」,3.0 写「in the project's permission settings」(规则存放处不写死,同上面「deny 的话术不再写死」那一条);其余文字(规则原文、「不要换个工具达到同样的结果」)逐字相同。
 - 计划模式、`ask` 档位下,模型对**围栏之外**的文件调 `Write` / `Edit`:2.x 的审批只按工具名信任(`trustedPlanFileTool`),不弹窗,由写工具的围栏拒绝;3.0 的权限层自己再核对一遍(03 §计划模式的写入围栏:只有改的**正是**围栏文件才当作只读),围栏外的写入走普通审批,用户允许之后写工具的围栏照样拒绝(结果文字两边逐字相同,文件一个字节没动)。多一次弹窗是登记过的收紧(围栏没设上时写入不会被悄悄放行)的可见后果,不是缺陷。
