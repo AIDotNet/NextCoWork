@@ -19,6 +19,9 @@ public static class NcwWidgetAirspace
 
     public static bool IsSuspended => _count > 0;
 
+    /// <summary>当前未释放的挂起个数(测试用:布尔值会被别的用例遗留的泄漏污染,断言「我这次操作」引起的增减要看个数)。</summary>
+    internal static int ActiveCount => _count;
+
     public static event Action? Changed;
 
     public static IDisposable Suspend()

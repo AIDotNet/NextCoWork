@@ -25,7 +25,7 @@
   </UserControl.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- 设备断开:运行中的状态未知,不判结束、不继续计时(规则 7) -->
-    <Border Grid.Row="0" IsVisible="{Binding IsDeviceUnknown}" Padding="16,8" Margin="16,8,16,0" CornerRadius="10"
+    <Border Grid.Row="0" IsVisible="{Binding IsDeviceUnknown}" ui:NcwMotion.ShowMotion="Fade" Padding="16,8" Margin="16,8,16,0" CornerRadius="10"
             Background="{arc:ArcDesignTokenResource SurfaceMuted}">
       <StackPanel Orientation="Horizontal" Spacing="8">
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
@@ -35,14 +35,14 @@
 
     <Panel Grid.Row="1">
       <!-- 空会话 -->
-      <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="24" MaxWidth="480">
+      <StackPanel IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="24" MaxWidth="480">
         <lucide:LucideIcon Kind="Sparkles" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
         <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"
                    Text="{l:NcwText EmptySessionTitle}" TextAlignment="Center" TextWrapping="Wrap" />
         <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText EmptySessionHint}" />
       </StackPanel>
       <!-- 订阅中:选中了会话,快照还没到 -->
-      <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+      <StackPanel IsVisible="{Binding IsLoading}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
         <TextBlock Classes="hint" Text="{l:NcwText SessionLoading}" />
       </StackPanel>
@@ -172,7 +172,7 @@
               <StackPanel Spacing="4">
                 <ui:NcwMarkdown Text="{Binding Text}" />
                 <Border IsVisible="{Binding IsStreaming}" Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Left"
-                        Background="{arc:ArcDesignTokenResource Accent}" />
+                        ui:NcwMotion.Busy="Breathe" Background="{arc:ArcDesignTokenResource Accent}" />
                 <!-- 复制整段回复的 Markdown 原文;流式中不显示(文字还在变) -->
                 <StackPanel Classes="tools" Orientation="Horizontal" HorizontalAlignment="Left" Height="24" IsVisible="{Binding !IsStreaming}">
                   <ui:PlainButton Width="24" Height="24" Click="OnCopyText" Tag="{Binding Text}"
@@ -196,17 +196,18 @@
             <StackPanel Margin="0,2" Spacing="4">
               <ui:PlainButton HorizontalAlignment="Left" Padding="6,3" Click="OnToggleThinking" AutomationProperties.Name="{l:NcwText ThinkingLabel}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                  <lucide:LucideIcon Kind="ChevronRight" Size="12" VerticalAlignment="Center" IsVisible="{Binding !IsExpanded}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                  <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" IsVisible="{Binding IsExpanded}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                   <lucide:LucideIcon Kind="Brain" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                   <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
                   <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsStreaming}"
                              Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
                 </StackPanel>
               </ui:PlainButton>
-              <Border IsVisible="{Binding IsExpanded}" Margin="8,0,0,0" Padding="12,0,0,0" BorderThickness="2,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-                <SelectableTextBlock Classes="hint" Text="{Binding Text}" TextWrapping="Wrap" />
-              </Border>
+              <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+                <Border Margin="8,0,0,0" Padding="12,0,0,0" BorderThickness="2,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+                  <SelectableTextBlock Classes="hint" Text="{Binding Text}" TextWrapping="Wrap" />
+                </Border>
+              </ui:NcwCollapsible>
             </StackPanel>
           </DataTemplate>
           <DataTemplate DataType="vm:ToolRowViewModel">
@@ -317,7 +318,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:HandledNotice">
-            <Border Classes="card" Padding="12,8">
+            <Border Classes="card" Padding="12,8" ui:NcwMotion.ArriveOnAttach="Rise">
               <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                 <lucide:LucideIcon Kind="MonitorCheck" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
                 <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
@@ -334,19 +335,24 @@
       </ItemsControl>
 
       <!-- 待办 -->
-      <Border Classes="card" Padding="12,8" IsVisible="{Binding Todo, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="card" Padding="12,8" IsVisible="{Binding Todo, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <StackPanel Spacing="6" DataContext="{Binding Todo}" x:DataType="vm:TodoPanelViewModel">
           <ui:PlainButton Padding="2,2" Click="OnToggleTodo" AutomationProperties.Name="{l:NcwText Todos}">
             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
               <lucide:LucideIcon Kind="ListTodo" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
               <TextBlock Grid.Column="1" Text="{l:NcwText Todos}" FontWeight="SemiBold" VerticalAlignment="Center" />
               <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Current}" />
-              <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center">
-                <Run Text="{Binding Completed}" /><Run Text=" / " /><Run Text="{Binding Total}" />
-              </TextBlock>
+              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Classes="hint" VerticalAlignment="Center">
+                  <Run Text="{Binding Completed}" /><Run Text=" / " /><Run Text="{Binding Total}" />
+                </TextBlock>
+                <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding IsExpanded}" Kind="ChevronDown" Size="12" VerticalAlignment="Center"
+                                   Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              </StackPanel>
             </Grid>
           </ui:PlainButton>
-          <ItemsControl ItemsSource="{Binding Items}" IsVisible="{Binding IsExpanded}">
+          <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+          <ItemsControl ItemsSource="{Binding Items}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TodoRowView">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,2">
@@ -360,11 +366,12 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          </ui:NcwCollapsible>
         </StackPanel>
       </Border>
 
       <!-- 目标条 -->
-      <Border Classes="card" Padding="12,8" IsVisible="{Binding Goal, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="card" Padding="12,8" IsVisible="{Binding Goal, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <Grid DataContext="{Binding Goal}" x:DataType="vm:GoalBarViewModel" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
           <lucide:LucideIcon Kind="Target" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Accent}" />
           <StackPanel Grid.Column="1" Spacing="2">

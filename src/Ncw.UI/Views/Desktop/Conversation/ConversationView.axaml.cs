@@ -1,8 +1,10 @@
+using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 
@@ -16,17 +18,29 @@ public partial class ConversationView : UserControl
 {
     private const double BottomTolerance = 8;
 
+    /// <summary>一轮里最多有几行算「刚到的」。一次性插进来更多(打开会话、快照到了、重连补齐)是加载历史,不是新消息,不播放进入动画。</summary>
+    private const int MaxArrivalsPerTurn = 4;
+
     private ScrollViewer? _scroller;
     private bool _pinning;
     private DispatcherTimer? _ticker;
     private ConversationViewModel? _vm;
     private IDisposable? _lightboxAirspace;
 
+    // 新行的进入动画(纯 UI 状态,docs/design/03 §9.2):虚拟化列表里只有「真正新追加」的行才动,滚动时被实例化的旧行不动,所以不影响滚动和跟随最新。
+    private readonly HashSet<RowViewModel> _arriving = [];
+    private SessionRef? _arrivalSession;
+    private bool _arrivalsArmed;
+    private int _turnAdds;
+    private bool _turnScheduled;
+
     public ConversationView()
     {
         InitializeComponent();
         AddHandler(KeyDownEvent, OnPreviewKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         DetachedFromVisualTree += (_, _) => ReleaseLightboxAirspace();
+        Transcript.ContainerPrepared += OnContainerPrepared;
+        Transcript.ContainerClearing += (_, e) => NcwMotion.Rest(e.Container);
         Transcript.TemplateApplied += (_, e) =>
         {
             if (_scroller is not null)
@@ -56,13 +70,20 @@ public partial class ConversationView : UserControl
         {
             _vm.PropertyChanged -= OnViewModelChanged;
             _vm.FocusRequested -= OnFocusRequested;
+            _vm.Rows.CollectionChanged -= OnRowsChanged;
         }
 
         _vm = DataContext as ConversationViewModel;
+        _arriving.Clear();
+        _arrivalSession = _vm?.Session;
+        _arrivalsArmed = false;
         if (_vm is not null)
         {
+            // 绑定那一刻已经在列表里的行是「已有的」;这一轮布局之后才开始认「刚到的」
+            Dispatcher.UIThread.Post(() => _arrivalsArmed = true, DispatcherPriority.Background);
             _vm.PropertyChanged += OnViewModelChanged;
             _vm.FocusRequested += OnFocusRequested;
+            _vm.Rows.CollectionChanged += OnRowsChanged;
         }
 
         // 换了会话:回到底部,重新跟随
@@ -70,6 +91,63 @@ public partial class ConversationView : UserControl
         JumpButton.IsVisible = false;
         UpdateTicker();
         Dispatcher.UIThread.Post(ScrollToEnd, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// 哪些行算「刚到的」:同一个会话里、快照已经到了、一轮里不超过 <see cref="MaxArrivalsPerTurn"/> 行的追加。
+    /// 切会话后的第一批插入(整段历史)在这一轮结束之后才「武装」,所以不会整屏淡入。
+    /// </summary>
+    private void OnRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_vm is null || e.Action != NotifyCollectionChangedAction.Add || e.NewItems is null)
+        {
+            return;
+        }
+
+        if (_vm.Session != _arrivalSession)
+        {
+            _arrivalSession = _vm.Session;
+            _arrivalsArmed = false;
+            _arriving.Clear();
+            Dispatcher.UIThread.Post(() => _arrivalsArmed = true, DispatcherPriority.Background);
+            return;
+        }
+
+        if (!_arrivalsArmed || _vm.IsLoading)
+        {
+            return;
+        }
+
+        if (!_turnScheduled)
+        {
+            _turnScheduled = true;
+            Dispatcher.UIThread.Post(() => (_turnAdds, _turnScheduled) = (0, false), DispatcherPriority.Background);
+        }
+
+        _turnAdds += e.NewItems.Count;
+        if (_turnAdds > MaxArrivalsPerTurn)
+        {
+            _arriving.Clear();
+            return;
+        }
+
+        foreach (RowViewModel row in e.NewItems)
+        {
+            _arriving.Add(row);
+        }
+    }
+
+    private void OnContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+    {
+        if (e.Container.DataContext is RowViewModel row && _arriving.Remove(row))
+        {
+            NcwMotion.Arrive(e.Container, NcwArrival.Rise);
+        }
+        else
+        {
+            // 容器被回收复用:上一行没播完的进入动画不能带到这一行上
+            NcwMotion.Rest(e.Container);
+        }
     }
 
     private void OnViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -149,7 +227,7 @@ public partial class ConversationView : UserControl
         {
             IsFollowing = true;
         }
-        else if (e.ExtentDelta.Y != 0 && IsFollowing)
+        else if ((e.ExtentDelta.Y != 0 || e.ViewportDelta.Y != 0) && IsFollowing)
         {
             // 内容变高(新行、流式增量):跟随就继续贴着底
             Dispatcher.UIThread.Post(ScrollToEnd, DispatcherPriority.Background);
