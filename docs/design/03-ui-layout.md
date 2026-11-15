@@ -575,6 +575,8 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 | 进程拉不起来(权限 / 被安全软件拦截) | 守护 `Restarting` 或 `Failed` + `LaunchFailed` | 错误面板 `launch-failed`,**在第一次失败就显示**(守护要等 8 次连续失败才放弃,中间一百多秒;这类问题不先处理不会好) |
 | 数据目录被另一个本应用无法通信的 Agent 占着 | 守护 `Restarting` / `Failed` + `AlreadyRunningElsewhere`(退出码 75) | 错误面板 `already-running-elsewhere`;对方退出后守护拿到锁,面板自己消失 |
 | Agent 反复崩溃 | 一次都没就绪过,却已经连续退出 ≥ 2 次(`Restarting`),或守护 `Failed` + `CrashLoop` | 错误面板 `crash-loop` |
+| 数据目录里有加密的数据,却找不到它的凭据主密钥(`credential.key`) | Agent 拒绝启动:退出码 65 + 一行 `ncw-agent startup-failed agent.masterKey.missing credential.key`(02 A6.1);守护**不退避、不重启**,直接 `Failed` + `MasterKeyMissing` | 错误面板 `master-key-missing`,**第一次拒绝就显示**,动作:重试 / 查看诊断 / 复制诊断 / 退出。说明用人话写原因(为了不让已有的凭据变得无法解密,没有自动创建新密钥),并如实告诉用户怎么办:把 `credential.key` 放回数据目录后点「重试」;文件确实丢了的话,已保存的凭据无法恢复、需要重新输入——**这一步目前没有自动流程**,文案照实写,不假装有。诊断里有数据目录路径、文件名和原因 key,**没有任何密钥内容**(事实里本来就只有 key 和字段名) |
+| `credential.key` 在,但读不了 / 已损坏 / 不是这份数据的密钥 | 同上,key 是 `agent.masterKey.unreadable` → `MasterKeyUnreadable` | 错误面板 `master-key-unreadable`,动作和上一行相同;说明里强调「没有改动它、也没有创建新的,已保存的凭据保持原样」。手机壳没有本机 Agent,用不到这两个原因(Core 对非桌面形态不产生失败,验证过不崩) |
 | 版本不一致 | `ClientOutdated`(Agent 比桌面新 / 拒绝了过旧的客户端)、`AgentOutdated`(包里的 Agent 比桌面旧) | 错误面板,**没有「重试」**(重试不会好) |
 | Agent 在运行但连不上 | 连接层退避三次后 `Offline` | 错误面板 `connection-failed` |
 | 「连接」或「内容」阶段卡住 | 阶段开始(上一阶段完成的时刻)起 ≥ 30 秒 | 错误面板 `timeout`;阶段完成后自己消失。Agent 阶段由守护自己的就绪超时和退避管,数据接管本来就可能很久,都不套用 |
@@ -682,10 +684,10 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 
 | 层次 | 内容 | 位置 / 命令 |
 |---|---|---|
-| Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(69 条) |
+| Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(73 条,含主密钥拒绝的两个原因) |
 | Client | ViewModel + Store + Recorder + 真实的 DataGate:延迟出现、最短停留、淡出触发、释放后零通知、失败面板与重试、复制诊断、退出、数据页让位与交回、接管步骤与数据页同源、手机形态、`DeviceLink.RetryNow`;变异检查 | `Ncw.Client.Tests/StartupViewModelTests`(33 条) |
-| Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(7 条) |
-| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(53 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
+| Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(9 条,含主密钥原因的映射);守护的 65 / 78 不重启、原因映射、重试恢复在 `SidecarSupervisorTests`,真实进程在 `RealAgentMasterKeyTests` |
+| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、主密钥缺失 / 无法使用、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(71 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
 | 真实启动(无界面) | 真实 `ncw-agent`(NativeAOT)+ 真实守护 + 真实 DeviceLink + 真实 Store:时间线(冷 / 热 / 接上)、故障注入、真实 2.x 库副本接管 | `dotnet run --project tools/StartupSmoke -- timeline|faults|takeover --agent <ncw-agent>`(结果见 §10.11) |
 | 真窗口(macOS) | 原生窗口底色读回、第一帧像素、帧间隔、淡出布局稳定、释放后空闲 CPU | `dotnet run --project tools/StartupSmoke -- window --agent <ncw-agent>`(结果见 §10.6) |
 
@@ -712,6 +714,8 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 
 **真实 2.x 库接管**(`takeover --legacy-db`,1.6 GB 的 2.x 库的**只读副本**,原库没有碰;23 个项目、631 个会话,凭据主密钥是随机造的,旧凭据解不开会计入「需要重新输入」,这次没有旧凭据行):加载层显示的是 Agent 的真实步骤 备份(`backing-up`)→ 升级(`migrating`)→ 提交(`committing`),进度值 0.200 → 0.600 → 0.650 → 0.700 → 0.800,单调不降;`备份并校验` 这一步用了 **37 秒**(系统负载 20–30;`docs/parity.md` 在空闲机器上量过约 16 秒),升级 10 ms,提交 410 ms;期间加载层一直拥有整窗,数据页没有同时出现 ✓。**这 37 秒里弧长一动不动**(弧长只数走完了几步),所以短弧在整个等待期间一直转,证明还在干活——这是看了这份数据之后才改的(以前只在没有真实步骤的阶段转)。数据被挡住(2.x 还在运行,`SingletonLock` 指向活进程)时:1.8–2.0 秒内加载层整个让位给数据页(数据页在场、加载层不在场,同一时刻只有一个全屏层),放开锁后点数据页的「重试」→ 加载层接回来显示接管步骤 → 摘要页(「继续」)→ 继续后加载层接回来完成内容阶段 ✓。
 
+**主密钥拒绝之后的回归复测**(同一份只读克隆,NativeAOT Agent 的新构建):没有 `credential.key` 时 0.95 秒出 `master-key-missing` 面板(没有退避);补一把随机密钥、点重试后接管照常完成——24.5 秒(机器负载 20–40;另一次完整运行是 36.2 秒)、23 个项目、631 个会话,进度 0.200 → 0.600 → 0.700 → 0.800 单调不降,步骤仍是 备份 → 升级 → 提交,加载层一直拥有整窗 ✓(接管路径的主密钥来源没有变)。
+
 **故障注入**(`faults`;真实的 NativeAOT `ncw-agent` 或能被它替身的可执行文件;每一项都落到明确的面板 / 不转圈,且「重试」真的恢复):
 
 | 故障 | 怎么注入 | 失败面板出现 | 面板 key | 重试 |
@@ -724,7 +728,10 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 | 数据根被别的 Agent 占着 | 先起一个用别的令牌的 Agent | 90 ms(握手被拒 → 守护 `Failed / AlreadyRunningElsewhere`) | `already-running-elsewhere` | 对方退出后点重试,约 1.9 秒后全部阶段完成 |
 | 所有阶段完成、还没淡出时 Agent 被杀 | 杀进程 | 没有面板:已完成的阶段不退回(5 → 5,进度 1.00 → 1.00),照常淡出,Agent 被拉起、设备重连 | — | — |
 | 进入可交互之后 Agent 被杀 | 杀进程 | **加载层没有回来**(设备断开,2.4 秒后重连;只用已有的断线条) | — | — |
-| **真实发现**:数据根里有 2.x 的库、却没有 `credential.key` | 只放库 | 5.3 秒崩溃面板(Agent 退出码 134:`AgentHost` 构造时 `DeviceIdentity.LoadOrCreate` → `CredentialCrypto.LoadMasterKey` 抛未处理的 `FileNotFoundException`) | `crash-loop` | 补上密钥、点「重试」,继续走接管。**这是 Agent 侧的缺陷**(应该给数据页一个明确的 `failed` 原因,而不是崩溃),不在这次范围内,没有改 |
+| 数据根里有加密凭据的库、却没有 `credential.key`(夹具:库里一行真实的 NCK1 密文) | 只放库,不放密钥 | **0.9 秒**(真实 NativeAOT Agent 退出码 65 + 一行结构化输出;守护 `Starting → Failed`,没有 `Restarting`,`RestartCount` 0;原来是 4–5 秒的崩溃面板,守护自己要 45 秒才放弃) | `master-key-missing`,有「重试」 | 把有效的 `credential.key` 放回去、点重试:恢复(夹具库是 2.x 形状,恢复后照常进入接管并停在摘要页),密钥文件还是放回去的那一把(没有被重新生成) |
+| `credential.key` 已损坏(长度不对,内容是哨兵) | 同上,放一个 17 字节的文件 | 0.6–0.8 秒 | `master-key-unreadable`,有「重试」 | 换上有效的密钥后重试:恢复;损坏的文件在失败期间原样保留,诊断里没有它的内容 |
+| Agent 起来就崩溃(未处理异常) | 指向一个以 134 退出的假可执行文件(临时目录里的 shell 脚本)——**不再靠「缺主密钥」注入**:真实的 Agent 现在对那种情形是结构化拒绝(上两行) | 4.2 秒(连续退出第 2 次,有退避) | `crash-loop` | 指回真 Agent 重试,恢复约 2.2 秒 |
+| 真实 2.x 库(只读克隆)、没有 `credential.key` | 只放库,不拷密钥 | 0.95 秒 | `master-key-missing`,没有退避 | 补一把随机密钥、点重试,继续走接管(见上) |
 
 ### 10.12 与 2.x 的对应与差异
 
@@ -737,5 +744,5 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 - Windows / Linux 的原生窗口底色、真机验证;iOS / Android 宿主里的加载界面(Headless 验证了共享部分)。
 - 「先显示一个只有底色的轻量窗口、延后创建外壳」:创建窗口与外壳的约 1.4 秒在第一帧之前,是窗口显示前最大的一项(§10.6);要改 `MainWindow` 内容的延迟装配,没有做。
 - 「提前启动 sidecar」评估后没有采用(§10.6 的 A/B)。
-- Agent 侧缺陷(这次发现,没有改):数据根里有 2.x 的库却没有 `credential.key` 时,Agent 在构造阶段抛未处理异常退出(退出码 134),用户看到的是启动失败的崩溃面板,而不是数据页上的明确原因(§10.11 最后一行)。
+- ~~Agent 侧缺陷:数据根里有 2.x 的库却没有 `credential.key` 时 Agent 抛未处理异常退出(134),用户只看到「崩溃循环」~~——已修:Agent 拒绝启动并给出结构化原因(退出码 65),守护不重启,面板写明原因和怎么办(§10.1 失败表、02 A6.1、04 §3)。仍然**没有**的:密钥确实丢了时重新输入凭据的自动流程(界面如实写明),以及「打开数据目录」入口(诊断里有数据目录路径)。
 - 加载层之后的 Onboarding 首屏也是整窗层,两者之间是「先淡出加载层再露出首次启动页」,没有做两层之间的合并动画。

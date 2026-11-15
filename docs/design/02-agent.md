@@ -117,6 +117,7 @@ nextco.work 编排服务:创建 / 唤醒 / 休眠 / 升级 / 配额
 - **启动配置只来自编排服务注入的环境,不在命令行、不进日志**:`NCW_CLOUD_CONFIG`(配置文件路径,JSON,**不含密钥**,文件不能被组 / 其它用户写)、`NCW_ACCOUNT_TOKEN` 或 `NCW_ACCOUNT_TOKEN_FILE`(账户身份令牌)、可选 `NCW_ORCH_KEYS`(编排验证公钥 `kid:base64,…`,覆盖文件里的)。
   文件里:数据根、工作区根、编排服务地址(必须 `https`,仅回环允许 `http`——令牌在这条连接上)、中继地址(`wss`;`ws` 仅本机 / 局域网)、编排验证公钥、KMS(`provider` / `context` / 可选 `keyId`)、可选的期望设备 id、空闲 / 上报间隔、健康端点、出网策略。不认识的字段、范围外的数值一律启动失败。
 - **启动失败是一行结构化输出**:`ncw-agent startup-failed <稳定 key> <字段名>`(**只有 key 和字段名,绝无值**,值可能是密钥),退出码:`78` 配置不合法(重启没用)、`69` 依赖不可用(KMS 连不上 / 拒绝,可退避重启)、`65` 身份 / 主密钥不符(挂错了卷,重启没用)、`75` 同一数据根已有 Agent、`2` 命令行参数错误。就绪时打印 `ncw-agent ready <deviceId> cloud`。
+- **本机模式(`--mode local`)有同一个形态的一条启动失败:主密钥缺失 / 读不了**。数据根里已经有加密数据(`device.json` 里用主密钥加密的设备私钥、`credentials` 表里的 NCK1 密文)却没有可用的 `credential.key` 时,Agent **拒绝启动、绝不生成新密钥**(新密钥解不开已有的密文,还会让同一张表出现两套互不兼容的密文),打印**一行** `ncw-agent startup-failed <key> credential.key` 并以**退出码 65** 退出——只有稳定 key 和字段名(密钥文件名),没有值、没有堆栈、没有未处理异常。两个稳定 key:`agent.masterKey.missing`(文件不存在)、`agent.masterKey.unreadable`(存在但读不了 / 已损坏 / 不是这份数据的密钥,即解不开设备私钥)。**不变的部分**:全新数据根(没有库、没有 `device.json`)第一次启动照常生成主密钥与身份;只有旧 safeStorage 行、没有 NCK1 密文的 2.x 库照常生成(2.x 数据接管是原地接管,`credential.key` 本来就在数据根里,接管流程只备份它、从不创建它,这条路径没有变化)。**只映射这一类失败**:生成过程自己的失败和其它未预期的启动异常保持原样,不用万能 catch。桌面端的守护据此直接停在失败、不重启(见 [04 §3](04-update-install.md))。
 - **拒绝配对码流程**:云端设备不需要配对码,`pair.begin / finish / claim / createQr` 返回 `unsupported`(`cloud.pairing.unsupported`);`remote.*` 配置本来只有本机通道可调,云端的中继地址固定为启动配置的值。
 
 #### 身份与信任(确定方案)
@@ -137,7 +138,7 @@ nextco.work 编排服务:创建 / 唤醒 / 休眠 / 升级 / 配额
 
 `IKeyWrap`(`Ncw.Agent.Storage.Credentials`)抽象 `Wrap / Unwrap` 数据主密钥(NCK1 的 32 字节 AES 密钥),带**加密上下文**(启动配置的 `kms.context`,通常含账户 id 和沙箱 id,KMS 据此保证别人的卷解不开)。
 云端模式下磁盘上**只有** `credential.key.kms`(KMS 包裹后的密文 + keyId),明文主密钥只在进程内存里(启动时解开一次并缓存,运行中 KMS 抖动不影响读写凭据;`CredentialStore` 拿到的是副本、用完清零)。**凭据格式 NCK1 不变**。
-第一次启动生成并包裹;数据根里有明文 `credential.key`(本机数据导入云端)时包裹后**删除明文**;库里有 NCK1 密文却找不到任何形态的主密钥 → 拒绝启动(退出码 65),绝不生成新密钥。本机模式仍用 0600 的 `credential.key` 文件,行为不变;来源按数据根登记(`CredentialCrypto.UseSource`)。
+第一次启动生成并包裹;数据根里有明文 `credential.key`(本机数据导入云端)时包裹后**删除明文**;库里有 NCK1 密文却找不到任何形态的主密钥 → 拒绝启动(退出码 65),绝不生成新密钥。本机模式仍用 0600 的 `credential.key` 文件,行为不变,缺失 / 读不了时同样拒绝启动(退出码 65,见上「本机模式有同一个形态的一条启动失败」);来源按数据根登记(`CredentialCrypto.UseSource`)。
 **适配点**:`CloudBoot.CreateKeyWrap(config, env)` 按 `kms.provider` 造 `IKeyWrap`。**本仓库不含任何真实云厂商的 KMS 客户端**——后端在这里加一个 `case`、实现 `IKeyWrap` 即可。唯一内置的 `dev-env`(环境变量里的 AES 密钥做 AES-GCM)只给开发和冒烟测试:**它只在定义了 `NCW_DEV_KMS` 的构建里才编译进去**(MSBuild 属性 `NcwDevKms`:Debug 默认开,Release / 发布默认关),发布的 `ncw-agent` 里根本没有这段代码,不能靠环境变量把它打开;带它的构建还要显式设 `NCW_CLOUD_ALLOW_DEV_KMS=1` 才可用。`tools/Ncw.Build publish-agent` 发布后会扫描二进制,出现开发 KMS 的标记就失败;冒烟测试用的带它的二进制要加 `--dev-kms` 发布,产物不得分发。
 
 #### 休眠与唤醒

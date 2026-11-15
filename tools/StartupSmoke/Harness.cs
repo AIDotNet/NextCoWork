@@ -98,6 +98,20 @@ internal sealed class Harness : IAsyncDisposable
 
     public IReadOnlyList<(double Ms, string What)> Events => _events;
 
+    /// <summary>守护的每一次状态变化(从守护创建的那一刻起记录,所以第一帧也在里面):用来断言「没有进入过重启退避」。</summary>
+    public IReadOnlyList<SidecarStatus> SidecarStatuses
+    {
+        get
+        {
+            lock (_statuses)
+            {
+                return [.. _statuses];
+            }
+        }
+    }
+
+    private readonly List<SidecarStatus> _statuses = [];
+
     /// <summary>
     /// 开始一次启动。窗口相关的里程碑(窗口 / 平台 / 账户)这里没有窗口,记在起点(真实的值见 window 模式);
     /// <paramref name="desktopVersion"/> 用来注入版本不匹配。
@@ -128,6 +142,13 @@ internal sealed class Harness : IAsyncDisposable
             }
 
             h.Sidecar = new LocalAgentSidecar(dataRoot, deps);
+            h.Sidecar.StatusChanged += status =>
+            {
+                lock (h._statuses)
+                {
+                    h._statuses.Add(status);
+                }
+            };
             h.Backend = new LocalBackend(h.Sidecar);
             h.Shell = new ShellViewModel(h.Stores, devices: h.Devices) { StartupHost = h.Backend.StartupHost };
             h.Shell.Startup.PropertyChanged += (_, e) => h.OnStartupChanged(e.PropertyName);

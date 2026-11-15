@@ -201,6 +201,9 @@ internal sealed class Scenarios(string agent, string work)
         await Run("agent-not-found", AgentNotFound);
         await Run("launch-failed", LaunchFailed);
         await Run("crash-loop", CrashingAgent);
+        await Run("agent-crashes-on-startup", AgentCrashesOnStartup);
+        await Run("master-key-missing", MasterKeyMissing);
+        await Run("master-key-unreadable", MasterKeyUnreadable);
         await Run("client-outdated", () => VersionMismatch("client-outdated", "0.0.1", canRetry: false));
         await Run("agent-outdated", () => VersionMismatch("agent-outdated", "99.0.0", canRetry: false));
         await Run("data-root-occupied", DataRootOccupied);
@@ -267,6 +270,143 @@ internal sealed class Scenarios(string agent, string work)
         h.Run(s => s.Startup.RetryCommand.Execute(null));
         var ok = h.WaitFor(s => s.IsAwaitingShell && !s.IsFailed, TimeSpan.FromSeconds(60));
         Report("fault.crash-loop.retry-recovers", ok is not null, $"recovered at {Fmt(ok)} ms ({Fmt(ok - shown)} ms after the panel)");
+    }
+
+    /// <summary>
+    /// Agent 起来就崩溃(未处理异常,退出码 134 = SIGABRT):用一个假的可执行文件注入(临时目录里的 shell 脚本),不再靠「没有主密钥」——
+    /// 真实的 Agent 现在对那种情形是结构化拒绝(退出码 65,见 master-key-missing)。这条路径要保证崩溃循环面板仍然被测到:
+    /// 守护按崩溃处理(退避重启),面板原因是 crash-loop,不是 master-key-*。
+    /// </summary>
+    private async Task AgentCrashesOnStartup()
+    {
+        var root = NewRoot("f-abort");
+        var script = Path.Combine(work, "abort-agent.sh");
+        File.WriteAllText(script, "#!/bin/sh\necho 'Unhandled exception. System.IO.FileNotFoundException: injected' >&2\nexit 134\n");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        SetAgent(script);
+        await using var h = Harness.Start(root);
+        var shown = h.WaitFor(s => s.IsFailed, TimeSpan.FromSeconds(30));
+        var reason = h.Read(s => s.FailureReason);
+        var restarts = h.Sidecar.Status.RestartCount;
+        var backedOff = h.SidecarStatuses.Any(s => s.Phase == SidecarPhase.Restarting && s.Issue == SidecarIssue.None && s.RetryIn is not null);
+        Report("fault.agent-crashes-on-startup.panel", shown is not null && reason == "crash-loop" && backedOff && restarts >= 2,
+            $"fake agent that exits 134: failure panel after {Fmt(shown)} ms reason={reason} (restarted {restarts}x with backoff={backedOff}; the guard itself only gives up after 8 consecutive crashes) canRetry={h.Read(s => s.CanRetry)}");
+
+        SetAgent(agent);
+        h.Run(s => s.Startup.RetryCommand.Execute(null));
+        var ok = h.WaitFor(s => s.IsAwaitingShell && !s.IsFailed, TimeSpan.FromSeconds(60));
+        Report("fault.agent-crashes-on-startup.retry-recovers", ok is not null, $"recovered at {Fmt(ok)} ms ({Fmt(ok - shown)} ms after the panel)");
+    }
+
+    private static byte[] NewKey() => System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+
+    private static void WriteKey(string root, byte[] content)
+    {
+        var path = Path.Combine(root, "credential.key");
+        File.WriteAllBytes(path, content);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    /// <summary>
+    /// 有加密凭据的库(一行真实的 NCK1 密文,用 <paramref name="key"/> 加密),但没有写 credential.key:只恢复了数据库文件的 2.x 用户的处境。
+    /// 返回的 key 是「放回去就对得上」的那一把。
+    /// </summary>
+    private static void SeedEncryptedDatabase(string root, byte[] key)
+    {
+        using (var db = AgentDatabase.Open(root))
+        {
+            using var command = db.Connection.CreateCommand();
+            command.CommandText = "INSERT OR REPLACE INTO credentials (ref, blob) VALUES ('provider:smoke', $blob)";
+            command.Parameters.AddWithValue("$blob", Ncw.Agent.Storage.Credentials.CredentialCrypto.Encrypt(key, "sk-smoke-secret"));
+            command.ExecuteNonQuery();
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    /// <summary>
+    /// 重试之后真的恢复了:失败面板没了、守护是 Running(Agent 握手成功)、并且启动走到了「全部完成」或「数据页要用户处理」。
+    /// 夹具库没有所有权标记,是 2.x 形状的库,所以恢复之后会照常进入接管并停在摘要页(要点「继续」),这是正确的下一步,不是失败。
+    /// </summary>
+    private static bool Recovered(Harness h, StartupViewModel s) =>
+        !s.IsFailed && h.Sidecar.Status.Phase == SidecarPhase.Running && (s.IsAwaitingShell || s.Phase == StartupPhase.NeedsUser);
+
+    private static bool Untouched(string root, byte[] expected) =>
+        File.Exists(Path.Combine(root, "credential.key")) && File.ReadAllBytes(Path.Combine(root, "credential.key")).AsSpan().SequenceEqual(expected);
+
+    /// <summary>
+    /// 数据根里有加密凭据却没有 credential.key:真实 Agent 拒绝启动(退出码 65,一行结构化输出),真实守护直接停在失败——不是崩溃循环的几十秒。
+    /// 把有效的密钥放回去、点重试就恢复,而且密钥文件是原样的那一把(没有被重新生成)。
+    /// </summary>
+    private async Task MasterKeyMissing()
+    {
+        var root = NewRoot("f-nokey");
+        var key = NewKey();
+        SeedEncryptedDatabase(root, key);
+        SetAgent(agent);
+        await using var h = Harness.Start(root);
+        var shown = h.WaitFor(s => s.IsFailed, TimeSpan.FromSeconds(30));
+        var view = h.Read(s => (s.FailureReason, s.CanRetry));
+        var diagnostics = h.Ui.Invoke(() =>
+        {
+            h.Shell.Startup.ToggleDiagnosticsCommand.Execute(null);   // 打开诊断:和用户点「查看诊断」同一个动作
+            return h.Shell.Startup.DiagnosticsText;
+        });
+        var diagnosticsOk = diagnostics.Contains("credential.key", StringComparison.Ordinal) && diagnostics.Contains(root, StringComparison.Ordinal) && diagnostics.Contains("master-key-missing", StringComparison.Ordinal);
+        var statuses = h.SidecarStatuses;
+        var noBackoff = statuses.All(s => s.Phase != SidecarPhase.Restarting) && h.Sidecar.Status.RestartCount == 0 && h.Sidecar.Status.RetryIn is null;
+        var fast = shown is not null && shown < 5000;
+        var noKeyCreated = !File.Exists(Path.Combine(root, "credential.key"));
+        Report("fault.master-key-missing.panel",
+            shown is not null && fast && view.FailureReason == "master-key-missing" && view.CanRetry && noBackoff && noKeyCreated && diagnosticsOk,
+            $"failure panel after {Fmt(shown)} ms (a crash loop would take ~45 s; fast={fast}) reason={view.FailureReason} canRetry={view.CanRetry} noBackoff={noBackoff} (restarts={h.Sidecar.Status.RestartCount}, statuses: {string.Join(">", statuses.Select(s => s.Phase))}) noNewKeyCreated={noKeyCreated} diagnosticsNameTheFileAndTheDataRoot={diagnosticsOk} detail={h.Sidecar.Status.Detail}");
+
+        await Task.Delay(1500);   // 守护没有在背后偷偷重启:再等一会儿,还是同一个失败、同一个进程数
+        Report("fault.master-key-missing.stays-failed", h.Read(s => s.IsFailed) && h.SidecarStatuses.All(s => s.Phase != SidecarPhase.Restarting), "1.5 s later the panel is still up and the guard never entered a restart backoff");
+
+        WriteKey(root, key);   // 用户把 credential.key 放回去
+        h.Run(s => s.Startup.RetryCommand.Execute(null));
+        var ok = h.WaitFor(s => Recovered(h, s), TimeSpan.FromSeconds(60));
+        Report("fault.master-key-missing.retry-recovers", ok is not null && Untouched(root, key), $"after the key was put back and Retry: recovered (agent running, past the agent stage) at {Fmt(ok)} ms ({Fmt(ok - shown)} ms after the panel); key file is still exactly the one that was put back={Untouched(root, key)}");
+    }
+
+    /// <summary>credential.key 在,但已经损坏(长度不对,内容是个哨兵):原因是 master-key-unreadable,文件原样保留,放回有效的密钥后重试恢复。</summary>
+    private async Task MasterKeyUnreadable()
+    {
+        var root = NewRoot("f-badkey");
+        var key = NewKey();
+        SeedEncryptedDatabase(root, key);
+        var damaged = System.Text.Encoding.ASCII.GetBytes("SMOKE-DAMAGED-KEY");
+        WriteKey(root, damaged);
+        SetAgent(agent);
+        await using var h = Harness.Start(root);
+        var shown = h.WaitFor(s => s.IsFailed, TimeSpan.FromSeconds(30));
+        var view = h.Read(s => (s.FailureReason, s.CanRetry));
+        var diagnostics = h.Ui.Invoke(() =>
+        {
+            h.Shell.Startup.ToggleDiagnosticsCommand.Execute(null);
+            return h.Shell.Startup.DiagnosticsText;
+        });
+        var noBackoff = h.SidecarStatuses.All(s => s.Phase != SidecarPhase.Restarting) && h.Sidecar.Status.RestartCount == 0;
+        var fast = shown is not null && shown < 5000;
+        var leftAlone = Untouched(root, damaged);
+        var leaked = (h.Sidecar.Status.Detail ?? "").Contains("DAMAGED", StringComparison.Ordinal) || diagnostics.Contains("DAMAGED", StringComparison.Ordinal);
+        var diagnosticsOk = diagnostics.Contains("credential.key", StringComparison.Ordinal) && diagnostics.Contains(root, StringComparison.Ordinal);
+        Report("fault.master-key-unreadable.panel",
+            shown is not null && fast && view.FailureReason == "master-key-unreadable" && view.CanRetry && noBackoff && leftAlone && !leaked && diagnosticsOk,
+            $"failure panel after {Fmt(shown)} ms reason={view.FailureReason} canRetry={view.CanRetry} noBackoff={noBackoff} damagedFileLeftAlone={leftAlone} keyContentNotInDiagnostics={!leaked} diagnosticsNameTheFileAndTheDataRoot={diagnosticsOk} detail={h.Sidecar.Status.Detail}");
+
+        WriteKey(root, key);   // 换上有效的密钥
+        h.Run(s => s.Startup.RetryCommand.Execute(null));
+        var ok = h.WaitFor(s => Recovered(h, s), TimeSpan.FromSeconds(60));
+        Report("fault.master-key-unreadable.retry-recovers", ok is not null, $"after a valid key replaced the damaged one and Retry: recovered (agent running, past the agent stage) at {Fmt(ok)} ms ({Fmt(ok - shown)} ms after the panel)");
     }
 
     private async Task VersionMismatch(string expected, string desktopVersion, bool canRetry)
@@ -449,10 +589,11 @@ internal sealed class Scenarios(string agent, string work)
         await using var h = Harness.Start(root);
 
         // 第一段(真实发现):只有库、没有凭据主密钥(2.x 的数据根里本来有 credential.key;这里不拷贝真实的密钥文件)。
-        // 真实的 Agent 在构造阶段抛未处理的 FileNotFoundException 退出,守护按崩溃处理——用户该看到错误面板,不是无限转圈
+        // 真实的 Agent 拒绝启动(退出码 65,一行结构化输出;以前是构造阶段的未处理异常、退出码 134),守护直接停在失败——用户该看到明确的原因,不是无限转圈,更不是崩溃循环
         var shown = h.WaitFor(v => v.IsFailed, TimeSpan.FromSeconds(60));
         var reason = h.Read(v => v.FailureReason);
-        Report("fault.agent-crashes-on-startup.panel", shown is not null && reason == "crash-loop", $"legacy 2.x database without credential.key: failure panel after {Fmt(shown)} ms reason={reason} (sidecar: {h.Sidecar.Status.Phase}, restarts={h.Sidecar.Status.RestartCount}, detail={h.Sidecar.Status.Detail})");
+        var noBackoff = h.SidecarStatuses.All(s => s.Phase != SidecarPhase.Restarting);
+        Report("takeover.real.without-key-is-refused", shown is not null && reason == "master-key-missing" && noBackoff, $"real 2.x database without credential.key: failure panel after {Fmt(shown)} ms reason={reason} noBackoff={noBackoff} (sidecar: {h.Sidecar.Status.Phase}, restarts={h.Sidecar.Status.RestartCount}, detail={h.Sidecar.Status.Detail})");
 
         // 第二段:补上一份随机的主密钥(旧凭据解不开会计入「需要重新输入」),点「重试」,继续走真实接管
         WriteFakeMasterKey(root);
