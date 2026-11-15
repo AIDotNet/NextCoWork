@@ -438,6 +438,9 @@ internal sealed record ParsedPart(string Type)
     public bool IsError { get; init; }
     public long? DurationMs { get; init; }
     public string? Path { get; init; }
+    /// <summary>用户图片块:MIME 与引用(<c>data:</c> URL 或 <c>ncw://</c> 附件引用)。</summary>
+    public string? Mime { get; init; }
+    public string? DataRef { get; init; }
     public string? ChildRunId { get; init; }
     public string? ErrorCode { get; init; }
     public string? ErrorMessage { get; init; }
@@ -492,6 +495,7 @@ internal static class MessageParts
                         DetailsJson = e.TryGetProperty("output", out var out2) && out2.ValueKind == JsonValueKind.Object ? WidgetDetails(out2) : null,
                     },
                     "file_ref" => part with { Path = SubagentReceipts.Str(e, "path") },
+                    "image" => part with { Mime = SubagentReceipts.Str(e, "mime"), DataRef = SubagentReceipts.Str(e, "dataRef") },
                     "subagent" => part with { ChildRunId = SubagentReceipts.Str(e, "childRunId"), Text = SubagentReceipts.Str(e, "summary") },
                     "error" when e.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object => part with
                     {
@@ -536,4 +540,35 @@ internal static class MessageParts
     private static long? Long(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : null;
 
     private static bool Bool(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+}
+
+/// <summary>用户消息里的一张图片(<see cref="DataRef"/> 是 <c>data:</c> URL 或 <c>ncw://</c> 附件引用)。</summary>
+public sealed record MessageImage(string Mime, string DataRef);
+
+/// <summary>从一条消息里取出用户发的图片引用(纯函数,解析结果有缓存)。内部消息(压缩边界等)和助手消息不算。</summary>
+public static class MessageImages
+{
+    public static IReadOnlyList<MessageImage> Of(MessageDto message) =>
+        message.Role != "user" || message.Internal
+            ? []
+            : [.. MessageParts.Parse(message.PartsJson)
+                .Where(p => p is { Type: "image", Mime.Length: > 0, DataRef.Length: > 0 })
+                .Select(p => new MessageImage(p.Mime!, p.DataRef!))];
+}
+
+/// <summary>
+/// 把一条用户消息里的附件还原成「发送时的输入」(图片 → 附件引用,<c>file_ref</c> → 项目文件引用),按原顺序。
+/// 编辑后重新运行 / 重新生成要把它们带上:截断历史再用同样的输入重发,否则图片和 @ 文件会被悄悄丢掉。
+/// </summary>
+public static class MessageInputs
+{
+    public static IReadOnlyList<Ncw.Client.Actions.InputFile> FilesOf(MessageDto message) =>
+        message.Role != "user" || message.Internal
+            ? []
+            : [.. MessageParts.Parse(message.PartsJson).SelectMany<ParsedPart, Ncw.Client.Actions.InputFile>(p => p switch
+            {
+                { Type: "image", Mime.Length: > 0, DataRef.Length: > 0 } => [Ncw.Client.Actions.InputFile.Attachment(p.DataRef!, p.Name is { Length: > 0 } ? p.Name : "image", p.Mime!)],
+                { Type: "file_ref", Path.Length: > 0 } => [new Ncw.Client.Actions.InputFile(p.Path!, p.Name is { Length: > 0 } ? p.Name : p.Path!)],
+                _ => [],
+            })];
 }

@@ -37,8 +37,27 @@ public abstract class RowViewModel<T>(T row) : RowViewModel(row.Key) where T : T
     }
 }
 
-public sealed class UserRowViewModel(UserRow row) : RowViewModel<UserRow>(row)
+public sealed partial class UserRowViewModel(UserRow row, IReadOnlyList<ImageThumbViewModel>? images = null) : RowViewModel<UserRow>(row)
 {
+    /// <summary>这条消息里的图片(缩略图;消息落库后不会变,所以随行创建一次)。没有引用可取时为空,界面退化成「N 张图片」。</summary>
+    public IReadOnlyList<ImageThumbViewModel> Images { get; } = images ?? [];
+
+    public bool HasThumbs => Images.Count > 0;
+
+    /// <summary>有图片但取不到引用(比如旧快照):只显示张数。</summary>
+    public bool HasImageCountOnly => Row.ImageCount > 0 && Images.Count == 0;
+
+    /// <summary>正在编辑这条提问(纯 UI 状态:数据更新不会丢)。</summary>
+    [ObservableProperty] public partial bool IsEditing { get; set; }
+
+    /// <summary>编辑框里的文字。</summary>
+    [ObservableProperty] public partial string EditText { get; set; } = "";
+
+    /// <summary>点了「删除这一轮」、等第二次确认。</summary>
+    [ObservableProperty] public partial bool IsConfirmingDelete { get; set; }
+
+    public string MessageId => Row.MessageId;
+
     public string Text => Row.Text;
 
     public string FilesText => Row.FilesText;
@@ -52,8 +71,13 @@ public sealed class UserRowViewModel(UserRow row) : RowViewModel<UserRow>(row)
     public DateTimeOffset At => Row.At;
 }
 
-public sealed class AssistantRowViewModel(AssistantRow row) : RowViewModel<AssistantRow>(row)
+public sealed partial class AssistantRowViewModel(AssistantRow row) : RowViewModel<AssistantRow>(row)
 {
+    /// <summary>这是最近一轮的最后一段回复、已经写完:可以「重新生成」。由 <see cref="ConversationViewModel"/> 在每次对齐行之后标记(取决于位置,不是行自己的数据)。</summary>
+    [ObservableProperty] public partial bool CanRegenerate { get; set; }
+
+    public string MessageId => Row.MessageId;
+
     public string Text => Row.Text;
 
     public bool IsStreaming => Row.IsStreaming;

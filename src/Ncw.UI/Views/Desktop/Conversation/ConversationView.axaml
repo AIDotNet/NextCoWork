@@ -14,6 +14,15 @@
     转录的行都来自 ConversationViewModel.Rows(Store 派生);这里的 code-behind 只管滚动和「跟随最新」这类纯 UI 状态。
     宽度跟着容器走:列表最大宽度取 ContentMaxWidthLG,窄屏下左右各留 16px,卡片内部都能换行,手机宽度下可用。
   -->
+  <UserControl.Styles>
+    <!-- 消息工具条:鼠标悬停才显示(手机上常驻;编辑 / 确认删除时钉住) -->
+    <Style Selector="StackPanel.tools">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.msg:pointerover StackPanel.tools, Border.msg.touch StackPanel.tools, StackPanel.tools.pinned">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </UserControl.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- 设备断开:运行中的状态未知,不判结束、不继续计时(规则 7) -->
     <Border Grid.Row="0" IsVisible="{Binding IsDeviceUnknown}" Padding="16,8" Margin="16,8,16,0" CornerRadius="10"
@@ -54,31 +63,133 @@
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.DataTemplates>
-          <!-- 用户消息:右对齐的气泡 -->
+          <!-- 用户消息:右对齐的气泡。悬停(手机上常驻)显示工具条:时间、复制、编辑、分支、删除这一轮;编辑是行内的 -->
           <DataTemplate DataType="vm:UserRowViewModel">
-            <Border Margin="0,6" HorizontalAlignment="Right" MaxWidth="560" Padding="12,8" CornerRadius="12"
-                    BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
-                    Background="{arc:ArcDesignTokenResource SurfaceMuted}">
-              <StackPanel Spacing="6">
-                <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasFiles}">
-                  <lucide:LucideIcon Kind="Paperclip" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                  <TextBlock Classes="hint" Text="{Binding FilesText}" TextWrapping="Wrap" />
+            <Border Classes="msg" Margin="0,6" HorizontalAlignment="Right" MaxWidth="560" Background="Transparent"
+                    Classes.touch="{Binding (ui:NcwDensity.IsTouch), RelativeSource={RelativeSource Self}}">
+              <StackPanel Spacing="2">
+                <Border IsVisible="{Binding !IsEditing}" Padding="12,8" CornerRadius="12"
+                        BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                        Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+                  <StackPanel Spacing="6">
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasFiles}">
+                      <lucide:LucideIcon Kind="Paperclip" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                      <TextBlock Classes="hint" Text="{Binding FilesText}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <!-- 图片缩略图:行滚进视野才取字节(AttachedToVisualTree);点开进灯箱;取不到引用时退化成「N 张图片」 -->
+                    <ItemsControl ItemsSource="{Binding Images}" IsVisible="{Binding HasThumbs}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ImageThumbViewModel">
+                          <Border Classes="thumb" Width="112" Height="112" Margin="0,0,6,6" CornerRadius="8" ClipToBounds="True"
+                                  BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                                  Background="{arc:ArcDesignTokenResource Surface}" AttachedToVisualTree="OnThumbAttached">
+                            <Panel>
+                              <Image Stretch="UniformToFill" IsVisible="{Binding IsReady}"
+                                     Source="{Binding Data, Converter={x:Static cv:ImageBytesConverter.Instance}, ConverterParameter=320}" />
+                              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="18" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsLoading}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                              <ui:PlainButton IsVisible="{Binding IsFailed}" Command="{Binding RetryCommand}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                              AutomationProperties.Name="{l:NcwText Retry}" arc:Tooltip.Tip="{l:NcwText Retry}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                  <lucide:LucideIcon Kind="ImageOff" Size="20" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                                  <TextBlock Classes="hint" Text="{l:NcwText MsgImageFailed}" TextWrapping="Wrap" TextAlignment="Center" Margin="6,0" />
+                                </StackPanel>
+                              </ui:PlainButton>
+                              <ui:PlainButton IsVisible="{Binding IsReady}" Click="OnOpenImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                              AutomationProperties.Name="{l:NcwText MsgImageOpen}" arc:Tooltip.Tip="{l:NcwText MsgImageOpen}" />
+                            </Panel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasImageCountOnly}">
+                      <lucide:LucideIcon Kind="Image" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                      <TextBlock Classes="hint" Text="{Binding Row.ImageCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ImageCount}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- 行内编辑:保存只改文字;保存并重新运行 = 这条和之后的全部移除,用新文字再跑一次 -->
+                <StackPanel IsVisible="{Binding IsEditing}" Spacing="6" MinWidth="360">
+                  <ui:NcwTextArea Text="{Binding EditText, Mode=TwoWay}" FrameMinHeight="64" IsResizable="False" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                    <ui:NcwButton Variant="Ghost" Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CancelEditCommand}" CommandParameter="{Binding}" Content="{l:NcwText Cancel}" />
+                    <ui:NcwButton Variant="Secondary" Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).SaveEditCommand}" CommandParameter="{Binding}" Content="{l:NcwText Save}" />
+                    <ui:NcwButton Variant="Primary" Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).ResendEditCommand}" CommandParameter="{Binding}" Content="{l:NcwText MsgSaveAndRerun}" />
+                  </StackPanel>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasImages}">
-                  <lucide:LucideIcon Kind="Image" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                  <TextBlock Classes="hint" Text="{Binding ImageCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ImageCount}" />
+
+                <!-- 工具条 -->
+                <StackPanel Classes="tools" Classes.pinned="{Binding IsConfirmingDelete}" IsVisible="{Binding !IsEditing}"
+                            Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2" Height="24">
+                  <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,6,0" IsVisible="{Binding !IsConfirmingDelete}"
+                             Text="{Binding At, Converter={x:Static cv:MessageTimeConverter.Instance}}" />
+                  <ui:PlainButton Width="24" Height="24" Click="OnCopyText" Tag="{Binding Text}"
+                                  AutomationProperties.Name="{l:NcwText MsgCopy}" arc:Tooltip.Tip="{l:NcwText MsgCopy}" IsVisible="{Binding !IsConfirmingDelete}">
+                    <lucide:LucideIcon Kind="Copy" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding !IsConfirmingDelete}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).BeginEditCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgEdit}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgEdit}">
+                    <lucide:LucideIcon Kind="Pencil" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding !IsConfirmingDelete}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).BranchTurnCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgBranch}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgBranch}">
+                    <lucide:LucideIcon Kind="GitBranch" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding !IsConfirmingDelete}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).AskDeleteTurnCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgDeleteTurn}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgDeleteTurn}">
+                    <lucide:LucideIcon Kind="Trash2" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <!-- 第二次确认 -->
+                  <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,6,0" IsVisible="{Binding IsConfirmingDelete}" Text="{l:NcwText MsgDeleteTurnConfirm}" />
+                  <ui:NcwButton Variant="Ghost" Height="24" MinHeight="0" Padding="8,0" IsVisible="{Binding IsConfirmingDelete}"
+                                Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CancelDeleteTurnCommand}" CommandParameter="{Binding}" Content="{l:NcwText Cancel}" />
+                  <ui:NcwButton Variant="Danger" Height="24" MinHeight="0" Padding="8,0" IsVisible="{Binding IsConfirmingDelete}"
+                                Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).DeleteTurnCommand}" CommandParameter="{Binding}" Content="{l:NcwText DeleteLabel}" />
                 </StackPanel>
               </StackPanel>
             </Border>
           </DataTemplate>
           <!-- 助手文字:Markdown,流式时末尾一个小圆点 -->
           <DataTemplate DataType="vm:AssistantRowViewModel">
-            <StackPanel Margin="0,4" Spacing="4">
-              <ui:NcwMarkdown Text="{Binding Text}" />
-              <Border IsVisible="{Binding IsStreaming}" Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Left"
-                      Background="{arc:ArcDesignTokenResource Accent}" />
-            </StackPanel>
+            <Border Classes="msg" Margin="0,4" Background="Transparent"
+                    Classes.touch="{Binding (ui:NcwDensity.IsTouch), RelativeSource={RelativeSource Self}}">
+              <StackPanel Spacing="4">
+                <ui:NcwMarkdown Text="{Binding Text}" />
+                <Border IsVisible="{Binding IsStreaming}" Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Left"
+                        Background="{arc:ArcDesignTokenResource Accent}" />
+                <!-- 复制整段回复的 Markdown 原文;流式中不显示(文字还在变) -->
+                <StackPanel Classes="tools" Orientation="Horizontal" HorizontalAlignment="Left" Height="24" IsVisible="{Binding !IsStreaming}">
+                  <ui:PlainButton Width="24" Height="24" Click="OnCopyText" Tag="{Binding Text}"
+                                  AutomationProperties.Name="{l:NcwText MsgCopy}" arc:Tooltip.Tip="{l:NcwText MsgCopy}">
+                    <lucide:LucideIcon Kind="Copy" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <!-- 重新生成:只在最近一轮的最后一段回复上出现(更早的回复后面还有对话,重跑会把后面全截掉) -->
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding CanRegenerate}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).RegenerateCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgRegenerate}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgRegenerate}">
+                    <lucide:LucideIcon Kind="RefreshCw" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                </StackPanel>
+              </StackPanel>
+            </Border>
           </DataTemplate>
           <!-- 思考块:默认折叠 -->
           <DataTemplate DataType="vm:ThinkingRowViewModel">
@@ -185,6 +296,18 @@
 
     <!-- 底部:提示、待办、目标条、输入框 -->
     <StackPanel Grid.Row="2" Margin="16,0,16,16" Spacing="8" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
+      <!-- 消息操作(编辑 / 分支 / 删除一轮)失败:稳定 key 翻译成文字,可以关掉 -->
+      <Border Classes="card danger" Padding="12,8" IsVisible="{Binding HasMessageError}" ui:NcwMotion.ShowMotion="Fade">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+          <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center"
+                     Text="{Binding MessageError, Converter={x:Static cv:MessageErrorTextConverter.Instance}}" />
+          <ui:PlainButton Grid.Column="2" Width="22" Height="22" Command="{Binding DismissMessageErrorCommand}"
+                          AutomationProperties.Name="{l:NcwText Dismiss}" arc:Tooltip.Tip="{l:NcwText Dismiss}">
+            <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </Grid>
+      </Border>
       <!-- 已在另一台设备上处理 -->
       <ItemsControl ItemsSource="{Binding Notices}" IsVisible="{Binding HasNotices}">
         <ItemsControl.ItemsPanel>
@@ -258,5 +381,21 @@
 
       <conv:ComposerView DataContext="{Binding Composer}" />
     </StackPanel>
+
+    <!-- 灯箱:点缩略图放大。盖住整个对话区,点空白处 / 点关闭 / Esc 关掉;打开时 WebView 小组件让出空域(code-behind) -->
+    <Border x:Name="LightboxLayer" Grid.RowSpan="3" IsVisible="{Binding HasLightbox}" Background="{arc:ArcDesignTokenResource Scrim}"
+            ui:NcwMotion.ShowMotion="Fade" PointerPressed="OnLightboxBackdropPressed">
+      <Grid Margin="24">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="10" ClipToBounds="True" PointerPressed="OnLightboxImagePressed">
+          <Image x:Name="LightboxImage" Stretch="Uniform" MaxWidth="1600" MaxHeight="1200"
+                 Source="{Binding Lightbox.Data, Converter={x:Static cv:ImageBytesConverter.Instance}, ConverterParameter=1600}" />
+        </Border>
+        <ui:NcwButton Classes="icon" Variant="Secondary" HorizontalAlignment="Right" VerticalAlignment="Top"
+                      Command="{Binding CloseLightboxCommand}"
+                      AutomationProperties.Name="{l:NcwText MsgImageClose}" arc:Tooltip.Tip="{l:NcwText MsgImageClose}">
+          <lucide:LucideIcon Kind="X" Size="16" />
+        </ui:NcwButton>
+      </Grid>
+    </Border>
   </Grid>
 </UserControl>

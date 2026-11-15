@@ -13,7 +13,7 @@ public sealed partial class SessionRepository
 
     /// <summary>编辑一条提问;<paramref name="truncate"/> = 从这条起重跑(这条和之后的全部移除,新提问由调用方另起一次 Run)。</summary>
     public void EditMessage(string sessionId, string messageId, string text, bool truncate) =>
-        EditHistory(sessionId, history => HistoryEdit.EditUserMessage(history, messageId, text, truncate));
+        EditHistory(sessionId, history => HistoryEdit.EditUserMessage(history, messageId, text, truncate), keepAttachmentsOfRemoved: truncate);
 
     /// <summary>删一整轮(提问 + 它引出的全部回复与工具回执)。</summary>
     public void DeleteTurn(string sessionId, string userMessageId) => EditHistory(sessionId, history =>
@@ -23,11 +23,11 @@ public sealed partial class SessionRepository
     public void DeleteReply(string sessionId, string fromId, string toId) => EditHistory(sessionId, history =>
         HistoryEdit.ReplySpan(history, fromId, toId) is { } span ? HistoryEdit.RemoveSpan(history, span) : null);
 
-    private void EditHistory(string sessionId, Func<IReadOnlyList<MessageRecord>, List<MessageRecord>?> edit) => database.InTransaction(() =>
+    private void EditHistory(string sessionId, Func<IReadOnlyList<MessageRecord>, List<MessageRecord>?> edit, bool keepAttachmentsOfRemoved = false) => database.InTransaction(() =>
     {
         _ = Require(sessionId);
         var next = edit(History(sessionId)) ?? throw new StorageException("The message to rewrite is no longer in this session.");
-        ReplaceHistory(sessionId, next, detachImportedSource: true);
+        ReplaceHistory(sessionId, next, detachImportedSource: true, keepAttachmentsOfRemoved: keepAttachmentsOfRemoved);
     });
 
     // ── 复制 / 分支 ────────────────────────────────────────────────────────────

@@ -144,6 +144,28 @@ public sealed class AttachmentRepository(AgentDatabase database, TimeProvider? c
         }
     }
 
+    /// <summary>
+    /// 编辑后重新运行的截断(<see cref="IMessageWriteObserver.OnMessagesRemoving"/>):被移除消息的会话附件降回草稿(文件和 <c>ncw://</c> 引用都还在,
+    /// 新消息提交时由 <see cref="CommitByRefs"/> 重新认领;不重发就按草稿的 7 天规则回收)。<c>&lt;messageId&gt;:managed:&lt;n&gt;</c> 那种「引用别的消息的附件」的行只是引用,直接删。
+    /// </summary>
+    public void OnMessagesRemoving(AgentDatabase db, SessionRecord session, IReadOnlyList<string> removedMessageIds)
+    {
+        foreach (var messageId in removedMessageIds)
+        {
+            foreach (var row in ForMessage(messageId).Where(r => r.Scope == "session" && r.Status == "committed" && r.OwnerId == session.Id).ToList())
+            {
+                if (row.Id.Contains(":managed:", StringComparison.Ordinal))
+                {
+                    Remove(row.Id);
+                }
+                else
+                {
+                    database.Run("UPDATE attachments SET status = 'draft', message_id = NULL, session_id = NULL WHERE id = $id AND scope = 'session' AND status = 'committed'", ("$id", row.Id));
+                }
+            }
+        }
+    }
+
     /// <summary>消息内容块里引用的会话附件(<c>image</c> / <c>file_ref</c> 块的 <c>dataRef</c> 是 <c>ncw://</c> URL),去重、保序。</summary>
     public static IReadOnlyList<AttachmentLocator> RefsOf(string partsJson)
     {

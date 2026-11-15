@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Controls;
 
 namespace Ncw.UI.Views.Desktop.Conversation;
 
@@ -18,10 +20,13 @@ public partial class ConversationView : UserControl
     private bool _pinning;
     private DispatcherTimer? _ticker;
     private ConversationViewModel? _vm;
+    private IDisposable? _lightboxAirspace;
 
     public ConversationView()
     {
         InitializeComponent();
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        DetachedFromVisualTree += (_, _) => ReleaseLightboxAirspace();
         Transcript.TemplateApplied += (_, e) =>
         {
             if (_scroller is not null)
@@ -46,6 +51,7 @@ public partial class ConversationView : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        ReleaseLightboxAirspace();
         if (_vm is not null)
         {
             _vm.PropertyChanged -= OnViewModelChanged;
@@ -71,6 +77,34 @@ public partial class ConversationView : UserControl
         if (e.PropertyName == nameof(ConversationViewModel.NeedsTick))
         {
             UpdateTicker();
+        }
+        else if (e.PropertyName == nameof(ConversationViewModel.HasLightbox))
+        {
+            // 灯箱盖在对话区上面,而 WebView 小组件是盖在窗口上的原生视图:打开期间让出空域,关闭恢复
+            if (_vm?.HasLightbox == true)
+            {
+                _lightboxAirspace ??= NcwWidgetAirspace.Suspend();
+            }
+            else
+            {
+                ReleaseLightboxAirspace();
+            }
+        }
+    }
+
+    private void ReleaseLightboxAirspace()
+    {
+        _lightboxAirspace?.Dispose();
+        _lightboxAirspace = null;
+    }
+
+    /// <summary>Esc 关灯箱(不管焦点在输入框还是转录里;灯箱没开时什么都不拦)。</summary>
+    private void OnPreviewKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Escape && _vm?.HasLightbox == true)
+        {
+            _vm.CloseLightboxCommand.Execute(null);
+            e.Handled = true;
         }
     }
 
@@ -154,6 +188,44 @@ public partial class ConversationView : UserControl
             Transcript.ScrollIntoView(index);
             JumpButton.IsVisible = _scroller is { } scroller && scroller.Extent.Height > scroller.Viewport.Height;
         }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>缩略图被实例化并挂上视觉树(虚拟化列表只给视野附近的行实例化):这时才向设备取字节,滚出去没挂上的不取。</summary>
+    private void OnThumbAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ImageThumbViewModel thumb)
+        {
+            _ = thumb.EnsureLoadedAsync();
+        }
+    }
+
+    private void OnOpenImage(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ImageThumbViewModel thumb)
+        {
+            _vm?.OpenImageCommand.Execute(thumb);
+        }
+    }
+
+    /// <summary>点灯箱的空白处关闭;点图片本身不关(<see cref="OnLightboxImagePressed"/> 拦住冒泡)。</summary>
+    private void OnLightboxBackdropPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) => _vm?.CloseLightboxCommand.Execute(null);
+
+    private void OnLightboxImagePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) => e.Handled = true;
+
+    /// <summary>复制一条消息的文字(<c>Tag</c> 绑的是消息正文):本机剪贴板,纯 UI 动作,不经设备。</summary>
+    private async void OnCopyText(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is string text && text.Length > 0 && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            try
+            {
+                await clipboard.SetTextAsync(text);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // 剪贴板被别的程序占着:复制失败不值得打断对话
+            }
+        }
     }
 
     private void OnToggleThinking(object? sender, RoutedEventArgs e)

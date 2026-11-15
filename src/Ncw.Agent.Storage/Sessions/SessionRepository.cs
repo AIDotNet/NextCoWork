@@ -12,6 +12,15 @@ namespace Ncw.Agent.Storage.Sessions;
 public interface IMessageWriteObserver
 {
     void OnMessageWritten(AgentDatabase database, SessionRecord session, MessageRecord message);
+
+    /// <summary>
+    /// 改写历史时,<b>在删消息之前</b>被调用(同一个事务),只在调用方要求保留附件时(<c>keepAttachmentsOfRemoved</c>:编辑后重新运行的截断)。
+    /// 消息删除会级联删掉它的附件行,旧的 <c>ncw://</c> 引用立刻失效;而重新运行要用同样的附件重发,所以附件域在这里把它们降回草稿(文件留着,新消息提交时重新认领)。
+    /// 默认什么都不做(删除一轮 / 一条回复不需要:被删的图不该回到输入框)。
+    /// </summary>
+    void OnMessagesRemoving(AgentDatabase database, SessionRecord session, IReadOnlyList<string> removedMessageIds)
+    {
+    }
 }
 
 /// <summary>

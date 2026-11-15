@@ -8,7 +8,9 @@ using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Routing;
 using Ncw.Client.Actions;
 using Ncw.Client.Devices;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
+using Ncw.Client.Transcript;
 using Ncw.Core.Domain;
 using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
@@ -362,5 +364,188 @@ public sealed class ConversationLinkTests : IAsyncLifetime
         // 收尾:中止这个 Run
         Assert.True(await a.Actions.AbortAsync(first.Run!.Value));
         await WaitUntil(() => a.State.Runs[first.Run!.Value] is { Phase: RunPhase.Aborted, Settled: true }, "aborted");
+    }
+
+    // ───────────────────────── 消息操作:编辑 / 编辑后重跑 / 删除一轮 / 分支 ─────────────────────────
+
+    private static string TextOf(MessageDto message) =>
+        System.Text.Json.JsonDocument.Parse(message.PartsJson).RootElement.EnumerateArray().First(p => p.GetProperty("type").GetString() == "text").GetProperty("text").GetString()!;
+
+    private static MessageActions MessagesOf(Controller c) => new(c.Devices, new SessionActions(c.Stores, c.Devices, c.Actions), c.Actions);
+
+    /// <summary>发一条消息、等这个 Run 跑完;返回会话、用户消息 id 和项目。</summary>
+    private async Task<(Controller C, ProjectRef Project, SessionRef Session, string UserId)> OneFinishedTurnAsync(string question, string answer)
+    {
+        var c = await StartControllerAsync("ctrl-m");
+        var project = await c.Link.AddProjectAsync(_workspace);
+        _llm.Then(Say(answer));
+        var session = (await c.Actions.CreateSessionAsync(project, "sonnet"))!.Value;
+        var sent = await c.Actions.SendAsync(session, question, Options);
+        Assert.Equal(SendOutcome.Started, sent.Outcome);
+        await WaitUntil(() => c.State.Runs[sent.Run!.Value] is { Phase: RunPhase.Done, Settled: true } && c.State.Sessions[session].Messages.Length == 2, "first turn done");
+        return (c, project, session, sent.MessageId!);
+    }
+
+    [Fact]
+    public async Task Editing_a_question_rewrites_only_its_text_and_keeps_the_reply()
+    {
+        var (c, _, session, userId) = await OneFinishedTurnAsync("original question", "the answer");
+        var result = await MessagesOf(c).EditAsync(session, userId, "reworded question");
+        Assert.True(result.IsOk);
+
+        await WaitUntil(() => c.State.Sessions[session].Messages.FirstOrDefault(m => m.Id == userId) is { } m && TextOf(m) == "reworded question", "history reset reached the mirror");
+        var messages = c.State.Sessions[session].Messages;
+        Assert.Equal(2, messages.Length);
+        Assert.Equal("the answer", TextOf(messages[1]));
+    }
+
+    [Fact]
+    public async Task Editing_and_rerunning_cuts_the_old_turn_and_runs_the_new_text()
+    {
+        var (c, _, session, userId) = await OneFinishedTurnAsync("original question", "old answer");
+        _llm.Then(Say("new answer"));
+        var result = await MessagesOf(c).EditAndResendAsync(session, userId, "sharper question", [], Options);
+        Assert.True(result.IsOk);
+
+        await WaitUntil(() => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "sharper question" && TextOf(m[1]) == "new answer", "old turn replaced by the new one");
+        Assert.DoesNotContain(c.State.Sessions[session].Messages, m => m.Id == userId); // 旧提问和旧回复都没了
+    }
+
+    [Fact]
+    public async Task Deleting_a_turn_removes_the_question_and_its_replies()
+    {
+        var (c, _, session, userId) = await OneFinishedTurnAsync("to be deleted", "gone soon");
+        Assert.True((await MessagesOf(c).DeleteTurnAsync(session, userId)).IsOk);
+        await WaitUntil(() => c.State.Sessions[session].Messages.Length == 0, "turn removed from the mirror");
+    }
+
+    [Fact]
+    public async Task Deleting_an_unknown_message_is_reported_not_silently_ignored()
+    {
+        var (c, _, session, _) = await OneFinishedTurnAsync("keep me", "kept");
+        var result = await MessagesOf(c).DeleteTurnAsync(session, "no-such-message");
+        Assert.False(result.IsOk);
+        Assert.Equal(2, c.State.Sessions[session].Messages.Length);
+    }
+
+    [Fact]
+    public async Task Branching_a_turn_opens_a_new_independent_session_with_the_transcript_up_to_it()
+    {
+        var (c, project, session, userId) = await OneFinishedTurnAsync("branch from here", "first answer");
+        var branch = await MessagesOf(c).BranchAsync(project, session.SessionId, userId);
+        Assert.True(branch.IsOk);
+        var branchId = branch.Value!;
+        Assert.NotEqual(session.SessionId, branchId);
+
+        var branchRef = new SessionRef(session.DeviceId, branchId);
+        await WaitUntil(() => c.State.Sessions.TryGetValue(branchRef, out var view) && view.Messages.Length == 2, "branch transcript in the mirror");
+        Assert.Equal("branch from here", TextOf(c.State.Sessions[branchRef].Messages[0]));
+        Assert.Equal(branchId, c.Stores.Selection.State.SessionId); // 分支被打开
+        Assert.Contains(c.Workspace.Sessions, s => s.Id == branchId); // 会话列表刷新过
+        Assert.Equal(2, c.State.Sessions[session].Messages.Length);   // 原会话不变
+    }
+
+    [Fact]
+    public async Task Rewriting_history_while_a_run_is_active_is_refused_as_busy_and_changes_nothing()
+    {
+        var c = await StartControllerAsync("ctrl-m");
+        var project = await c.Link.AddProjectAsync(_workspace);
+        var projectPath = (await c.Link.CallAsync(DeviceMethods.ProjectsList, Unit.Value)).Projects.Single().Path;
+        _llm.Then(CallWrite("c1", Path.Combine(projectPath, "busy.txt"))).Then(Say("done"));
+        var session = (await c.Actions.CreateSessionAsync(project, "sonnet"))!.Value;
+        var sent = await c.Actions.SendAsync(session, "write it", Options);
+        await WaitUntil(() => c.State.InteractionsOf(sent.Run!.Value.DeviceId).Pending.Length == 1, "run paused on approval");
+
+        var messages = MessagesOf(c);
+        var edit = await messages.EditAsync(session, sent.MessageId!, "too late");
+        Assert.Equal(ActionOutcome.Conflict, edit.Outcome);
+        Assert.Equal(MessageActions.BusyKey, edit.ErrorKey);
+        Assert.Equal(MessageActions.BusyKey, (await messages.DeleteTurnAsync(session, sent.MessageId!)).ErrorKey);
+
+        // 收尾
+        Assert.True(await c.Actions.AbortAsync(sent.Run!.Value));
+        await WaitUntil(() => c.State.Runs[sent.Run!.Value] is { Phase: RunPhase.Aborted, Settled: true }, "aborted");
+    }
+
+    [Fact]
+    public async Task A_sent_image_comes_back_as_a_ref_in_the_transcript_and_loads_through_the_image_source()
+    {
+        var c = await StartControllerAsync("ctrl-img");
+        var project = await c.Link.AddProjectAsync(_workspace);
+        _llm.Then(Say("nice picture"));
+        var session = (await c.Actions.CreateSessionAsync(project, "sonnet"))!.Value;
+
+        // 一张真实的小 PNG(不是任意字节:要验证取回来的和上传的逐字节相同)
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+        var attachments = new AttachmentActions(c.Devices);
+        var uploaded = await attachments.UploadAsync(session.DeviceId, session.SessionId, "pic.png", "image/png", png);
+        Assert.True(uploaded.IsOk);
+
+        var sent = await c.Actions.SendAsync(session, "what is this?", [InputFile.Attachment(uploaded.Value!.Url, "pic.png", "image/png")], Options);
+        Assert.Equal(SendOutcome.Started, sent.Outcome);
+        await WaitUntil(() => c.State.Runs[sent.Run!.Value] is { Phase: RunPhase.Done, Settled: true } && c.State.Sessions[session].Messages.Length == 2, "turn done");
+
+        // 转录镜像里的用户消息带着一条 ncw:// 图片引用
+        var message = c.State.Sessions[session].Messages.First(m => m.Id == sent.MessageId);
+        var image = Assert.Single(MessageImages.Of(message));
+        Assert.Equal("image/png", image.Mime);
+        Assert.StartsWith("ncw://", image.DataRef);
+
+        // 经图片来源按引用向设备取回字节,与上传的逐字节相同;第二次走缓存
+        var source = new AttachmentImageSource(attachments);
+        var loaded = await source.LoadAsync(session.DeviceId, image.DataRef);
+        Assert.NotNull(loaded);
+        Assert.Equal(png, loaded!.Data);
+        Assert.Equal("image/png", loaded.Mime);
+        Assert.Same(loaded, await source.LoadAsync(session.DeviceId, image.DataRef));
+
+        // 对话视图模型据此给这一行生成缩略图,加载后就绪
+        var conversation = new Ncw.Client.ViewModels.ConversationViewModel(c.Stores, c.Actions, images: source);
+        c.Stores.Selection.Update(_ => new SelectionState(project, session.SessionId));
+        var row = conversation.Rows.OfType<Ncw.Client.ViewModels.UserRowViewModel>().Single();
+        var thumb = Assert.Single(row.Images);
+        await thumb.EnsureLoadedAsync();
+        Assert.True(thumb.IsReady);
+        Assert.Equal(png, thumb.Data);
+    }
+
+    [Fact]
+    public async Task Rerunning_a_question_that_had_an_image_keeps_the_image_readable_and_attached_to_the_new_message()
+    {
+        var c = await StartControllerAsync("ctrl-rerun-img");
+        var project = await c.Link.AddProjectAsync(_workspace);
+        _llm.Then(Say("first look"));
+        var session = (await c.Actions.CreateSessionAsync(project, "sonnet"))!.Value;
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+        var attachments = new AttachmentActions(c.Devices);
+        var uploaded = await attachments.UploadAsync(session.DeviceId, session.SessionId, "pic.png", "image/png", png);
+        var sent = await c.Actions.SendAsync(session, "what is this?", [InputFile.Attachment(uploaded.Value!.Url, "pic.png", "image/png")], Options);
+        await WaitUntil(() => c.State.Runs[sent.Run!.Value] is { Phase: RunPhase.Done, Settled: true } && c.State.Sessions[session].Messages.Length == 2, "first turn done");
+
+        // 和界面一样:从原消息还原附件,截断历史后带着它们重发
+        var original = c.State.Sessions[session].Messages.First(m => m.Id == sent.MessageId);
+        var files = MessageInputs.FilesOf(original);
+        Assert.Single(files);
+        _llm.Then(Say("second look"));
+        Assert.True((await MessagesOf(c).EditAndResendAsync(session, sent.MessageId!, "what is this, in French?", files, Options)).IsOk);
+
+        await WaitUntil(() => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "what is this, in French?" && TextOf(m[1]) == "second look", "turn replaced");
+        var rerun = c.State.Sessions[session].Messages[0];
+        Assert.NotEqual(sent.MessageId, rerun.Id);
+        var image = Assert.Single(MessageImages.Of(rerun)); // 新消息仍然带着图
+        var loaded = await new AttachmentImageSource(attachments).LoadAsync(session.DeviceId, image.DataRef);
+        Assert.NotNull(loaded);                              // 截断没有把附件回收掉:字节还在,逐字节相同
+        Assert.Equal(png, loaded!.Data);
+    }
+
+    [Fact]
+    public async Task Regenerating_replaces_the_reply_and_keeps_the_question()
+    {
+        var (c, _, session, userId) = await OneFinishedTurnAsync("tell me a joke", "joke number one");
+        _llm.Then(Say("joke number two"));
+        var question = c.State.Sessions[session].Messages.First(m => m.Id == userId);
+        Assert.True((await MessagesOf(c).EditAndResendAsync(session, userId, TextOf(question), MessageInputs.FilesOf(question), Options)).IsOk);
+
+        await WaitUntil(() => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "tell me a joke" && TextOf(m[1]) == "joke number two", "reply replaced, question kept");
     }
 }

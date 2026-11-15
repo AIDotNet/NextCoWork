@@ -127,20 +127,8 @@
           </ItemsControl>
         </ui:NcwSection>
 
-        <!-- 其他入口 -->
+        <!-- 其他入口。「文件」和「Git 变更」是右侧面板(InspectorPanel)的页签,不在项目面板里重复放入口 -->
         <TextBlock Classes="section" Text="{l:NcwText ProjectSection}" Margin="8,14,4,4" />
-        <ui:PlainButton Padding="8,7">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <lucide:LucideIcon Kind="Folder" Size="14" />
-            <TextBlock Text="{l:NcwText TabFiles}" />
-          </StackPanel>
-        </ui:PlainButton>
-        <ui:PlainButton Padding="8,7">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <lucide:LucideIcon Kind="GitCompare" Size="14" />
-            <TextBlock Text="{l:NcwText GitChanges}" />
-          </StackPanel>
-        </ui:PlainButton>
         <ui:PlainButton Padding="8,7" Command="{Binding OpenScheduledTasksCommand}">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <lucide:LucideIcon Kind="CalendarClock" Size="14" />

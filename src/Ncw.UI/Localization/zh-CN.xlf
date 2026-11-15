@@ -93,6 +93,24 @@
     <unit id="DataReasonNewerSchema"><segment><source>This data was saved by a newer version of NextCoWork. Update NextCoWork to open it.</source><target state="translated">这份数据来自更新版本的 NextCoWork,请先更新 NextCoWork。</target></segment></unit>
     <unit id="DataReasonGeneric"><segment><source>Your existing data was left as it was. Try again; if it keeps failing, contact us.</source><target state="translated">现有数据已原样保留。请重试;如果仍然失败,请联系我们。</target></segment></unit>
     <unit id="Retry"><segment><source>Try again</source><target state="translated">重试</target></segment></unit>
+    <unit id="MsgCopy"><segment><source>Copy</source><target state="translated">复制</target></segment></unit>
+    <unit id="MsgCopied"><segment><source>Copied</source><target state="translated">已复制</target></segment></unit>
+    <unit id="MsgEdit"><segment><source>Edit message</source><target state="translated">编辑消息</target></segment></unit>
+    <unit id="MsgBranch"><segment><source>Branch from here</source><target state="translated">从这里分支</target></segment></unit>
+    <unit id="MsgDeleteTurn"><segment><source>Delete this turn</source><target state="translated">删除这一轮</target></segment></unit>
+    <unit id="MsgDeleteTurnConfirm"><segment><source>Delete this question and all its replies?</source><target state="translated">删除这条提问和它的全部回复?</target></segment></unit>
+    <unit id="MsgSaveAndRerun"><segment><source>Save and re-run</source><target state="translated">保存并重新运行</target></segment></unit>
+    <unit id="MsgLocked"><segment><source>Wait for the current run to finish, or stop it, first.</source><target state="translated">等当前运行结束,或先停止它。</target></segment></unit>
+    <unit id="MsgErrBusy"><segment><source>A run is in progress. Wait for it to finish or stop it, then try again.</source><target state="translated">有运行正在进行。等它结束或先停止,再试一次。</target></segment></unit>
+    <unit id="MsgErrUnavailable"><segment><source>The device is not connected. Try again once it is back.</source><target state="translated">设备没有连上,连上之后再试。</target></segment></unit>
+    <unit id="MsgErrForbidden"><segment><source>You do not have permission to change this conversation.</source><target state="translated">你没有修改这个对话的权限。</target></segment></unit>
+    <unit id="MsgErrGone"><segment><source>That message is no longer in the conversation.</source><target state="translated">这条消息已经不在对话里了。</target></segment></unit>
+    <unit id="MsgErrFailed"><segment><source>That did not go through. Try again.</source><target state="translated">操作没有完成,请重试。</target></segment></unit>
+    <unit id="MsgErrResend"><segment><source>The earlier messages were cut, but the new run could not start. Your text is back in the input box.</source><target state="translated">前面的消息已经截断,但新的运行没能启动。你的文字已放回输入框。</target></segment></unit>
+    <unit id="MsgImageFailed"><segment><source>Couldn't load the image</source><target state="translated">无法加载图片</target></segment></unit>
+    <unit id="MsgImageOpen"><segment><source>View image</source><target state="translated">查看图片</target></segment></unit>
+    <unit id="MsgImageClose"><segment><source>Close image</source><target state="translated">关闭图片</target></segment></unit>
+    <unit id="MsgRegenerate"><segment><source>Regenerate</source><target state="translated">重新生成</target></segment></unit>
     <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="translated">欢迎使用 NextCoWork 3.0</target></segment></unit>
     <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="translated">已从 NextCoWork 2.x 迁移 {0} 个项目、{1} 个会话。</target></segment></unit>
     <unit id="Continue"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>

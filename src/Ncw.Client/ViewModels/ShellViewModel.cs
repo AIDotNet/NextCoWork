@@ -50,7 +50,8 @@ public sealed partial class ShellViewModel : ObservableObject
         Workspace = new WorkspaceViewModel(stores, Sessions);
         Conversation = new ConversationViewModel(stores, Conversations, Subagents, Goals, clock ?? TimeProvider.System, lookups ?? new ComposerLookups(Files, Extensions.Commands),
             new AttachmentTrayViewModel(attachmentUploader ?? Attachments, () => Host.AttachmentPicker),
-            new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock));
+            new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock),
+            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments));
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspector ?? new InspectorServices(Files, Git, Review, Terminals, Subagents));
         DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
         DeviceActions = new DeviceActions(Devices, clock);
