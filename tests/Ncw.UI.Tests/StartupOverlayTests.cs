@@ -337,6 +337,70 @@ public class StartupOverlayTests : IDisposable
         Snapshot(rig.Window, "failure-diagnostics", width, dark);
     }
 
+    public static IEnumerable<object[]> MasterKeyMatrix() =>
+        from reason in new[] { "master-key-missing", "master-key-unreadable" }
+        from width in new[] { 1500, 1200, 900, 600 }
+        from dark in new[] { true, false }
+        select new object[] { reason, width, dark };
+
+    [AvaloniaTheory]
+    [MemberData(nameof(MasterKeyMatrix))]
+    public void A_refused_start_for_the_master_key_explains_the_cause_in_plain_words_and_offers_retry_diagnostics_copy_and_quit(string reason, int width, bool dark)
+    {
+        var rig = new Rig(width, dark);
+        rig.AppReady();
+        const string dataRoot = "/Users/someone/.next-cowork/data";
+
+        // 守护第一次拉起就收到了 Agent 的拒绝(退出码 65):没有重启,第一帧就是失败面板
+        rig.Stores.Startup.SetSidecar(new StartupSidecar(StartupSidecarPhase.Failed, reason, 0, Detail: $"agent refused to start (exit code 65): agent.masterKey.{(reason == "master-key-missing" ? "missing" : "unreadable")} credential.key; data root: {dataRoot}"));
+        Pump();
+
+        Assert.True(rig.Startup.IsFailed);
+        Assert.Equal(reason, rig.Startup.FailureReason);
+        Assert.True(rig.Startup.CanRetry);
+        var missing = reason == "master-key-missing";
+        var texts = rig.VisibleTexts().ToList();
+        Assert.Contains(NcwTexts.Get(missing ? NcwTextKind.StartupFailTitleMasterKeyMissing : NcwTextKind.StartupFailTitleMasterKeyUnreadable), texts);
+        var hint = NcwTexts.Get(missing ? NcwTextKind.StartupFailHintMasterKeyMissing : NcwTextKind.StartupFailHintMasterKeyUnreadable);
+        Assert.Contains(hint, texts);
+        Assert.Contains("credential.key", hint);                                                          // 说清楚是哪个文件
+        Assert.DoesNotContain(NcwTexts.Get(NcwTextKind.StartupFailTitleCrashLoop), texts);                // 不是「崩溃循环」
+        Assert.DoesNotContain(NcwTexts.Get(NcwTextKind.StartupFailTitleUnknown), texts);
+        Assert.DoesNotContain(rig.Rows(), r => r.IsEffectivelyVisible);                                   // 没有清单,没有转圈
+        Assert.False(rig.Overlay!.FindControl<NcwProgressArc>("Comet")!.IsEffectivelyVisible);
+        var buttons = rig.Overlay!.GetVisualDescendants().OfType<NcwButton>().Where(b => b.IsEffectivelyVisible).Select(b => b.Content as string).ToList();
+        Assert.Contains(NcwTexts.Get(NcwTextKind.Retry), buttons);
+        Assert.Contains(NcwTexts.Get(NcwTextKind.StartupShowDiagnostics), buttons);
+        Assert.Contains(NcwTexts.Get(NcwTextKind.StartupCopyDiagnostics), buttons);
+        Assert.Contains(NcwTexts.Get(NcwTextKind.StartupQuit), buttons);
+        Snapshot(rig.Window, $"failure-{reason}", width, dark);
+
+        // 诊断里有数据目录和文件名,没有任何密钥内容(这里本来就没有:事实里只有结构化的 key 和字段名)
+        rig.Startup.ToggleDiagnosticsCommand.Execute(null);
+        Frames(400);
+        Assert.Contains(rig.Overlay!.GetVisualDescendants().OfType<SelectableTextBlock>(), t => t.IsEffectivelyVisible && t.Text!.Contains(dataRoot) && t.Text.Contains("credential.key") && t.Text.Contains(reason));
+        Snapshot(rig.Window, $"failure-{reason}-diagnostics", width, dark);
+
+        // 重试:一个动作;用户把密钥放回去之后守护重新拉起,失败面板消失
+        RetryButton(rig).Command!.Execute(null);
+        Assert.Equal(1, rig.Host.Retries);
+        rig.Sidecar(StartupSidecarPhase.Starting);
+        Assert.False(rig.Startup.IsFailed);
+        Assert.DoesNotContain(NcwTexts.Get(missing ? NcwTextKind.StartupFailTitleMasterKeyMissing : NcwTextKind.StartupFailTitleMasterKeyUnreadable), rig.VisibleTexts());
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_phone_shell_ignores_the_master_key_reasons_because_there_is_no_local_agent(bool dark)
+    {
+        var rig = new Rig(390, dark, mobile: true, profile: StartupProfile.Remote);
+        rig.Stores.Startup.SetSidecar(new StartupSidecar(StartupSidecarPhase.Failed, "master-key-missing", 0, Detail: "x"));
+        Pump();
+
+        Assert.False(rig.Startup.IsFailed);   // 手机壳没有本机 Agent:设备连不上不是启动失败,也不崩
+    }
+
     [AvaloniaTheory]
     [InlineData(1200, true)]
     [InlineData(1200, false)]
