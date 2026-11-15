@@ -347,6 +347,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 ### 回放对照的录制方法
 
 录制脚本是 Node / TypeScript,而 AGENTS.md §6 规定仓库里只用 C#,所以**录制脚本不进仓库**:它放在仓库之外,只有它的产出(JSON)和 C# 回放测试进仓库。
+持久副本在开发机上的仓库同级目录 `~/code/ncw-parity-recorder/`(五个 `.mts` 加一份 README,用环境变量 `NCW_2X_ROOT` 指向 2.x 检出);它不是仓库的一部分,换机器要自己拷过去。
 每个录制文件的 `source` 里写着 2.x 的 commit、录制日期和 Node 版本。
 
 1. **2.x 检出**(仓库之外,不要在本仓库的工作树里改 `main`):`git worktree add <仓库外目录> main`(或 `git clone -b main <repo> <目录>`),
