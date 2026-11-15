@@ -137,6 +137,9 @@ public sealed class RegistryTests
         var stuck = new TaskCompletionSource();
         using var rig = new Rig(o =>
         {
+            // 手动时钟:这条用例要让一个 Run 一直停在「已中止、驱动不认取消」的 stopping 状态。用真时钟的话,5 秒的看门狗会在整套并行 / 机器很忙、
+            // 中间任何一步(含等 finalizing 那个 Run 走到 run_end)拖过 5 秒时把它放弃掉,stopping 就变成空列表(失败时用例总耗时 7 秒)。分类逻辑与时间无关。
+            o.ManualClock = true;
             o.SessionExtensions = [BlockOnRunEnd(entered, release.Task)];
             o.Driver = r => new ScriptedDriver(async (handle, request, sink, ct) =>
             {

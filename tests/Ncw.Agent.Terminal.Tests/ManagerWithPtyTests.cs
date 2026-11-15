@@ -28,7 +28,9 @@ public class ManagerWithPtyTests
         var events = new List<TerminalEvent>();
         using var attachment = manager.Attach("tab-1", e => { lock (events) { events.Add(e); } });
         await manager.WriteAsync("tab-1", "echo mgr-$((6*7)); exit 5\n");
-        await Wait.UntilAsync(() => !manager.Get("tab-1").Alive, 15_000, "exit");
+        // 等「退出事件已经送到订阅者」,不是等 Info.Alive 变假:管理器在会话锁里先把 Info 改成 Exited、再向订阅者发退出事件,
+        // 而 Get() 不取锁——观察到 Exited 的那一刻,退出事件可能还没送到(这条用例失败时 events[^1] 就不是 TerminalExit)。
+        await Wait.UntilAsync(() => { lock (events) { return events.Any(static e => e is TerminalExit); } }, 15_000, "the exit event");
 
         var done = manager.Get("tab-1");
         Assert.Equal(5, done.ExitCode);

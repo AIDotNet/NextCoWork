@@ -203,7 +203,8 @@ public sealed class AuthTests
         await cts.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
         release.SetResult();
-        await Task.Delay(100);
+        // 刷新脱离了调用方在后台完成:等的是「新 token 写进了存储」这件事本身(不是睡一段时间去赌它写完了)
+        await f.Store.FirstWrite.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.Equal("A2", ((OAuthCredential)CredentialFormat.Parse(f.Store.Peek(Ref))!).AccessToken);
     }

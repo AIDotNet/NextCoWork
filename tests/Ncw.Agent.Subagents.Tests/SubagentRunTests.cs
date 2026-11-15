@@ -404,6 +404,8 @@ public sealed class SubagentRunTests : IDisposable
         _rig.Script(SubRig.ChildSession("s1", "p1"), Up.Hang());
         var changes = new List<ReportChange>();
         _rig.Service.ReportChanged += changes.Add;
+        var stopped = new System.Collections.Concurrent.ConcurrentQueue<SubagentStopped>();
+        _rig.Service.Stopped += stopped.Enqueue;
         var parent = _rig.Start("s1", "go");
         await SubRig.Settled(parent);
         var child = _rig.Child("p1");
@@ -412,7 +414,9 @@ public sealed class SubagentRunTests : IDisposable
         _rig.Registry.Abort(child.RunId, cascade: false);
         await SubRig.Settled(child);
 
-        await Wait.UntilAsync(() => _rig.ToolResults("s1").Single().Subagent!.Status == "aborted", what: "the receipt to say aborted");
+        // 子代理的收尾(写回执 → 发 subagent_end → 登记待汇报并发 ReportChanged → 通知 Stopped)是在子 Run settle 之后异步做完的,
+        // Stopped 是它最后一步:等它,之后「回执、变更通知、没有自动开新一轮」才都是定局(回执先于变更通知可见,只等回执会在两者之间读到旧的 changes)。
+        await Wait.UntilAsync(() => stopped.Count == 1, what: "the subagent's bookkeeping to finish");
         var receipt = _rig.ToolResults("s1").Single().Subagent!;
         Assert.Equal(("aborted", "pending"), (receipt.Status, receipt.ReportStatus));
         Assert.DoesNotContain(_rig.Transcript("s1"), m => m.Internal); // 没有自动开一轮新的对话:那正好违背了「停下」这个意图
@@ -542,10 +546,13 @@ public sealed class SubagentRunTests : IDisposable
         Assert.NotNull(_rig.Registry.Get(new RunId("p1:sub:1")));
         Assert.Null(_rig.Registry.Get(new RunId("p1:sub:2")));
         Assert.Single(_rig.Registry.ActiveChildrenOf(new RunId("p1")));
-        // 排队期间在父卡片上报排位——易失的 tool_progress,不写进转录
-        var progress = listener.Events(new RunId("p1")).OfType<ToolProgressEvent>().Where(e => e.Progress.Message!.StartsWith("Queued", StringComparison.Ordinal)).ToList();
-        Assert.Contains(progress, p => p.CallId == "c2" && p.Progress.Message == "Queued, waiting for a free subagent slot.");
-        Assert.Contains(progress, p => p.CallId == "c3" && p.Progress.Message == "Queued, 1 ahead.");
+        // 排队期间在父卡片上报排位——易失的 tool_progress,不写进转录。
+        // 排位进度是入队(QueuedCount 变化)之后、在队列的锁外才投出去的,而且要等父 Run 的 tool_start 落下之后才发给订阅者(RunHandle 保序):
+        // QueuedCount 到 2 的那一刻这两条可能还在路上,所以等它们真的到了再断言(而不是在 QueuedCount 上赌它们已经到了)。
+        List<ToolProgressEvent> QueuedProgress() => listener.Events(new RunId("p1")).OfType<ToolProgressEvent>().Where(e => e.Progress.Message!.StartsWith("Queued", StringComparison.Ordinal)).ToList();
+        await Wait.UntilAsync(
+            () => QueuedProgress() is var p && p.Any(e => e.CallId == "c2" && e.Progress.Message == "Queued, waiting for a free subagent slot.") && p.Any(e => e.CallId == "c3" && e.Progress.Message == "Queued, 1 ahead."),
+            what: "the two queue-position progress events");
 
         gate1.SetResult();
         await Wait.UntilAsync(() => _rig.Registry.Get(new RunId("p1:sub:2")) is not null, what: "the second to start");
@@ -730,8 +737,8 @@ public sealed class SubagentRunTests : IDisposable
     [Fact]
     public async Task The_stopped_event_fires_for_every_finished_child_for_the_SubagentStop_hook()
     {
-        var stopped = new List<SubagentStopped>();
-        _rig.Service.Stopped += stopped.Add;
+        var stopped = new System.Collections.Concurrent.ConcurrentQueue<SubagentStopped>();
+        _rig.Service.Stopped += stopped.Enqueue;
         _rig.Script("s1", SubRig.Calls(("c1", "Task", SubRig.TaskArgs())), Up.Text("ok"));
 
         await SubRig.Settled(_rig.Start("s1", "go"));

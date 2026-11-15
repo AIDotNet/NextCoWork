@@ -60,7 +60,12 @@ public sealed class MemoryCredentialStore : ICredentialStore
 {
     private readonly Dictionary<string, string> _values = [];
 
+    private readonly TaskCompletionSource _firstWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public List<(string Ref, string Value)> Writes { get; } = [];
+
+    /// <summary>第一次写入完成(值已经可以用 <see cref="Peek"/> 读到)时完成:等一件「脱离调用方的后台写入」用它,不用睡一段时间去赌。</summary>
+    public Task FirstWrite => _firstWrite.Task;
 
     public MemoryCredentialStore Put(string credentialRef, string value)
     {
@@ -76,6 +81,7 @@ public sealed class MemoryCredentialStore : ICredentialStore
     {
         _values[credentialRef] = value;
         Writes.Add((credentialRef, value));
+        _firstWrite.TrySetResult();
         return ValueTask.CompletedTask;
     }
 }
