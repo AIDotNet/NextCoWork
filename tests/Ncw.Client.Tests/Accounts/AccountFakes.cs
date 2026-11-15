@@ -169,6 +169,9 @@ public sealed class FakeAccountApi(TimeProvider clock) : IAccountApi
 
     public List<(string Code, string Verifier)> Exchanges { get; } = [];
 
+    /// <summary>每次换码用的 redirect_uri(必须和授权请求里的相同)。</summary>
+    public List<string> ExchangeRedirects { get; } = [];
+
     public List<string> Refreshes { get; } = [];
 
     public List<string> Revoked { get; } = [];
@@ -191,8 +194,8 @@ public sealed class FakeAccountApi(TimeProvider clock) : IAccountApi
 
     public bool DelegationSupported { get; set; }
 
-    public Uri BuildAuthorizeUri(string state, string codeChallenge) =>
-        new($"https://auth.example.test/oauth/authorize?client_id=ncw-desktop&state={Uri.EscapeDataString(state)}&code_challenge={Uri.EscapeDataString(codeChallenge)}&code_challenge_method=S256&redirect_uri={Uri.EscapeDataString("nextcowork://auth/callback")}");
+    public Uri BuildAuthorizeUri(string state, string codeChallenge, string redirectUri) =>
+        new($"https://auth.example.test/client/authorize?client_id=nextcowork-desktop&state={Uri.EscapeDataString(state)}&code_challenge={Uri.EscapeDataString(codeChallenge)}&code_challenge_method=S256&redirect_uri={Uri.EscapeDataString(redirectUri)}");
 
     public TokenSet NewTokens(string? access = null, string? refresh = null, TimeSpan? ttl = null)
     {
@@ -200,9 +203,10 @@ public sealed class FakeAccountApi(TimeProvider clock) : IAccountApi
         return new TokenSet(access ?? $"AT-{n}", refresh ?? $"RT-{n}", clock.GetUtcNow() + (ttl ?? TimeSpan.FromMinutes(15)), User);
     }
 
-    public Task<TokenSet> ExchangeCodeAsync(string code, string codeVerifier, CancellationToken ct)
+    public Task<TokenSet> ExchangeCodeAsync(string code, string codeVerifier, string redirectUri, CancellationToken ct)
     {
         Calls.Add("exchange");
+        ExchangeRedirects.Add(redirectUri);
         Exchanges.Add((code, codeVerifier));
         if (ExchangeFailure is { } failure)
         {
@@ -288,6 +292,42 @@ public sealed class FakeAccountApi(TimeProvider clock) : IAccountApi
     }
 }
 
+/// <summary>假的本机回环监听:不开端口,记录启动 / 关闭;<see cref="RedirectUri"/> 是固定的回环地址。</summary>
+public sealed class FakeLoginListener : ILoginCallbackListener
+{
+    public const string RedirectUri = "http://127.0.0.1:49152/callback";
+
+    public List<FakeSession> Sessions { get; } = [];
+
+    public Exception? StartFailure { get; set; }
+
+    public ILoginCallbackSession Start(string expectedState, Func<AuthCallbackLink, Task> onCallback)
+    {
+        if (StartFailure is { } failure)
+        {
+            throw failure;
+        }
+
+        var session = new FakeSession(expectedState, onCallback);
+        Sessions.Add(session);
+        return session;
+    }
+
+    public sealed class FakeSession(string expectedState, Func<AuthCallbackLink, Task> onCallback) : ILoginCallbackSession
+    {
+        public string ExpectedState { get; } = expectedState;
+
+        public bool Disposed { get; private set; }
+
+        string ILoginCallbackSession.RedirectUri => RedirectUri;
+
+        /// <summary>模拟浏览器跳回监听(监听自己只放行 state 对得上的)。</summary>
+        public Task DeliverAsync(AuthCallbackLink link) => onCallback(link);
+
+        public void Dispose() => Disposed = true;
+    }
+}
+
 /// <summary>一整套账户夹具:Store + 服务 + 假后端 + 手动时钟,可直接驱动登录流程。</summary>
 public sealed class AccountRig
 {
@@ -298,7 +338,7 @@ public sealed class AccountRig
         Clock = new ManualTimeProvider(Start);
         Api = new FakeAccountApi(Clock);
         Stores = stores ?? new ClientStores();
-        Service = new AccountService(Stores, Api, Vault, Meta, () => Launcher, Delegation, clock: Clock, options: options);
+        Service = new AccountService(Stores, Api, Vault, Meta, () => Launcher, Delegation, clock: Clock, options: options, listener: Listener);
     }
 
     public ManualTimeProvider Clock { get; }
@@ -315,6 +355,8 @@ public sealed class AccountRig
 
     public FakeDelegationTarget Delegation { get; } = new();
 
+    public FakeLoginListener Listener { get; } = new();
+
     public AccountService Service { get; }
 
     public AccountState State => Stores.Account.State;
@@ -323,7 +365,7 @@ public sealed class AccountRig
     public (AccountService Service, ClientStores Stores) Restart()
     {
         var stores = new ClientStores();
-        return (new AccountService(stores, Api, Vault, Meta, () => Launcher, Delegation, clock: Clock), stores);
+        return (new AccountService(stores, Api, Vault, Meta, () => Launcher, Delegation, clock: Clock, listener: Listener), stores);
     }
 
     /// <summary>走完一次浏览器登录(回调带正确的 state),返回时已经是登录状态。</summary>

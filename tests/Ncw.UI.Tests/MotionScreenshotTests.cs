@@ -141,6 +141,34 @@ public class MotionScreenshotTests : IDisposable
         Snapshot(window, $"tools-collapsed-{level.ToString().ToLowerInvariant()}", width, dark);
     }
 
+    [AvaloniaTheory]
+    [InlineData(1200, true)]
+    [InlineData(1200, false)]
+    [InlineData(600, true)]
+    [InlineData(600, false)]
+    public void Thinking_and_todo_expand_collapse_end_states(int width, bool dark)
+    {
+        NcwMotion.Apply(UiMotionLevel.Off);
+        var (window, _, vm) = Render(ConversationScreenshotTests.SubagentsAndTodo(), width, dark);
+        var todo = vm.Conversation.Todo!;
+        var todoList = window.GetVisualDescendants().OfType<NcwCollapsible>().First(c => c.Child is ItemsControl);
+        Assert.True(todoList.IsVisible);                           // 待办默认展开
+        Assert.Equal(1, todoList.Progress);
+        var openHeight = todoList.Bounds.Height;
+        Assert.True(openHeight > 20);
+
+        todo.IsExpanded = false;
+        Pump();
+        Assert.False(todoList.IsVisible);
+        Assert.Equal(0, todoList.Progress);
+        Snapshot(window, "todo-collapsed", width, dark);
+
+        todo.IsExpanded = true;
+        Pump();
+        Assert.Equal(openHeight, todoList.Bounds.Height);          // 展开后高度和第一次完全一致
+        Snapshot(window, "todo-expanded", width, dark);
+    }
+
     // ───────────────────────── 动画进行到一半 ─────────────────────────
 
     [AvaloniaTheory]
@@ -178,7 +206,57 @@ public class MotionScreenshotTests : IDisposable
         Assert.Equal(cardHeightOpen, detail.GetVisualAncestors().OfType<ToolCard>().First().Bounds.Height, 0.5);
     }
 
+    [AvaloniaFact]
+    public void The_thinking_block_unfolds_under_full_motion_and_stays_consistent_when_its_text_streams_in()
+    {
+        NcwMotion.Apply(UiMotionLevel.Full);
+        var (window, _, vm) = Render(ConversationScreenshotTests.Streaming(), 1200, true);
+        var thinking = vm.Conversation.Rows.OfType<ThinkingRowViewModel>().First();
+        var collapsible = window.GetVisualDescendants().OfType<NcwCollapsible>().First(c => c.DataContext == thinking);
+
+        thinking.IsExpanded = true;
+        Advance(60);
+        Assert.InRange(collapsible.Progress, 0.02, 0.98);
+        Snapshot(window, "thinking-half-open", 1200, true);
+        Advance(1200);
+        Assert.Equal(1, collapsible.Progress);
+        Assert.True(collapsible.Bounds.Height > 10);
+    }
+
     // ───────────────────────── 新行出现 ─────────────────────────
+
+    [AvaloniaFact]
+    public void A_newly_appended_row_arrives_with_a_rise_but_history_loaded_with_the_session_does_not()
+    {
+        NcwMotion.Apply(UiMotionLevel.Full);
+        var stores = ConversationScreenshotTests.Tools();
+        var (window, _, vm) = Render(stores, 1200, true);
+        Advance(600);
+        var transcript = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "Transcript");
+        var historyContainers = transcript.GetVisualDescendants().OfType<ContentPresenter>().Where(p => p.DataContext is RowViewModel).ToList();
+        Assert.NotEmpty(historyContainers);
+        Assert.All(historyContainers, p => Assert.False(NcwMotion.IsArriving(p)));    // 打开会话时的历史行:没有进入动画
+
+        Session(stores, "s-ncw-2",
+        [
+            User("u1", "把 ProjectPanelViewModel 的会话过滤抽成纯函数,并跑一遍测试。"),
+            Assistant("a1", 8, Text("我先读文件,然后改。")),
+            User("u2", "再补一个测试。", 0),
+        ], activeRunId: "run-2");
+        Pump();
+
+        var fresh = vm.Conversation.Rows.OfType<UserRowViewModel>().Last();   // 新追加的用户消息(待处理的审批卡片是原来就有的,只是被挪了位置)
+        Assert.Contains(vm.Conversation.Rows, r => r == fresh);
+        var container = transcript.GetVisualDescendants().OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.DataContext, fresh));
+        Assert.NotNull(container);
+        Assert.True(NcwMotion.IsArriving(container!));                                // 刚追加的行:进入动画
+        Advance(40);
+        Assert.InRange(container.Opacity, 0.01, 0.99);
+        Advance(600);
+        Assert.False(NcwMotion.IsArriving(container));
+        Assert.Equal(1, container.Opacity);
+        Assert.Null(container.RenderTransform);
+    }
 
     // ───────────────────────── 左右栏 ─────────────────────────
 

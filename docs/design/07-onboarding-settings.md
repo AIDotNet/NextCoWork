@@ -40,24 +40,29 @@
 
 登录 → 没有任何设备时,给出两个选项:「连接我的电脑」(扫码配对)和「创建云端 Agent」。
 
-## 2. 登录:`nextcowork://` 跳转
+## 2. 登录:授权码 + PKCE + 本机回环回调
 
-2.x 用的是本机回调端口(`ipc/client-auth.ts` 起一个 HTTP 回调服务)。3.0 改为**授权码 + PKCE + 自定义 scheme 跳转**:
+桌面登录与 2.x(`ipc/client-auth.ts`)和线上后端(`ClientOAuth`)用**同一套**:授权码 + PKCE,浏览器跳回本机回环地址上的临时监听。
+后端对桌面客户端 `nextcowork-desktop` 只放行 `http://127.0.0.1:{端口}/callback`(端口任意、无查询串、不能写 `localhost`),不认自定义 scheme;授权页是网页路由 `/client/authorize`,不在 `/api` 下。
 
 ```
-1. 客户端生成 code_verifier、code_challenge(S256)、state(一次性,10 分钟过期)
+1. 客户端生成 code_verifier、code_challenge(S256)、state(一次性,10 分钟过期),
+   并在 127.0.0.1 上起一个临时监听(端口由系统分配)
 2. 打开系统浏览器:
-   https://nextco.work/oauth/authorize?client_id=ncw-desktop
-     &redirect_uri=nextcowork://auth/callback&code_challenge=…&state=…
-3. 用户在浏览器里登录 → 跳转到 nextcowork://auth/callback?code=…&state=…
-4. 系统把链接交给 NextCoWork。如果已经有实例在运行,新启动的进程把链接转给它,然后自己退出(单实例转发)
-5. 客户端校验 state,用 code + code_verifier 换取令牌
+   https://nextco.work/client/authorize?client_id=nextcowork-desktop
+     &redirect_uri=http://127.0.0.1:{端口}/callback&response_type=code
+     &code_challenge=…&code_challenge_method=S256&state=…&scope=…
+3. 用户在浏览器里登录并同意 → 浏览器跳转到 http://127.0.0.1:{端口}/callback?code=…&state=…
+4. 监听校验 state,把回调交给账户服务,给浏览器一个「可以关闭此页面」的页面,然后关掉监听
+5. 客户端用 code + code_verifier + 同一个 redirect_uri 换取令牌
 6. 刷新令牌存在系统钥匙串(Keychain / DPAPI / libsecret / Keystore)
 7. 桌面端把一个委托令牌交给本机 Agent(Agent 调用模型通道和配置同步时要用)
 ```
 
-**备用方式(登录码)**:Linux 上 AppImage 没注册 scheme、企业浏览器拦截跳转等情况下,提供「改用登录码」:
-按设备授权流程(RFC 8628)显示一个短码,用户在浏览器里输入。
+**为什么桌面不用 `nextcowork://auth/callback`**:3.0 早期设计假设后端会为桌面客户端放行自定义 scheme,但线上后端一直只认回环回调(授权页和 `POST /api/client/oauth/authorize` 都按 `ClientOAuth.ValidRedirect` 判无效请求),已发布的 2.x 也这样登录,桌面沿用它不依赖后端新版本;
+自定义 scheme 还有个弱点:同一台电脑上任何程序都能注册同名 scheme,而回环监听只在登录期间存在、只收一次 state 匹配的回调。后端仓库已另外放行 `nextcowork://auth/callback`(逐字匹配,**待部署**),留给手机和以后;`nextcowork://` 在桌面只用于配对和打开链接(下面的路由表)。
+
+**备用方式(登录码)**:`POST /api/client/oauth/device`(RFC 8628;`nextcowork-desktop` 与 `tack-server` 共用,`ClientGrant` 可组合)取用户码和设备码,用户在 `https://nextco.work/client/device` 核对并按住批准(确认页对 NextCoWork 有专门文案),客户端轮询令牌端点。**后端仓库已实现,待部署**;部署前线上的老后端会拒绝(`invalid_client`),客户端显示「登录码暂时不可用」。
 
 ### 各平台注册 `nextcowork://`
 
@@ -73,7 +78,7 @@
 
 | 路由 | 用途 |
 |---|---|
-| `nextcowork://auth/callback` | 登录回调 |
+| `nextcowork://auth/callback` | 预留给手机的 Universal Link / App Link 回跳(后端目前没有对应的手机客户端;桌面 client_id 虽已放行这个地址,桌面不用)。**桌面登录不走它**:没有进行中的浏览器登录监听时一律被忽略 |
 | `nextcowork://pair?invite=…` | 配对。用系统相机扫配对二维码后直接跳进 App |
 | `nextcowork://open?…` | 打开项目或会话(后续版本) |
 
@@ -92,8 +97,9 @@
 - **状态机**:`AccountMode`(`Loading` / `Undecided` / `Offline` / `Authenticated`)× `SessionHealth`(`Ok` / `Refreshing` / `Unreachable` / `Expired`)× 进行中的登录(`LoginProgress`:方法 + 阶段 + 截止时间;失败是稳定 key `account.login.*`)× 每台设备上委托令牌的状态(`Pending` / `Attached` / `Failed`,key 带 deviceId,设备断开时移除 = 未知,规则 7)。展示**只读这一个 Store**;令牌不进 Store、不进 DTO、不进日志、不进异常消息(访问令牌只在 `AccountService` 内存里,刷新令牌在钥匙串里)。状态条显示什么只有一个纯函数 `AccountBanner.Of`(首屏状态条和设置页的账户页共用,规则 3)。
 - **单调**:`Generation` 在登录完成 / 退出 / 失效时加一,所有异步结果(刷新、换码、控制端列表)带着发起时的代数回来,对不上就丢弃——退出登录之后迟到的刷新结果复活不了会话,也写不回钥匙串(规则 6)。
 - **PKCE**:`code_verifier` 48 个随机字节(64 个 base64url 字符)、`code_challenge = BASE64URL(SHA256(verifier))`、`state` 24 个随机字节,随机数只用 `RandomNumberGenerator`;有 RFC 7636 附录 B 的已知向量测试。一次登录一份一次性的 state / verifier,10 分钟过期(`AccountOptions.LoginTtl`),再次发起顶掉上一次。
-- **回跳处理**:`NcwLinkParser` 是严格白名单(scheme 正好是 `nextcowork`、host + 路径只有 `auth/callback` / `pair` / `open`,不带用户信息 / 端口 / 片段,总长 ≤ 4096、参数 ≤ 16 个、单个值 ≤ 2048,重复参数名、控制字符、空白、非法百分号编码、非 ASCII 冒充的主机一律拒绝)。`AccountService.HandleLinkAsync`:没有进行中的浏览器登录 → 忽略(陌生回调什么都不改);state 常数时间比较,**对不上 = 拒绝且不影响正在等的登录**(别人构造的回调不能把登录打断);同一个回调只能用一次(重放被忽略);过期 → 失败;`error=access_denied` → `account.login.denied`。`pair?invite=` 只记下邀请并触发 `PairRequested`,**由界面让用户确认后才配对**;`open` 只解析、不执行(后续版本)。
-- **设备授权码备用方式(RFC 8628)**:界面「改用登录码」:取短码(`user_code`)和验证地址显示给用户,同时尽力打开验证页,后台按 `interval` 轮询,`slow_down` 加 5 秒,`access_denied` / `expired_token` / 设备码自己的有效期到了都是终态;连续网络失败 3 次放弃;`Unsupported`(后端没有这个端点)给出「登录码暂时不可用」。设备码不进状态。
+- **回环回调监听(`LoopbackLoginCallbackListener`)**:一次浏览器登录一个,`TcpListener` 只绑 `127.0.0.1`、端口由系统分配(不用 `HttpListener`:Windows 上它对 `127.0.0.1` 前缀要预留 URL ACL);只收 `GET /callback`(别的路径 404、别的方法 405);`Host` 头必须是 `127.0.0.1:{端口}`(防 DNS 重绑定);请求头 ≤ 8 KB、5 秒读完;参数交给 `NcwLinkParser` 同一套严格解析(重复参数、控制字符、非法百分号编码一律 400);**state 常数时间比较,对不上回 400 并继续等**;一次登录只把一个匹配的回调交给账户服务;回给浏览器的页面没有外链、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`,文字由 `NcwApp` 注入(`Ncw.Client` 不产出界面文字,缺省只显示 ✓ / ✕)。监听在登录完成 / 失败 / 取消 / 过期 / 被新的登录顶掉 / 退出时关闭;监听起不来 = `account.login.browserFailed`,不打开浏览器。换码请求的 `redirect_uri` 逐字使用监听给出的那一个。
+- **回跳处理**:`NcwLinkParser` 是严格白名单(scheme 正好是 `nextcowork`、host + 路径只有 `auth/callback` / `pair` / `open`,不带用户信息 / 端口 / 片段,总长 ≤ 4096、参数 ≤ 16 个、单个值 ≤ 2048,重复参数名、控制字符、空白、非法百分号编码、非 ASCII 冒充的主机一律拒绝)。`AccountService.HandleLinkAsync`(监听把通过 state 校验的回调交给它,服务里再校验一次):没有进行中的浏览器登录(或本机监听还没就绪)→ 忽略(陌生回调什么都不改);state 常数时间比较,**对不上 = 拒绝且不影响正在等的登录**(别人构造的回调不能把登录打断);同一个回调只能用一次(重放被忽略);过期 → 失败;`error=access_denied` → `account.login.denied`。`pair?invite=` 只记下邀请并触发 `PairRequested`,**由界面让用户确认后才配对**;`open` 只解析、不执行(后续版本)。
+- **设备授权码备用方式(RFC 8628)**:界面「改用登录码」:取短码(`user_code`)和验证地址显示给用户,同时尽力打开验证页,后台按 `interval` 轮询,`slow_down` 加 5 秒,`access_denied` / `expired_token` / 设备码自己的有效期到了都是终态;连续网络失败 3 次放弃;`Unsupported`(老后端没有这个端点)给出「登录码暂时不可用」。设备码不进状态。
 - **刷新**:访问令牌离过期不到 2 分钟就刷新(`AccountOptions.RefreshMargin`),后台每分钟检查一次(单飞);刷新令牌会轮换,新的存回钥匙串。刷新令牌被拒(401 / `invalid_grant`)= `Expired`:清钥匙串、撤销本机 Agent 的委托令牌、**保留账户资料**(界面显示「登录已过期」和姓名,可重新登录或继续离线);连不上 = `Unreachable`:会话和钥匙串都不动,本地功能照常,下个节拍重试。启动时钥匙串里没有刷新令牌(用户删了 / 换了机器)按「已过期」处理,**不会悄悄登录**。
 - **团队**:登录后读团队;只有一个直接选定,多个则 `ContextRequired`(要选才能用模型通道 / 市场 / 同步,此时不交付委托令牌),没有团队 = 登录失败并撤销令牌。
 - **钥匙串**:macOS 用 Keychain 通用口令(服务 `NextCoWork Account`,已有就原地更新——刷新令牌每次轮换都要写,这一点在真实钥匙串上有测试);Windows 用 DPAPI(当前用户)加密的文件;**Linux 的 libsecret 未接入:拒绝保存**,本次登录只在内存里有效,界面提示「此系统暂时无法安全保存登录状态」,下次启动要重新登录——**绝不降级为明文文件**。非机密记录(决定、用户资料、团队)在客户端目录的 `account.json`(0600、原子写)。
@@ -101,7 +107,7 @@
 - **委托令牌**:登录完成、每次刷新、换团队之后,以及本机设备(重新)连上时,经 `account.attachDelegatedToken` 交给本机 Agent。后端能换专用的委托令牌(RFC 8693 令牌交换,`DelegatePath`)就用它;**后端不支持(404 / 405 / 501)时退回把访问令牌本身交给本机 Agent**(同一台电脑、同一个用户、短期;B13 到位后自然切换,不用改客户端)。只有**本机通道**的设备才有这一步,远程设备和云端 Agent 的账户身份另有来源(02 A6)。
 - **单实例转发**:`SingleInstance`——主实例独占客户端目录下的锁文件(`FileShare.None`,进程崩溃由操作系统释放),在当前用户专属的命名管道(`CurrentUserOnly`)上监听;后启动的进程把 `link <uri>` / `activate` 转过去再退出。收到的内容不可信:只收第一行、≤ 16 KB、读取 5 秒期限,不解释,交给 `NcwLinkParser`。macOS 的 OpenUri 激活经 Avalonia 的 `IActivatableLifetime`(`ProtocolActivatedEventArgs`)进同一个收件箱 `NcwLinkInbox`。
 - **各平台注册**:macOS 靠 `tools/Ncw.Build` 的 bundle 写进 Info.plist(`CFBundleURLTypes`,已有);Windows 运行时写 `HKCU\Software\Classes\nextcowork`(Velopack 安装钩子以后接管,卸载时删);Linux 运行时写 `~/.local/share/applications/nextcowork-url-handler.desktop` 并 `xdg-mime default`(AppImage 用 `APPIMAGE` 指向的文件)。注册只做「尽力而为」;用 `dotnet` 主机启动(开发)或设了 `NCW_REGISTER_URL_SCHEME=0` 不会去改系统注册。
-- **账户后端(`IAccountApi` / `HttpAccountApi`)**:沿用 2.x 的真实端点(`/api/client/oauth/token`、`/revoke`、`/api/client/account`、`/api/client/context/options|select`、`/api/client/usage`),响应容忍 `{ data: … }` 外壳,10 秒超时,令牌只在请求头 / 体里。**B11 的待确认约定**(后端目前不存在,全部用假后端测):授权页 `https://nextco.work/oauth/authorize`(2.x 是 `/client/authorize`)、`client_id = ncw-desktop`、`redirect_uri = nextcowork://auth/callback`、`scope` 沿用 2.x 的完整串(后端是**全等匹配**,少一个插件市场就 401)、设备授权 `POST /api/client/oauth/device_authorization`(RFC 8628 §3.1,轮询走令牌端点的 `urn:ietf:params:oauth:grant-type:device_code`)、委托令牌 `POST /api/client/oauth/delegate`、控制端列表与撤销 `GET|DELETE /api/client/sessions[/{id}]`。这些在 05 §6 登记为 B11 补充 / B13 / B14。
+- **账户后端(`IAccountApi` / `HttpAccountApi`)**:沿用 2.x 的真实端点(`/api/client/oauth/token`、`/revoke`、`/api/client/account`、`/api/client/context/options|select`、`/api/client/usage`),响应容忍 `{ data: … }` 外壳,10 秒超时,令牌只在请求头 / 体里。**与线上后端一致的部分**:授权页 `https://nextco.work/client/authorize`、`client_id = nextcowork-desktop`、`redirect_uri = http://127.0.0.1:{端口}/callback`、`scope` 沿用 2.x 的完整串(后端是**全等匹配**,少一个插件市场就 401),所有请求带 `User-Agent: NextCoWork/3.x`(后端按 `NextCoWork/` 前缀识别桌面客户端、给会话起设备名)。**后端仓库已实现、待部署的端点**(部署前线上得到 404 / 405 = `Unsupported`,客户端优雅降级):设备授权 `POST /api/client/oauth/device`(RFC 8628 §3.1,轮询走令牌端点的 `urn:ietf:params:oauth:grant-type:device_code`)、委托令牌 `POST /api/client/oauth/delegate`(没有就退回访问令牌)、控制端列表与撤销 `GET|DELETE /api/client/sessions[/{id}]`。这些在 05 §6 登记为 B11 / B13 / B14 / B15。
 - **没做(等后端或真机)**:账户配置同步 `configSync`(B10 `RailLayout` 跨端分组)只留接口位置和本地快照语义,后端到位前**保持关闭**;模型通道的托管供应商 `nextcowork`(`/v1/models` 同步成别名)随后端接入——Agent 已经能从 `DelegatedAccount` 拿令牌;钱包 / 余额 / 充值(3.0 不涉及支付);手机端的 `ASWebAuthenticationSession` / Custom Tabs 回跳(属于 M5 的宿主);各平台协议注册的真机验证(见 04 §7)。
 
 ## 3. 设置页(重新设计)

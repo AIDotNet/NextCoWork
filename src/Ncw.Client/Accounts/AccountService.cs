@@ -63,7 +63,7 @@ public sealed record AccountOptions
 }
 
 /// <summary>
-/// 控制端的账户服务(07 §2):登录(浏览器 + PKCE + <c>nextcowork://</c> 回跳 / 设备授权码备用)、选团队、令牌刷新与失效、离线使用、退出登录、把委托令牌交给本机 Agent。
+/// 控制端的账户服务(07 §2):登录(浏览器 + PKCE + 本机回环回调 / 设备授权码备用)、选团队、令牌刷新与失效、离线使用、退出登录、把委托令牌交给本机 Agent。
 /// <list type="bullet">
 /// <item><b>真源</b>:账户的展示状态在 <see cref="ClientStores.Account"/>(唯一一份);令牌只在本类内部(访问令牌)和系统钥匙串(刷新令牌),<b>永远不进 Store、不进日志、不进异常消息</b>。</item>
 /// <item><b>单调</b>:每次登录完成 / 退出 / 失效,代数加一;所有异步结果带着发起时的代数回来,对不上就丢弃——退出登录之后迟到的刷新结果复活不了会话(规则 6)。</item>
@@ -94,6 +94,20 @@ public sealed class AccountService : IAsyncDisposable
 
         public ITimer? Expiry { get; set; }
 
+        /// <summary>浏览器登录的本机回环监听(<see cref="ILoginCallbackListener"/>);登录结束就关。</summary>
+        public ILoginCallbackSession? Listener { get; set; }
+
+        /// <summary>授权请求里用的 <c>redirect_uri</c>;换码请求必须逐字相同。</summary>
+        public string? RedirectUri { get; set; }
+
+        /// <summary>释放这次登录占用的计时器和本机监听(幂等)。</summary>
+        public void Release()
+        {
+            Expiry?.Dispose();
+            Expiry = null;
+            Listener?.Dispose();
+        }
+
         /// <summary>回调已被接受过一次:同一个授权码的重放(同一个 state)不能再触发第二次换码。</summary>
         public bool Consumed { get; set; }
     }
@@ -105,6 +119,7 @@ public sealed class AccountService : IAsyncDisposable
     private readonly Func<IUrlLauncher> _launcher;
     private readonly IDelegationTarget _delegation;
     private readonly IUiDispatcher _ui;
+    private readonly ILoginCallbackListener _listener;
     private readonly TimeProvider _clock;
     private readonly AccountOptions _options;
     private readonly object _gate = new();
@@ -122,7 +137,8 @@ public sealed class AccountService : IAsyncDisposable
 
     public AccountService(
         ClientStores stores, IAccountApi api, IRefreshTokenVault vault, IAccountMetaStore meta, Func<IUrlLauncher> launcher,
-        IDelegationTarget? delegation = null, IUiDispatcher? ui = null, TimeProvider? clock = null, AccountOptions? options = null)
+        IDelegationTarget? delegation = null, IUiDispatcher? ui = null, TimeProvider? clock = null, AccountOptions? options = null,
+        ILoginCallbackListener? listener = null)
     {
         _stores = stores;
         _api = api;
@@ -133,6 +149,7 @@ public sealed class AccountService : IAsyncDisposable
         _ui = ui ?? InlineDispatcher.Instance;
         _clock = clock ?? TimeProvider.System;
         _options = options ?? new AccountOptions();
+        _listener = listener ?? new LoopbackLoginCallbackListener();
         stores.Workspace.Changed += OnWorkspaceChanged;
     }
 
@@ -222,17 +239,36 @@ public sealed class AccountService : IAsyncDisposable
     // ───────────────────────── 登录:浏览器 ─────────────────────────
 
     /// <summary>
-    /// 发起浏览器登录(PKCE):生成一次性的 verifier / challenge / state,打开系统浏览器。随后系统把 <c>nextcowork://auth/callback?…</c> 交回来(<see cref="HandleLinkAsync"/>)。
-    /// 再次调用 = 顶掉上一次。返回 false = 浏览器没能打开(<see cref="AccountState.LoginError"/> 已设,界面建议改用登录码)。
+    /// 发起浏览器登录(PKCE):生成一次性的 verifier / challenge / state,在本机回环地址上起一个临时监听(后端只认 <c>http://127.0.0.1:{端口}/callback</c>),
+    /// 再打开系统浏览器;授权完成后浏览器跳回这个监听,state 对上的回调进入 <see cref="HandleLinkAsync"/>。
+    /// 再次调用 = 顶掉上一次。返回 false = 监听起不来或浏览器没能打开(<see cref="AccountState.LoginError"/> 已设,界面建议改用登录码)。
     /// </summary>
     public async Task<bool> BeginBrowserLoginAsync()
     {
         var pkce = Pkce.Create();
         var state = Pkce.NewState();
         var attempt = NewAttempt(LoginMethod.Browser, pkce.Verifier, state, null);
-        var uri = _api.BuildAuthorizeUri(state, pkce.Challenge);
         try
         {
+            var session = _listener.Start(state, HandleCallbackAsync);
+            bool current;
+            lock (_gate)
+            {
+                current = ReferenceEquals(_attempt, attempt);
+                if (current)
+                {
+                    attempt.Listener = session;
+                    attempt.RedirectUri = session.RedirectUri;
+                }
+            }
+
+            if (!current)
+            {
+                session.Dispose(); // 启动期间已被新的登录顶掉
+                return false;
+            }
+
+            var uri = _api.BuildAuthorizeUri(state, pkce.Challenge, session.RedirectUri);
             await _launcher().OpenAsync(uri.AbsoluteUri).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
@@ -243,6 +279,8 @@ public sealed class AccountService : IAsyncDisposable
 
         return true;
     }
+
+    private Task HandleCallbackAsync(AuthCallbackLink link) => HandleLinkAsync(link);
 
     /// <summary>收到系统转来的 <c>nextcowork://</c> 链接。只处理登录回调;其他路由由 <see cref="LinkRouter"/> 分发。</summary>
     public async Task<LinkOutcome> HandleLinkAsync(NcwLink link)
@@ -255,9 +293,9 @@ public sealed class AccountService : IAsyncDisposable
         Attempt attempt;
         lock (_gate)
         {
-            if (_attempt is not { Method: LoginMethod.Browser } current)
+            if (_attempt is not { Method: LoginMethod.Browser, RedirectUri: not null } current)
             {
-                return LinkOutcome.Ignored; // 没有进行中的浏览器登录:陌生的回调什么都不改
+                return LinkOutcome.Ignored; // 没有进行中的浏览器登录(或本机监听还没就绪):陌生的回调什么都不改
             }
 
             attempt = current;
@@ -293,16 +331,16 @@ public sealed class AccountService : IAsyncDisposable
 
         var code = callback.Code!;
         var verifier = attempt.Verifier!;
+        var redirectUri = attempt.RedirectUri!;
         lock (_gate)
         {
-            attempt.Expiry?.Dispose();
-            attempt.Expiry = null;
+            attempt.Release(); // 回调已收到:计时器和本机监听都不再需要
         }
 
         Publish(s => s with { Login = new LoginProgress(LoginMethod.Browser, LoginPhase.Exchanging, attempt.StartedAt, attempt.ExpiresAt) });
         try
         {
-            var tokens = await _api.ExchangeCodeAsync(code, verifier, attempt.Cts.Token).ConfigureAwait(false);
+            var tokens = await _api.ExchangeCodeAsync(code, verifier, redirectUri, attempt.Cts.Token).ConfigureAwait(false);
             await CompleteSignInAsync(tokens, attempt).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -337,10 +375,12 @@ public sealed class AccountService : IAsyncDisposable
         }
         catch (AccountApiException e)
         {
-            FailAttempt(attempt.Id, e.Kind switch
+            FailAttempt(attempt.Id, e switch
             {
-                AccountApiErrorKind.Network => AccountKeys.Network,
-                AccountApiErrorKind.Unsupported => AccountKeys.DeviceCodeUnavailable,
+                { Kind: AccountApiErrorKind.Network } => AccountKeys.Network,
+                { Kind: AccountApiErrorKind.Unsupported } => AccountKeys.DeviceCodeUnavailable,
+                // 还没部署设备码的老后端对 nextcowork-desktop 回 invalid_client / unauthorized_client:同样是「暂时不可用」
+                { OAuthError: "invalid_client" or "unauthorized_client" } => AccountKeys.DeviceCodeUnavailable,
                 _ => AccountKeys.Failed,
             });
             return false;
@@ -355,8 +395,7 @@ public sealed class AccountService : IAsyncDisposable
             }
 
             // 设备码有自己的有效期(轮询循环按它判断过期),不再用浏览器登录的 10 分钟计时器
-            attempt.Expiry?.Dispose();
-            attempt.Expiry = null;
+            attempt.Release();
         }
 
         var shown = new LoginProgress(LoginMethod.DeviceCode, LoginPhase.Waiting, attempt.StartedAt, expires, auth.UserCode, auth.VerificationUri);
@@ -500,7 +539,7 @@ public sealed class AccountService : IAsyncDisposable
                 return; // 取消 / 顶掉:不写任何东西
             }
 
-            attempt.Expiry?.Dispose();
+            attempt.Release();
             _attempt = null;
             _tokens = tokens;
             _delegated = null;
@@ -549,7 +588,7 @@ public sealed class AccountService : IAsyncDisposable
 
         if (previous is not null)
         {
-            previous.Expiry?.Dispose();
+            previous.Release();
             previous.Cts.Cancel(); // 顶掉上一次
         }
 
@@ -581,7 +620,7 @@ public sealed class AccountService : IAsyncDisposable
             _attempt = null;
         }
 
-        attempt.Expiry?.Dispose();
+        attempt.Release();
         attempt.Cts.Cancel();
         Publish(s => s with { Login = null, LoginError = key });
     }
@@ -602,7 +641,7 @@ public sealed class AccountService : IAsyncDisposable
             return;
         }
 
-        attempt.Expiry?.Dispose();
+        attempt.Release();
         attempt.Cts.Cancel();
         Publish(s => s with { Login = null, LoginError = null });
     }
@@ -693,7 +732,7 @@ public sealed class AccountService : IAsyncDisposable
             _generation++;
         }
 
-        attempt?.Expiry?.Dispose();
+        attempt?.Release();
         attempt?.Cts.Cancel();
         StopRefreshTimer();
         var devices = _stores.Account.State.Delegations.Keys.Concat(_delegation.ConnectedTargets()).Distinct().ToArray();
@@ -1134,7 +1173,7 @@ public sealed class AccountService : IAsyncDisposable
             _attempt = null;
         }
 
-        attempt?.Expiry?.Dispose();
+        attempt?.Release();
         attempt?.Cts.Cancel();
         StopRefreshTimer();
         Task poll;

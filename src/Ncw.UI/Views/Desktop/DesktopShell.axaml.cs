@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
@@ -38,50 +39,73 @@ public partial class DesktopShell : UserControl
     }
 
     private IDisposable? _airspace;
+    private List<Control> _overlays = [];
 
     /// <summary>
     /// 盖在工作区上的整窗覆盖层(设置页、首次启动页、数据页、窄屏抽屉的遮罩)打开时,挂起所有 widget 的 WebView:原生视图是盖在窗口上的,
     /// Avalonia 画的覆盖层盖不住它(<see cref="NcwWidgetAirspace"/>)。
+    /// <para>
+    /// <see cref="NcwWidgetAirspace"/> 是全局计数:句柄不释放,所有窗口里的 widget 就一直被挂起。所以句柄的生命周期跟着本控件挂不挂在视觉树上走——
+    /// 卸下(窗口关闭、外壳被替换)时无条件释放,重新挂上时按当前覆盖层状态重新计算;不能只在「覆盖层变不可见」时才释放(窗口在覆盖层还开着时被关掉就永远泄漏)。
+    /// </para>
     /// </summary>
     private void WatchOverlays()
     {
-        var overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay or StartupOverlay).Append(DrawerScrim).ToList();
-        void Recompute()
-        {
-            var any = overlays.Any(c => c.IsVisible);
-            if (any && _airspace is null)
-            {
-                _airspace = NcwWidgetAirspace.Suspend();
-            }
-            else if (!any && _airspace is not null)
-            {
-                _airspace.Dispose();
-                _airspace = null;
-            }
-        }
-
-        foreach (var overlay in overlays)
+        _overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay or StartupOverlay).Append(DrawerScrim).ToList();
+        foreach (var overlay in _overlays)
         {
             overlay.PropertyChanged += (_, e) =>
             {
                 if (e.Property == IsVisibleProperty)
                 {
-                    Recompute();
+                    RecomputeAirspace();
                 }
             };
         }
 
         // 启动加载界面淡出后自己摘掉:别让这里的记录继续引用它
-        if (overlays.OfType<StartupOverlay>().FirstOrDefault() is { } startup)
+        if (_overlays.OfType<StartupOverlay>().FirstOrDefault() is { } startup)
         {
             startup.Released += (_, _) =>
             {
-                overlays.Remove(startup);
-                Recompute();
+                _overlays.Remove(startup);
+                RecomputeAirspace();
             };
         }
 
-        Recompute();
+        RecomputeAirspace();
+    }
+
+    private void RecomputeAirspace()
+    {
+        // 没挂在视觉树上时不持有挂起:此时可见的覆盖层没有被画出来,不该影响别的窗口。
+        var any = TopLevel.GetTopLevel(this) is not null && _overlays.Any(c => c.IsVisible);
+        if (any && _airspace is null)
+        {
+            _airspace = NcwWidgetAirspace.Suspend();
+        }
+        else if (!any && _airspace is not null)
+        {
+            ReleaseAirspace();
+        }
+    }
+
+    private void ReleaseAirspace()
+    {
+        _airspace?.Dispose();
+        _airspace = null;
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        RecomputeAirspace();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        ReleaseAirspace();
+        base.OnDetachedFromVisualTree(e);
     }
 
     public ShellBreakpoint Breakpoint { get; private set; } = ShellBreakpoint.Wide;

@@ -51,7 +51,7 @@ public sealed partial class SessionRepository
     /// 会话层应把读到的文本原样回传,没改的消息才不会被重写。
     /// <paramref name="detachImportedSource"/>:手动编辑转录 = 永久脱离导入来源,必须和替换在同一个事务里。
     /// </summary>
-    public void ReplaceHistory(string sessionId, IReadOnlyList<MessageRecord> messages, bool detachImportedSource = false) => database.InTransaction(() =>
+    public void ReplaceHistory(string sessionId, IReadOnlyList<MessageRecord> messages, bool detachImportedSource = false, bool keepAttachmentsOfRemoved = false) => database.InTransaction(() =>
     {
         var session = Require(sessionId);
         var existing = database.Rows("SELECT id, ordinal, role, parts, schema_version, created_at, internal, meta FROM messages WHERE session_id = $s",
@@ -112,6 +112,11 @@ public sealed partial class SessionRepository
         if (renumber)
         {
             database.Run("UPDATE messages SET ordinal = -ordinal - 1 WHERE session_id = $s", ("$s", sessionId));
+        }
+
+        if (keepAttachmentsOfRemoved && removed.Count > 0)
+        {
+            observer?.OnMessagesRemoving(database, session, removed); // 级联删除之前:附件域把它们降回草稿
         }
 
         foreach (var id in removed)

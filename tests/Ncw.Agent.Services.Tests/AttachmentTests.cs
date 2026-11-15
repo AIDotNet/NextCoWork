@@ -177,6 +177,77 @@ public sealed class AttachmentTests : IDisposable
         _service.Remove("no-such-id");
     }
 
+    private static string ImageMessage(string url) => $"[{{\"type\":\"text\",\"text\":\"look\"}},{{\"type\":\"image\",\"mime\":\"image/png\",\"dataRef\":\"{url}\"}}]";
+
+    // ───────────────────────── 编辑后重新运行:截断保留附件 ─────────────────────────
+
+    [Fact]
+    public void Truncating_for_a_rerun_keeps_the_attachment_readable_and_a_resend_reclaims_it()
+    {
+        _sessions.Create(new SessionCreate("ws", "s1"));
+        var a = Upload("s1", "a.png", "image/png", Png);
+        _sessions.Commit("s1", new MessageRecord("m1", "user", ImageMessage(a.Url), 1));
+        _sessions.Commit("s1", new MessageRecord("m2", "assistant", "[{\"type\":\"text\",\"text\":\"nice\"}]", 2));
+
+        _sessions.EditMessage("s1", "m1", "look again", truncate: true); // 这条和回复都被移除
+
+        Assert.Empty(_sessions.History("s1"));
+        Assert.NotNull(_repo.FindByOwnerAndFileName("s1", Path.GetFileName(_repo.Get(a.Id)!.Path))); // 行还在(降回了草稿)
+        Assert.Equal("draft", _repo.Get(a.Id)!.Status);
+        Assert.Null(_repo.Get(a.Id)!.MessageId);
+        Assert.Equal(Png.Length, _service.Read(a.Url, 0, 1024).Data.Length); // 旧引用没有失效
+
+        // 用同一个引用重发:新消息重新认领它
+        _sessions.Commit("s1", new MessageRecord("m3", "user", ImageMessage(a.Url), 3));
+        Assert.Equal(("committed", "m3"), (_repo.Get(a.Id)!.Status, _repo.Get(a.Id)!.MessageId));
+        Assert.Equal(Png, File.ReadAllBytes(_repo.Get(a.Id)!.Path));
+    }
+
+    [Fact]
+    public void Truncating_without_a_resend_leaves_a_draft_that_the_normal_draft_expiry_will_reclaim()
+    {
+        _sessions.Create(new SessionCreate("ws", "s1"));
+        var a = Upload("s1", "a.png", "image/png", Png);
+        _sessions.Commit("s1", new MessageRecord("m1", "user", ImageMessage(a.Url), 1));
+        _sessions.EditMessage("s1", "m1", "x", truncate: true);
+
+        Assert.Equal("draft", _repo.Get(a.Id)!.Status);
+        Assert.Contains(_service.ListBySession("s1"), i => i.Id == a.Id); // 和别的草稿一样,出现在待发附件里(重发失败时附件跟着文字一起回到输入框)
+    }
+
+    [Fact]
+    public void Editing_the_text_without_truncating_or_deleting_a_turn_does_not_turn_attachments_into_drafts()
+    {
+        _sessions.Create(new SessionCreate("ws", "s1"));
+        var kept = Upload("s1", "a.png", "image/png", Png);
+        _sessions.Commit("s1", new MessageRecord("m1", "user", ImageMessage(kept.Url), 1));
+        _sessions.EditMessage("s1", "m1", "reworded", truncate: false);
+        Assert.Equal(("committed", "m1"), (_repo.Get(kept.Id)!.Status, _repo.Get(kept.Id)!.MessageId)); // 只改文字,附件不动
+
+        // 删除一轮:被删的图不该以草稿的形式回到输入框
+        var gone = Upload("s1", "b.png", "image/png", [..Png, 1]);
+        _sessions.Commit("s1", new MessageRecord("m2", "user", ImageMessage(gone.Url), 2));
+        _sessions.DeleteTurn("s1", "m2");
+        Assert.Null(_repo.Get(gone.Id));
+        Assert.DoesNotContain(_service.ListBySession("s1"), i => i.Id == gone.Id);
+    }
+
+    [Fact]
+    public void Truncating_removes_reference_rows_but_keeps_the_original_owner_row_for_the_surviving_message()
+    {
+        _sessions.Create(new SessionCreate("ws", "s1"));
+        var a = Upload("s1", "a.png", "image/png", Png);
+        _sessions.Commit("s1", new MessageRecord("m1", "user", ImageMessage(a.Url), 1));
+        _sessions.Commit("s1", new MessageRecord("m2", "assistant", "[{\"type\":\"text\",\"text\":\"ok\"}]", 2));
+        _sessions.Commit("s1", new MessageRecord("m3", "user", ImageMessage(a.Url), 3)); // 同一张图第二次被引用:另建一行引用
+
+        _sessions.EditMessage("s1", "m3", "x", truncate: true);
+
+        Assert.Equal(("committed", "m1"), (_repo.Get(a.Id)!.Status, _repo.Get(a.Id)!.MessageId)); // m1 还在,图归它
+        Assert.Empty(_repo.ForMessage("m3"));                                                      // m3 的引用行没了,不留成草稿
+        Assert.Equal(Png.Length, _service.Read(a.Url, 0, 1024).Data.Length);
+    }
+
     [Fact]
     public void A_committed_attachment_cannot_be_removed_through_its_id_and_an_external_path_row_never_touches_the_users_file()
     {

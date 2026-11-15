@@ -79,6 +79,60 @@ public class AccountServiceTests
     }
 
     [Fact]
+    public async Task Browser_login_listens_on_loopback_and_uses_that_exact_redirect_for_authorize_and_exchange()
+    {
+        var rig = new AccountRig();
+        await rig.Service.InitializeAsync();
+        Assert.True(await rig.Service.BeginBrowserLoginAsync());
+        var session = Assert.Single(rig.Listener.Sessions);
+        Assert.Equal(rig.Launcher.Query("state"), session.ExpectedState);
+        Assert.Equal(FakeLoginListener.RedirectUri, rig.Launcher.Query("redirect_uri"));
+        Assert.False(session.Disposed);
+
+        await session.DeliverAsync(new AuthCallbackLink("C", session.ExpectedState, null, null));
+        Assert.True(rig.State.IsSignedIn);
+        Assert.Equal([FakeLoginListener.RedirectUri], rig.Api.ExchangeRedirects);
+        Assert.True(session.Disposed); // 登录结束,本机监听关掉
+    }
+
+    [Fact]
+    public async Task The_loopback_listener_is_closed_when_the_login_is_cancelled_replaced_denied_or_expires()
+    {
+        var rig = new AccountRig();
+        await rig.Service.InitializeAsync();
+
+        await rig.Service.BeginBrowserLoginAsync();
+        rig.Service.CancelLogin();
+        Assert.True(rig.Listener.Sessions[0].Disposed);
+
+        await rig.Service.BeginBrowserLoginAsync();
+        await rig.Service.BeginBrowserLoginAsync(); // 顶掉上一次
+        Assert.True(rig.Listener.Sessions[1].Disposed);
+        Assert.False(rig.Listener.Sessions[2].Disposed);
+
+        await rig.Listener.Sessions[2].DeliverAsync(new AuthCallbackLink(null, rig.Listener.Sessions[2].ExpectedState, "access_denied", null));
+        Assert.Equal(AccountKeys.Denied, rig.State.LoginError);
+        Assert.True(rig.Listener.Sessions[2].Disposed);
+
+        await rig.Service.BeginBrowserLoginAsync();
+        rig.Clock.Advance(TimeSpan.FromMinutes(11));
+        Assert.Equal(AccountKeys.Expired, rig.State.LoginError);
+        Assert.True(rig.Listener.Sessions[3].Disposed);
+    }
+
+    [Fact]
+    public async Task A_listener_that_cannot_start_fails_the_login_with_the_browser_error_and_never_opens_the_browser()
+    {
+        var rig = new AccountRig();
+        await rig.Service.InitializeAsync();
+        rig.Listener.StartFailure = new System.Net.Sockets.SocketException();
+        Assert.False(await rig.Service.BeginBrowserLoginAsync());
+        Assert.Equal(AccountKeys.BrowserFailed, rig.State.LoginError);
+        Assert.Empty(rig.Launcher.Opened);
+        Assert.Null(rig.State.Login);
+    }
+
+    [Fact]
     public async Task A_replayed_callback_cannot_exchange_the_same_code_twice()
     {
         var rig = new AccountRig();
@@ -319,6 +373,18 @@ public class AccountServiceTests
         var rig = new AccountRig();
         await rig.Service.InitializeAsync();
         rig.Api.DeviceStartFailure = new AccountApiException(AccountApiErrorKind.Unsupported, "404", 404);
+        Assert.False(await rig.Service.BeginDeviceCodeLoginAsync());
+        Assert.Equal(AccountKeys.DeviceCodeUnavailable, rig.State.LoginError);
+    }
+
+    [Theory]
+    [InlineData("invalid_client")]
+    [InlineData("unauthorized_client")]
+    public async Task A_backend_that_does_not_know_the_client_for_device_codes_also_says_unavailable(string error)
+    {
+        var rig = new AccountRig();
+        await rig.Service.InitializeAsync();
+        rig.Api.DeviceStartFailure = new AccountApiException(AccountApiErrorKind.Rejected, "400", 400, error);
         Assert.False(await rig.Service.BeginDeviceCodeLoginAsync());
         Assert.Equal(AccountKeys.DeviceCodeUnavailable, rig.State.LoginError);
     }
