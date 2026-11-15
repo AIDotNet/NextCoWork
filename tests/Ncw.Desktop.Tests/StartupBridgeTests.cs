@@ -39,6 +39,19 @@ public class StartupBridgeTests
         }
     }
 
+    [Theory]
+    [InlineData(SidecarIssue.MasterKeyMissing, "master-key-missing")]
+    [InlineData(SidecarIssue.MasterKeyUnreadable, "master-key-unreadable")]
+    public void Master_key_refusals_map_to_their_own_stable_keys_and_become_retryable_failures(SidecarIssue issue, string key)
+    {
+        Assert.Equal(key, StartupBridge.IssueKey(issue));
+        var mapped = StartupBridge.Map(new SidecarStatus(SidecarPhase.Failed, issue, Detail: "agent refused to start (exit code 65): agent.masterKey.missing credential.key; data root: /d"));
+        Assert.Equal(StartupSidecarPhase.Failed, mapped.Phase);
+        Assert.Equal(key, mapped.Issue);
+        Assert.Equal(0, mapped.RestartCount);
+        Assert.Null(mapped.RetryIn);
+    }
+
     [Fact]
     public void The_detail_retry_delay_and_restart_count_are_carried_over()
     {

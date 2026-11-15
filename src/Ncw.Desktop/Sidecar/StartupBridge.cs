@@ -31,6 +31,8 @@ public static class StartupBridge
         SidecarIssue.AgentOutdated => "agent-outdated",
         SidecarIssue.ClientOutdated => "client-outdated",
         SidecarIssue.CrashLoop => "crash-loop",
+        SidecarIssue.MasterKeyMissing => "master-key-missing",
+        SidecarIssue.MasterKeyUnreadable => "master-key-unreadable",
         _ => null,
     };
 
@@ -64,7 +66,8 @@ public sealed class SidecarStartupHost(LocalAgentSidecar sidecar, int logTailLin
     public string? Diagnostics()
     {
         var status = sidecar.Status;
-        var text = $"sidecar status: {status.Phase} issue={status.Issue} version={status.AgentVersion ?? "-"} restarts={status.RestartCount}{(status.Detail is null ? "" : " detail=" + status.Detail)}\n";
+        var text = $"data root: {sidecar.DataRoot}\n";
+        text += $"sidecar status: {status.Phase} issue={status.Issue} version={status.AgentVersion ?? "-"} restarts={status.RestartCount}{(status.Detail is null ? "" : " detail=" + status.Detail)}\n";
         try
         {
             var log = new SidecarPaths(sidecar.DataRoot).LogFile;

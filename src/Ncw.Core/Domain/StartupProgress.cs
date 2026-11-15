@@ -112,7 +112,7 @@ public enum StartupSidecarPhase
     Stopped,
 }
 
-/// <param name="Issue">问题的稳定 key(kebab-case,和 <c>SidecarIssue</c> 一一对应:<c>agent-not-found</c>、<c>launch-failed</c>、<c>already-running-elsewhere</c>、<c>agent-outdated</c>、<c>client-outdated</c>、<c>crash-loop</c>)。</param>
+/// <param name="Issue">问题的稳定 key(kebab-case,和 <c>SidecarIssue</c> 一一对应:<c>agent-not-found</c>、<c>launch-failed</c>、<c>already-running-elsewhere</c>、<c>agent-outdated</c>、<c>client-outdated</c>、<c>crash-loop</c>、<c>master-key-missing</c>、<c>master-key-unreadable</c>)。</param>
 /// <param name="Detail">给诊断的原始信息(退出码、异常消息);不是界面文字。</param>
 public sealed record StartupSidecar(StartupSidecarPhase Phase, string? Issue = null, int RestartCount = 0, TimeSpan? RetryIn = null, string? Detail = null);
 
@@ -254,6 +254,7 @@ public enum StartupOwner
 /// <summary>失败的原因(稳定 key)和可用的动作。</summary>
 /// <param name="Reason">
 /// 稳定 key(界面按它取文字):<c>agent-not-found</c>、<c>launch-failed</c>、<c>already-running-elsewhere</c>、<c>agent-outdated</c>、<c>client-outdated</c>、<c>crash-loop</c>、
+/// <c>master-key-missing</c> / <c>master-key-unreadable</c>(Agent 拒绝启动:数据目录里有加密数据却没有可用的凭据主密钥;不是崩溃,守护不重启,用户把 <c>credential.key</c> 放回去后重试)、
 /// <c>connection-failed</c>(Agent 在运行但连不上)、<c>timeout</c>(某一阶段卡住超过阈值)。
 /// </param>
 public sealed record StartupFailure(string Reason, bool CanRetry, string? Detail = null)
@@ -506,6 +507,7 @@ public static class StartupProgress
 
         if (f.Sidecar is { Phase: StartupSidecarPhase.Failed } failed)
         {
+            // 守护已经判定「不会自动继续」:原因照搬(master-key-* 是 Agent 自己拒绝启动,不是崩溃);用户处理之后可以重试(只有版本不匹配重试没用)
             var reason = failed.Issue ?? "crash-loop";
             return new StartupFailure(reason, CanRetry: reason is not ("client-outdated" or "agent-outdated"), failed.Detail);
         }

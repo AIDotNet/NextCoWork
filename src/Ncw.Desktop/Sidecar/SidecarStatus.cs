@@ -46,6 +46,12 @@ public enum SidecarIssue
 
     /// <summary>反复崩溃,不再自动重启。</summary>
     CrashLoop,
+
+    /// <summary>数据目录里有加密的数据,却找不到它的凭据主密钥(<c>credential.key</c>)。Agent 为了不让已有的凭据变得无法解密而拒绝启动(退出码 65),不会自动创建新密钥。重启没用。</summary>
+    MasterKeyMissing,
+
+    /// <summary><c>credential.key</c> 在,但读不了、已损坏,或者不是这份数据的密钥。Agent 拒绝启动(退出码 65)。重启没用。</summary>
+    MasterKeyUnreadable,
 }
 
 /// <param name="RestartCount">本次桌面端运行期间 Agent 被意外重启的次数。</param>

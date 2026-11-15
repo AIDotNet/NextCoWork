@@ -9,6 +9,10 @@
     <Compile Include="../Ncw.Client.Tests/Accounts/AccountFakes.cs" Link="Updates/AccountFakes.cs" />
   </ItemGroup>
   <ItemGroup>
+    <!-- 真实 Agent 的主密钥用例要造一个「有 NCK1 凭据行」的库(只在测试里,版本在 Directory.Packages.props) -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/Ncw.Desktop/Ncw.Desktop.csproj" />
     <!-- 只为了构建顺序:真实冒烟测试要用刚构建出来的 ncw-agent(不引用它的代码,客户端项目不能引用 Ncw.Agent.*)。 -->
     <ProjectReference Include="../../src/Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />

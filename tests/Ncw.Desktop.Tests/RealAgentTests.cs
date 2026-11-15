@@ -21,7 +21,7 @@ public class RealAgentTests
         throw new InvalidOperationException("repo root not found");
     }
 
-    private static string FindAgent()
+    internal static string FindAgent()
     {
         if (Environment.GetEnvironmentVariable("NCW_SKIP_AGENT_SMOKE") == "1")
         {
@@ -52,7 +52,7 @@ public class RealAgentTests
         return found;
     }
 
-    private static (LocalAgentSidecar Sidecar, FakePolicy Policy, string Version) Real(string dataRoot, string agent, FakePolicy? policy = null)
+    internal static (LocalAgentSidecar Sidecar, FakePolicy Policy, string Version) Real(string dataRoot, string agent, FakePolicy? policy = null)
     {
         policy ??= new FakePolicy();
         var version = SidecarVersionPolicy.OfAssembly(typeof(LocalAgentSidecar).Assembly);

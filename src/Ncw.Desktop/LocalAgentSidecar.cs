@@ -15,6 +15,9 @@ namespace Ncw.Desktop;
 /// <item><b>版本不一致</b>:Agent 比桌面端旧就让它退出并换包里的;比桌面端新(或 Agent 拒绝了过旧的客户端)就报 <see cref="SidecarIssue.ClientOutdated"/>;</item>
 /// <item><b>退出</b>:优雅关闭(关 stdin → SIGTERM → 强杀),或按「关窗后继续运行」留下它;</item>
 /// <item><b>单实例</b>:同一数据根只允许一个 Agent —— 锁在 Agent 里(<c>run/agent.lock</c>,退出码 75),这里据此报 <see cref="SidecarIssue.AlreadyRunningElsewhere"/>。</item>
+/// <item><b>拒绝启动</b>:Agent 以退出码 65 / 78 退出表示「重启没用」(数据根里有加密数据却没有可用的主密钥 / 启动配置不合法;docs/design/02 A6.1):
+///   不进入重启退避,直接停在 <see cref="SidecarPhase.Failed"/>,原因取自它打印的那一行 <c>ncw-agent startup-failed &lt;key&gt; &lt;字段名&gt;</c>
+///   (<see cref="SidecarIssue.MasterKeyMissing"/> / <see cref="SidecarIssue.MasterKeyUnreadable"/>;认不出的算 <see cref="SidecarIssue.LaunchFailed"/>);用户处理之后点「重试」。</item>
 /// </list>
 /// 逻辑只依赖 <see cref="SidecarDependencies"/> 里的抽象(进程启动、握手、时钟),所以可以用假进程和假时钟测试。
 /// </summary>
@@ -22,6 +25,15 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
 {
     /// <summary>ncw-agent 在单实例锁被占用时的退出码(src/Ncw.Agent/AgentInstanceLock.cs)。</summary>
     public const int AlreadyRunningExitCode = 75;
+
+    /// <summary>ncw-agent 拒绝启动的退出码(EX_DATAERR):数据根里有加密数据却没有可用的主密钥(src/Ncw.Agent/Program.cs)。重启也不会好。</summary>
+    public const int StartupRefusedExitCode = 65;
+
+    /// <summary>ncw-agent 的启动配置不合法(EX_CONFIG)。重启也不会好。</summary>
+    public const int StartupConfigExitCode = 78;
+
+    /// <summary>Agent 在退出前打印的结构化失败行的前缀(stderr 行带 <c>[stderr] </c>,所以按「包含」找)。</summary>
+    private const string StartupFailedMarker = "ncw-agent startup-failed ";
 
     private readonly SidecarPaths _paths;
     private readonly SidecarDependencies _deps;
@@ -40,6 +52,7 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
     private bool _stdinOwned;
     private bool _detachedSpawn;
     private volatile bool _forceStop;
+    private volatile string? _startupFailedLine;   // 这一次拉起的 Agent 打印的 startup-failed 行(输出线程写,守护线程读)
 
     public LocalAgentSidecar(string dataRoot)
         : this(dataRoot, SidecarDependencies.Production(dataRoot, Ncw.UI.NcwApp.ClientDirectory, typeof(LocalAgentSidecar).Assembly))
@@ -236,6 +249,15 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
                         ClearProcess();
                         continue;
 
+                    case Exited { Code: var code } when spawned && code is StartupRefusedExitCode or StartupConfigExitCode:
+                        // 「重启没用」的终态:不退避、不重启,停在失败等用户处理(把 credential.key 放回去……)再点重试。先等输出读完(退出和最后一行输出是两个事件)。
+                        await WaitExitAsync(process, TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                        ClearProcess();
+                        SetStatus(new SidecarStatus(SidecarPhase.Failed, RefusalIssue(_startupFailedLine, out var refusal), null, restarts, Detail: $"agent refused to start (exit code {code}): {refusal}; data root: {_paths.DataRoot}"));
+                        await WaitForRetryAsync(ct).ConfigureAwait(false);
+                        failures = 0;
+                        continue;
+
                     case Exited { Code: var code }:
                         ClearProcess();
                         failures++;
@@ -323,6 +345,35 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
         return null;
     }
 
+    /// <summary>
+    /// 把 Agent 的 <c>startup-failed &lt;key&gt; &lt;字段名&gt;</c> 映射成问题。<paramref name="refusal"/> 是进诊断的那一段(key 和字段名;只收标识符字符,别的一律丢掉——
+    /// 这一行只会有 key 和字段名,但守护不信任输出)。认不出的(没有这一行、没见过的 key)算 <see cref="SidecarIssue.LaunchFailed"/>。
+    /// </summary>
+    internal static SidecarIssue RefusalIssue(string? line, out string refusal)
+    {
+        refusal = "no structured reason";
+        if (line is null)
+        {
+            return SidecarIssue.LaunchFailed;
+        }
+
+        var rest = line[(line.IndexOf(StartupFailedMarker, StringComparison.Ordinal) + StartupFailedMarker.Length)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (rest.Length == 0 || !rest.All(IsIdentifier))
+        {
+            return SidecarIssue.LaunchFailed;
+        }
+
+        refusal = string.Join(' ', rest.Take(2));
+        return rest[0] switch
+        {
+            "agent.masterKey.missing" => SidecarIssue.MasterKeyMissing,
+            "agent.masterKey.unreadable" => SidecarIssue.MasterKeyUnreadable,
+            _ => SidecarIssue.LaunchFailed,
+        };
+
+        static bool IsIdentifier(string token) => token.Length <= 64 && token.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');
+    }
+
     private IAgentProcess Spawn(string executable)
     {
         var keep = _deps.Policy.KeepAgentRunningAfterExit;
@@ -334,7 +385,16 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
         }
 
         var spec = new AgentLaunchSpec(executable, args, new Dictionary<string, string> { ["NCW_LOCAL_TOKEN"] = Token }, Lifeline: !keep);
-        var process = _deps.Launcher.Start(spec, _deps.Log.Write);
+        _startupFailedLine = null;
+        var process = _deps.Launcher.Start(spec, line =>
+        {
+            if (line.Contains(StartupFailedMarker, StringComparison.Ordinal))
+            {
+                _startupFailedLine = line;
+            }
+
+            _deps.Log.Write(line);
+        });
         _process = process;
         _spawnedByUs = true;
         _stdinOwned = !keep;

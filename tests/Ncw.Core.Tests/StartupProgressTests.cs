@@ -388,6 +388,8 @@ public class StartupProgressTests
     [InlineData("launch-failed", true)]
     [InlineData("already-running-elsewhere", true)]
     [InlineData("crash-loop", true)]
+    [InlineData("master-key-missing", true)]      // 用户把 credential.key 放回去之后可以重试
+    [InlineData("master-key-unreadable", true)]
     [InlineData("agent-outdated", false)]
     [InlineData("client-outdated", false)]
     public void Every_sidecar_issue_becomes_a_failure_with_the_right_actions(string issue, bool canRetry)
@@ -422,6 +424,35 @@ public class StartupProgressTests
         // 守护下一轮成功了(那个进程退出了 / 权限放开了):失败自己消失
         var back = StartupProgress.Derive(f with { Sidecar = new StartupSidecar(StartupSidecarPhase.Starting) }, At(6000));
         Assert.Null(back.Failure);
+    }
+
+    [Theory]
+    [InlineData("master-key-missing")]
+    [InlineData("master-key-unreadable")]
+    public void A_refused_start_because_of_the_master_key_fails_at_once_with_all_four_actions_and_names_the_data_root_and_file_but_no_secret(string issue)
+    {
+        // 守护第一次拉起就收到了 Agent 的拒绝(退出码 65):没有重启、没有退避,第一帧就是失败
+        const string detail = "agent refused to start (exit code 65): agent.masterKey.missing credential.key; data root: /home/u/.next-cowork/data";
+        var f = Reach(UpToAgent(), 200, StartupMilestone.AgentSpawned) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Failed, issue, 0, Detail: detail) };
+
+        var view = StartupProgress.Derive(f, At(260));
+
+        Assert.Equal(StartupPhase.Failed, view.Phase);
+        Assert.Equal(issue, view.Failure!.Reason);
+        Assert.True(view.Failure.CanRetry);
+        Assert.True(view.Failure.CanShowDiagnostics);
+        Assert.True(view.Failure.CanQuit);
+        var text = StartupProgress.Diagnostics(f, view, At(260));
+        Assert.Contains("credential.key", text);
+        Assert.Contains("/home/u/.next-cowork/data", text);
+        Assert.Contains($"issue={issue}", text);
+
+        // 用户把密钥放回去、重试成功:失败自己消失(派生,不锁存)
+        var ok = Reach(f, 900, StartupMilestone.AgentReady) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Running) };
+        Assert.Null(StartupProgress.Derive(ok, At(910)).Failure);
+
+        // 失败面板立刻出现,不等延迟(没有理由让用户对着空白等)
+        Assert.True(StartupPresentation.Decide(view, new StartupPresentation.State(At(250)), At(260)).ContentVisible);
     }
 
     [Fact]

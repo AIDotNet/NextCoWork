@@ -227,6 +227,103 @@ public class SidecarSupervisorTests
         Assert.Equal(SidecarIssue.AlreadyRunningElsewhere, rig.Sidecar.Status.Issue);
     }
 
+    // ---- 拒绝启动(退出码 65 / 78):重启没用 ----
+
+    private static void Refuses(FakeLauncher launcher, int code, string line)
+    {
+        launcher.OnStart = p => p.Exit(code);
+        launcher.OnOutput = (_, output) => output(line);
+    }
+
+    [Fact]
+    public async Task Exit_code_65_with_a_missing_master_key_goes_straight_to_failed_without_backoff_or_restarts()
+    {
+        await using var rig = new Rig(Fast());
+        Refuses(rig.Launcher, 65, "[stderr] ncw-agent startup-failed agent.masterKey.missing credential.key");
+        rig.Sidecar.Start();
+
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Failed, Issue: SidecarIssue.MasterKeyMissing }, "master key missing reported");
+
+        var status = rig.Sidecar.Status;
+        Assert.Equal(0, status.RestartCount);
+        Assert.Null(status.RetryIn);
+        Assert.Contains("agent.masterKey.missing credential.key", status.Detail);
+        Assert.Contains("exit code 65", status.Detail);
+        Assert.Contains(rig.Paths.DataRoot, status.Detail); // 数据目录进诊断
+        rig.Clock.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(30);
+        Assert.Single(rig.Launcher.Starts);                 // 不重启
+        lock (rig.Statuses)
+        {
+            Assert.DoesNotContain(rig.Statuses, s => s.Phase == SidecarPhase.Restarting); // 也没有进入过退避
+        }
+    }
+
+    [Fact]
+    public async Task Exit_code_65_with_an_unreadable_master_key_is_its_own_reason()
+    {
+        await using var rig = new Rig(Fast());
+        Refuses(rig.Launcher, 65, "ncw-agent startup-failed agent.masterKey.unreadable credential.key");
+        rig.Sidecar.Start();
+
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Failed, Issue: SidecarIssue.MasterKeyUnreadable }, "master key unreadable reported");
+        Assert.Single(rig.Launcher.Starts);
+    }
+
+    [Theory]
+    [InlineData(78, "ncw-agent startup-failed cloud.config.invalid dataRoot")]   // 78:配置不合法,重启也不会好,原因认不出来就是「拉不起来」
+    [InlineData(65, "ncw-agent startup-failed some.future.key field")]
+    [InlineData(65, "something else entirely")]                                    // 没有结构化的那一行
+    [InlineData(78, "ncw-agent startup-failed agent.masterKey.missing a=b")]       // 守护不信任输出:不是标识符的内容不进诊断
+    public async Task Exit_codes_65_and_78_without_a_recognized_reason_still_do_not_restart(int code, string line)
+    {
+        await using var rig = new Rig(Fast());
+        Refuses(rig.Launcher, code, line);
+        rig.Sidecar.Start();
+
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Failed, Issue: SidecarIssue.LaunchFailed }, "failed");
+        Assert.DoesNotContain("a=b", rig.Sidecar.Status.Detail);
+        Assert.Contains($"exit code {code}", rig.Sidecar.Status.Detail);
+        rig.Clock.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(30);
+        Assert.Single(rig.Launcher.Starts);
+    }
+
+    [Fact]
+    public async Task Retry_after_the_master_key_is_back_recovers_and_retry_while_it_is_still_missing_fails_again_without_backoff()
+    {
+        await using var rig = new Rig(Fast());
+        Refuses(rig.Launcher, 65, "ncw-agent startup-failed agent.masterKey.missing credential.key");
+        rig.Sidecar.Start();
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Failed, Issue: SidecarIssue.MasterKeyMissing }, "failed");
+
+        rig.Sidecar.Retry();                                                // 密钥还没放回去:再拒绝一次,仍然是失败(不是退避)
+        await Rig.Until(() => rig.Launcher.Starts.Count == 2, "second attempt");
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Failed, Issue: SidecarIssue.MasterKeyMissing }, "failed again");
+        lock (rig.Statuses)
+        {
+            Assert.DoesNotContain(rig.Statuses, s => s.Phase == SidecarPhase.Restarting);
+        }
+
+        rig.Launcher.OnStart = null;                                        // 用户把 credential.key 放回去了
+        rig.Launcher.OnOutput = null;
+        rig.Sidecar.Retry();
+        await rig.UntilPhase(SidecarPhase.Running);
+        Assert.Equal(SidecarIssue.None, rig.Sidecar.Status.Issue);
+        Assert.Equal(3, rig.Launcher.Starts.Count);
+    }
+
+    [Fact]
+    public async Task A_plain_crash_exit_code_is_still_a_crash_and_restarts()
+    {
+        await using var rig = new Rig(Fast());
+        Refuses(rig.Launcher, 134, "ncw-agent startup-failed agent.masterKey.missing credential.key"); // 退出码不是 65 / 78:不信输出,仍按崩溃处理
+        rig.Sidecar.Start();
+
+        await Rig.Until(() => rig.Sidecar.Status is { Phase: SidecarPhase.Restarting }, "restarting");
+        await rig.AdvanceUntil(() => rig.Launcher.Starts.Count >= 2, "restart");
+    }
+
     // ---- 版本 ----
 
     [Fact]

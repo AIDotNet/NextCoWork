@@ -206,6 +206,9 @@ internal sealed class FakeLauncher : IProcessLauncher
 
     public Action<FakeProcess>? OnStart { get; set; }
 
+    /// <summary>进程拉起后,Agent 往 stdout / stderr 打印的行(第二个参数就是守护收到输出的回调;stderr 行自己带 <c>[stderr] </c> 前缀)。</summary>
+    public Action<FakeProcess, Action<string>>? OnOutput { get; set; }
+
     public string AgentVersion { get; set; } = "3.0.0";
 
     public FakeProcess Last => Starts[^1].Process;
@@ -221,6 +224,7 @@ internal sealed class FakeLauncher : IProcessLauncher
         Starts.Add((spec, process));
         Running[process.Id] = process;
         OnStart?.Invoke(process);
+        OnOutput?.Invoke(process, onOutput);
         onOutput("ncw-agent ready dev_fake");
         return process;
     }
