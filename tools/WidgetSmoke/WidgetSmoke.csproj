@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    开发用的真实 WebView 冒烟程序(不对用户发布,不进 NextCoWork.slnx;AGENTS.md §1 的「tools/ 只给开发和 CI 用」):
+    开一个真窗口,把真实的外壳(WidgetShell)放进真实的 NativeWebView(NcwWidgetSurface),再装上真实的宿主桥(WidgetBridge),
+    让页面里的 widget 代码跑一批检查(CSP 是否生效、导航 / 弹窗是否被拦、桥是否双向、主题 / 状态 / 数据是否推到、报高)和一轮恶意载荷(伪造消息 / 洪水),
+    把每一项打印成 `SMOKE <名字> PASS|FAIL <详情>`,退出码 = 失败项数。
+    用法:在仓库根目录运行 dotnet run 并指定项目 tools/WidgetSmoke(需要图形会话;只在 macOS 上验证过,Windows / Linux 同一份代码但没有机器可测)。
+    tests/Ncw.UI.Tests 的 NcwWidgetSmokeTests 在设置了环境变量 NCW_WIDGET_SMOKE=1 时调用它。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+    <ProjectReference Include="../../src/Ncw.UI/Ncw.UI.csproj" />
+  </ItemGroup>
+</Project>
