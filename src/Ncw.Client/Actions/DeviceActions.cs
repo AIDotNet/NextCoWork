@@ -35,12 +35,33 @@ public enum PairOutcome
 
     /// <summary>这个平台还不能安全保存本控制端的密钥。</summary>
     KeyStoreUnavailable,
+
+    /// <summary>扫到的不是 NextCoWork 的配对二维码(格式不对、版本不对、字段缺失)。</summary>
+    QrInvalid,
+
+    /// <summary>二维码已过期(10 分钟有效)。</summary>
+    QrExpired,
+
+    /// <summary>设备拒绝了二维码里的一次性密钥(已经用过或已过期)。</summary>
+    QrRejected,
+}
+
+/// <summary>设置中继地址的结果。</summary>
+public enum RelayOutcome
+{
+    Applied,
+
+    /// <summary>地址格式不对(需要 <c>wss://</c>;<c>ws://</c> 只允许本机 / 局域网地址)。</summary>
+    Invalid,
+
+    /// <summary>本机设备没连上 / 数据没就绪。</summary>
+    Unavailable,
 }
 
 /// <summary>
 /// 设备相关的用户意图(AGENTS.md §3 规则 4):添加 / 移除远程设备,以及本机设备的远程开关、配对码、吊销控制端。
 /// </summary>
-public sealed class DeviceActions(DeviceRegistry devices)
+public sealed class DeviceActions(DeviceRegistry devices, TimeProvider? clock = null)
 {
     /// <summary>用 <c>地址:端口</c> 和配对码添加一台设备。</summary>
     public async Task<PairOutcome> PairAsync(string address, string code, CancellationToken ct = default)
@@ -93,6 +114,67 @@ public sealed class DeviceActions(DeviceRegistry devices)
         }
     }
 
+    /// <summary>
+    /// 扫码配对(内容是 <c>nextcowork://pair?…</c>,docs/design/09 §3):解析、按过期时间预判、出示一次性密钥,成功后保存并连接。
+    /// 手动粘贴二维码内容走同一个入口。内容不合法 / 已过期在发出任何网络请求之前就返回。
+    /// </summary>
+    public async Task<PairOutcome> PairWithQrAsync(string qrContent, CancellationToken ct = default)
+    {
+        var content = qrContent.Trim();
+        if (!PairingQr.TryParse(content, out var qr))
+        {
+            return PairOutcome.QrInvalid;
+        }
+
+        if ((clock ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds() >= qr.ExpiresAt)
+        {
+            return PairOutcome.QrExpired;
+        }
+
+        if (devices.Remote is not { } remote)
+        {
+            return PairOutcome.KeyStoreUnavailable;
+        }
+
+        try
+        {
+            await remote.PairWithQrAsync(content, ct).ConfigureAwait(false);
+            return PairOutcome.Paired;
+        }
+        catch (FormatException)
+        {
+            return PairOutcome.QrInvalid;
+        }
+        catch (PairingException e)
+        {
+            return e.Failure switch
+            {
+                PairingFailure.QrExpired => PairOutcome.QrExpired,
+                PairingFailure.QrRejected => PairOutcome.QrRejected,
+                PairingFailure.RemoteDisabled => PairOutcome.RemoteDisabled,
+                PairingFailure.Unreachable => PairOutcome.Unreachable,
+                PairingFailure.WrongCode => PairOutcome.WrongCode,
+                _ => PairOutcome.DeviceNotVerified,
+            };
+        }
+        catch (SecureChannelException)
+        {
+            return PairOutcome.NotADevice;
+        }
+        catch (ProtocolException)
+        {
+            return PairOutcome.NotADevice;
+        }
+        catch (Exception e) when (e is SocketException or IOException || (e is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            return PairOutcome.Unreachable;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return PairOutcome.KeyStoreUnavailable;
+        }
+    }
+
     /// <summary>忘掉一台远程设备。</summary>
     public Task RemoveAsync(string deviceId) => devices.Remote?.RemoveAsync(deviceId) ?? Task.CompletedTask;
 
@@ -101,6 +183,38 @@ public sealed class DeviceActions(DeviceRegistry devices)
 
     /// <summary>换一个配对码。</summary>
     public Task RotatePairingCodeAsync() => CallLocal(DeviceMethods.RemoteRotateCode, Unit.Value);
+
+    /// <summary>改远程连接的端口或「仅允许局域网地址」。</summary>
+    public Task ConfigureRemoteAsync(int? port, bool? lanOnly) => CallLocal(DeviceMethods.RemoteConfigure, new RemoteConfigureParams(port, lanOnly));
+
+    /// <summary>
+    /// 设置中继地址(<c>wss://…</c>;空串 = 关闭中继,默认关闭)。设备校验格式:不合法返回 <see cref="RelayOutcome.Invalid"/>,设置不变;
+    /// 成功后到中继的注册状态经 remote 主题进入 Store(「仅允许局域网地址」只管局域网监听,不影响经中继)。
+    /// </summary>
+    public async Task<RelayOutcome> SetRelayAsync(string url)
+    {
+        if (devices.Local is not { IsConnected: true } local)
+        {
+            return RelayOutcome.Unavailable;
+        }
+
+        try
+        {
+            await local.CallAsync(DeviceMethods.RemoteConfigure, new RemoteConfigureParams(null, null, url.Trim())).ConfigureAwait(false);
+            return RelayOutcome.Applied;
+        }
+        catch (ProtocolException e) when (e.Code == ErrorCodes.InvalidRequest)
+        {
+            return RelayOutcome.Invalid;
+        }
+        catch (ProtocolException)
+        {
+            return RelayOutcome.Unavailable;
+        }
+    }
+
+    /// <summary>改一个已配对控制端的角色(owner / member / viewer)。</summary>
+    public Task SetControllerRoleAsync(string fingerprint, string role) => CallLocal(DeviceMethods.TrustSetRole, new TrustSetRoleParams(fingerprint, role));
 
     /// <summary>吊销一个控制端:设备删除它的信任记录并立即断开它。</summary>
     public Task RevokeControllerAsync(string fingerprint) => CallLocal(DeviceMethods.TrustRevoke, new TrustRevokeParams(fingerprint));

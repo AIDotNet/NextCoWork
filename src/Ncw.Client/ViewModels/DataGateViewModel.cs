@@ -52,6 +52,9 @@ public sealed partial class DataGateViewModel : ObservableObject
 
     [ObservableProperty] public partial bool IsRetrying { get; private set; }
 
+    /// <summary>本机设备的数据已就绪(首次启动流程的「数据」一步据此显示完成)。没连上为 false。</summary>
+    [ObservableProperty] public partial bool IsReady { get; private set; }
+
     public bool IsVisible => Mode != DataGateMode.Hidden;
 
     public bool CanRetry => Mode is DataGateMode.Blocked or DataGateMode.Failed;
@@ -96,6 +99,7 @@ public sealed partial class DataGateViewModel : ObservableObject
         Step = data?.Step;
         Reason = data?.Reason;
         Summary = data?.TakenOver;
+        IsReady = data?.State == DataStates.Ready;
         Mode = data?.State switch
         {
             null => DataGateMode.Hidden, // 没连上:连接状态在别处显示

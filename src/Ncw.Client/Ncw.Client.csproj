@@ -2,6 +2,8 @@
   <!-- 控制端的 Store、Action、ViewModel。与平台无关,不引用 Avalonia,也不能引用任何 Ncw.Agent.*(AGENTS.md §5)。 -->
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
+    <!-- 发布清单的 Ed25519 验签(Updates/ManifestVerifier):和 Ncw.Protocol 同一个库,.NET 没有内置 Ed25519。 -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />

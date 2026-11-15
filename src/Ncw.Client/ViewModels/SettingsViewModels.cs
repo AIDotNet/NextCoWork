@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
 using Ncw.Client.Devices;
 using Ncw.Client.Stores;
+using Ncw.Client.Updates;
 using Ncw.Core.Domain;
 
 namespace Ncw.Client.ViewModels;
@@ -14,18 +15,72 @@ public enum SettingsSection
     /// <summary>本应用:本控制端配对过的设备、添加设备。</summary>
     Devices,
 
+    /// <summary>设备:模型与供应商(供应商、凭据、模型别名、模型目录)。</summary>
+    Models,
+
     /// <summary>设备(本机):远程开关、配对码、已配对的控制端。</summary>
     Remote,
+
+    /// <summary>设备:通用(辅助模型、超时、轮换与故障转移、压缩、代理、个性化)。</summary>
+    General,
+
+    /// <summary>项目:项目设置。</summary>
+    Project,
+
+    /// <summary>设备:技能。</summary>
+    Skills,
+
+    /// <summary>设备:斜杠命令。</summary>
+    Commands,
+
+    /// <summary>设备:Hooks。</summary>
+    Hooks,
+
+    /// <summary>设备:MCP 服务器。</summary>
+    Mcp,
+
+    /// <summary>设备:用量统计。</summary>
+    Usage,
+
+    /// <summary>设备:存储与数据维护。</summary>
+    Storage,
+
+    /// <summary>设备:开放网关。</summary>
+    Gateway,
+
+    /// <summary>本应用:账户(账户信息、团队、已登录的控制端、退出登录;不涉及支付)。</summary>
+    Account,
+
+    /// <summary>设备:插件(已安装 / 权限 / 配置 / 活动与诊断 / 市场 / 待处理的提问)。</summary>
+    Plugins,
+
+    /// <summary>本应用:关于与更新(当前版本、通道、检查更新、下载、重启并更新)。</summary>
+    About,
 }
 
 /// <summary>设置页:整窗覆盖在外壳上,左侧导航 + 内容区。打开与否、当前分组是纯 UI 状态。</summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
-    public SettingsViewModel(ClientStores stores, DeviceRegistry devices, DeviceActions actions)
+    public SettingsViewModel(ClientStores stores, DeviceRegistry devices, DeviceActions actions, ModelsSettingsViewModel models, ManagementPages pages, AccountViewModel? account = null, AboutViewModel? about = null)
     {
+        Account = account ?? new AccountViewModel(stores, null);
+        About = about ?? new AboutViewModel(stores, new UpdateActions(null));
         Devices = new DevicesSettingsViewModel(stores, devices, actions);
         Remote = new RemoteSettingsViewModel(stores, devices, actions);
+        Models = models;
+        Pages = pages;
     }
+
+    /// <summary>设备 / 项目作用域的管理页(通用、项目、技能、命令、Hooks、MCP、用量、存储、网关)。</summary>
+    public ManagementPages Pages { get; }
+
+    /// <summary>「账户」页(本应用作用域):账户信息、团队、已登录的控制端、退出登录。</summary>
+    public AccountViewModel Account { get; }
+
+    /// <summary>「关于」页(本应用作用域):当前版本、通道、检查更新、下载进度、重启并更新。</summary>
+    public AboutViewModel About { get; }
+
+    public ModelsSettingsViewModel Models { get; }
 
     public DevicesSettingsViewModel Devices { get; }
 
@@ -39,10 +94,39 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public bool IsRemoteSection => Section == SettingsSection.Remote;
 
+    public bool IsModelsSection => Section == SettingsSection.Models;
+
+    public bool IsAccountSection => Section == SettingsSection.Account;
+
+    public bool IsAboutSection => Section == SettingsSection.About;
+
     partial void OnSectionChanged(SettingsSection value)
     {
+        OnPropertyChanged(nameof(IsAboutSection));
         OnPropertyChanged(nameof(IsDevicesSection));
         OnPropertyChanged(nameof(IsRemoteSection));
+        OnPropertyChanged(nameof(IsModelsSection));
+        OnPropertyChanged(nameof(IsAccountSection));
+        if (IsOpen)
+        {
+            Activate(value);
+        }
+    }
+
+    private void Activate(SettingsSection section)
+    {
+        if (section == SettingsSection.Account)
+        {
+            _ = Account.ActivateAsync(); // 打开「账户」页时读已登录的控制端
+        }
+        else if (section == SettingsSection.About)
+        {
+            // 「关于」是本应用的页:没有设备数据要读(自更新状态在 Store 里,服务自己维护)
+        }
+        else
+        {
+            _ = Pages.ActivateAsync(section);
+        }
     }
 
     [RelayCommand]
@@ -50,10 +134,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         Devices.Refresh();
         IsOpen = true;
+        Activate(Section);
     }
 
     [RelayCommand]
-    private void Close() => IsOpen = false;
+    private void Close()
+    {
+        IsOpen = false;
+        Pages.Gateway.HideKeys(); // 密钥只在页面打开时短暂持有
+    }
 
     [RelayCommand]
     private void Show(SettingsSection section) => Section = section;
@@ -163,7 +252,10 @@ public sealed partial class DevicesSettingsViewModel : ObservableObject
 }
 
 /// <summary>「连接与远程」页里的一行:一个配对过本机的控制端。</summary>
-public sealed record ControllerItem(string Fingerprint, string Name, string ShortFingerprint, bool Connected, long PairedAt, long? LastSeenAt);
+public sealed record ControllerItem(string Fingerprint, string Name, string ShortFingerprint, string Role, bool Connected, long PairedAt, long? LastSeenAt);
+
+/// <summary>改角色菜单里的一项。</summary>
+public sealed record RoleChange(string Fingerprint, string Role);
 
 /// <summary>
 /// 「连接与远程」页(本机设备):远程开关、地址、配对码、已配对的控制端。数据只来自 Store 里本机设备的 <see cref="DeviceInfo.Remote"/>
@@ -195,6 +287,70 @@ public sealed partial class RemoteSettingsViewModel : ObservableObject
     [ObservableProperty] public partial string? Error { get; private set; }
 
     [ObservableProperty] public partial bool IsBusy { get; private set; }
+
+    /// <summary>设备上保存的首选端口(设备推回来的值)。</summary>
+    [ObservableProperty] public partial int PreferredPort { get; private set; }
+
+    [ObservableProperty] public partial bool IsLanOnly { get; private set; }
+
+    /// <summary>设备上保存的中继地址(设备推回来的值);没配置为 null(默认,中继关闭)。</summary>
+    [ObservableProperty] public partial string? RelayUrl { get; private set; }
+
+    /// <summary>到中继的注册状态:<c>off</c> / <c>connecting</c> / <c>registered</c> / <c>failed</c>;没配置中继为 null。</summary>
+    [ObservableProperty] public partial string? RelayState { get; private set; }
+
+    /// <summary>输入框里的草稿(双向绑定)。点「应用」才发给设备;留空 = 关闭中继。</summary>
+    [ObservableProperty] public partial string RelayDraft { get; set; } = "";
+
+    /// <summary>上一次提交的地址被设备拒绝(格式不对)。</summary>
+    [ObservableProperty] public partial bool RelayInvalid { get; private set; }
+
+    private Timer? _portTimer;
+    private int? _pendingPort;
+
+    /// <summary>端口输入框(双向绑定)。步进按钮每点一下都会改值,停下来一会儿才发给设备(每次改端口设备都要重新监听)。</summary>
+    public double Port
+    {
+        get => _pendingPort ?? PreferredPort;
+        set
+        {
+            var port = (int)Math.Round(value);
+            if (port == (_pendingPort ?? PreferredPort) || port is < 1024 or > 65535)
+            {
+                return;
+            }
+
+            _pendingPort = port;
+            _portTimer?.Dispose();
+            _portTimer = new Timer(_ => _ = CommitPortAsync(), null, PortDebounce, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    /// <summary>端口改动合并的等待时间(测试里可以调短)。</summary>
+    public TimeSpan PortDebounce { get; set; } = TimeSpan.FromMilliseconds(800);
+
+    private async Task CommitPortAsync()
+    {
+        if (_pendingPort is not { } port)
+        {
+            return;
+        }
+
+        await _actions.ConfigureRemoteAsync(port, null);
+    }
+
+    /// <summary>「仅允许局域网地址」开关(双向绑定)。</summary>
+    public bool LanOnly
+    {
+        get => IsLanOnly;
+        set
+        {
+            if (value != IsLanOnly)
+            {
+                _ = _actions.ConfigureRemoteAsync(null, value);
+            }
+        }
+    }
 
     public ObservableCollection<string> Addresses { get; } = [];
 
@@ -231,11 +387,27 @@ public sealed partial class RemoteSettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>草稿和设备上的地址不同(「应用」按钮可用)。</summary>
+    public bool CanApplyRelay => RelayDraft.Trim() != (RelayUrl ?? "");
+
+    partial void OnRelayDraftChanged(string value)
+    {
+        RelayInvalid = false;
+        OnPropertyChanged(nameof(CanApplyRelay));
+    }
+
+    /// <summary>把中继地址发给设备(空 = 关闭)。设备校验格式:不合法时标出来,不改设置。</summary>
+    [RelayCommand]
+    private async Task ApplyRelayAsync() => RelayInvalid = await _actions.SetRelayAsync(RelayDraft) == RelayOutcome.Invalid;
+
     [RelayCommand]
     private Task RotateCodeAsync() => _actions.RotatePairingCodeAsync();
 
     [RelayCommand]
     private Task RevokeAsync(string fingerprint) => _actions.RevokeControllerAsync(fingerprint);
+
+    [RelayCommand]
+    private Task SetRoleAsync(RoleChange change) => _actions.SetControllerRoleAsync(change.Fingerprint, change.Role);
 
     private void Refresh()
     {
@@ -245,6 +417,27 @@ public sealed partial class RemoteSettingsViewModel : ObservableObject
         PairingCode = remote?.Status.PairingCode is { Length: 6 } code ? $"{code[..3]} {code[3..]}" : null;
         Error = remote?.Status.Error;
         OnPropertyChanged(nameof(Enabled));
+        if (remote is not null)
+        {
+            PreferredPort = remote.Status.PreferredPort;
+            IsLanOnly = remote.Status.LanOnly;
+            var previousRelay = RelayUrl;
+            RelayUrl = remote.Status.RelayUrl;
+            RelayState = remote.Status.RelayState;
+            if (RelayUrl != previousRelay)
+            {
+                RelayDraft = RelayUrl ?? ""; // 设备采用了新值(或在别处改了):输入框跟随
+            }
+
+            OnPropertyChanged(nameof(CanApplyRelay));
+            if (_pendingPort == PreferredPort)
+            {
+                _pendingPort = null; // 设备已经采用了这个端口
+            }
+        }
+
+        OnPropertyChanged(nameof(Port));
+        OnPropertyChanged(nameof(LanOnly));
 
         var port = remote?.Status.Port;
         var addresses = remote is null || port is null
@@ -254,7 +447,7 @@ public sealed partial class RemoteSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAddresses));
 
         var controllers = remote?.Controllers
-            .Select(c => new ControllerItem(c.Fingerprint, c.Name, ShortFingerprint(c.Fingerprint), c.Connected, c.PairedAt, c.LastSeenAt))
+            .Select(c => new ControllerItem(c.Fingerprint, c.Name, ShortFingerprint(c.Fingerprint), c.Role, c.Connected, c.PairedAt, c.LastSeenAt))
             .ToList() ?? [];
         Sync(Controllers, controllers);
         OnPropertyChanged(nameof(HasControllers));

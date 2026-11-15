@@ -2,7 +2,10 @@ using System.Collections.Immutable;
 using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
+using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
+using Ncw.Protocol.Transport;
+using Ncw.Protocol.Wire;
 
 namespace Ncw.Client.Devices;
 
@@ -17,9 +20,11 @@ public sealed class RemoteDeviceManager(
     IControllerIdentityStore identities,
     IDeviceBook book,
     string controllerName,
-    TimeProvider? clock = null) : IAsyncDisposable
+    TimeProvider? clock = null,
+    HeartbeatOptions? heartbeat = null) : IAsyncDisposable
 {
     private readonly Dictionary<string, DeviceLink> _links = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _relays = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
     /// <summary>读出保存的设备并开始连接。</summary>
@@ -50,8 +55,27 @@ public sealed class RemoteDeviceManager(
     {
         var identity = identities.LoadOrCreate();
         var paired = await RemoteDevices.PairAsync(host, port, identity, code, controllerName, ct).ConfigureAwait(false);
-        var saved = new SavedDevice(paired.DeviceId, $"{host}:{port}", Convert.ToHexStringLower(paired.DeviceFingerprint),
-            host, port, paired.Role, paired.RouteToken, (clock ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds());
+        return await SaveAsync(paired).ConfigureAwait(false);
+    }
+
+    /// <summary>扫二维码配对(内容是 <c>nextcowork://pair?…</c>)。结果和 <see cref="PairAsync"/> 一样。二维码内容不合法抛 <see cref="FormatException"/>。</summary>
+    public async Task<SavedDevice> PairWithQrAsync(string qrContent, CancellationToken ct = default)
+    {
+        if (!Protocol.Security.PairingQr.TryParse(qrContent, out var qr))
+        {
+            throw new FormatException("Not a NextCoWork pairing QR code");
+        }
+
+        var identity = identities.LoadOrCreate();
+        var paired = await RemoteDevices.PairWithQrAsync(qr, identity, controllerName, clock, ct).ConfigureAwait(false);
+        return await SaveAsync(paired).ConfigureAwait(false);
+    }
+
+    private async Task<SavedDevice> SaveAsync(PairedDevice paired)
+    {
+        var saved = new SavedDevice(paired.DeviceId, $"{paired.Host}:{paired.Port}", Convert.ToHexStringLower(paired.DeviceFingerprint),
+            paired.Host, paired.Port, paired.Role, paired.RouteToken, (clock ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds(),
+            RelayAddress.TryNormalize(paired.Relay, out var relay) ? RelayAddress.ToText(relay) : null);
 
         await DisconnectAsync(paired.DeviceId).ConfigureAwait(false);
         ui.Post(() =>
@@ -84,9 +108,17 @@ public sealed class RemoteDeviceManager(
         var identity = identities.LoadOrCreate();
         var fingerprint = Convert.FromHexString(device.Fingerprint);
         var link = new DeviceLink(stores, ui, device.DeviceId, DeviceKind.Remote, displayName: null,
-            ct => RemoteDevices.ConnectAsync(device.Host, device.Port, identity, fingerprint, ct),
+            async ct =>
+            {
+                // 并行尝试局域网和中继,先通的胜出,局域网优先(09 §4)。每次重连都重新选路:直连断了会续连到中继,回到局域网后又走直连。
+                // 中继地址取最新记录的(设备后来才配置中继时,下面会把它学进来)。
+                var current = CurrentRelay(device);
+                var connection = await RemoteDevices.ConnectAsync(device.DeviceId, AddressesOf(device, current), identity, fingerprint, ct).ConfigureAwait(false);
+                return connection.Stream;
+            },
             new ClientHello(controllerName, typeof(RemoteDeviceManager).Assembly.GetName().Version?.ToString() ?? "3.0.0"),
-            initialName: device.Name);
+            initialName: device.Name, heartbeat: heartbeat);
+        link.Synced += () => _ = LearnRelayAsync(device.DeviceId, link);
         lock (_gate)
         {
             _links[device.DeviceId] = link;
@@ -95,12 +127,68 @@ public sealed class RemoteDeviceManager(
         link.Start();
     }
 
+    /// <summary>该设备最新记录的中继地址(记录可能在连接过程中被 <see cref="LearnRelayAsync"/> 更新)。</summary>
+    private string? CurrentRelay(SavedDevice fallback)
+    {
+        lock (_gate)
+        {
+            return _relays.TryGetValue(fallback.DeviceId, out var relay) ? relay : fallback.Relay;
+        }
+    }
+
+    private static DeviceAddresses AddressesOf(SavedDevice device, string? relay) =>
+        new(device.Host.Length > 0 && device.Port > 0 ? [new LanAddress(device.Host, device.Port)] : [],
+            RelayAddress.TryNormalize(relay, out var url) && device.RouteToken.Length > 0 ? new RelayRoute(url, device.RouteToken) : null);
+
+    /// <summary>
+    /// 连上之后问设备当前的中继地址(<c>device.info</c>):设备后来才配置(或换了)中继时,已配对的控制端据此学到,离开局域网后就能经中继连。
+    /// 记录变了就保存。失败不影响连接。
+    /// </summary>
+    private async Task LearnRelayAsync(string deviceId, DeviceLink link)
+    {
+        try
+        {
+            var info = await link.CallAsync(DeviceMethods.Info, Unit.Value).ConfigureAwait(false);
+            var learned = RelayAddress.TryNormalize(info.Relay, out var url) ? RelayAddress.ToText(url) : null;
+            lock (_gate)
+            {
+                _relays[deviceId] = learned;
+            }
+
+            ui.Post(() =>
+            {
+                var list = stores.Paired.State;
+                var index = -1;
+                for (var i = 0; i < list.Length; i++)
+                {
+                    if (list[i].DeviceId == deviceId)
+                    {
+                        index = i;
+                    }
+                }
+
+                if (index < 0 || list[index].Relay == learned)
+                {
+                    return;
+                }
+
+                stores.Paired.Update(l => l.SetItem(index, l[index] with { Relay = learned }));
+                book.Save(stores.Paired.State);
+            });
+        }
+        catch (Exception e) when (e is ProtocolException or OperationCanceledException or ObjectDisposedException)
+        {
+            // 连接中途断了:下一次连上再学。
+        }
+    }
+
     private async Task DisconnectAsync(string deviceId)
     {
         DeviceLink? link;
         lock (_gate)
         {
             _links.Remove(deviceId, out link);
+            _relays.Remove(deviceId);
         }
 
         if (link is not null)

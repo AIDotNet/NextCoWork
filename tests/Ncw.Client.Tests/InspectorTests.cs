@@ -32,7 +32,7 @@ public class InspectorTabsTests
     [Fact]
     public void Remaining_excludes_added()
     {
-        Assert.Equal([InspectorTabKind.Context, InspectorTabKind.History], InspectorTabs.Remaining([InspectorTabKind.Git]));
+        Assert.Equal([InspectorTabKind.Review, InspectorTabKind.Terminal, InspectorTabKind.Context, InspectorTabKind.History], InspectorTabs.Remaining([InspectorTabKind.Git]));
     }
 }
 
@@ -48,7 +48,7 @@ public class InspectorViewModelTests
     private static (ClientStores Stores, ShellViewModel Shell) Create()
     {
         var stores = MockWorkspace.Create(Now);
-        return (stores, new ShellViewModel(stores, new FixedClock(Now)));
+        return (stores, new ShellViewModel(stores, new FixedClock(Now), inspector: MockInspectorServices.Create(stores)));
     }
 
     [Fact]
@@ -59,11 +59,12 @@ public class InspectorViewModelTests
 
         Assert.True(inspector.IsFiles);
         Assert.Equal("NextCoWork", inspector.Files.ProjectName);
-        var src = Assert.Single(inspector.Files.Roots, n => n.Name == "src");
+        var src = Assert.Single(inspector.Files.Tree.Roots, n => n.Name == "src");
         Assert.True(src.IsExpanded);
+        Assert.True(src.ChildrenLoaded);
         Assert.True(src.HasChangedDescendant);
         // 目录在前
-        Assert.True(inspector.Files.Roots.TakeWhile(n => n.IsDirectory).Count() >= 3);
+        Assert.True(inspector.Files.Tree.Roots.TakeWhile(n => n.IsDirectory).Count() >= 3);
     }
 
     [Fact]
@@ -106,7 +107,7 @@ public class InspectorViewModelTests
 
         Assert.True(inspector.IsGit);
         Assert.DoesNotContain(InspectorTabKind.Git, inspector.Addable);
-        Assert.Contains(inspector.GitChanges, c => c is { Letter: "M", Name: "InspectorPanel.axaml" });
+        Assert.Contains(inspector.Git.Unstaged, c => c is { Letter: "M", Name: "InspectorPanel.axaml" });
         Assert.True(inspector.Tabs.Single(t => t.Kind == InspectorTabKind.Git).ShowsClose);
 
         inspector.CloseCommand.Execute(InspectorTabKind.Git);
@@ -124,7 +125,28 @@ public class InspectorViewModelTests
         shell.Actions.Select(new ProjectRef("local", "api-server"));
 
         Assert.Equal("api-server", shell.Inspector.Files.ProjectName);
-        Assert.Equal(2, shell.Inspector.GitChanges.Count);
+        Assert.Equal(2, shell.Inspector.Git.Unstaged.Count);
         Assert.DoesNotContain(shell.Inspector.Tabs, t => t.Kind == InspectorTabKind.Subagents);
+    }
+
+    [Fact]
+    public void The_tree_and_git_overview_are_fetched_again_when_the_device_connects_after_the_first_attempt_failed()
+    {
+        var stores = MockWorkspace.Create(Now);
+        stores.Workspace.Update(w => w with { Devices = w.Devices.SetItem("local", w.Devices["local"] with { Connection = DeviceConnection.Connecting }) });
+        var files = new Inspector.FakeFiles { Offline = true }.Add("src/App.cs").Add("README.md");
+        var git = new Inspector.FakeGit(stores);
+        var services = new InspectorServices(files, git, new Inspector.FakeReview(), new Inspector.FakeTerminals(), null);
+        var inspector = new InspectorViewModel(stores, new FixedClock(Now), services);
+
+        Assert.Empty(inspector.Files.Tree.Roots); // 启动时设备还没连上:第一次列目录失败了
+        Assert.NotNull(inspector.Files.Tree.Failure);
+
+        files.Offline = false;
+        stores.Workspace.Update(w => w with { Devices = w.Devices.SetItem("local", w.Devices["local"] with { Connection = DeviceConnection.Connected }) });
+
+        Assert.Equal(["src", "README.md"], inspector.Files.Tree.Roots.Select(n => n.Name));
+        Assert.Null(inspector.Files.Tree.Failure);
+        Assert.True(git.Calls.Count(c => c == "refresh") >= 2); // 连上之后概览也重新取了
     }
 }

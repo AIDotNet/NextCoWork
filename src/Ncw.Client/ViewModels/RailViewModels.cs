@@ -163,10 +163,18 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     [ObservableProperty] public partial bool IsSsh { get; private set; }
     [ObservableProperty] public partial string Tooltip { get; private set; } = "";
 
+    /// <summary>所在设备的名字和当前分支(手机的项目列表显示副标题用)。</summary>
+    [ObservableProperty] public partial string DeviceName { get; private set; } = "";
+    [ObservableProperty] public partial string? Branch { get; private set; }
+    [ObservableProperty] public partial string? EnvironmentName { get; private set; }
+
     /// <summary>是否在某个项目组里(右键菜单显示「移出项目组」还是「新建项目组」)。</summary>
     [ObservableProperty] public partial bool IsInGroup { get; internal set; }
 
     public bool IsCloud => DeviceKind == DeviceKind.Cloud;
+
+    /// <summary>局域网里另一台电脑上的项目(SSH 项目的角标优先,所以这个角标放在另一个角)。</summary>
+    public bool IsRemote => DeviceKind == DeviceKind.Remote;
 
     [RelayCommand]
     private void Select() => _actions.Select(Project);
@@ -189,12 +197,16 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         IsRunning = activity.IsRunning;
         PendingCount = activity.PendingInteractions;
         HasPending = activity.PendingInteractions > 0;
-        IsOffline = device is null || device.Connection is DeviceConnection.Offline or DeviceConnection.Connecting || activity.Unknown;
+        IsOffline = device is null || device.Connection is DeviceConnection.Offline or DeviceConnection.Connecting or DeviceConnection.Revoked || activity.Unknown;
         IsMissing = info is null;
         DeviceKind = device?.Kind ?? DeviceKind.Remote;
         OnPropertyChanged(nameof(IsCloud));
+        OnPropertyChanged(nameof(IsRemote));
         IsSsh = info?.Environment == EnvironmentKind.Ssh;
         Tooltip = device is null ? Name : $"{Name} · {device.Name}";
+        DeviceName = device?.Name ?? "";
+        Branch = info?.Branch;
+        EnvironmentName = info?.EnvironmentName;
     }
 
     private static readonly string[] Palette = ["#0F766E", "#2563EB", "#7C3AED", "#DB2777", "#EA580C", "#059669", "#4F46E5", "#B45309"];
