@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    云端 Agent 模式(docs/design/02 A6)的测试:领域层的单元测试(启动配置、指令验签与防重放、配额、用量上报、空闲检测、KMS 主密钥、Git 凭据与克隆),
+    以及「假编排服务 + 假 KMS + 进程内中继(Ncw.Relay)+ 真实的云端模式 AgentHost+ 控制端 DeviceClient 经中继」的端到端测试。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Cloud/Ncw.Agent.Cloud.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
+    <ProjectReference Include="../../src/Ncw.Relay/Ncw.Relay.csproj" />
+    <!-- 进程级冒烟测试要起真实的 ncw-agent 进程:只要求它先构建好,不引用它的程序集 -->
+    <ProjectReference Include="../../src/Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

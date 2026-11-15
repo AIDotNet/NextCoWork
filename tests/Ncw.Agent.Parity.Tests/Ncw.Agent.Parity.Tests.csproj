@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- 测试用 System.Text.Json.Nodes 的动态 DOM 来表达录制和规范化数据;测试程序集不发布、不裁剪。 -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <!-- 真实的权限扩展 / 交互闸门(审批场景)和待办扩展(清单补报场景),经 Planning 传递引用 Extensions 与 Tools。 -->
+    <ProjectReference Include="../../src/Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 从 2.x 录制的场景(纯数据):上游 SSE 原文、工具结果、用户操作,以及 2.x 产出的规范化事件序列和落库行。 -->
+    <None Include="Recordings/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

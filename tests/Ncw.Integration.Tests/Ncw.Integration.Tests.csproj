@@ -3,5 +3,15 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Ncw.Client/Ncw.Client.csproj" />
     <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
+    <!-- 进程内的服务器中继(Ncw.Relay):经中继的端到端测试 -->
+    <ProjectReference Include="../../src/Ncw.Relay/Ncw.Relay.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 用户态 sshd 夹具(和 Ncw.Agent.Environments.Tests 同一份,不另拷贝):SSH 环境的集成测试没有 sshd 时跳过 -->
+    <Compile Include="../Ncw.Agent.Environments.Tests/SshdFixture.cs" Link="Support/SshdFixture.cs" />
+    <!-- 账户测试的脚本化后端(假 IAccountApi、手动时钟、记录浏览器):和 Ncw.Client.Tests 同一份 -->
+    <Compile Include="../Ncw.Client.Tests/Accounts/AccountFakes.cs" Link="Support/AccountFakes.cs" />
+    <!-- 心跳测试的手动时钟与「静默消失」的字节流(和 Ncw.Protocol.Tests 同一份) -->
+    <Compile Include="../Ncw.Protocol.Tests/HeartbeatSupport.cs" Link="Support/HeartbeatSupport.cs" />
   </ItemGroup>
 </Project>

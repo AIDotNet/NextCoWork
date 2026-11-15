@@ -153,6 +153,75 @@ public sealed class RemoteDeviceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Settings_page_turns_remote_on_and_changes_the_port()
+    {
+        await WaitUntil(s => s.Devices.Values.Any(d => d.Kind == DeviceKind.Local && d.Remote is not null), "local remote state");
+        RemoteSettingsViewModel settings;
+        lock (_ui.Gate)
+        {
+            settings = new RemoteSettingsViewModel(_stores, _devices, new DeviceActions(_devices)) { PortDebounce = TimeSpan.FromMilliseconds(50) };
+            settings.Enabled = true;
+        }
+
+        await WaitUntil(s => s.Devices.Values.Single(d => d.Kind == DeviceKind.Local).Remote!.Status.PairingCode is not null, "remote on");
+        int target;
+        lock (_ui.Gate)
+        {
+            target = settings.PreferredPort + 101;
+            settings.Port = target;
+            settings.Port = target; // 重复设置同一个值不会多发
+        }
+
+        await WaitUntil(s => s.Devices.Values.Single(d => d.Kind == DeviceKind.Local).Remote!.Status.PreferredPort == target, "port changed");
+        lock (_ui.Gate)
+        {
+            Assert.Equal(target, (int)settings.Port);
+        }
+    }
+
+    [Fact]
+    public async Task Settings_page_sets_validates_and_clears_the_relay_address()
+    {
+        await WaitUntil(s => s.Devices.Values.Any(d => d.Kind == DeviceKind.Local && d.Remote is not null), "local remote state");
+        RemoteSettingsViewModel settings;
+        lock (_ui.Gate)
+        {
+            settings = new RemoteSettingsViewModel(_stores, _devices, new DeviceActions(_devices));
+            settings.Enabled = true;
+        }
+
+        await WaitUntil(s => s.Devices.Values.Single(d => d.Kind == DeviceKind.Local).Remote!.Status.PairingCode is not null, "remote on");
+        Assert.Null(settings.RelayUrl); // 默认没有中继
+
+        // 格式不对:设备拒绝,界面标出来,设置不变。
+        settings.RelayDraft = "http://not-a-relay";
+        Assert.True(settings.CanApplyRelay);
+        await settings.ApplyRelayCommand.ExecuteAsync(null);
+        Assert.True(settings.RelayInvalid);
+        Assert.Null(settings.RelayUrl);
+
+        // 合法地址(没有中继在听):设备记下来并如实报告「连不上」,而不是假装在线。
+        settings.RelayDraft = "ws://127.0.0.1:9"; // discard 端口,连接会被拒绝
+        Assert.False(settings.RelayInvalid);
+        await settings.ApplyRelayCommand.ExecuteAsync(null);
+        await WaitUntil(s => s.Devices.Values.Single(d => d.Kind == DeviceKind.Local).Remote!.Status is { RelayUrl: "ws://127.0.0.1:9", RelayState: "failed" or "connecting" }, "relay failure reported");
+        lock (_ui.Gate)
+        {
+            Assert.Equal("ws://127.0.0.1:9", settings.RelayUrl);
+            Assert.False(settings.CanApplyRelay);
+        }
+
+        // 留空 = 关闭中继。
+        settings.RelayDraft = "";
+        await settings.ApplyRelayCommand.ExecuteAsync(null);
+        await WaitUntil(s => s.Devices.Values.Single(d => d.Kind == DeviceKind.Local).Remote!.Status.RelayUrl is null, "relay cleared");
+        lock (_ui.Gate)
+        {
+            Assert.Null(settings.RelayState);
+        }
+    }
+
+    [Fact]
     public async Task Wrong_code_and_bad_address_are_reported_as_outcomes()
     {
         var actions = new DeviceActions(_devices);

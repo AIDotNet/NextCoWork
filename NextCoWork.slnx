@@ -45,6 +45,7 @@
     <Project Path="tests/Ncw.Agent.Extensions.Tests/Ncw.Agent.Extensions.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Runs.Tests/Ncw.Agent.Runs.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Planning.Tests/Ncw.Agent.Planning.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Parity.Tests/Ncw.Agent.Parity.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Widgets.Tests/Ncw.Agent.Widgets.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Subagents.Tests/Ncw.Agent.Subagents.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Mcp.Tests/Ncw.Agent.Mcp.Tests.csproj" />
@@ -60,6 +61,7 @@
     <Project Path="tests/Ncw.Agent.Host.Tests/Ncw.Agent.Host.Tests.csproj" />
     <Project Path="tests/Ncw.Integration.Tests/Ncw.Integration.Tests.csproj" />
     <Project Path="tests/Ncw.Relay.Tests/Ncw.Relay.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Cloud.Tests/Ncw.Agent.Cloud.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
   </Folder>

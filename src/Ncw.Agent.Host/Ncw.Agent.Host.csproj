@@ -1,12 +1,52 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Agent 服务进程的宿主:设备身份、项目登记、方法表、监听。不引用 Avalonia,也不引用任何客户端项目(AGENTS.md §5)。 -->
+  <!--
+    Agent 服务进程的宿主:设备身份、项目登记、方法表、监听,以及对话链路的装配(会话 / Run / 权限 / 交互 / 内置工具)。
+    Host 是唯一知道 Ncw.Protocol 的 Agent 层:其它 Ncw.Agent.* 项目只产出领域类型,协议 DTO 的映射都在这里。
+    不引用 Avalonia,也不引用任何客户端项目(AGENTS.md §5)。
+  -->
   <PropertyGroup>
     <!-- LibraryImport(realpath)需要;生成的封送代码是安全的,本项目手写代码里没有 unsafe 块。 -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <PropertyGroup>
+    <!--
+      云端模式的 `dev-env` KMS 提供者(密钥来自环境变量,没有任何 KMS 保护价值)只给开发和冒烟测试用:
+      Debug 构建默认带,Release / 发布默认**不带**,显式 -p:NcwDevKms=true 才带(tools/Ncw.Build 的 publish-agent 加 dev-kms 选项;产物不得分发)。
+      发布产物里出现它会让 publish-agent 失败。见 CloudBoot.DevKmsCompiledIn。
+    -->
+    <NcwDevKms Condition="'$(NcwDevKms)' == '' and '$(Configuration)' == 'Debug'">true</NcwDevKms>
+    <DefineConstants Condition="'$(NcwDevKms)' == 'true'">$(DefineConstants);NCW_DEV_KMS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 设置接线(出厂值 → SessionSettings / 子代理 / 目标 / 代理)的单测直接读 Host 里的内部装配类。 -->
+    <InternalsVisibleTo Include="Ncw.Agent.Host.Tests" />
+    <InternalsVisibleTo Include="Ncw.Agent.Cloud.Tests" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
     <ProjectReference Include="../Ncw.Protocol/Ncw.Protocol.csproj" />
     <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Cloud/Ncw.Agent.Cloud.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Runs/Ncw.Agent.Runs.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Catalog/Ncw.Agent.Catalog.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Subagents/Ncw.Agent.Subagents.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Services/Ncw.Agent.Services.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Gateway/Ncw.Agent.Gateway.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Workspace/Ncw.Agent.Workspace.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Terminal/Ncw.Agent.Terminal.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Skills/Ncw.Agent.Skills.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Hooks/Ncw.Agent.Hooks.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Mcp/Ncw.Agent.Mcp.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Plugins/Ncw.Agent.Plugins.csproj" />
+    <ProjectReference Include="../Ncw.Agent.WebTools/Ncw.Agent.WebTools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Widgets/Ncw.Agent.Widgets.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Browser/Ncw.Agent.Browser.csproj" />
   </ItemGroup>
 </Project>

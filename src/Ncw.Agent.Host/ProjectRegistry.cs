@@ -43,6 +43,21 @@ public sealed class ProjectRegistry(WorkspaceRepository workspaces)
         return ToDto(record);
     }
 
+    /// <summary>
+    /// 登记一个 SSH 环境里的目录(<paramref name="rootPath"/> 是远程主机上的规范路径,已由环境核实是目录)。同一个环境里同一个目录只登记一次。
+    /// </summary>
+    public ProjectDto AddRemote(string environmentId, string environmentName, string rootPath, string? name)
+    {
+        var before = workspaces.List().Count;
+        var record = workspaces.AddRemote(environmentId, rootPath, name, environmentName);
+        if (workspaces.List().Count != before)
+        {
+            Publish();
+        }
+
+        return ToDto(record);
+    }
+
     public void Remove(string workspaceId)
     {
         if (!workspaces.Remove(workspaceId))
@@ -65,5 +80,6 @@ public sealed class ProjectRegistry(WorkspaceRepository workspaces)
         w.RootPath,
         w.EnvironmentKind == "connection" ? "ssh" : "local",
         w.ConnectionId is { } id ? workspaces.ConnectionName(id) ?? id : null,
-        w.CreatedAt);
+        w.CreatedAt,
+        w.ConnectionId);
 }

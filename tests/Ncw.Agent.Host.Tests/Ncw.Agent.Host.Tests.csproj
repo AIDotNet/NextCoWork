@@ -2,4 +2,12 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 插件端到端用的真实风格夹具(和 Ncw.Agent.Plugins.Tests 同一份,不另拷贝) -->
+    <None Include="../Ncw.Agent.Plugins.Tests/Fixtures/**/*" Link="Fixtures/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 用户态 sshd 夹具(和 Ncw.Agent.Environments.Tests 同一份,不另拷贝):SSH 环境的端到端测试没有 sshd 时跳过 -->
+    <Compile Include="../Ncw.Agent.Environments.Tests/SshdFixture.cs" Link="Support/SshdFixture.cs" />
+  </ItemGroup>
 </Project>

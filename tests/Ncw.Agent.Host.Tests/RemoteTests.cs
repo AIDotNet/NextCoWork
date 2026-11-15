@@ -99,6 +99,70 @@ public sealed class RemoteTests : IAsyncLifetime
         Assert.Equal(_controller.FingerprintHex, controller.Fingerprint);
     }
 
+    private async Task<PairingQr> CreateQr()
+    {
+        var result = await _local.CallAsync(DeviceMethods.PairCreateQr, Unit.Value);
+        Assert.True(PairingQr.TryParse(result.Uri, out var qr));
+        return qr;
+    }
+
+    [Fact]
+    public async Task Scanning_the_qr_code_pairs_without_a_pairing_code_and_the_token_works_once()
+    {
+        var qr = await CreateQr();
+        Assert.Equal(_host.DeviceId, qr.DeviceId);
+        Assert.Equal(_host.Fingerprint, qr.Fingerprint);
+        Assert.NotEmpty(qr.Addresses);
+        Assert.All(qr.Addresses, a => Assert.True(PairingQr.TrySplitAddress(a, out _, out var port) && port == Port));
+
+        var paired = await RemoteDevices.PairWithQrAsync(qr with { Addresses = [$"127.0.0.1:{Port}"] }, _controller, "Scanner");
+        Assert.Equal("member", paired.Role);
+        Assert.NotEmpty(paired.RouteToken);
+
+        await using var client = await ConnectRemote(paired.DeviceFingerprint);
+        Assert.Equal("member", client.Welcome.Role);
+
+        // 同一个二维码第二次用:设备拒绝。
+        var again = await Assert.ThrowsAsync<PairingException>(() =>
+            RemoteDevices.PairWithQrAsync(qr with { Addresses = [$"127.0.0.1:{Port}"] }, PeerIdentity.Create("someone-else"), "Late"));
+        Assert.Equal(PairingFailure.QrRejected, again.Failure);
+    }
+
+    [Fact]
+    public async Task Qr_code_with_a_wrong_token_or_expired_time_is_refused()
+    {
+        var qr = (await CreateQr()) with { Addresses = [$"127.0.0.1:{Port}"] };
+
+        var wrong = await Assert.ThrowsAsync<PairingException>(() =>
+            RemoteDevices.PairWithQrAsync(qr with { Token = new byte[PairingQr.TokenLength] }, _controller, "Guesser"));
+        Assert.Equal(PairingFailure.QrRejected, wrong.Failure);
+
+        var expired = await Assert.ThrowsAsync<PairingException>(() =>
+            RemoteDevices.PairWithQrAsync(qr with { ExpiresAt = 1 }, _controller, "Slow"));
+        Assert.Equal(PairingFailure.QrExpired, expired.Failure);
+
+        // 猜错之后,真的二维码仍然有效(错误的尝试不消耗它)。
+        var paired = await RemoteDevices.PairWithQrAsync(qr, _controller, "Scanner");
+        Assert.Equal("member", paired.Role);
+    }
+
+    [Fact]
+    public async Task Qr_code_pins_the_device_so_a_different_device_cannot_be_paired()
+    {
+        var qr = (await CreateQr()) with { Addresses = [$"127.0.0.1:{Port}"], Fingerprint = PeerIdentity.Create("other").Fingerprint };
+        var failure = await Assert.ThrowsAsync<PairingException>(() => RemoteDevices.PairWithQrAsync(qr, _controller, "Scanner"));
+        Assert.Equal(PairingFailure.Unreachable, failure.Failure);
+    }
+
+    [Fact]
+    public async Task Remote_controllers_cannot_create_qr_codes()
+    {
+        var paired = await Pair();
+        await using var client = await ConnectRemote(paired.DeviceFingerprint);
+        var error = await Assert.ThrowsAsync<ProtocolException>(async () => await client.CallAsync(DeviceMethods.PairCreateQr, Unit.Value));
+        Assert.Equal(ErrorCodes.Forbidden, error.Code);
+    }
+
     [Fact]
     public async Task Unpaired_controller_can_only_pair()
     {
@@ -218,6 +282,42 @@ public sealed class RemoteTests : IAsyncLifetime
         Assert.Null(off.PairingCode);
         await client.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.NotNull(await _local.CallAsync(DeviceMethods.ProjectsList, Unit.Value));
+    }
+
+    [Fact]
+    public async Task Changing_a_role_reconnects_the_controller_with_the_new_role()
+    {
+        var paired = await Pair();
+        await using var client = await ConnectRemote(paired.DeviceFingerprint);
+
+        await _local.CallAsync(DeviceMethods.TrustSetRole, new TrustSetRoleParams(_controller.FingerprintHex, "viewer"));
+
+        await client.Completion.WaitAsync(TimeSpan.FromSeconds(5)); // 角色在握手时定下:旧连接断开
+        await using var again = await ConnectRemote(paired.DeviceFingerprint);
+        Assert.Equal("viewer", again.Welcome.Role);
+        Assert.NotNull(await again.CallAsync(DeviceMethods.ProjectsList, Unit.Value));
+        var add = await Assert.ThrowsAsync<ProtocolException>(() => again.CallAsync(DeviceMethods.ProjectsAdd, new ProjectsAddParams(_root, null)));
+        Assert.Equal(ErrorCodes.Forbidden, add.Code);
+
+        var bad = await Assert.ThrowsAsync<ProtocolException>(() => _local.CallAsync(DeviceMethods.TrustSetRole, new TrustSetRoleParams(_controller.FingerprintHex, "root")));
+        Assert.Equal(ErrorCodes.InvalidRequest, bad.Code);
+    }
+
+    [Fact]
+    public async Task Changing_the_port_relistens_and_is_kept()
+    {
+        var oldPort = Port;
+        var target = oldPort + 37;
+
+        var status = await _local.CallAsync(DeviceMethods.RemoteConfigure, new RemoteConfigureParams(target, null));
+
+        Assert.Equal(target, status.PreferredPort);
+        Assert.NotNull(status.Port);
+        Assert.NotEqual(oldPort, Port);
+        var paired = await Pair(); // 新端口上可以配对
+        Assert.Equal("member", paired.Role);
+        var tooLow = await Assert.ThrowsAsync<ProtocolException>(() => _local.CallAsync(DeviceMethods.RemoteConfigure, new RemoteConfigureParams(80, null)));
+        Assert.Equal(ErrorCodes.InvalidRequest, tooLow.Code);
     }
 
     [Fact]

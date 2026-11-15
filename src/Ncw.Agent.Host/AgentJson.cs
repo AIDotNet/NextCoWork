@@ -24,7 +24,7 @@ public sealed record DeviceIdentity(string Name, PeerIdentity Keys)
     public const string FileName = "device.json";
 
     /// <summary>读数据根里的身份;没有(或是旧格式)就生成一个。私钥用数据根的主密钥(NCK1)加密。</summary>
-    public static DeviceIdentity LoadOrCreate(string dataRoot, TimeProvider clock)
+    public static DeviceIdentity LoadOrCreate(string dataRoot, TimeProvider clock, string? name = null)
     {
         var path = Path.Combine(dataRoot, FileName);
         DeviceIdentityFile? file;
@@ -51,7 +51,7 @@ public sealed record DeviceIdentity(string Name, PeerIdentity Keys)
             }
         }
 
-        var name = Environment.MachineName;
+        name ??= Environment.MachineName;
         var keys = PeerIdentity.Create(name, clock);
         var key = CredentialStore.MasterKeyForDataRoot(dataRoot);
         try
