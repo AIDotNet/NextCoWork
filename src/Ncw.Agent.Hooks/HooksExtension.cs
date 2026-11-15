@@ -164,7 +164,9 @@ public sealed class HooksExtension : IAgentExtension
         }
 
         // 只追加,不改写:界面、记录、模型看到的必须是同一份(Kernel 还会再校验一遍)。
-        return payload with { Result = result with { Content = [.. result.Content, new TextPart(context)], IsError = result.IsError || blocked } };
+        // 反馈包进 <hook-feedback>(2.x 的 agent-session.ts 同一个写法):让模型分得清「工具自己的输出」和「钩子脚本说的话」。
+        // 内容块之间用一个换行连接,所以块首的换行凑成 2.x 的「输出 + 空行 + 标签」。
+        return payload with { Result = result with { Content = [.. result.Content, new TextPart($"\n<hook-feedback>\n{context.Trim()}\n</hook-feedback>")], IsError = result.IsError || blocked } };
     }
 
     // ───────────────────────── Stop ─────────────────────────

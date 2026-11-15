@@ -74,6 +74,7 @@ public sealed class RunHandle : IDisposable
         _host = host;
         _log = new RunEventLog(logMaxEntries, logMaxBytes);
         _model = launch.Request.Model;
+        InputText = string.Join('\n', launch.Request.Input.SelectMany(m => m.Parts).OfType<TextPart>().Select(p => p.Text));
         RunId = launch.RunId;
         SessionId = launch.SessionId;
         WorkspaceId = launch.WorkspaceId;
@@ -101,6 +102,12 @@ public sealed class RunHandle : IDisposable
     public RunOrigin Origin { get; }
 
     public SendOptions? Options { get; }
+
+    /// <summary>
+    /// 这次 Run 的输入里的文字(各条输入消息的文字块,换行连接;2.x 的 <c>req.input</c> 文字部分)。给 AI 审核器当「用户的任务」——
+    /// 审核器要判断的是「这次调用和用户要的事是否一致」,没有任务文字它只能凭工具入参猜。
+    /// </summary>
+    public string InputText { get; }
 
     public DateTimeOffset StartedAt { get; }
 

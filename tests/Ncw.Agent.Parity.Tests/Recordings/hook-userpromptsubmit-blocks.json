@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "kind": "orchestration",
+  "id": "hook-userpromptsubmit-blocks",
+  "description": "UserPromptSubmit 钩子(退出码 2 + stderr 原因)拦下这次提交:Run 以错误结束(原因原文),没有上游请求,会话里没有这条用户消息。",
+  "covers": [
+    "parity Hooks UserPromptSubmit 阻断",
+    "runtime.ts 钩子拦截 → handle.finish(error)"
+  ],
+  "source": {
+    "repository": "NextCoWork (2.x, branch main)",
+    "commit": "1cb3770a494d18e2d1c65358cfa153e680b5962b",
+    "recordedAt": "2026-11-15",
+    "node": "v24.16.0",
+    "recorder": "external to the repository; see docs/parity.md \"回放对照的录制方法\""
+  },
+  "input": {
+    "model": {
+      "alias": "claude-sonnet-4",
+      "providerId": "p1",
+      "upstreamModel": "claude-sonnet-4-20250514",
+      "contextWindow": 200000,
+      "maxOutputTokens": 8192,
+      "thinking": true,
+      "vision": true
+    },
+    "extraModels": [],
+    "providers": [
+      {
+        "id": "p1",
+        "protocol": "anthropic",
+        "baseUrl": "https://p1.example.com",
+        "priority": 0
+      }
+    ],
+    "settings": {},
+    "tools": [],
+    "toolBehaviors": {},
+    "files": {
+      ".next-cowork/settings.local.json": "{\n  \"hooks\": {\n    \"UserPromptSubmit\": [\n      {\n        \"id\": \"freeze\",\n        \"command\": \"echo 'prompts are frozen today' >&2; exit 2\"\n      }\n    ]\n  }\n}\n"
+    },
+    "routes": [
+      {
+        "key": "main",
+        "firstUser": "hello"
+      }
+    ],
+    "upstream": {
+      "main": []
+    },
+    "steps": [
+      {
+        "run": "p1",
+        "session": "main",
+        "input": "hello"
+      }
+    ],
+    "interactions": [],
+    "actions": [],
+    "focusTools": [
+      "Read"
+    ],
+    "settleMs": 0
+  },
+  "expected": {
+    "runs": [
+      {
+        "run": "p1",
+        "status": "error",
+        "errorCode": "unknown"
+      }
+    ],
+    "interactions": [],
+    "files": {
+      ".next-cowork/settings.local.json": "{\n  \"hooks\": {\n    \"UserPromptSubmit\": [\n      {\n        \"id\": \"freeze\",\n        \"command\": \"echo 'prompts are frozen today' >&2; exit 2\"\n      }\n    ]\n  }\n}\n"
+    },
+    "events": [
+      {
+        "e": "run",
+        "run": "p1"
+      },
+      {
+        "e": "run_end",
+        "status": "error",
+        "error": {
+          "code": "unknown"
+        }
+      }
+    ],
+    "rows": [
+      {
+        "session": "main"
+      }
+    ],
+    "requests": []
+  }
+}

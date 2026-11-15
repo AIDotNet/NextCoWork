@@ -506,6 +506,29 @@ public sealed class ConversationTests : IAsyncLifetime
         await topic.WaitAsync(() => topic.Decoded<SessionPageDto>(SessionEvents.HistoryReset).Any(p => p.Messages.Any(m => m.Id == compacted.Boundary.Id)), "history.reset with the boundary");
     }
 
+    // ───────────────────────── 权限:AI 审核器 ─────────────────────────
+
+    [Fact]
+    public async Task The_ai_reviewer_is_told_what_the_user_asked_for_not_only_the_tool_input()
+    {
+        // 回放对照(permission-auto-reviewer-decisions)抓到:Host 从不填 PermissionRunState.UserTask,审核请求里 `User task:` 是空的,
+        // 审核器没法判断「这次调用和用户要的事是否一致」。2.x 带的是这次 Run 的输入文字。
+        var client = await _rig.ConnectAsync();
+        var project = await _rig.AddProjectAsync(client);
+        var session = await _rig.CreateSessionAsync(client, project, "sonnet");
+        await client.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(new DeviceSettingsPatchDto(PermissionReviewer: new ModelPickDto("sonnet", "p1"))), idem: Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(project.Path, "reviewed.txt");
+        _rig.Llm.Then(Up.Calls(("c1", "Write", ConversationRig.WriteJson(target, "x")))).Then(Up.Say("{\"decision\":\"allow\"}")).Then(Up.Say("done"));
+
+        var start = await _rig.StartAsync(client, session.Id, "please create reviewed.txt", permission: "auto");
+        await (await RunWatch.OpenAsync(client, start.RunId)).SettledAsync();
+
+        Assert.True(File.Exists(target));   // 审核器说 allow:不弹窗,直接执行
+        var review = _rig.Llm.Requests[1].Messages.Single().Parts.OfType<Ncw.Agent.Llm.TextPart>().Single().Text;
+        Assert.StartsWith("You are a safety reviewer", review);
+        Assert.Contains("User task: please create reviewed.txt", review);
+    }
+
     private sealed record Attempt<T>(T? Result, ProtocolException? Error) where T : class;
 
     private static async Task<Attempt<T>> Try<T>(Func<Task<T>> call) where T : class

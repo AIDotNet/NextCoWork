@@ -39,6 +39,21 @@ public sealed class RegistryTests
     // ── 查询 ──
 
     [Fact]
+    public async Task A_run_exposes_the_text_of_its_input_for_the_permission_reviewer()
+    {
+        // 「为我批准」的 AI 审核器要看用户的任务(2.x:req.input 的文字部分);Host 登记权限状态时从这里取。附件之类非文字块不算。
+        var release = new TaskCompletionSource();
+        using var rig = new Rig(o => o.Driver = _ => WaitingDriver(release));
+        rig.NewSessionRow("s1");
+        var handle = rig.Start("s1", "please create reviewed.txt");
+
+        Assert.Equal("please create reviewed.txt", handle.InputText);
+        release.SetResult();
+        await Rig.Settled(handle);
+    }
+
+
+    [Fact]
     public async Task Running_children_are_counted_not_the_cumulative_set_the_concurrency_gate_must_not_run_dry()
     {
         var release = new TaskCompletionSource();

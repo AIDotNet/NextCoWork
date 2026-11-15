@@ -423,7 +423,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 
 ### 场景与结果
 
-78 个场景(`Recordings/*.json`:49 个单会话 + 29 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
+89 个场景(`Recordings/*.json`:49 个单会话 + 40 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
 
 | 场景 | 说明 |
 | --- | --- |
@@ -449,6 +449,8 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `permission-ask-allow-once` | 「询问」档位下一个会改文件的工具:真实的审批策略向用户弹窗,用户允许一次,工具执行。 |
 | `permission-ask-deny-with-reason` | 用户在审批弹窗上拒绝并写了理由。 |
 | `permission-ask-deny` | 同上,用户在弹窗上拒绝(不带理由):工具不执行,模型看到默认的拒绝话术。 |
+| `permission-auto-no-reviewer-asks` | (整机)`auto` 档位、没配审核器模型:破坏性工具回退人工审批而不是放行;只读的 Read 不问、不调审核器。 |
+| `permission-auto-reviewer-decisions` | (整机)`auto` 档位下破坏性工具交给 AI 审核器:JSON allow / deny、围栏代码块包着的 allow、中文「允许」、含糊回答(回退人工审批)、上游 400(回退人工审批);审核请求逐项比较(含 `User task`)。 |
 | `permission-read-only-needs-no-prompt` | 只读工具在「询问」档位下直接放行,不弹窗。 |
 | `permission-subagent-denied` | 子代理(depth 1)调用需要审批的工具:它没有人可问,策略当场拒绝并给出说明,而不是挂起。 |
 | `plan-approve-new-session` | (整机)计划审批「在新会话里执行」:Run 在 ExitPlanMode 之后结束、回执 action 为 `approve_new_session`、围栏撤掉;另一条全新会话里以 code 模式带计划引用执行(计划文件在工作区里、不在新会话历史里),Write 不受围栏。 |
@@ -487,7 +489,16 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `goal-propose-ask-declined` | (整机)用户拒绝自提的目标:没有目标、没有 kickoff、模型不被告知、判定器一次不调。 |
 | `goal-propose-direct-until-met` | (整机)自提目标(auto 策略、ask_user=false)直接设立;判定器先说「没达成」→ 续跑反馈 → 再判「达成」→ 收口。 |
 | `goal-propose-disabled` | (整机)设置禁用模型自提目标:工具表里没有 `ProposeGoal`。 |
+| `hook-notification-on-permission-prompt` | (整机)Notification 钩子:权限弹窗出现时发了就不管地跑(stdin 带 `notification.kind=tool_permission` 和工具名);弹窗照常等人。 |
+| `hook-posttooluse-feedback` | (整机)PostToolUse 钩子:Read 之后 stdout 追加进工具结果(`<hook-feedback>` 包着);Write 之后退出码 2 → 结果翻成错误、stderr 为反馈;matcher 不匹配的、已停用的钩子不跑;钩子 stdin(工具名、入参、输出)逐字比较。 |
+| `hook-pretooluse-ask-in-full-mode` | (整机)PreToolUse 钩子 JSON ask 在「完全访问」档位下也强制弹窗;没有钩子匹配的写入照常免弹窗。 |
 | `hook-pretooluse-blocks-despite-allow-rule` | (整机)PreToolUse 钩子(退出码 2)压过项目 allow 规则和档位,阻断写入;`Read` 不被钩子匹配、照常放行。 |
+| `hook-pretooluse-decisions` | (整机)PreToolUse 钩子的各种结论(ask 档位):JSON allow 免弹窗、JSON ask 弹窗、JSON deny + 理由、退出码 1(fail-open)、超时(fail-open)、已停用的钩子不跑。 |
+| `hook-stop-blocks-then-allows` | (整机)Stop 钩子(退出码 2)阻断收尾:反馈作为内部消息注入、这一轮继续;第二次被叫时 `stop_hook_active=true`,脚本放行。 |
+| `hook-stop-passes-silently` | (整机)Stop 钩子退出码 0:不阻断,Run 照常收尾;stdin 里 `status=done`、`stop_hook_active=false`。 |
+| `hook-subagentstop` | (整机)SubagentStop 钩子:前台子代理结束时跑,stdin 带子代理的会话 / Run 和结局状态。 |
+| `hook-userpromptsubmit-blocks` | (整机)UserPromptSubmit 钩子(退出码 2 + stderr)拦下提交:Run 以错误结束、没有上游请求、会话里没有这条用户消息。 |
+| `hook-userpromptsubmit-injects-context` | (整机)UserPromptSubmit 钩子:stdout 文字作为附加上下文,只进发给上游的那份消息流(`<hook-context>`),不进转录;钩子 stdin 是一行 JSON(事件、会话、Run、提示词),逐字比较。 |
 | `permission-allow-always-persists` | (整机)「以后都允许」(项目作用域)放行这一次并写 `.next-cowork/settings.local.json`,下一个 Run 同样的写入不再弹窗。 |
 | `permission-ask-and-allow-rules` | (整机)ask 规则在 full 档位也强制弹窗、allow 规则在 ask 档位免弹窗、都不匹配的弹窗(用户拒绝并给理由)。 |
 | `permission-deny-rule-beats-the-mode` | (整机)deny 规则压过「完全访问」档位:不弹窗、文件不动。 |
@@ -512,7 +523,9 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 - 计划模式:`approve_new_session`、计划文件被外部改写 / 删除时的 `ExitPlanMode` 错误分支(只录了空文件和未进入)、压缩之后计划路径的每轮重注入。
 - 目标:用户手动设 / 清目标、后台工作期间的推迟与 check-in(要时间)、`impossible` 判定、判定器失败(`skipped`)、重启恢复。
 - 权限:AI 审核器(`auto` 档位的 review)、`allow_edited`(单会话回放已有)、`allow_always` 的会话 / 全局作用域(2.x 只有项目作用域,3.0 多出的两个作用域没有对照物)、插件拦截器。
-- Hooks:PreToolUse 的 `ask` / `allow` 决定、PostToolUse、Stop、UserPromptSubmit、SubagentStop、prompt 型钩子;插件、MCP、定时任务整块没有场景。
+- Hooks:六个事件都有场景(UserPromptSubmit、PreToolUse 各种结论、PostToolUse、Notification、Stop、SubagentStop)。**prompt 型钩子**:2.x 已录制(`Recordings/pending/hook-prompt-type-stop-blocks.json`,
+  不在回放集合里),3.0 的 Host 还没有真实的判定器(`IHookEvaluator` 默认 `skipped`,上面 Hooks 一行的差异 ⑤),所以 3.0 一侧一次判定请求都不发、阻断不了收尾;等 Host 接上判定器就把它挪进 `Recordings/`(2.x 一侧的预期已经在文件里)。
+  Stop 钩子在中止 / 出错路径上发了就不管的那一次、PreToolUse 钩子对子代理的调用:没有场景(发了就不管的写文件时机不确定)。插件、MCP、定时任务:见下面各自的说明。
 - OpenAI Chat / Responses:多工具调用已录;token 用量(`usage`)的数值不进规范化(`tokens` 在两边都被丢弃),用量账本由各自的单测覆盖,回放对照没有比较它。
 - 整机回放不比较流增量与工具进度文字(只比较结构性事件);发给上游的请求里,工具表只比较名字(见上)。
 
@@ -559,6 +572,13 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
   于是中文的目标条件 / 计划反馈、结果里的破折号都被模型逐字读成转义序列(token 成倍增加、可读性下降)。2.x 的 `JSON.stringify` 只转义引号、反斜杠和控制字符;`MessageCodec` 等别处早已用 `UnsafeRelaxedJsonEscaping`,只有这一处漏了。
   整机回放的 `goal-*` 与 `plan-request-changes`(反馈含中文)抓到。回归:`ProposeGoalToolTests.The_result_the_model_reads_keeps_non_ascii_and_html_characters_as_they_are`、`PlanModeTests.The_receipt_the_model_reads_keeps_non_ascii_feedback_as_it_is`(回退修复后稳定失败)。
 
+- **PostToolUse 钩子的反馈没有 `<hook-feedback>` 标签**(已修,`Ncw.Agent.Hooks/HooksExtension.cs`):钩子 stdout(或退出码 2 的 stderr)追加进工具结果时是裸文字,模型分不清哪句是工具自己的输出、哪句是钩子脚本说的;
+  2.x 的 `agent-session.ts` 把反馈包成 `<hook-feedback>…</hook-feedback>` 接在输出后面(空一行)。现在逐字相同。回归:`HookWiringTests.PostToolUse_appends_feedback_to_the_result_and_never_rewrites_it`、`PostToolUse_exit_two_flips_the_result_to_an_error_so_the_model_can_act_on_it`(改成断言带标签的完整结尾)和整机回放 `hook-posttooluse-feedback`。
+
+- **AI 审核器看不到用户的任务**(已修,`Ncw.Agent.Runs/RunHandle.cs`、`Ncw.Agent.Host/Conversation/ConversationService.cs`):`PermissionRunState.UserTask`(审核请求里的 `User task: …`)Host 从不填,线上的审核请求永远是 `User task: ` 加空串,
+  审核器没法判断「这次调用和用户要的事是否一致」(2.x 带的是这次 Run 的输入文字)。`RunHandle` 现在带 `InputText`(输入消息的文字块,换行连接),Host 登记权限状态时填进去。
+  整机回放 `permission-auto-reviewer-decisions` 抓到(它的台架先照 Host 原样留空,才露出差异)。回归:`Ncw.Agent.Host.Tests.ConversationTests.The_ai_reviewer_is_told_what_the_user_asked_for_not_only_the_tool_input`(回退修复后稳定失败)。
+
 ### 回放对照发现的新偏离
 
 下面几条在回放对照之前文档里没有登记,经判断是**可接受的偏离**(不是缺陷)而补登记:
@@ -576,8 +596,11 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 - 被动压缩(上游 `context_length` 拒绝)的边界上,`preTokens` 是装配后请求的本地估算,含系统提示词和工具段;3.0 的提示词更短,数字相应更小(自动压缩读上游真值时两边相同)。
 - 压缩的摘要请求在显式关闭思考(`off`)时发 `thinking: disabled`(设计 01 §6:显式关闭必须发出关闭参数、不能省略);2.x 的摘要请求省略该字段,正文请求(2.x 也发 disabled)与此不一致,是 2.x 的疏漏。
 - 目标判定器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`,2.x 的判定请求省略该字段(与压缩摘要请求同一类:2.x 的旁路请求显式关闭思考时不发关闭参数、正文请求才发;判定器传的是 `thinkingLevel: 'off'`,录制用的别名声明了思考能力,所以不是录制环境的假象,是 2.x 的疏漏)。判定请求的其余部分(模型、输出额度、无工具、转录 / 问题文案)逐项比较。
+- AI 审核器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`(`auto` 档位的「为我批准」),2.x 的审核请求省略该字段(与压缩摘要、目标判定同一类:2.x 的旁路请求显式关闭思考时不发关闭参数)。审核请求的其余部分(审核模型、输出额度 128、无工具、系统文案、含「User task」的提示词)逐项比较。
 - 目标的 `goal_status` 标记(「已设立」「第 N 次判定未达成 / 已达成」)在 3.0 上是**带外**写进最后一条助手消息的(不新增消息、**不再发一次 `message_commit`**,界面经 `goal` 主题的变更拿到它,见 05 §7);2.x 把标记并进那条助手消息后重新发一次 `message_commit`(同 id、parts 末尾多一个 `goal_status`);还没有助手消息时设立(用户手动设目标于空会话),2.x 把「已设立」标记排队、并进第一条助手消息**那一次** `message_commit` 的 parts 里,3.0 同样带外落库、那次 commit 不带它(`goal-manual-set-until-met` 抓到)。落库的消息行两边逐项相同。
 - `Read` 的输出文件以换行结尾时:2.x 按 `split('\n')` 切行,末尾多出一个空的编号行(`     2\t`);3.0 不多出这个空行(03 §`Read` 已登记:「文件以换行结尾时不多出一个空行」),与上面 `Write` 行数的差一同一个原因。
+- 被 `UserPromptSubmit` 钩子拦下的提交,Run 的错误带稳定 key `hooks.promptBlocked`(设计 03 的 `InputPayload.BlockedKey`):2.x 的错误只有钩子给的原因文字(`message`),没有 key;3.0 的 `message` 仍是钩子原因(没给原因时是固定的英文兜底句),另带 key 供控制端翻译。错误码两边都是 `unknown`。
+- UserPromptSubmit 钩子注入的上下文自成一个 `<system-reminder>` 头块:2.x 把 `<hook-context>…</hook-context>` 塞进「项目指令」那一块(包在「Project instructions for this workspace, loaded from AGENTS.md…」的说明里——工作区没有 AGENTS.md 时这句说明并不属实);3.0 的头块只含 `<hook-context>` 本身。`<hook-context>` 里的正文逐字相同,两边都只进发给上游的那份消息流、不进转录。
 - 项目 `deny` 规则命中时给模型的话:2.x 写死「in the workspace's .next-cowork/settings.local.json」,3.0 写「in the project's permission settings」(规则存放处不写死,同上面「deny 的话术不再写死」那一条);其余文字(规则原文、「不要换个工具达到同样的结果」)逐字相同。
 - 计划模式、`ask` 档位下,模型对**围栏之外**的文件调 `Write` / `Edit`:2.x 的审批只按工具名信任(`trustedPlanFileTool`),不弹窗,由写工具的围栏拒绝;3.0 的权限层自己再核对一遍(03 §计划模式的写入围栏:只有改的**正是**围栏文件才当作只读),围栏外的写入走普通审批,用户允许之后写工具的围栏照样拒绝(结果文字两边逐字相同,文件一个字节没动)。多一次弹窗是登记过的收紧(围栏没设上时写入不会被悄悄放行)的可见后果,不是缺陷。
 - 状态块(`<system-reminder>` 里的 Workspace state)的每一段在 3.0 两端去空白(`ContextAssembler.StateBlock` 的 `Trim`);2.x 原样保留。可见的后果:批准的计划文件以换行结尾时(几乎总是),2.x 的块在 `</system-reminder>` 之前多一个空行。只是一个空行,不影响模型读到的内容。

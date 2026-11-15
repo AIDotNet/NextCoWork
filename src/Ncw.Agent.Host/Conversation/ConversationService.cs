@@ -580,6 +580,8 @@ internal sealed class ConversationRunExtension(ConversationService service) : IR
                 WorkspaceId = run.WorkspaceId,
                 // 「为我批准」档位的专用审核模型(设置 › 模型):没配 = 没有审核模型 = 回退人工审批(Unknown,不是放行)。每个 Run 现读。
                 ReviewerModel = service.DeviceSettings.Current().PermissionReviewer is { IsSet: true } reviewer ? new ModelRef(reviewer.ProviderId, reviewer.Model) : null,
+                // 审核器要看的「用户的任务」:这次 Run 的输入文字(2.x 的 req.input;子代理的权限状态从父 Run 继承它)。
+                UserTask = run.InputText,
                 PlanFence = runtime.WriteFence,
                 // 「联网搜索」开关(项目设置,Run 开始时现读):关着时 WebFetch / web_search 不进工具快照、调用也被拒(NetworkSwitchTools 那一张名单)。
                 WebSearch = new Ncw.Agent.Services.Settings.ProjectSettingsService(service.Workspaces).Get(run.WorkspaceId)?.WebSearch ?? false,

@@ -18,6 +18,11 @@ public static partial class Rules
     private const string OutputLimitResult =
         "[not executed: the response reached the output limit, so the arguments of this tool call may have been truncated. Re-issue the tool call.]";
 
+    /// <summary>2.x 把钩子上下文放进项目指令块:<c>&lt;system-reminder&gt;\nProject instructions … &lt;project-instructions&gt;\n&lt;hook-context&gt;…&lt;/hook-context&gt;\n&lt;/project-instructions&gt;\n\n… &lt;/system-reminder&gt;</c>。</summary>
+    private static readonly Regex ProjectInstructionsHookContextPattern = new(
+        @"^<system-reminder>\nProject instructions for this workspace[\s\S]*?<project-instructions>\n(?<ctx><hook-context>\n[\s\S]*?\n</hook-context>)\n</project-instructions>[\s\S]*</system-reminder>$",
+        RegexOptions.Compiled);
+
     public static IReadOnlyList<Rule> All { get; } =
     [
         // ───────────── 事件(循环层 / 会话层的事件词汇) ─────────────
@@ -214,6 +219,53 @@ public static partial class Rules
                 return changed;
             }),
 
+        new("ERROR-KEY-HOOK-PROMPT-BLOCKED", Section.Events,
+            new(Parity, "被 `UserPromptSubmit` 钩子拦下的提交,Run 的错误带稳定 key `hooks.promptBlocked`"),
+            "UserPromptSubmit 钩子拦下提交:2.x 的错误只有原因文字(没有 key);3.0 另带稳定 key hooks.promptBlocked 供控制端翻译(设计 03 的 BlockedKey)。只去掉 C# 一侧 run_end 错误上的这一个 key,错误码仍逐项比较。",
+            (_, r, _, _) =>
+            {
+                var removed = 0;
+                foreach (var n in r.Where(n => E(n) == "run_end" && n["error"]?["key"] is JsonValue v && v.TryGetValue<string>(out var key) && key == "hooks.promptBlocked"))
+                {
+                    n["error"]!.AsObject().Remove("key");
+                    removed++;
+                }
+
+                return removed;
+            }),
+
+        EditBoth("REQ-HOOK-CONTEXT-BLOCK", Section.Requests,
+            new(Parity, "UserPromptSubmit 钩子注入的上下文自成一个 `<system-reminder>` 头块"),
+            "钩子注入的 <hook-context>:2.x 把它塞进「项目指令」那一块(包在「Project instructions … loaded from AGENTS.md」的说明里,工作区根本没有 AGENTS.md 时说法也不对);3.0 自成一个头块。只把 2.x 那种单纯包着 hook-context 的项目指令块改写成 3.0 的形状,<hook-context> 里的正文逐字比较。",
+            request =>
+            {
+                var changed = false;
+                foreach (var message in request["body"]?["messages"]?.AsArray() ?? [])
+                {
+                    if (message?["content"] is not JsonArray blocks)
+                    {
+                        continue;
+                    }
+
+                    for (var i = 0; i < blocks.Count; i++)
+                    {
+                        if (blocks[i] is not JsonObject block || Str(block, "text") is not { } text)
+                        {
+                            continue;
+                        }
+
+                        var m = ProjectInstructionsHookContextPattern.Match(text);
+                        if (m.Success)
+                        {
+                            block["text"] = $"<system-reminder>\n{m.Groups["ctx"].Value}\n</system-reminder>";
+                            changed = true;
+                        }
+                    }
+                }
+
+                return changed;
+            }),
+
         EditBoth("REQ-GOAL-JUDGE-THINKING", Section.Requests,
             new(Parity, "目标判定器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`"),
             "目标判定请求:显式关闭思考时 3.0 发 thinking: disabled,2.x 省略该字段(2.x 的疏漏,同压缩摘要请求);只去掉判定请求上的 disabled 字段,其余逐项比较。",
@@ -221,6 +273,22 @@ public static partial class Rules
             {
                 var body = request["body"]!.AsObject();
                 if (SystemText(body)?.StartsWith("You are evaluating a stop-condition hook", StringComparison.Ordinal) != true
+                    || body["thinking"]?["type"]?.GetValue<string>() != "disabled")
+                {
+                    return false;
+                }
+
+                body.Remove("thinking");
+                return true;
+            }),
+
+        EditBoth("REQ-REVIEWER-THINKING", Section.Requests,
+            new(Parity, "AI 审核器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`"),
+            "AI 审核请求:显式关闭思考时 3.0 发 thinking: disabled,2.x 省略该字段(2.x 的旁路请求疏漏,同压缩摘要 / 目标判定);只去掉审核请求上的 disabled 字段,其余(模型、输出额度、无工具、提示词)逐项比较。",
+            request =>
+            {
+                var body = request["body"]!.AsObject();
+                if (SystemText(body)?.StartsWith("Be conservative. Deny destructive", StringComparison.Ordinal) != true
                     || body["thinking"]?["type"]?.GetValue<string>() != "disabled")
                 {
                     return false;

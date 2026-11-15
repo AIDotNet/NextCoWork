@@ -145,6 +145,8 @@ public sealed class OrchestrationRig : IDisposable
             ResolveProject = (_, _) => ValueTask.FromResult<HookProjectTarget?>(new HookProjectTarget(_env, EnvPath.Parse(_workspace, Style))),
             Log = _log,
         });
+        // Notification 钩子订阅交互闸门的 tool_permission(Host 在 ConversationService 里同样接)。
+        _hooks.AttachNotifications(_gate, _permissionRuns);
         var sub = settings["subagent"]?.AsObject();
         var catalog = new AgentCatalog(new ScanSource(this), new MemoryAgentSwitchStore(), _log);
         var factory = new Factory(this);
@@ -177,7 +179,7 @@ public sealed class OrchestrationRig : IDisposable
             WorkspaceRoot = EnvPath.Parse(_workspace, Style),
             Extensions =
             [
-                new PermissionExtension(_permissionRuns, PermissionRuleBook.CreateDefault(null), reviewer: null, hooks: [_hooks.PreToolSource]),
+                new PermissionExtension(_permissionRuns, PermissionRuleBook.CreateDefault(null), reviewer: new LlmPermissionReviewer(router, _log), hooks: [_hooks.PreToolSource]),
                 _hooks.CreateExtension(workspaceId),
                 new SubagentExtension(_subagents, workspaceId),
                 .. _kit.Extensions,
@@ -405,6 +407,12 @@ public sealed class OrchestrationRig : IDisposable
         }
 
         await QuiesceAsync().ConfigureAwait(false);
+        if (_input["settleMs"]?.GetValue<int>() is > 0 and var settleMs)
+        {
+            // 给「发了就不管」的钩子(Notification)写文件留出时间:两边同一个数。
+            await Task.Delay(settleMs).ConfigureAwait(false);
+        }
+
         await responderStop.CancelAsync().ConfigureAwait(false);
         await responder.ConfigureAwait(false);
         return Collect();
@@ -783,7 +791,9 @@ public sealed class OrchestrationRig : IDisposable
                 Root = runtime.Root,
                 WorkspaceId = run.WorkspaceId,
                 PlanFence = runtime.WriteFence,
-                UserTask = string.Empty,
+                // 「为我批准」档位的专用审核模型:没配 = 回退人工审批(Host 每个 Run 现读设置,这里读录制里的设置)。
+                ReviewerModel = rig._input["settings"]!["permissionReviewerModel"]?.GetValue<string>() is { Length: > 0 } reviewer ? ModelRef.Unpinned(reviewer) : null,
+                UserTask = run.InputText,
                 PlanWorkflow = rig._modes.TryGetValue(run.RunId, out var m) && m == "plan",
             });
         }

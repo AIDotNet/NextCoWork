@@ -187,7 +187,7 @@ public sealed class HookWiringTests : IAsyncLifetime
         var result = Result("w1");
         Assert.False(result.IsError);
         Assert.Contains("a.txt", result.Output.Content);          // 原输出还在
-        Assert.EndsWith("lint: 2 warnings", result.Output.Content); // 反馈追加在后面
+        Assert.EndsWith("\n\n<hook-feedback>\nlint: 2 warnings\n</hook-feedback>", result.Output.Content); // 反馈追加在后面,用 <hook-feedback> 标出是钩子说的(2.x 同)
         Assert.Equal("hello", File.ReadAllText(target));
     }
 
@@ -200,7 +200,7 @@ public sealed class HookWiringTests : IAsyncLifetime
         await _rig.RunAsync(S, "write it");
 
         Assert.True(Result("w1").IsError);
-        Assert.Contains("rejected by lint", Result("w1").Output.Content);
+        Assert.EndsWith("\n\n<hook-feedback>\nrejected by lint\n</hook-feedback>", Result("w1").Output.Content);
     }
 
     [Fact(Skip = "POSIX only", SkipUnless = nameof(Platform.IsPosix), SkipType = typeof(Platform))]
