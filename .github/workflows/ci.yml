@@ -1,0 +1,116 @@
+# NextCoWork 3.0(Avalonia 分支)的持续集成。docs/design/04 §7.1。
+#
+# 注意:本工作流**没有在真实的 GitHub Actions 上运行过**(只用 actionlint 做了静态检查,命令在 macOS 上手工跑过)。
+# 第一次推送后先看三平台各步是否通过,再把它当作合并门槛。
+#
+# 全部步骤只用 .NET SDK(global.json 固定版本)和 tools/Ncw.Build;不装 Node / npm(AGENTS.md §6)。
+name: ci
+
+on:
+  push:
+    branches: [v3/avalonia]
+  pull_request:
+    branches: [v3/avalonia]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  # 构建工具的入口(开发和 CI 用;不对用户发布)。
+  NCW_BUILD: dotnet run --project tools/Ncw.Build -c Release --
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-test:
+    name: build + test + AOT check (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # NativeAOT 不能跨操作系统编译(04 §7.1),所以每个桌面平台一个 runner,RID 跟着 runner 的原生架构。
+          # arm64 的 Windows / Linux runner 以后需要再加(windows-11-arm、ubuntu-24.04-arm),这里先不列。
+          - { os: macos-latest, rid: osx-arm64, exe: "" }
+          - { os: windows-latest, rid: win-x64, exe: ".exe" }
+          - { os: ubuntu-latest, rid: linux-x64, exe: "" }
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (version from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # NativeAOT 在 Linux 上需要原生工具链(clang + zlib 头文件);macOS 用 Xcode 命令行工具、Windows 用 VS 的 C++ 工具集(runner 已带)。
+      # fontconfig:Avalonia Headless 截图用的 SkiaSharp 原生库在 Linux 上需要它。
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang zlib1g-dev libfontconfig1 fonts-dejavu-core
+
+      - name: Restore
+        run: dotnet restore NextCoWork.slnx
+
+      # TreatWarningsAsErrors 在 Directory.Build.props 里是 true:有任何警告这一步就失败,不需要再额外加开关。
+      - name: Build (zero warnings)
+        run: dotnet build NextCoWork.slnx --no-restore
+
+      - name: Test
+        run: >
+          dotnet test NextCoWork.slnx --no-build
+          --logger "trx;LogPrefix=true"
+          --results-directory "${{ runner.temp }}/test-results"
+
+      # UI 截图是视觉评审的依据(AGENTS.md §7):不管测试成败都上传。
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-${{ matrix.rid }}
+          path: tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.rid }}
+          path: ${{ runner.temp }}/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ncw-agent 必须能以 NativeAOT 发布且零裁剪警告(AGENTS.md §5):任何 IL / ILC 警告都会让 publish-agent 失败。
+      - name: Publish ncw-agent (NativeAOT, zero trim warnings)
+        run: ${{ env.NCW_BUILD }} publish-agent --rid ${{ matrix.rid }}
+
+      - name: Smoke-test the published ncw-agent
+        run: ${{ env.NCW_BUILD }} verify --agent "artifacts/publish/${{ matrix.rid }}/agent/ncw-agent${{ matrix.exe }}"
+
+      # 中继(服务端部署物)的发布与产物自检:默认自包含,再加 --aot 确认零警告 AOT 仍然可用(09 §9.3)。
+      - name: Publish and self-check ncw-relay
+        run: ${{ env.NCW_BUILD }} build-relay --rid ${{ matrix.rid }}
+
+      - name: Publish and self-check ncw-relay (NativeAOT)
+        run: ${{ env.NCW_BUILD }} build-relay --rid ${{ matrix.rid }} --aot

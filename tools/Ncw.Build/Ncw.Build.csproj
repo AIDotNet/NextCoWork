@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    构建与发布工具链(docs/design/04 §6、01 §2 的 tools/):只给开发和 CI 用,不对用户发布,也不是面向用户的命令行(AGENTS.md §1)。
+    运行方式:dotnet run 指向本项目,再加子命令和选项(见 AGENTS.md 第 7 节「常用命令」)。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Ncw.Build</AssemblyName>
+    <RootNamespace>Ncw.Build</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- verify 用真实协议连一次打包产物里的 ncw-agent;发布清单的 Ed25519 签名用 BouncyCastle(.NET 没有内置)。 -->
+    <ProjectReference Include="../../src/Ncw.Protocol/Ncw.Protocol.csproj" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ncw.Build.Tests" />
+  </ItemGroup>
+</Project>

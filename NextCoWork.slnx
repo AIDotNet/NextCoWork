@@ -64,6 +64,10 @@
     <Project Path="tests/Ncw.Agent.Cloud.Tests/Ncw.Agent.Cloud.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
+    <Project Path="tests/Ncw.Build.Tests/Ncw.Build.Tests.csproj" />
     <Project Path="tests/Ncw.Desktop.Tests/Ncw.Desktop.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Ncw.Build/Ncw.Build.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../tools/Ncw.Build/Ncw.Build.csproj" />
+    <!-- 契约测试:用真实的 manifest 子命令生成清单,再用客户端运行时的验证代码验一遍(两边的字段与签名格式不能漂移)。 -->
+    <ProjectReference Include="../../src/Ncw.Client/Ncw.Client.csproj" />
+    <!-- 只为了构建顺序:冒烟测试要用刚构建出来的 ncw-agent(不引用它的代码)。 -->
+    <ProjectReference Include="../../src/Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <!-- 同理:build-relay 的产物自检要用刚构建出来的 ncw-relay。 -->
+    <ProjectReference Include="../../src/Ncw.Relay/Ncw.Relay.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

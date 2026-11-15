@@ -1,0 +1,318 @@
+# NextCoWork 3.0 的发布流水线,步骤顺序就是 docs/design/04 §7.1:
+#   publish-agent -> publish-desktop -> bundle -> verify -> sign -> velopack(三平台各一个 runner)-> manifest(汇总)。
+#
+# 注意:本工作流**没有在真实的 GitHub Actions 上运行过**(只用 actionlint 做了静态检查;各步骤的命令在 macOS 上手工跑过,
+# Windows / Linux 的 signtool、Setup.exe、AppImage 从未在真机上验证过,见 04 §7.1「没有验证的部分」)。
+#
+# 本文件不包含任何密钥。签名凭据全部来自仓库 / 环境的 secrets(只出现名字):
+#   macOS    NCW_MAC_CERT_P12_BASE64 + NCW_MAC_CERT_PASSWORD(Developer ID Application 证书,base64 的 .p12)、NCW_MAC_SIGN_IDENTITY、
+#            公证:NCW_NOTARY_PROFILE,或 NCW_NOTARY_APPLE_ID + NCW_NOTARY_TEAM_ID + NCW_NOTARY_PASSWORD;可选 NCW_MAC_INSTALLER_IDENTITY(.pkg)
+#   Windows  NCW_WIN_CERT_PFX_BASE64 + NCW_WIN_CERT_PASSWORD(Authenticode,base64 的 .pfx);时间戳地址放在 vars.NCW_WIN_TIMESTAMP_URL(公开信息)
+#   清单     NCW_RELEASE_SIGNING_KEY(Ed25519 私钥种子,base64)+ NCW_RELEASE_SIGNING_KEY_ID;验证用的公钥放在 vars.NCW_RELEASE_PUBLIC_KEY
+# 缺哪个就跳过哪一步并明说(Ncw.Build 的 sign / manifest 自己会打印 SKIPPED / NOT SIGNED,这里再写进 job 摘要)。
+# 正式发布要「缺凭据就失败」:手动触发时勾选 require_signing(对应 `sign --require`);tag 触发默认不强制——
+# 等 secrets 配齐、整条流水线在真实 runner 上跑通一遍之后,把下面 REQUIRE_SIGNING 的默认值改成 true。
+name: release
+
+on:
+  push:
+    tags: ["v3.*"]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel (the Velopack feed name)
+        type: string
+        default: stable
+      require_signing:
+        description: Fail instead of skipping when signing credentials are missing (sign --require)
+        type: boolean
+        default: false
+      mandatory:
+        description: Mark the release as a mandatory update in the manifest
+        type: boolean
+        default: false
+      minimum_supported_version:
+        description: Minimum supported version recorded in the manifest (optional)
+        type: string
+        default: ""
+      release_notes:
+        description: Release notes recorded in the manifest (optional)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  NCW_BUILD: dotnet run --project tools/Ncw.Build -c Release --
+  CHANNEL: ${{ inputs.channel || 'stable' }}
+  # tag 触发时 inputs 为空:默认不强制(见文件头)。手动触发按勾选。
+  REQUIRE_SIGNING: ${{ inputs.require_signing == true }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preflight:
+    name: preflight (version)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # 版本号只有一个来源:Directory.Build.props 的 <Version>(客户端、ncw-agent、安装包共用,04 §3)。
+      # tag 触发时 tag 必须是 v<Version>,防止打错 tag 发出版本号对不上的包。
+      - name: Read and check the version
+        id: version
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "::error::No <Version> in Directory.Build.props"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Directory.Build.props version v$version"
+            exit 1
+          fi
+          echo "Releasing $version on channel $CHANNEL"
+
+  build:
+    name: ${{ matrix.rid }}
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # NativeAOT 不能跨操作系统编译:每个平台一个 runner。arm64 的 Windows / Linux 以后再加。
+          - { os: macos-latest, rid: osx-arm64, exe: "" }
+          - { os: windows-latest, rid: win-x64, exe: ".exe" }
+          - { os: ubuntu-latest, rid: linux-x64, exe: "" }
+    env:
+      # 凭据:缺失时是空字符串,Ncw.Build 按「没设置」处理。这里只映射名字,值在运行时由 GitHub 注入。
+      NCW_MAC_SIGN_IDENTITY: ${{ secrets.NCW_MAC_SIGN_IDENTITY }}
+      NCW_MAC_INSTALLER_IDENTITY: ${{ secrets.NCW_MAC_INSTALLER_IDENTITY }}
+      NCW_NOTARY_PROFILE: ${{ secrets.NCW_NOTARY_PROFILE }}
+      NCW_NOTARY_APPLE_ID: ${{ secrets.NCW_NOTARY_APPLE_ID }}
+      NCW_NOTARY_TEAM_ID: ${{ secrets.NCW_NOTARY_TEAM_ID }}
+      NCW_NOTARY_PASSWORD: ${{ secrets.NCW_NOTARY_PASSWORD }}
+      NCW_WIN_CERT_PASSWORD: ${{ secrets.NCW_WIN_CERT_PASSWORD }}
+      NCW_WIN_TIMESTAMP_URL: ${{ vars.NCW_WIN_TIMESTAMP_URL }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (version from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      # ── 1. publish-agent:ncw-agent 的 NativeAOT 发布,任何裁剪警告都让这一步失败 ──
+      - name: "1/7 publish-agent"
+        run: ${{ env.NCW_BUILD }} publish-agent --rid ${{ matrix.rid }}
+
+      # ── 2. publish-desktop:桌面自包含发布(不裁剪) ──
+      - name: "2/7 publish-desktop"
+        run: ${{ env.NCW_BUILD }} publish-desktop --rid ${{ matrix.rid }}
+
+      # ── 3. bundle:把 ncw-agent 放进桌面应用的约定目录,写 bundle.json ──
+      - name: "3/7 bundle"
+        run: ${{ env.NCW_BUILD }} bundle --rid ${{ matrix.rid }}
+
+      # ── 4. verify:核对 bundle.json 的校验值,再启动包里的 ncw-agent 做冒烟 ──
+      - name: "4/7 verify (before signing)"
+        run: ${{ env.NCW_BUILD }} verify --rid ${{ matrix.rid }}
+
+      # ── 5. sign:准备凭据(有才准备),再签名 ──
+      - name: Prepare the macOS signing keychain
+        if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.NCW_MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.NCW_MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERT_P12_BASE64" ] || [ -z "$NCW_MAC_SIGN_IDENTITY" ]; then
+            echo "::warning::macOS signing certificate is not configured (NCW_MAC_CERT_P12_BASE64 / NCW_MAC_SIGN_IDENTITY); the app will NOT be signed or notarized."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/ncw-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "::add-mask::$keychain_password"
+          echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/ncw-signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/ncw-signing.p12" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm -f "$RUNNER_TEMP/ncw-signing.p12"
+          echo "NCW_MAC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Prepare the Windows signing certificate
+        if: runner.os == 'Windows'
+        env:
+          WIN_CERT_PFX_BASE64: ${{ secrets.NCW_WIN_CERT_PFX_BASE64 }}
+        run: |
+          if [ -z "$WIN_CERT_PFX_BASE64" ] || [ -z "$NCW_WIN_CERT_PASSWORD" ]; then
+            echo "::warning::Windows Authenticode certificate is not configured (NCW_WIN_CERT_PFX_BASE64 / NCW_WIN_CERT_PASSWORD); the app will NOT be signed."
+            exit 0
+          fi
+          echo "$WIN_CERT_PFX_BASE64" | base64 --decode > "$RUNNER_TEMP/ncw-signing.pfx"
+          echo "NCW_WIN_CERT_FILE=$(cygpath -w "$RUNNER_TEMP/ncw-signing.pfx")" >> "$GITHUB_ENV"
+          # signtool 在 Windows SDK 里,不在 PATH 上:取最新版本的 x64 工具。
+          shopt -s nullglob
+          candidates=("/c/Program Files (x86)/Windows Kits/10/bin/"*/x64/signtool.exe)
+          if [ "${#candidates[@]}" -gt 0 ]; then
+            signtool="$(printf '%s\n' "${candidates[@]}" | sort -V | tail -n 1)"
+            echo "NCW_SIGNTOOL=$(cygpath -w "$signtool")" >> "$GITHUB_ENV"
+          else
+            echo "::warning::signtool.exe was not found in the Windows SDK; signing will fail if a certificate is configured."
+          fi
+
+      # 缺凭据时 Ncw.Build 自己打印「SKIPPED signing: …」并继续(REQUIRE_SIGNING 为 true 时改为失败)。macOS 带 --notarize:缺公证凭据同样跳过并明说。
+      - name: "5/7 sign"
+        run: |
+          args=(--rid ${{ matrix.rid }})
+          if [ "$REQUIRE_SIGNING" = "true" ]; then args+=(--require); fi
+          if [ "$RUNNER_OS" = "macOS" ]; then args+=(--notarize); fi
+          ${{ env.NCW_BUILD }} sign "${args[@]}"
+
+      # 签名改变了二进制:bundle.json 已由 sign 刷新,签名之后再冒烟一次(04 §7.1 实测:签名后 verify 仍然 PASS)。
+      - name: "5b/7 verify (after signing)"
+        run: ${{ env.NCW_BUILD }} verify --rid ${{ matrix.rid }}
+
+      - name: Record the signing status
+        if: always()
+        run: |
+          bundle="artifacts/bundle/${{ matrix.rid }}/bundle.json"
+          if [ -f "$bundle" ] && grep -Eiq '"signed"[[:space:]]*:[[:space:]]*true' "$bundle"; then
+            status="signed"
+          else
+            status="NOT SIGNED (credentials missing or signing skipped)"
+          fi
+          echo "- **${{ matrix.rid }}**: platform signature: $status" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 6. velopack:vpk 打安装器与更新包;签名变量(环境里的)由 vpk 用于 macOS 的最终签名与 .pkg ──
+      - name: "6/7 velopack"
+        run: ${{ env.NCW_BUILD }} velopack --rid ${{ matrix.rid }} --channel "$CHANNEL"
+
+      - name: Remove the temporary signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/ncw-signing.pfx" "$RUNNER_TEMP/ncw-signing.p12"
+          if [ "$RUNNER_OS" = "macOS" ] && [ -f "$RUNNER_TEMP/ncw-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/ncw-signing.keychain-db" || true
+          fi
+
+      - name: Upload the installers and update packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-${{ matrix.rid }}
+          path: artifacts/velopack/${{ matrix.rid }}/${{ env.CHANNEL }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      # 调试符号不进安装包(04 §7.1),单独留着给崩溃符号化用。
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ matrix.rid }}
+          path: artifacts/symbols/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── 7. manifest:汇总三个平台的产物,生成发布清单;持有 Ed25519 私钥(secret)才签名,没有就只写清单并明说 ──
+  manifest:
+    name: 7/7 manifest
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      NCW_RELEASE_SIGNING_KEY: ${{ secrets.NCW_RELEASE_SIGNING_KEY }}
+      NCW_RELEASE_SIGNING_KEY_ID: ${{ secrets.NCW_RELEASE_SIGNING_KEY_ID }}
+      NCW_RELEASE_PUBLIC_KEY: ${{ vars.NCW_RELEASE_PUBLIC_KEY }}
+      MANDATORY: ${{ inputs.mandatory == true }}
+      MIN_SUPPORTED: ${{ inputs.minimum_supported_version }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (version from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Download the platform packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: velopack-*
+          path: artifacts/in
+
+      - name: Write the release manifest
+        run: |
+          args=(--version "$VERSION" --channel "$CHANNEL" --out "artifacts/release/$VERSION")
+          if [ "$MANDATORY" = "true" ]; then args+=(--mandatory); fi
+          if [ -n "$MIN_SUPPORTED" ]; then args+=(--minimum-supported-version "$MIN_SUPPORTED"); fi
+          if [ -n "$RELEASE_NOTES" ]; then args+=(--notes "$RELEASE_NOTES"); fi
+          # 每个平台一个目录(velopack-<rid>):逐个文件交给 manifest(kind 留空,由文件名推断)。
+          for dir in artifacts/in/velopack-*; do
+            rid="${dir##*/velopack-}"
+            for file in "$dir"/*; do
+              case "$(basename "$file")" in
+                *.nupkg|*Setup*|*Portable*|*.AppImage|releases.*.json|RELEASES) args+=(--artifact "$rid::$file") ;;
+              esac
+            done
+          done
+          ${{ env.NCW_BUILD }} manifest "${args[@]}"
+
+      - name: Verify the manifest signature and artifact hashes
+        run: |
+          manifest="artifacts/release/$VERSION/release-manifest.json"
+          if [ ! -f "$manifest.sig" ]; then
+            echo "::warning::The release manifest is NOT signed (NCW_RELEASE_SIGNING_KEY is not configured): signing.status = pending. The job that holds the key must run this step again before upload."
+            echo "- manifest: **NOT SIGNED** (signing.status = pending)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "$NCW_RELEASE_PUBLIC_KEY" ]; then
+            echo "::warning::vars.NCW_RELEASE_PUBLIC_KEY is not set; the signature was written but not verified here."
+            exit 0
+          fi
+          dirs=()
+          for dir in artifacts/in/velopack-*; do dirs+=(--dir "$dir"); done
+          ${{ env.NCW_BUILD }} manifest-verify --manifest "$manifest" "${dirs[@]}"
+          echo "- manifest: signed and verified" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: artifacts/release/${{ needs.preflight.outputs.version }}/
+          if-no-files-found: error
+          retention-days: 30
