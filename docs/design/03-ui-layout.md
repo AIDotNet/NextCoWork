@@ -219,6 +219,13 @@ iOS / Android 宿主项目、相机、推送令牌、附件选择器是平台能
   窄屏的模型 / 思考 / 权限三个选择器只留图标(模型名截短),菜单照旧;软键盘由 `Page.AvoidKeyboard` 处理。
 - **触控密度与宽度是两回事**:`IsTouch` 只由手机壳设置,桌面窗口再窄也不会变成「长按允许」。
 
+### 宿主里的安全区与横屏(Android 模拟器上发现并处理,详见 [11 §6](11-mobile-hosts.md))
+
+- `AdaptiveShell` 在有 `InsetsManager` 的宿主(手机 / 平板)里启用 `DisplayEdgeToEdgePreference` 并关闭 Avalonia 的 `AutoSafeAreaPadding`:内容画到状态栏 / 手势条后面,留白由页面自己负责。
+- 手机壳:`NcwPage` 不用 Arc 的 `UsePlatformSafeArea`(它读 `SafeAreaChanged` 事件参数,那是物理像素,页面顶部多出 2.6 倍的空白),改读 `IInsetsManager.SafeAreaPadding`(dip),并在 `SafeAreaChanged` / `ScalingChanged` 时重读;只有最外层页面留安全区。
+- 平板 / 手机横屏(宽度 ≥ 720)走桌面外壳:`AdaptiveShell` 给桌面外壳的 `Padding` 设成安全区;`WindowChrome.ForCurrentPlatform()` 在 Android / iOS 上不再画最小化 / 最大化 / 关闭。
+- 窄屏(360dp)输入框的工具行(模型 / 思考 / 权限)会换行:权限图标掉到第二行(已知,未修)。
+
 ### 审批的「长按允许」(02 B2)
 
 - 手势状态机是 Client 的 `HoldGesture`(纯逻辑,时间由 `TimeProvider` 注入):按下 → 按住期间每帧 `Tick` → 按满时长触发一次;松手早了 / 手指移出按钮边缘 24px(在滚动)/ 失焦 / 卡片换了版本 / 正在提交,都取消并把进度回零;

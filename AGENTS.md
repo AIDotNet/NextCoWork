@@ -6,8 +6,8 @@
 
 M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成:协议(含黄金向量)、本机与局域网承载、配对、C# Agent、2.x 数据接管、控制端连真实 Agent 都有测试
 (但真实 2.x 数据根与 safeStorage 凭据只在 macOS 上验证过)。M3 / M4 的 Agent 侧(模型层、回合循环、权限、执行环境、工具、终端、子代理、压缩、计划、待办、目标、Skills、Hooks、MCP、插件宿主、定时任务、开放网关、模型目录)
-和桌面界面主体已完成,M4 的 sidecar 打包守护与 `tools/Ncw.Build` 在 macOS 上跑通;M5 只完成共享层;M6 只完成中继(`Ncw.Relay` 与中继承载)。
-**尚未完成**:云端 Agent 模式(`--mode cloud`)、2.x 回放对照测试、iOS / Android 宿主与真机验证、真实后端(账户、更新 feed、推送中继、云端编排)、正式签名与公证、Windows / Linux 真机验证、
+和桌面界面主体已完成,M4 的 sidecar 打包守护与 `tools/Ncw.Build` 在 macOS 上跑通;M5 完成共享层和 Android 宿主(本机 Android 模拟器上走通「配对 → 审批 → 长按允许 → Run 继续」,推送 / 真机 / iOS 没做);M6 只完成中继(`Ncw.Relay` 与中继承载)。
+**尚未完成**:云端 Agent 模式(`--mode cloud`)、2.x 回放对照测试、iOS 宿主、Android 真机验证、推送、真实后端(账户、更新 feed、推送中继、云端编排)、正式签名与公证、Windows / Linux 真机验证、
 升级链路的其余部分(M7:桌面自更新运行时已接入并在 macOS 上本机演练过,后端 feed、2.9 桥接、正式签名与公证、Windows / Linux 未做)、CI 工作流(已写但没在真实 GitHub Actions 上跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
 设计文档在 `docs/design/`;实现必须与设计一致,偏离时先改设计文档。
 
@@ -74,6 +74,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 - 构建:`dotnet build NextCoWork.slnx`
 - 测试:`dotnet test NextCoWork.slnx`(UI 测试的截图输出在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`)
 - 桌面运行:`dotnet run --project src/Ncw.Desktop`
+- Android 宿主(需要 .NET 的 android workload + JDK + Android SDK,不在 `NextCoWork.slnx` 里;安装与回退见 `docs/design/11-mobile-hosts.md` §2):`dotnet build NextCoWork.Mobile.slnx -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=$HOME/Library/Developer/Xamarin/jdk`;模拟器冒烟(开发 / CI,默认不跑):`NCW_ANDROID_SMOKE=1 dotnet run --project tools/Ncw.MobileSmoke -- smoke`(前提:模拟器已启动、`src/Ncw.Agent` 与 Android 宿主已构建)
 - Agent 运行:`dotnet run --project src/Ncw.Agent -- --mode local`
 - CI:`.github/workflows/ci.yml`(三平台:构建零警告、测试、UI 截图、`publish-agent` 零裁剪警告、`build-relay`)与 `release.yml`(tag / 手动触发的发布流水线);均未在真实 GitHub Actions 上运行过
 - 中继(开发用,部署物):`NCW_RELAY_URLS=http://127.0.0.1:8080 dotnet run --project src/Ncw.Relay`(配置见 `docs/design/09-protocol.md` §9.3)
