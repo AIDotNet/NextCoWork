@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Android 宿主(docs/design/11)。需要 .NET 的 android workload + JDK + Android SDK(见 11 §4),所以<b>不在 NextCoWork.slnx 里</b>,
+    只在 NextCoWork.Mobile.slnx 里;没有 workload 的机器上 `dotnet build NextCoWork.slnx` 不受影响。
+    只引用 Ncw.UI / Ncw.Client / Ncw.Mobile.Shared;不引用 Ncw.Agent.* 和 Ncw.Desktop(手机不跑 Agent,AGENTS.md §5)。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Ncw.Mobile.Android</AssemblyName>
+    <RootNamespace>Ncw.Mobile.Droid</RootNamespace>
+    <!-- Android 8.0:通知渠道、自适应图标;Keystore 的 AES-GCM 需要 23+ -->
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <ApplicationId>work.nextco.ncw</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- 调试构建也把程序集打进 APK:`adb install` 装得上、不依赖 Fast Deployment(否则启动即崩:No assemblies found in .__override__) -->
+    <EmbedAssembliesIntoApk Condition="'$(EmbedAssembliesIntoApk)' == ''">true</EmbedAssembliesIntoApk>
+    <AndroidUseAapt2>true</AndroidUseAapt2>
+    <!-- 只出 64 位:模拟器(Apple 芯片)是 arm64,真机也都是;32 位设备不支持(Ncw.UI 带的原生库没有 32 位) -->
+    <NcwAndroidRids Condition="'$(NcwAndroidRids)' == ''">android-arm64</NcwAndroidRids>
+    <RuntimeIdentifiers>$(NcwAndroidRids)</RuntimeIdentifiers>
+    <!-- 只保留英文(默认)和简体中文的卫星资源程序集:Microsoft.* / Avalonia 依赖带十几种语言,每种在 APK 里都是一个 .so -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!--
+      Release 发布(`dotnet publish -c Release`)会跑 ILLink 裁剪。ILLink 对「产生裁剪警告的程序集」只给一条汇总 IL2104(TrimmerSingleWarn 默认),
+      仓库的 TreatWarningsAsErrors 会把它升成错误。核对过(`-p:TrimmerSingleWarn=false`,见 docs/design/11 §10):全部 7 条原始警告都来自第三方的
+      Avalonia.DesignerSupport(设计器支持,Android 上用不到,是 Avalonia 包的传递依赖),Ncw.* 和 ZXing.Net 一条都没有。所以只放行 IL2104 这一条汇总;
+      Ncw.* 自己的裁剪警告(IL2026 / IL2057 / IL2067 / IL2070 / IL2072 / IL2075 / IL3050 等)仍然是错误。
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
+    <!-- 推送服务:在本目录放 google-services.json(不进仓库,见 .gitignore)才启用 FCM,否则「推送服务未配置」且不引用 Firebase -->
+    <NcwFcm Condition="'$(NcwFcm)' == '' and Exists('$(MSBuildProjectDirectory)/google-services.json')">true</NcwFcm>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Android" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(NcwFcm)' == 'true'">
+    <PackageReference Include="Xamarin.Firebase.Messaging" />
+    <GoogleServicesJson Include="google-services.json" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(NcwFcm)' == 'true'">
+    <DefineConstants>$(DefineConstants);NCW_FCM</DefineConstants>
+  </PropertyGroup>
+  <!--
+    Ncw.UI 引用 TKCode.Arc.Terminal(终端页签,桌面用)。它带的 libghostty-vt.so 是 glibc 的 linux 构建:在 Android(bionic)上不能加载,
+    也没有 16 KB 页对齐(XA0141)。手机宿主没有本机 Agent、也不提供终端页签,所以从 APK 里去掉它(平板宽屏走桌面外壳时终端页签不可用,见 docs/design/11 §6)。
+  -->
+  <Target Name="NcwDropDesktopOnlyNative" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)" Condition="$([System.String]::Copy('%(NativeCopyLocalItems.FullPath)').Contains('tkcode.arc.terminal'))" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />
+    <ProjectReference Include="../Ncw.Client/Ncw.Client.csproj" />
+    <ProjectReference Include="../Ncw.Mobile.Shared/Ncw.Mobile.Shared.csproj" />
+  </ItemGroup>
+</Project>

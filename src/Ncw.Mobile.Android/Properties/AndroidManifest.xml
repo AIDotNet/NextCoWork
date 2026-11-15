@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    权限(docs/design/11 §3):相机只用于扫配对二维码(没有相机的设备也能装,走「粘贴二维码内容」);相册 / 文件走系统选择器,不要存储权限;
+    POST_NOTIFICATIONS 只在用户点「开启通知」时才申请(推送配置好之后)。
+  -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
+  <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+  <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
+  <!-- 拍照附件:启动系统相机的意图(Android 11+ 的包可见性) -->
+  <queries>
+    <intent>
+      <action android:name="android.media.action.IMAGE_CAPTURE" />
+    </intent>
+  </queries>
+  <application android:allowBackup="false" android:fullBackupContent="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
+    <!-- 拍照附件的临时文件(只在 cache/capture 下,系统相机通过一次性授权的 URI 写入) -->
+    <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.captures" android:exported="false" android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/capture_paths" />
+    </provider>
+  </application>
+</manifest>

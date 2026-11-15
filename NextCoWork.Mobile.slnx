@@ -1,0 +1,18 @@
+<Solution>
+  <!--
+    移动宿主解决方案:Android 宿主 + 它需要的共享项目(docs/design/11)。需要 .NET 的 android workload、JDK、Android SDK,
+    所以不并进 NextCoWork.slnx(没有 workload 的机器上主解决方案照常 `dotnet build`)。
+    构建:dotnet build NextCoWork.Mobile.slnx -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=<jdk>
+  -->
+  <Folder Name="/src/">
+    <Project Path="src/Ncw.Core/Ncw.Core.csproj" />
+    <Project Path="src/Ncw.Protocol/Ncw.Protocol.csproj" />
+    <Project Path="src/Ncw.Client/Ncw.Client.csproj" />
+    <Project Path="src/Ncw.UI/Ncw.UI.csproj" />
+    <Project Path="src/Ncw.Mobile.Shared/Ncw.Mobile.Shared.csproj" />
+    <Project Path="src/Ncw.Mobile.Android/Ncw.Mobile.Android.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ncw.Mobile.Shared.Tests/Ncw.Mobile.Shared.Tests.csproj" />
+  </Folder>
+</Solution>

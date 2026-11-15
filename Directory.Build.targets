@@ -7,7 +7,8 @@
   <PropertyGroup>
     <NcwPatchedRuntime10>10.0.15</NcwPatchedRuntime10>
   </PropertyGroup>
-  <Target Name="NcwPinServicingPacks" BeforeTargets="ProcessFrameworkReferences;_ComputeToolPackInputsToProcessFrameworkReferences">
+  <!-- Android(src/Ncw.Mobile.Android)不钉:它的运行时包版本由 android workload 清单给出(Microsoft.Android.Runtime.* 是 36.x,钉成 10.0.15 会还原失败),也不做 NativeAOT。 -->
+  <Target Name="NcwPinServicingPacks" BeforeTargets="ProcessFrameworkReferences;_ComputeToolPackInputsToProcessFrameworkReferences" Condition="'$(TargetPlatformIdentifier)' != 'android'">
     <ItemGroup>
       <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" Condition="'%(TargetFramework)' == 'net10.0'" ILCompilerPackVersion="$(NcwPatchedRuntime10)" />
       <KnownFrameworkReference Update="Microsoft.NETCore.App" Condition="'%(TargetFramework)' == 'net10.0'" LatestRuntimeFrameworkVersion="$(NcwPatchedRuntime10)" />

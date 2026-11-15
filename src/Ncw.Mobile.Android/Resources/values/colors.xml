@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ncw_window_background">#0E0F13</color>
+  <color name="ncw_icon_background">#1F6FEB</color>
+  <color name="ncw_icon_foreground">#FFFFFF</color>
+</resources>

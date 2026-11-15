@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    移动宿主(Ncw.Mobile.Android / 以后的 Ncw.Mobile.iOS)共用、但不依赖任何平台 workload 的逻辑:身份文件的密封存储、
+    后台 / 网络切换的连接策略、只连远程设备的后端、二维码帧解码。放在这里是为了 `dotnet build NextCoWork.slnx` 和
+    `dotnet test` 在没有 Android / iOS workload 的机器上也能覆盖这些逻辑(docs/design/11 §1)。
+    只引用 Ncw.UI 与 Ncw.Client(它们带上 Ncw.Core / Ncw.Protocol),不引用 Ncw.Agent.*、不引用 Ncw.Desktop。
+  -->
+  <ItemGroup>
+    <PackageReference Include="ZXing.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ncw.Mobile.Shared.Tests" />
+  </ItemGroup>
+</Project>

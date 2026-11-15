@@ -10,6 +10,8 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Skia" Version="12.1.5" />
+    <!-- Android 宿主(src/Ncw.Mobile.Android,不在主解决方案里):同样锁 12.1.5。 -->
+    <PackageVersion Include="Avalonia.Android" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Headless" Version="12.1.5" />
     <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.5" />
     <PackageVersion Include="TKCode.Arc" Version="1.1.0" />
@@ -36,6 +38,10 @@
     <PackageVersion Include="Jaunt" Version="1.0.3" />
     <!-- 更新(M7 桌面端接入;现在只有 tools/Ncw.Build 在用 vpk 打包):运行时库必须和 .config/dotnet-tools.json 里的 vpk 同一个版本,tests/Ncw.Build.Tests 核对。 -->
     <PackageVersion Include="Velopack" Version="1.2.161" />
+    <!-- 手机宿主(src/Ncw.Mobile.Shared):二维码解码。纯托管(Apache-2.0),不依赖 Google Play 服务,Android 与 iOS 共用,单测里用生成的二维码图验证。 -->
+    <PackageVersion Include="ZXing.Net" Version="0.16.11" />
+    <!-- Android 的 FCM 推送:只在 src/Ncw.Mobile.Android 里有 google-services.json(不进仓库)时才引用,默认构建不拉它。 -->
+    <PackageVersion Include="Xamarin.Firebase.Messaging" Version="125.1.3" />
     <!-- 测试 -->
     <!-- Avalonia.Headless.XUnit 12.1.5 基于 xunit v3(extensibility 3.2.x),测试统一用 xunit v3 3.2.x。 -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Android 模拟器冒烟的桌面一侧(不对用户发布,不进 NextCoWork.slnx;AGENTS.md §1 的「tools/ 只给开发和 CI 用」):
+    在隔离的临时数据根里拉起真实的 ncw-agent(不碰用户的 ~/.next-cowork),打开远程开关,配一个本机假上游(OpenAI Chat 的 SSE:第一次回复一个需要审批的 Bash 调用,
+    拿到工具结果后回复文字),生成配对二维码(地址改写成模拟器看到的宿主地址 10.0.2.2),等手机配对,发起一轮 Run,等收件箱里出现待审批、
+    手机「长按允许」之后 Run 继续并完成。默认不跑:必须设置环境变量 NCW_ANDROID_SMOKE=1。
+    用法见 docs/design/11-mobile-hosts.md §7。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 把配对二维码画成 PNG,喂给模拟器的虚拟相机(-camera-back imagefile:) -->
+    <PackageReference Include="ZXing.Net" />
+    <ProjectReference Include="../../src/Ncw.Protocol/Ncw.Protocol.csproj" />
+    <!-- 只为了构建顺序:先有 ncw-agent 的输出;不引用 Agent 的代码 -->
+    <ProjectReference Include="../../src/Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">NextCoWork</string>
+  <string name="channel_approvals">Approvals and questions</string>
+  <string name="channel_approvals_desc">A run is waiting for your decision</string>
+  <string name="channel_runs">Run results</string>
+  <string name="channel_runs_desc">A run finished or failed</string>
+  <string name="notification_needs_attention">Needs your attention</string>
+  <string name="notification_run_finished">A run has finished</string>
+</resources>

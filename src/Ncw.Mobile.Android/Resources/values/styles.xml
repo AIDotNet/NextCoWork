@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    Avalonia 的 Activity 要求 AppCompat 主题。界面内的一切颜色都来自 Arc token;这里只有「第一帧之前」的原生窗口底色,
+    取深色(应用默认深色主题,docs/design/03 §4),避免冷启动先闪一下白屏。
+  -->
+  <style name="NcwTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowBackground">@color/ncw_window_background</item>
+    <item name="android:colorBackground">@color/ncw_window_background</item>
+    <item name="android:windowLightStatusBar">false</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+  </style>
+</resources>

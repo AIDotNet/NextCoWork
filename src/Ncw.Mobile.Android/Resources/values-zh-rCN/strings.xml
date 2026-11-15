@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">NextCoWork</string>
+  <string name="channel_approvals">审批与提问</string>
+  <string name="channel_approvals_desc">有任务在等你决定</string>
+  <string name="channel_runs">任务结果</string>
+  <string name="channel_runs_desc">任务完成或失败</string>
+  <string name="notification_needs_attention">需要你确认</string>
+  <string name="notification_run_finished">有任务已经完成</string>
+</resources>

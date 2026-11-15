@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Mobile.Shared/Ncw.Mobile.Shared.csproj" />
+  </ItemGroup>
+</Project>
