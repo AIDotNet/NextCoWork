@@ -57,6 +57,28 @@ public sealed partial class DataGateViewModel : ObservableObject
 
     public bool IsVisible => Mode != DataGateMode.Hidden;
 
+    /// <summary>
+    /// 数据页此刻是否盖在窗口上:有内容要显示,并且启动加载界面没有拥有整窗。启动期间(加载界面还在)的准备 / 接管进度由加载界面显示(读的是同一个 <see cref="Step"/>),
+    /// 数据页只在「需要用户处理」时(被挡住 / 失败 / 刚接管完等「继续」)接管整窗——同一时刻只有一个全屏层。进入可交互状态后加载界面不再存在,数据页和以前一样。
+    /// </summary>
+    public bool IsPresented => IsVisible && !(_startup?.OwnsScreen ?? false);
+
+    private StartupViewModel? _startup;
+
+    /// <summary>接上启动加载界面(外壳装配时调一次):它拥有整窗时,数据页让位。</summary>
+    public void AttachStartup(StartupViewModel startup)
+    {
+        _startup = startup;
+        startup.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(StartupViewModel.OwnsScreen))
+            {
+                OnPropertyChanged(nameof(IsPresented));
+            }
+        };
+        OnPropertyChanged(nameof(IsPresented));
+    }
+
     public bool CanRetry => Mode is DataGateMode.Blocked or DataGateMode.Failed;
 
     /// <summary>正在准备或接管(显示转圈)。</summary>
@@ -67,6 +89,7 @@ public sealed partial class DataGateViewModel : ObservableObject
     partial void OnModeChanged(DataGateMode value)
     {
         OnPropertyChanged(nameof(IsVisible));
+        OnPropertyChanged(nameof(IsPresented));
         OnPropertyChanged(nameof(CanRetry));
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(IsCompleted));

@@ -666,8 +666,9 @@ public class StartupProgressTests
 
         var decision = StartupPresentation.Decide(View(f, 1200), new StartupPresentation.State(T0, At(250), At(900)), At(1200));
 
-        // 淡出已经开始的状态优先(界面层在淡出结束后才写 Interactive);没有淡出状态时直接关闭
-        Assert.True(decision.Reveal);
+        // 界面层在淡出结束后才写 Interactive;写下之后覆盖层不在了(不论表现层状态是什么)
+        Assert.False(decision.IsOpen);
+        Assert.False(decision.Reveal);
         Assert.False(StartupPresentation.Decide(View(f, 1200), Fresh(), At(1200)).IsOpen);
     }
 

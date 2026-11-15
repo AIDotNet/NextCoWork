@@ -53,6 +53,11 @@ public sealed partial class ShellViewModel : ObservableObject
             new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock));
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspector ?? new InspectorServices(Files, Git, Review, Terminals, Subagents));
         DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
+        // 启动加载界面(docs/design/03 §10):事实由 StartupRecorder 锁存进 Store,ViewModel 只读;和数据页读同一份数据状态,同一时刻只有一个全屏层
+        StartupRecorder = new StartupRecorder(stores, Devices);
+        Startup = new StartupViewModel(stores, Devices, DataGate,
+            new StartupActions(stores, Devices, () => StartupHost, () => Startup!.LocalFiles, () => RequestExit), () => StartupHost);
+        DataGate.AttachStartup(Startup);
         DeviceActions = new DeviceActions(Devices, clock);
         Account = new AccountViewModel(stores, account);
         Links = links;
@@ -191,6 +196,18 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>启动时的数据页(接管 2.x 数据的进度、被挡住时的重试)。</summary>
     public DataGateViewModel DataGate { get; }
+
+    /// <summary>启动加载界面:真实的加载阶段、进度、慢启动提示、失败面板(整窗覆盖层,盖在外壳上,淡出后释放)。没有在跟踪启动时什么也不显示。</summary>
+    public StartupViewModel Startup { get; }
+
+    /// <summary>把已经发生的事锁存成启动里程碑的订阅者(Workspace / Account Store → Startup Store)。</summary>
+    public StartupRecorder StartupRecorder { get; }
+
+    /// <summary>宿主提供的启动能力(桌面:本机 Agent 守护的重试与诊断);手机和测试为 null。</summary>
+    public IStartupHost? StartupHost { get; set; }
+
+    /// <summary>应用的退出流程(启动失败面板的「退出」);宿主装配时设置。</summary>
+    public Action? RequestExit { get; set; }
 
     /// <summary>设备相关的意图(添加 / 移除设备、远程开关)。</summary>
     public DeviceActions DeviceActions { get; }

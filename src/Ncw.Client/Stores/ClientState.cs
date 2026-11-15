@@ -120,6 +120,9 @@ public sealed record SelectionState(ProjectRef? Project, string? SessionId)
 /// <summary>控制端的全部 Store。ViewModel 只读它们,修改只能经过 Actions。</summary>
 public sealed class ClientStores
 {
+    /// <param name="clock">启动里程碑的时间戳用的时钟(默认系统时钟;测试传手动时钟)。</param>
+    public ClientStores(TimeProvider? clock = null) => Startup = new StartupStore(clock);
+
     public Store<LayoutState> Layout { get; } = new(LayoutState.Empty);
 
     public Store<WorkspaceState> Workspace { get; } = new(WorkspaceState.Empty);
@@ -177,6 +180,9 @@ public sealed class ClientStores
 
     /// <summary>自更新的状态(当前版本、通道、检查 / 下载 / 待重启、失败原因、待装更新的强制更新策略)。真源是这一个 Store,由 <see cref="Ncw.Client.Updates.UpdateService"/> 维护;界面只读。</summary>
     public Store<Ncw.Client.Updates.UpdateState> Updates { get; } = new(Ncw.Client.Updates.UpdateState.Initial);
+
+    /// <summary>启动事实(里程碑锁存、本机 Agent 守护的状态)。启动加载界面只读它(和设备 / 数据状态一起派生);真源规则见 <see cref="StartupState"/>。</summary>
+    public StartupStore Startup { get; }
 
     public Store<SelectionState> Selection { get; } = new(SelectionState.None);
 

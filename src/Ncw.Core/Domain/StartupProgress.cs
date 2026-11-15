@@ -580,14 +580,14 @@ public static class StartupPresentation
     public static Decision Decide(StartupView view, State state, DateTimeOffset now, StartupTimings? timings = null)
     {
         timings ??= StartupTimings.Default;
+        if (view.Phase == StartupPhase.Done)
+        {
+            return new Decision(false, false, false, null, state);   // 淡出结束、已经可交互:覆盖层不在了
+        }
+
         if (state.RevealStartedAt is not null)
         {
             return new Decision(true, state.ContentShownAt is not null, true, null, state);
-        }
-
-        if (view.Phase == StartupPhase.Done)
-        {
-            return new Decision(false, false, false, null, state);
         }
 
         if (view.Owner == StartupOwner.DataGate)

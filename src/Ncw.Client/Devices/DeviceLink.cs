@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
 using Ncw.Core.Layout;
@@ -42,6 +43,8 @@ public sealed class DeviceLink : IAsyncDisposable
     private readonly ConcurrentDictionary<string, long> _runCursors = new(StringComparer.Ordinal);
     private Task _loop = Task.CompletedTask;
     private DeviceClient? _client;
+    private readonly StartupSignals _startup;
+    private bool _sessionsTracked;
 
     /// <param name="placeholderId">连上之前用来显示的设备 id;连上后换成设备报告的真实 id。</param>
     /// <param name="displayName">显示名;为 null 时用设备自己报告的名字(远程设备)。</param>
@@ -58,6 +61,7 @@ public sealed class DeviceLink : IAsyncDisposable
         _environments = new DeviceEnvironmentsSync(stores, ui, () => DeviceId);
         _stores = stores;
         _ui = ui;
+        _startup = new StartupSignals(stores, ui);
         _connect = connect;
         _hello = hello;
         _kind = kind;
@@ -168,14 +172,45 @@ public sealed class DeviceLink : IAsyncDisposable
             _client = null;
             failures++;
             SetConnection(failures >= 3 ? DeviceConnection.Offline : DeviceConnection.Connecting);
+            using var kick = new CancellationTokenSource();
+            Volatile.Write(ref _kick, kick);
             try
             {
-                await Task.Delay(Backoff[Math.Min(failures - 1, Backoff.Length - 1)], _lifetime.Token).ConfigureAwait(false);
+                using var wait = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, kick.Token);
+                await Task.Delay(Backoff[Math.Min(failures - 1, Backoff.Length - 1)], wait.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!_lifetime.IsCancellationRequested)
+            {
+                // 用户点了「重试」:不等退避,立刻再连;连续失败从头数,界面回到「连接中」
+                failures = 0;
+                SetConnection(DeviceConnection.Connecting);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+            finally
+            {
+                Volatile.Write(ref _kick, null);
+            }
+        }
+    }
+
+    private CancellationTokenSource? _kick;
+
+    /// <summary>
+    /// 不等退避,立刻重连(启动加载界面和设备页的「重试」)。只在退避等待中有效;正在连接 / 已连上时什么也不做。
+    /// 连续失败的计数清零,设备从「离线」回到「连接中」。
+    /// </summary>
+    public void RetryNow()
+    {
+        try
+        {
+            Volatile.Read(ref _kick)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // 退避刚好结束:本来就要重连
         }
     }
 
@@ -289,6 +324,7 @@ public sealed class DeviceLink : IAsyncDisposable
         await _environments.AttachAsync(client, _lifetime.Token).ConfigureAwait(false);
 
         var initial = await first.Task.WaitAsync(TimeSpan.FromSeconds(10), _lifetime.Token).ConfigureAwait(false);
+        _startup.Milestone(StartupMilestone.TopicsSynced);   // 各主题的首帧都到了(启动时间线;不在跟踪时是空操作)
         if (initial.State == DataStates.Ready)
         {
             var projects = await client.CallAsync(DeviceMethods.ProjectsList, Unit.Value, _lifetime.Token).ConfigureAwait(false);
@@ -317,9 +353,13 @@ public sealed class DeviceLink : IAsyncDisposable
     {
         var deviceId = DeviceId;
         // 会话列表跟着项目走:每个项目拉一次 sessions.list(设备没有「会话列表」主题,变化靠下面几处触发重拉)
-        foreach (var project in list.Projects)
+        var refreshes = list.Projects.Select(p => RefreshSessionsAsync(p.WorkspaceId)).ToList();
+        if (!_sessionsTracked)
         {
-            _ = RefreshSessionsAsync(project.WorkspaceId);
+            // 启动时间线:第一份项目列表写进镜像之后,等这些会话列表都拉回来(RefreshSessionsAsync 在完成前已把结果投递到 UI 线程,
+            // 所以这里再投递的里程碑一定排在它们的 Store 更新之后);失败的不拖住启动(列表保持原样)
+            _sessionsTracked = true;
+            _ = Task.WhenAll(refreshes).ContinueWith(_ => _startup.Milestone(StartupMilestone.SessionsLoaded), TaskScheduler.Default);
         }
 
         var refs = list.Projects.Select(p => new ProjectRef(deviceId, p.WorkspaceId)).ToList();
@@ -341,6 +381,8 @@ public sealed class DeviceLink : IAsyncDisposable
         {
             _stores.Selection.Update(_ => new SelectionState(refs[0], null));
         }
+
+        _stores.Startup.Reach(StartupMilestone.ProjectsLoaded);   // 项目列表(哪怕是空的)已经写进镜像
     }
 
     /// <summary>
