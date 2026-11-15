@@ -35,7 +35,7 @@ public enum SessionHealth
 
 public enum LoginMethod
 {
-    /// <summary>浏览器授权码 + PKCE,<c>nextcowork://auth/callback</c> 跳回。</summary>
+    /// <summary>浏览器授权码 + PKCE,跳回本机回环监听(<c>http://127.0.0.1:{端口}/callback</c>)。</summary>
     Browser,
 
     /// <summary>设备授权码(RFC 8628):用户在浏览器里输入短码。</summary>

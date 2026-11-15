@@ -76,7 +76,8 @@ public class NcwApp : Application
                     stores, new HttpAccountApi(HttpAccountApi.CreateDefaultClient(), AccountEndpointsFromEnvironment()),
                     RefreshTokenVaultFactory?.Invoke() ?? UnsupportedRefreshTokenVault.Instance,
                     new JsonFileAccountMetaStore(Path.Combine(ClientDirectory, "account.json")),
-                    () => shell!.Launcher, new DeviceDelegationTarget(devices), AvaloniaUiDispatcher.Instance);
+                    () => shell!.Launcher, new DeviceDelegationTarget(devices), AvaloniaUiDispatcher.Instance,
+                    listener: new LoopbackLoginCallbackListener(done => NcwTexts.Get(done ? NcwTextKind.AccountCallbackDone : NcwTextKind.AccountCallbackFailed)));
             }
 
             if (!UseMockData)

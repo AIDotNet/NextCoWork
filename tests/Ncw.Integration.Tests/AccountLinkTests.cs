@@ -65,7 +65,7 @@ public sealed class AccountLinkTests : IAsyncLifetime
         _link = new DeviceLink(_stores, _ui, "local", DeviceKind.Local, "本机", async ct => await LocalTransport.ConnectAsync(endpoint, ct), new ClientHello("account-link", "3.0.0", LocalToken: AgentToken));
         _devices = new DeviceRegistry { Local = _link };
         _plugins = new PluginsActions(_devices, _stores.Plugins);
-        _account = new AccountService(_stores, _api, _vault, new MemoryAccountMetaStore(), () => _launcher, new DeviceDelegationTarget(_devices), _ui, _clock);
+        _account = new AccountService(_stores, _api, _vault, new MemoryAccountMetaStore(), () => _launcher, new DeviceDelegationTarget(_devices), _ui, _clock, listener: new Ncw.Client.Tests.Accounts.FakeLoginListener());
         await _account.InitializeAsync();
         _link.Start();
         await WaitUntil(() => Read(s => s.Workspace.State.Devices.Values.Any(d => d.Connection == DeviceConnection.Connected && d.Data?.State == DataStates.Ready)), "the local device is ready");

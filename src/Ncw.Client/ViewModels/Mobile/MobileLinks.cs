@@ -16,7 +16,7 @@ public sealed record PairQrMobileLink(string Content) : MobileLink;
 /// <summary><c>nextcowork://inbox?d=&lt;deviceId&gt;&amp;k=&lt;kind&gt;&amp;id=&lt;opaqueId&gt;</c>:通知点击后打开收件箱(推送内容只有这三个不透明字段,09 §10)。</summary>
 public sealed record InboxMobileLink(string DeviceId, string? Kind, string? OpaqueId) : MobileLink;
 
-/// <summary><c>nextcowork://auth/callback?…</c>:登录回调,交给账户登录流程(<see cref="LinkRouter"/>)。</summary>
+/// <summary><c>nextcowork://auth/callback?…</c>:登录回调,交给账户登录流程(<see cref="LinkRouter"/>)。桌面登录走本机回环监听、不经过它;这条路由留给手机的 Universal Link / App Link 回跳(后端目前没有对应的手机客户端,手机壳也还没有账户服务)。</summary>
 public sealed record AuthCallbackMobileLink(string Raw) : MobileLink;
 
 /// <summary>手机壳对一条链接的处理结果。</summary>

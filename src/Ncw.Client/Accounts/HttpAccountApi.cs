@@ -29,7 +29,21 @@ public sealed class HttpAccountApi(HttpClient http, AccountEndpoints? endpoints 
         Timeout = TimeSpan.FromSeconds(30),
     };
 
-    public Uri BuildAuthorizeUri(string state, string codeChallenge)
+    /// <summary>
+    /// <c>NextCoWork/3.x (系统; 架构)</c>:后端按前缀 <c>NextCoWork/</c> 识别桌面客户端,会话列表里的设备名「NextCoWork Desktop on macOS」取自系统名。
+    /// 只有产品名、版本族、系统和架构,不带用户或设备标识。
+    /// </summary>
+    public static readonly string UserAgent = $"NextCoWork/3.x ({PlatformName()}; {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()})";
+
+    private static string PlatformName() =>
+        OperatingSystem.IsMacOS() ? "macOS"
+        : OperatingSystem.IsWindows() ? "Windows"
+        : OperatingSystem.IsAndroid() ? "Android"
+        : OperatingSystem.IsIOS() ? "iOS"
+        : OperatingSystem.IsLinux() ? "Linux"
+        : "Unknown";
+
+    public Uri BuildAuthorizeUri(string state, string codeChallenge, string redirectUri)
     {
         var query = new StringBuilder();
         void Add(string name, string value)
@@ -43,7 +57,7 @@ public sealed class HttpAccountApi(HttpClient http, AccountEndpoints? endpoints 
         }
 
         Add("client_id", _endpoints.ClientId);
-        Add("redirect_uri", _endpoints.RedirectUri);
+        Add("redirect_uri", redirectUri);
         Add("response_type", "code");
         Add("state", state);
         Add("code_challenge", codeChallenge);
@@ -52,14 +66,14 @@ public sealed class HttpAccountApi(HttpClient http, AccountEndpoints? endpoints 
         return new UriBuilder(new Uri(_endpoints.Origin, _endpoints.AuthorizePath)) { Query = query.ToString() }.Uri;
     }
 
-    public async Task<TokenSet> ExchangeCodeAsync(string code, string codeVerifier, CancellationToken ct)
+    public async Task<TokenSet> ExchangeCodeAsync(string code, string codeVerifier, string redirectUri, CancellationToken ct)
     {
         using var doc = await SendAsync(HttpMethod.Post, _endpoints.TokenPath, null, new JsonObject
         {
             ["grant_type"] = "authorization_code",
             ["client_id"] = _endpoints.ClientId,
             ["code"] = code,
-            ["redirect_uri"] = _endpoints.RedirectUri,
+            ["redirect_uri"] = redirectUri,
             ["code_verifier"] = codeVerifier,
         }, ct).ConfigureAwait(false);
         return ReadTokens(doc);
@@ -263,6 +277,8 @@ public sealed class HttpAccountApi(HttpClient http, AccountEndpoints? endpoints 
         timeout.CancelAfter(_endpoints.Timeout);
         using var request = new HttpRequestMessage(method, new Uri(_endpoints.Origin, path));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        // 后端按 User-Agent 前缀识别桌面客户端(专属渠道门禁,会话列表里的设备名也取自它);只写产品名,不带用户或设备标识
+        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
         if (bearer is not null)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);

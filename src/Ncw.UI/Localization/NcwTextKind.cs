@@ -1193,6 +1193,8 @@ public enum NcwTextKind
     AccountCodeTitle,
     AccountCodeHint,
     AccountLoginFailedTitle,
+    AccountCallbackDone,
+    AccountCallbackFailed,
     AccountSignOut,
     AccountSignOutTitle,
     AccountSignOutHint,

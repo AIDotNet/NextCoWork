@@ -31,14 +31,14 @@ public class HttpAccountApiTests
     }
 
     [Fact]
-    public void The_authorize_url_carries_the_pkce_parameters_the_client_id_and_the_custom_scheme_redirect()
+    public void The_authorize_url_points_at_the_client_authorize_page_with_the_registered_client_id_and_the_loopback_redirect()
     {
         var (api, _, _) = Make();
-        var uri = api.BuildAuthorizeUri("STATE-1", "CHALLENGE-1");
-        Assert.Equal("https://api.example.test/oauth/authorize", uri.GetLeftPart(UriPartial.Path));
+        var uri = api.BuildAuthorizeUri("STATE-1", "CHALLENGE-1", "http://127.0.0.1:49152/callback");
+        Assert.Equal("https://api.example.test/client/authorize", uri.GetLeftPart(UriPartial.Path));
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        Assert.Equal("ncw-desktop", query["client_id"]);
-        Assert.Equal("nextcowork://auth/callback", query["redirect_uri"]);
+        Assert.Equal("nextcowork-desktop", query["client_id"]);
+        Assert.Equal("http://127.0.0.1:49152/callback", query["redirect_uri"]);
         Assert.Equal("code", query["response_type"]);
         Assert.Equal("STATE-1", query["state"]);
         Assert.Equal("CHALLENGE-1", query["code_challenge"]);
@@ -53,7 +53,7 @@ public class HttpAccountApiTests
         {
             var json = """{"access_token":"A","refresh_token":"R","expires_in":900,"user":{"id":"u1","email":"a@b.c","displayName":"Ann"}}""";
             var (api, handler, clock) = Make(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(envelope ? $$"""{"data":{{json}}}""" : json) });
-            var tokens = await api.ExchangeCodeAsync("CODE", "VERIFIER", CancellationToken.None);
+            var tokens = await api.ExchangeCodeAsync("CODE", "VERIFIER", "http://127.0.0.1:49152/callback", CancellationToken.None);
             Assert.Equal(("A", "R"), (tokens.AccessToken, tokens.RefreshToken));
             Assert.Equal(clock.GetUtcNow().AddSeconds(900), tokens.ExpiresAt);
             Assert.Equal("Ann", tokens.User!.Label);
@@ -61,8 +61,24 @@ public class HttpAccountApiTests
             Assert.Equal("https://api.example.test/api/client/oauth/token", request.Uri.ToString());
             Assert.Contains("\"grant_type\":\"authorization_code\"", request.Body);
             Assert.Contains("\"code_verifier\":\"VERIFIER\"", request.Body);
+            Assert.Contains("\"client_id\":\"nextcowork-desktop\"", request.Body);
+            Assert.Contains("\"redirect_uri\":\"http://127.0.0.1:49152/callback\"", request.Body);
             Assert.Null(request.Auth); // 换码不带令牌
         }
+    }
+
+    [Fact]
+    public async Task Requests_identify_the_desktop_client_by_the_product_prefix_the_backend_gates_on()
+    {
+        string? userAgent = null;
+        var (api, _, _) = Make(request =>
+        {
+            userAgent = request.Headers.UserAgent.ToString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = Json("{\"access_token\":\"A\",\"refresh_token\":\"R\",\"expires_in\":900}") };
+        });
+        await api.ExchangeCodeAsync("CODE", "VERIFIER", "http://127.0.0.1:49152/callback", CancellationToken.None);
+        Assert.StartsWith("NextCoWork/", userAgent);
+        Assert.Matches(@"^NextCoWork/3\.x \((macOS|Windows|Linux|Android|iOS|Unknown); \w+\)$", userAgent); // 会话列表里的设备名取自系统名
     }
 
     [Fact]
@@ -90,7 +106,7 @@ public class HttpAccountApiTests
         Assert.Equal(AccountApiErrorKind.BadResponse, (await Assert.ThrowsAsync<AccountApiException>(() => garbage.GetUserAsync("AT", CancellationToken.None))).Kind);
 
         var (incomplete, _, _) = Make(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = Json("""{"access_token":"A"}""") });
-        Assert.Equal(AccountApiErrorKind.BadResponse, (await Assert.ThrowsAsync<AccountApiException>(() => incomplete.ExchangeCodeAsync("C", "V", CancellationToken.None))).Kind);
+        Assert.Equal(AccountApiErrorKind.BadResponse, (await Assert.ThrowsAsync<AccountApiException>(() => incomplete.ExchangeCodeAsync("C", "V", "http://127.0.0.1:49152/callback", CancellationToken.None))).Kind);
     }
 
     [Fact]
@@ -121,7 +137,7 @@ public class HttpAccountApiTests
     [Fact]
     public async Task The_device_authorization_flow_maps_the_RFC_8628_answers()
     {
-        var (api, handler, _) = Make(r => r.RequestUri!.AbsolutePath.EndsWith("device_authorization", StringComparison.Ordinal)
+        var (api, handler, _) = Make(r => r.RequestUri!.AbsolutePath.EndsWith("/api/client/oauth/device", StringComparison.Ordinal)
             ? new HttpResponseMessage(HttpStatusCode.OK) { Content = Json("""{"device_code":"DC","user_code":"ABCD-EFGH","verification_uri":"https://x.test/device","expires_in":600,"interval":7}""") }
             : new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json("""{"error":"authorization_pending"}""") });
         var auth = await api.StartDeviceAuthorizationAsync(CancellationToken.None);

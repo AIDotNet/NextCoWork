@@ -1170,6 +1170,8 @@
     <unit id="AccountCodeTitle"><segment><source>Enter this code in your browser</source><target state="final">Enter this code in your browser</target></segment></unit>
     <unit id="AccountCodeHint"><segment><source>Open {0} and enter the code. This window continues automatically once you approve it.</source><target state="final">Open {0} and enter the code. This window continues automatically once you approve it.</target></segment></unit>
     <unit id="AccountLoginFailedTitle"><segment><source>Sign-in didn't finish</source><target state="final">Sign-in didn't finish</target></segment></unit>
+    <unit id="AccountCallbackDone"><segment><source>Sign-in is complete. You can close this page and return to NextCoWork.</source><target state="final">Sign-in is complete. You can close this page and return to NextCoWork.</target></segment></unit>
+    <unit id="AccountCallbackFailed"><segment><source>Sign-in didn't finish. Close this page and try again in NextCoWork.</source><target state="final">Sign-in didn't finish. Close this page and try again in NextCoWork.</target></segment></unit>
     <unit id="AccountSignOut"><segment><source>Sign out</source><target state="final">Sign out</target></segment></unit>
     <unit id="AccountSignOutTitle"><segment><source>Sign out of NextCoWork?</source><target state="final">Sign out of NextCoWork?</target></segment></unit>
     <unit id="AccountSignOutHint"><segment><source>This app forgets your account and the local agent loses access to it too. Your files, sessions and your own model providers stay.</source><target state="final">This app forgets your account and the local agent loses access to it too. Your files, sessions and your own model providers stay.</target></segment></unit>

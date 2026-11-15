@@ -1170,6 +1170,8 @@
     <unit id="AccountCodeTitle"><segment><source>Enter this code in your browser</source><target state="translated">在浏览器里输入这个登录码</target></segment></unit>
     <unit id="AccountCodeHint"><segment><source>Open {0} and enter the code. This window continues automatically once you approve it.</source><target state="translated">打开 {0} 并输入登录码,你在浏览器里确认后这里会自动继续。</target></segment></unit>
     <unit id="AccountLoginFailedTitle"><segment><source>Sign-in didn't finish</source><target state="translated">登录没有完成</target></segment></unit>
+    <unit id="AccountCallbackDone"><segment><source>Sign-in is complete. You can close this page and return to NextCoWork.</source><target state="translated">登录完成,可以关闭此页面并回到 NextCoWork。</target></segment></unit>
+    <unit id="AccountCallbackFailed"><segment><source>Sign-in didn't finish. Close this page and try again in NextCoWork.</source><target state="translated">登录没有完成,请关闭此页面,回到 NextCoWork 重试。</target></segment></unit>
     <unit id="AccountSignOut"><segment><source>Sign out</source><target state="translated">退出登录</target></segment></unit>
     <unit id="AccountSignOutTitle"><segment><source>Sign out of NextCoWork?</source><target state="translated">退出 NextCoWork 账户?</target></segment></unit>
     <unit id="AccountSignOutHint"><segment><source>This app forgets your account and the local agent loses access to it too. Your files, sessions and your own model providers stay.</source><target state="translated">这个应用会忘记你的账户,本机 Agent 也不再能使用它。你的文件、会话和自己的模型供应商都不受影响。</target></segment></unit>
