@@ -4,6 +4,8 @@
     <Project Path="src/Ncw.Protocol/Ncw.Protocol.csproj" />
     <Project Path="src/Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
     <Project Path="src/Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+    <Project Path="src/Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <Project Path="src/Ncw.Agent.Terminal/Ncw.Agent.Terminal.csproj" />
     <Project Path="src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
     <Project Path="src/Ncw.Agent/Ncw.Agent.csproj" />
     <Project Path="src/Ncw.Client/Ncw.Client.csproj" />
@@ -15,6 +17,8 @@
     <Project Path="tests/Ncw.Protocol.Tests/Ncw.Protocol.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Storage.Tests/Ncw.Agent.Storage.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Llm.Tests/Ncw.Agent.Llm.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Environments.Tests/Ncw.Agent.Environments.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Terminal.Tests/Ncw.Agent.Terminal.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Host.Tests/Ncw.Agent.Host.Tests.csproj" />
     <Project Path="tests/Ncw.Integration.Tests/Ncw.Integration.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />

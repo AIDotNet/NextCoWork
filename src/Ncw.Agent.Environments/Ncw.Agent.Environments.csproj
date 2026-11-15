@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    执行环境(docs/design/06):工具真正执行、文件真正所在的地方。
+    LocalEnvironment 是整个 Agent 里唯一可以直接用 System.IO / Process 碰设备本地的地方(AGENTS.md §5);
+    SshEnvironment 用 SSH.NET。本项目不引用 Avalonia、客户端项目,也不引用 Ncw.Protocol,不产出界面文字,只给结构化数据和错误码。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Environments</RootNamespace>
+    <!-- LibraryImport(kill)生成的封送代码需要 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SSH.NET" />
+    <InternalsVisibleTo Include="Ncw.Agent.Environments.Tests" />
+  </ItemGroup>
+</Project>

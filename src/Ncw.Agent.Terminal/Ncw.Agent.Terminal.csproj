@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    终端(docs/design/06 §9):本机 PTY(POSIX 用 posix_openpt + posix_spawn,Windows 用 ConPTY)和终端会话管理 TerminalManager。
+    本机 PTY 是 LocalEnvironment 的「终端提供方」(LocalEnvironmentOptions.TerminalFactory 的注入物),所以和执行环境实现一样,
+    允许直接碰设备本地的进程和文件(AGENTS.md §5 的例外);工具、Hooks、插件宿主一律不得引用本项目的 PTY 类型。
+    依赖规则:只引用 Ncw.Agent.Environments(ITerminal / TerminalSpec / EnvPath / IExecutionEnvironment);
+    不引用 Ncw.Protocol、Ncw.Agent.Storage、Ncw.Agent.Host、Avalonia、客户端项目。本层不产出界面文字:错误只有错误码和英文诊断,
+    审批意图只带结构化数据(环境标识、shell、目录),控制端按类型翻译。
+    P/Invoke 全部用 LibraryImport 源生成,不用反射,可裁剪、可 NativeAOT。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Terminal</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Terminal.Tests" />
+  </ItemGroup>
+</Project>
