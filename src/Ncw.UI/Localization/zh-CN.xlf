@@ -1128,6 +1128,7 @@
     <unit id="SettingsNotifications"><segment><source>Notifications</source><target state="translated">通知</target></segment></unit>
     <unit id="PushHint"><segment><source>Get an alert when a run needs your approval or finishes while the app is closed. Alerts never contain your conversation.</source><target state="translated">App 不在前台时,任务需要审批或完成会提醒你。提醒里不包含对话内容。</target></segment></unit>
     <unit id="PushUnsupported"><segment><source>Push notifications aren't available on this device.</source><target state="translated">这台设备不支持推送通知。</target></segment></unit>
+    <unit id="PushNotConfigured"><segment><source>Push notifications aren't set up in this build yet. Approvals still show up in your inbox while the app is open.</source><target state="translated">这个版本还没有配置推送服务。App 打开时,待审批仍会出现在收件箱里。</target></segment></unit>
     <unit id="PushNotDetermined"><segment><source>Notifications are off.</source><target state="translated">通知还没有开启。</target></segment></unit>
     <unit id="PushDenied"><segment><source>Notifications are blocked. Allow them in system settings.</source><target state="translated">通知被禁止了。请在系统设置里允许。</target></segment></unit>
     <unit id="PushNoToken"><segment><source>Waiting for the system to provide a push token.</source><target state="translated">正在等系统提供推送令牌。</target></segment></unit>

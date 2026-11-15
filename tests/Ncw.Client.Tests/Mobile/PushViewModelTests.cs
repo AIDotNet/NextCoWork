@@ -17,6 +17,8 @@ public class PushViewModelTests
     {
         public bool IsSupported => true;
 
+        public bool IsConfigured { get; set; } = true;
+
         public PushPlatform Platform => PushPlatform.Apns;
 
         public PushPermission Permission { get; set; } = permission;
@@ -63,6 +65,22 @@ public class PushViewModelTests
         var stores = MockWorkspace.Create(Now); // 本机连着,云端休眠,工作室离线
         var commands = new FakeCommands();
         return (new PushViewModel(stores, commands, () => push, "3.0.0"), stores, commands);
+    }
+
+    [Fact]
+    public async Task A_platform_without_push_configuration_is_not_an_error_and_never_asks_or_registers()
+    {
+        var push = new FakePush { IsConfigured = false };
+        var (vm, _, commands) = Make(push);
+
+        await vm.RefreshAsync();
+        await vm.EnableCommand.ExecuteAsync(null);
+
+        Assert.Equal(PushStatus.NotConfigured, vm.Status);
+        Assert.False(vm.CanEnable);
+        Assert.False(vm.IsSupported);
+        Assert.Equal(0, push.Requests); // 没配置就不弹系统权限对话框
+        Assert.Empty(commands.Registered);
     }
 
     [Fact]

@@ -11,7 +11,9 @@ public sealed record WindowChrome(double LeftInset, bool ShowsCaptionButtons)
     /// <summary>顶部这一行的高度。这一行里没有被控件处理的按下用来拖动窗口。</summary>
     public const double TopRowHeight = 40;
 
-    /// <summary>按操作系统选择外框,只有这一处判断平台。</summary>
+    /// <summary>按操作系统选择外框,只有这一处判断平台。手机 / 平板(Android、iOS)没有窗口:横屏宽度 ≥ 720 时走桌面外壳,不画最小化 / 最大化 / 关闭。</summary>
     public static WindowChrome ForCurrentPlatform() =>
-        OperatingSystem.IsMacOS() ? new WindowChrome(78, false) : new WindowChrome(0, true);
+        OperatingSystem.IsMacOS() ? new WindowChrome(78, false)
+        : OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() ? new WindowChrome(0, false)
+        : new WindowChrome(0, true);
 }

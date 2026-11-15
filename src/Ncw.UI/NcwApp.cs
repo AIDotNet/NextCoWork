@@ -117,13 +117,27 @@ public class NcwApp : Application
             _backend = BackendFactory?.Invoke();
             _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
-            single.MainView = new Views.AdaptiveShell { DataContext = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke()) };
+            var mobileShell = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke());
+            single.MainView = new Views.AdaptiveShell { DataContext = mobileShell };
+            AttachMobileLinks(mobileShell);
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
     private AccountService? _account;
+
+    /// <summary>
+    /// 手机宿主把系统转来的 <c>nextcowork://</c> 链接(Android intent-filter / iOS URL scheme)投进 <see cref="NcwLinkInbox"/>,这里路由:
+    /// 配对二维码 → 扫码页待确认、<c>inbox</c> → 收件箱、登录回调 → 账户流程(手机壳还没有账户页时如实忽略)。链接不可信,不会自动配对。
+    /// </summary>
+    private static void AttachMobileLinks(ShellViewModel shell)
+    {
+        var handler = new MobileLinkHandler(shell);
+        NcwLinkInbox.Attach(
+            raw => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = handler.HandleAsync(raw)),
+            static () => { });
+    }
 
     /// <summary>宿主在启动前设置:创建账户刷新令牌的系统钥匙串保管(macOS Keychain / Windows DPAPI)。为 null 时拒绝保存刷新令牌(登录只在本次运行里有效,并提示用户)。</summary>
     public static Func<IRefreshTokenVault>? RefreshTokenVaultFactory { get; set; }

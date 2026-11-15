@@ -23,7 +23,7 @@
       <Border x:Name="PreviewFrame" IsVisible="{Binding ShowsScanner}" CornerRadius="16" ClipToBounds="True" Height="240"
               Background="{arc:ArcDesignTokenResource SurfaceMuted}" BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
         <Panel>
-          <ContentControl x:Name="PreviewHost" />
+          <ContentControl x:Name="PreviewHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
           <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
             <lucide:LucideIcon Kind="ScanLine" Size="40" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <TextBlock HorizontalAlignment="Center" Classes="hint" Text="{l:NcwText QrPreviewPlaceholder}" />

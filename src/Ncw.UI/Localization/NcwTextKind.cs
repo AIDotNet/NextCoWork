@@ -1147,6 +1147,7 @@ public enum NcwTextKind
     SettingsNotifications,
     PushHint,
     PushUnsupported,
+    PushNotConfigured,
     PushNotDetermined,
     PushDenied,
     PushNoToken,

@@ -13,6 +13,9 @@ public enum PushStatus
     /// <summary>这个平台没有推送(桌面 / 模拟器 / 宿主没接)。</summary>
     Unsupported,
 
+    /// <summary>平台能推送,但这个构建没有配置推送服务(没有 Firebase / APNs 配置):不是错误,不请求权限。</summary>
+    NotConfigured,
+
     /// <summary>还没问过通知权限。</summary>
     NotDetermined,
 
@@ -65,14 +68,14 @@ public sealed partial class PushViewModel : ObservableObject
 
     public bool CanEnable => Status is PushStatus.NotDetermined or PushStatus.NoToken or PushStatus.Failed;
 
-    public bool IsSupported => _push() is { IsSupported: true };
+    public bool IsSupported => _push() is { IsSupported: true, IsConfigured: true };
 
     /// <summary>设置页打开时:读权限 / 令牌,拿得到就登记。</summary>
     public async Task RefreshAsync(CancellationToken ct = default)
     {
-        if (_push() is not { IsSupported: true } push)
+        if (_push() is not { IsSupported: true, IsConfigured: true } push)
         {
-            Status = PushStatus.Unsupported;
+            Status = Compute(null);
             return;
         }
 
@@ -92,7 +95,7 @@ public sealed partial class PushViewModel : ObservableObject
     [RelayCommand]
     private async Task EnableAsync()
     {
-        if (_push() is not { IsSupported: true } push)
+        if (_push() is not { IsSupported: true, IsConfigured: true } push)
         {
             return;
         }
@@ -136,9 +139,9 @@ public sealed partial class PushViewModel : ObservableObject
     private async Task SyncAsync(PushPermission permission)
     {
         var push = _push();
-        if (push is not { IsSupported: true })
+        if (push is not { IsSupported: true, IsConfigured: true })
         {
-            Status = PushStatus.Unsupported;
+            Status = Compute(null);
             return;
         }
 
@@ -180,14 +183,19 @@ public sealed partial class PushViewModel : ObservableObject
         OnPropertyChanged(nameof(CanEnable));
     }
 
-    private PushStatus Compute(PushPermission? permission) => _push() is not { IsSupported: true }
-        ? PushStatus.Unsupported
-        : permission switch
-        {
-            PushPermission.Denied => PushStatus.Denied,
-            PushPermission.NotDetermined => PushStatus.NotDetermined,
-            _ => PushStatus.NoToken,
-        };
+    private PushStatus Compute(PushPermission? permission) => _push() switch
+    {
+        not { IsSupported: true } => PushStatus.Unsupported,
+        { IsConfigured: false } => PushStatus.NotConfigured,
+        _ => ComputePermission(permission),
+    };
+
+    private static PushStatus ComputePermission(PushPermission? permission) => permission switch
+    {
+        PushPermission.Denied => PushStatus.Denied,
+        PushPermission.NotDetermined => PushStatus.NotDetermined,
+        _ => PushStatus.NoToken,
+    };
 
     partial void OnStatusChanged(PushStatus value) => OnPropertyChanged(nameof(CanEnable));
 }

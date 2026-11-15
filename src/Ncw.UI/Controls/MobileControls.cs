@@ -1,3 +1,6 @@
+using Avalonia.Controls;
+using Avalonia.VisualTree;
+
 namespace Ncw.UI.Controls;
 
 // 手机壳用的 TKCode.Arc.Mobile 薄封装(同 ArcWrappers.cs:业务视图只引用这里的类型,Arc 升级的破坏性变更收敛在这一个文件)。
@@ -12,7 +15,66 @@ public class NcwNavigationStack : TKCode.Arc.Mobile.NavigationStack
 /// <summary>一屏:头部(导航栏)、内容、底部(标签栏),自带安全区和软键盘避让。</summary>
 public class NcwPage : TKCode.Arc.Mobile.Page
 {
+    private Avalonia.Controls.Platform.IInsetsManager? _insets;
+    private TopLevel? _top;
+
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.Mobile.Page);
+
+    // 安全区(刘海、状态栏、手势条)自己取,不用 Arc 的 UsePlatformSafeArea:Avalonia 的 IInsetsManager.SafeAreaPadding 属性是 dip,
+    // 但 SafeAreaChanged 事件参数里的值是物理像素(模拟器实测:缩放 2.625 的手机上属性 = 48.8,事件 = 128),Arc.Mobile 1.1.0 用的是事件参数,
+    // 于是页面顶部多出 2.6 倍的空白(见 docs/design/11 §6)。这里始终读属性(dip),事件只当作「变了」的通知。
+    // 只有最外层的页面(MobileShell 的框架页)留出安全区;推进导航栈里的页面在它的内容区内,不再重复留。
+    public NcwPage() => UsePlatformSafeArea = false;
+
+    protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (this.FindAncestorOfType<TKCode.Arc.Mobile.Page>() is not null)
+        {
+            SafeArea = default;
+            return;
+        }
+
+        _top = TopLevel.GetTopLevel(this);
+        _insets = _top?.InsetsManager;
+        if (_insets is not null && _top is not null)
+        {
+            _insets.SafeAreaChanged += OnSafeAreaChanged;
+            _top.ScalingChanged += OnScalingChanged;
+            ReadSafeArea();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        if (_insets is not null)
+        {
+            _insets.SafeAreaChanged -= OnSafeAreaChanged;
+            _insets = null;
+        }
+
+        if (_top is not null)
+        {
+            _top.ScalingChanged -= OnScalingChanged;
+            _top = null;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    // 属性值 = 物理像素 / 当前渲染缩放;启动早期缩放还是 1 时读到的是像素值(128),缩放更新到 2.625 后不再有 SafeAreaChanged,
+    // 所以缩放变化时也要重读。
+    private void OnSafeAreaChanged(object? sender, Avalonia.Controls.Platform.SafeAreaChangedArgs e) => ReadSafeArea();
+
+    private void OnScalingChanged(object? sender, EventArgs e) => ReadSafeArea();
+
+    private void ReadSafeArea()
+    {
+        if (_insets is not null)
+        {
+            SafeArea = _insets.SafeAreaPadding;
+        }
+    }
 }
 
 /// <summary>44px 的顶部导航栏(返回按钮、居中标题、右侧操作)。</summary>

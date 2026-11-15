@@ -140,6 +140,36 @@ public sealed class RemoteDeviceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Suspending_marks_the_paired_device_unknown_and_resuming_or_reconnecting_brings_it_back_without_duplicates()
+    {
+        var actions = new DeviceActions(_devices);
+        Assert.Equal(PairOutcome.Paired, await actions.PairAsync(Address, _b.Remote.PairingCode!));
+        await WaitUntil(s => s.Devices.TryGetValue(_b.DeviceId, out var d) && d.Connection == DeviceConnection.Connected, "remote connected");
+
+        // 手机进入后台 / 断网:断开,设备标成断开(状态未知,不判成结束),已配对列表不动
+        await _devices.Remote!.SuspendAsync();
+        await WaitUntil(s => s.Devices.TryGetValue(_b.DeviceId, out var d) && d.Connection == DeviceConnection.Offline, "suspended");
+        Assert.Null(_devices.Remote.Find(_b.DeviceId));
+        Assert.Single(_book.Saved);
+
+        // 重复挂起无害;恢复后重新连上
+        await _devices.Remote.SuspendAsync();
+        _devices.Remote.Resume();
+        await WaitUntil(s => s.Devices.TryGetValue(_b.DeviceId, out var d) && d.Connection == DeviceConnection.Connected, "resumed");
+        var first = _devices.Remote.Find(_b.DeviceId);
+        Assert.NotNull(first);
+
+        // 已经在连着时再 Resume 不会重复建连接
+        _devices.Remote.Resume();
+        Assert.Same(first, _devices.Remote.Find(_b.DeviceId));
+
+        // 换网络 / 离开太久:丢弃现有连接重连
+        await _devices.Remote.ReconnectAsync();
+        await WaitUntil(s => s.Devices.TryGetValue(_b.DeviceId, out var d) && d.Connection == DeviceConnection.Connected, "reconnected");
+        Assert.NotSame(first, _devices.Remote.Find(_b.DeviceId));
+    }
+
+    [Fact]
     public async Task Local_device_mirrors_its_remote_state_for_the_settings_page()
     {
         await WaitUntil(s => s.Devices.Values.Any(d => d.Kind == DeviceKind.Local && d.Remote is not null), "local remote state");

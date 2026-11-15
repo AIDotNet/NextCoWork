@@ -74,6 +74,12 @@ public interface IPushRegistration
     /// <summary>这个平台有推送(桌面、模拟器没有)。</summary>
     bool IsSupported { get; }
 
+    /// <summary>
+    /// 这个平台能推送,但应用里有没有配好推送服务(FCM 的 <c>google-services.json</c> / APNs 的能力与证书)。没配好时界面显示「推送服务未配置」,
+    /// 不请求权限、不取令牌、更不会伪造令牌。默认 true(已有实现不用改)。
+    /// </summary>
+    bool IsConfigured => true;
+
     PushPlatform Platform { get; }
 
     Task<PushPermission> GetPermissionAsync(CancellationToken ct = default);

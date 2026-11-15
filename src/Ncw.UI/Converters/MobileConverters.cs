@@ -102,6 +102,7 @@ public sealed class PushStatusTextConverter : IMultiValueConverter
         ? status switch
         {
             PushStatus.Unsupported => NcwTexts.Get(NcwTextKind.PushUnsupported),
+            PushStatus.NotConfigured => NcwTexts.Get(NcwTextKind.PushNotConfigured),
             PushStatus.NotDetermined => NcwTexts.Get(NcwTextKind.PushNotDetermined),
             PushStatus.Denied => NcwTexts.Get(NcwTextKind.PushDenied),
             PushStatus.NoToken => NcwTexts.Get(NcwTextKind.PushNoToken),

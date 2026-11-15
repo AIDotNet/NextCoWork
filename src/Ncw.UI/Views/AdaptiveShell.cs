@@ -52,6 +52,46 @@ public sealed class AdaptiveShell : ContentControl
     /// <summary>当前显示的手机外壳(没创建过为 null;测试用)。</summary>
     public MobileShell? Mobile => _mobile;
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // 手机宿主的单视图:内容画到系统栏后面(状态栏、手势条),页面自己按安全区留白(NcwPage)。桌面窗口没有 InsetsManager,这里什么也不做。
+        if (TopLevel.GetTopLevel(this) is { InsetsManager: { } insets } top)
+        {
+            insets.DisplayEdgeToEdgePreference = true;
+            TopLevel.SetAutoSafeAreaPadding(this, false); // Avalonia 默认还会自己给根视图加安全区 padding;关掉,避免和 NcwPage 的留白叠加
+            _insets = insets;
+            _top = top;
+            insets.SafeAreaChanged += OnSafeAreaChanged;
+            top.ScalingChanged += OnScalingChanged;
+            ApplySafeArea();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_insets is not null && _top is not null)
+        {
+            _insets.SafeAreaChanged -= OnSafeAreaChanged;
+            _top.ScalingChanged -= OnScalingChanged;
+        }
+
+        _insets = null;
+        _top = null;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private Avalonia.Controls.Platform.IInsetsManager? _insets;
+    private TopLevel? _top;
+
+    private void OnSafeAreaChanged(object? sender, Avalonia.Controls.Platform.SafeAreaChangedArgs e) => ApplySafeArea();
+
+    private void OnScalingChanged(object? sender, EventArgs e) => ApplySafeArea();
+
+    /// <summary>桌面外壳没有自己的安全区处理(手机外壳的页面 <c>NcwPage</c> 自己留):手机 / 平板横屏走桌面外壳时,在这里给它留出状态栏 / 手势条 / 刘海。</summary>
+    private void ApplySafeArea() =>
+        Padding = Kind == ShellKind.Desktop && _insets is not null ? _insets.SafeAreaPadding : default;
+
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
@@ -76,6 +116,7 @@ public sealed class AdaptiveShell : ContentControl
         }
 
         Kind = kind;
+        ApplySafeArea();
         Content = kind == ShellKind.Mobile
             ? _mobile ??= new MobileShell()
             : _desktop ??= CreateDesktop();
