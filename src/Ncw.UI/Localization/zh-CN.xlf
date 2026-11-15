@@ -1512,5 +1512,48 @@
     <unit id="MotionOff"><segment><source>Off</source><target state="translated">关闭</target></segment></unit>
     <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="translated">当前生效:{0}</target></segment></unit>
     <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="translated">这个平台读不到系统的「减少动态效果」设置,所以按「完整」处理;想减少动效请直接选「减弱」或「关闭」。</target></segment></unit>
+    <unit id="StartupA11yName"><segment><source>Starting NextCoWork</source><target state="translated">正在启动 NextCoWork</target></segment></unit>
+    <unit id="StartupProgressLabel"><segment><source>Startup progress</source><target state="translated">启动进度</target></segment></unit>
+    <unit id="StartupStageApp"><segment><source>Preparing the app</source><target state="translated">准备应用</target></segment></unit>
+    <unit id="StartupStageAgent"><segment><source>Starting the local agent</source><target state="translated">启动本机 Agent</target></segment></unit>
+    <unit id="StartupStageConnect"><segment><source>Connecting to the device</source><target state="translated">连接设备</target></segment></unit>
+    <unit id="StartupStageData"><segment><source>Preparing your data</source><target state="translated">准备数据</target></segment></unit>
+    <unit id="StartupStageContent"><segment><source>Loading projects and sessions</source><target state="translated">加载项目与会话</target></segment></unit>
+    <unit id="StartupDetailAppStarting"><segment><source>Setting up the window and your preferences…</source><target state="translated">正在准备窗口和偏好设置…</target></segment></unit>
+    <unit id="StartupDetailAgentLaunching"><segment><source>Launching the agent process…</source><target state="translated">正在启动 Agent 进程…</target></segment></unit>
+    <unit id="StartupDetailAgentHandshake"><segment><source>Waiting for the agent to answer…</source><target state="translated">正在等待 Agent 响应…</target></segment></unit>
+    <unit id="StartupDetailAgentRestarting"><segment><source>The agent stopped unexpectedly and is restarting.</source><target state="translated">Agent 意外退出,正在重新启动。</target></segment></unit>
+    <unit id="StartupDetailConnecting"><segment><source>Opening a secure local connection…</source><target state="translated">正在建立本机连接…</target></segment></unit>
+    <unit id="StartupDetailReconnecting"><segment><source>The connection dropped. Reconnecting…</source><target state="translated">连接中断,正在重新连接…</target></segment></unit>
+    <unit id="StartupDetailDataPreparing"><segment><source>Checking your data…</source><target state="translated">正在检查数据…</target></segment></unit>
+    <unit id="StartupDetailLoadingProjects"><segment><source>Loading your projects…</source><target state="translated">正在读取项目…</target></segment></unit>
+    <unit id="StartupDetailLoadingSessions"><segment><source>Loading your sessions…</source><target state="translated">正在读取会话…</target></segment></unit>
+    <unit id="StartupDetailSettling"><segment><source>Getting everything ready…</source><target state="translated">马上就好…</target></segment></unit>
+    <unit id="StartupSlowGeneric"><segment><source>This is taking a little longer than usual. Hang tight.</source><target state="translated">这次启动比平时久一点,请稍候。</target></segment></unit>
+    <unit id="StartupSlowAgent"><segment><source>The local agent is slow to answer. A first launch or a security scan can cause this.</source><target state="translated">本机 Agent 响应较慢。首次启动或安全软件扫描可能造成这种情况。</target></segment></unit>
+    <unit id="StartupSlowData"><segment><source>Upgrading your data can take a few minutes. Please keep the app open.</source><target state="translated">升级数据可能需要几分钟,请不要关闭应用。</target></segment></unit>
+    <unit id="StartupSlowContent"><segment><source>Reading your projects and sessions. A long history takes a little more time.</source><target state="translated">正在读取项目和会话,历史较多时会稍慢。</target></segment></unit>
+    <unit id="StartupFailTitleUnknown"><segment><source>NextCoWork could not start</source><target state="translated">NextCoWork 无法启动</target></segment></unit>
+    <unit id="StartupFailHintUnknown"><segment><source>Something went wrong while starting. Try again, or copy the diagnostics.</source><target state="translated">启动时出了问题。请重试,或复制诊断信息。</target></segment></unit>
+    <unit id="StartupFailTitleAgentNotFound"><segment><source>The local agent is missing</source><target state="translated">找不到本机 Agent</target></segment></unit>
+    <unit id="StartupFailHintAgentNotFound"><segment><source>NextCoWork could not find its agent program. The installation looks incomplete; reinstalling usually fixes it.</source><target state="translated">NextCoWork 找不到自带的 Agent 程序,安装似乎不完整,重新安装通常可以解决。</target></segment></unit>
+    <unit id="StartupFailTitleLaunchFailed"><segment><source>The local agent could not start</source><target state="translated">本机 Agent 无法启动</target></segment></unit>
+    <unit id="StartupFailHintLaunchFailed"><segment><source>The system refused to start the agent (permissions or security software may be blocking it). Check the details, then try again.</source><target state="translated">系统拒绝启动 Agent(权限或安全软件可能拦截了它)。请查看详情后重试。</target></segment></unit>
+    <unit id="StartupFailTitleAlreadyRunningElsewhere"><segment><source>Another agent is using your data</source><target state="translated">另一个 Agent 正在使用你的数据</target></segment></unit>
+    <unit id="StartupFailHintAlreadyRunningElsewhere"><segment><source>Another NextCoWork agent that this app cannot talk to holds your data folder (another user account, or a leftover process). Quit it, then try again.</source><target state="translated">另一个本应用无法通信的 NextCoWork Agent 占用着数据目录(其他用户账户或残留进程)。请先退出它,再重试。</target></segment></unit>
+    <unit id="StartupFailTitleAgentOutdated"><segment><source>The installed agent is out of date</source><target state="translated">安装包里的 Agent 版本过旧</target></segment></unit>
+    <unit id="StartupFailHintAgentOutdated"><segment><source>The app and its agent do not match, so the installation is incomplete. Please reinstall NextCoWork.</source><target state="translated">应用和它自带的 Agent 版本不一致,安装不完整。请重新安装 NextCoWork。</target></segment></unit>
+    <unit id="StartupFailTitleClientOutdated"><segment><source>This app needs an update</source><target state="translated">需要更新 NextCoWork</target></segment></unit>
+    <unit id="StartupFailHintClientOutdated"><segment><source>The agent running on this computer is newer than this app. Update NextCoWork to continue.</source><target state="translated">这台电脑上运行的 Agent 比本应用新。请更新 NextCoWork 后继续。</target></segment></unit>
+    <unit id="StartupFailTitleCrashLoop"><segment><source>The local agent keeps stopping</source><target state="translated">本机 Agent 反复退出</target></segment></unit>
+    <unit id="StartupFailHintCrashLoop"><segment><source>It stopped several times in a row, so automatic restarts have paused. Copy the diagnostics for support, then try again.</source><target state="translated">它连续退出了好几次,自动重启已暂停。请复制诊断信息以便排查,然后重试。</target></segment></unit>
+    <unit id="StartupFailTitleConnectionFailed"><segment><source>Could not connect to the local agent</source><target state="translated">无法连接本机 Agent</target></segment></unit>
+    <unit id="StartupFailHintConnectionFailed"><segment><source>The agent is running but did not accept the connection. Try again; if it keeps happening, copy the diagnostics.</source><target state="translated">Agent 在运行,但没有接受连接。请重试;如果反复出现,请复制诊断信息。</target></segment></unit>
+    <unit id="StartupFailTitleTimeout"><segment><source>Starting is taking too long</source><target state="translated">启动耗时过长</target></segment></unit>
+    <unit id="StartupFailHintTimeout"><segment><source>A step did not finish in time. You can keep waiting, try again, or copy the diagnostics.</source><target state="translated">某一步骤没有按时完成。可以继续等待、重试或复制诊断信息。</target></segment></unit>
+    <unit id="StartupShowDiagnostics"><segment><source>View diagnostics</source><target state="translated">查看诊断</target></segment></unit>
+    <unit id="StartupHideDiagnostics"><segment><source>Hide diagnostics</source><target state="translated">收起诊断</target></segment></unit>
+    <unit id="StartupCopyDiagnostics"><segment><source>Copy diagnostics</source><target state="translated">复制诊断信息</target></segment></unit>
+    <unit id="StartupQuit"><segment><source>Quit</source><target state="translated">退出</target></segment></unit>
   </file>
 </xliff>

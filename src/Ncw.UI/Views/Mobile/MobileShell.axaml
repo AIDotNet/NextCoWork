@@ -5,6 +5,7 @@
              xmlns:ui="using:Ncw.UI.Controls"
              xmlns:cv="using:Ncw.UI.Converters"
              xmlns:themes="using:Ncw.UI.Themes"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Mobile.MobileShell"
              x:DataType="vm:ShellViewModel"
@@ -30,6 +31,7 @@
     </Style>
   </UserControl.Styles>
 
+  <Grid>
   <ui:NcwPage x:Name="Frame" Background="{arc:ArcDesignTokenResource Background}">
     <ContentControl x:Name="StackHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     <ui:NcwPage.Footer>
@@ -52,4 +54,7 @@
       </Grid>
     </ui:NcwPage.Footer>
   </ui:NcwPage>
+  <!-- 启动加载界面(简化版式:只有标识、当前阶段和说明;docs/design/03 §10.9):盖住整个手机壳,同一个 ViewModel、同一个 Core 纯函数 -->
+  <desktop:StartupOverlay DataContext="{Binding Startup}" />
+  </Grid>
 </UserControl>

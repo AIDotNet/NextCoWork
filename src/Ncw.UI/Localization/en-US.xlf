@@ -1512,5 +1512,48 @@
     <unit id="MotionOff"><segment><source>Off</source><target state="final">Off</target></segment></unit>
     <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="final">In effect now: {0}</target></segment></unit>
     <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="final">This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</target></segment></unit>
+    <unit id="StartupA11yName"><segment><source>Starting NextCoWork</source><target state="final">Starting NextCoWork</target></segment></unit>
+    <unit id="StartupProgressLabel"><segment><source>Startup progress</source><target state="final">Startup progress</target></segment></unit>
+    <unit id="StartupStageApp"><segment><source>Preparing the app</source><target state="final">Preparing the app</target></segment></unit>
+    <unit id="StartupStageAgent"><segment><source>Starting the local agent</source><target state="final">Starting the local agent</target></segment></unit>
+    <unit id="StartupStageConnect"><segment><source>Connecting to the device</source><target state="final">Connecting to the device</target></segment></unit>
+    <unit id="StartupStageData"><segment><source>Preparing your data</source><target state="final">Preparing your data</target></segment></unit>
+    <unit id="StartupStageContent"><segment><source>Loading projects and sessions</source><target state="final">Loading projects and sessions</target></segment></unit>
+    <unit id="StartupDetailAppStarting"><segment><source>Setting up the window and your preferences…</source><target state="final">Setting up the window and your preferences…</target></segment></unit>
+    <unit id="StartupDetailAgentLaunching"><segment><source>Launching the agent process…</source><target state="final">Launching the agent process…</target></segment></unit>
+    <unit id="StartupDetailAgentHandshake"><segment><source>Waiting for the agent to answer…</source><target state="final">Waiting for the agent to answer…</target></segment></unit>
+    <unit id="StartupDetailAgentRestarting"><segment><source>The agent stopped unexpectedly and is restarting.</source><target state="final">The agent stopped unexpectedly and is restarting.</target></segment></unit>
+    <unit id="StartupDetailConnecting"><segment><source>Opening a secure local connection…</source><target state="final">Opening a secure local connection…</target></segment></unit>
+    <unit id="StartupDetailReconnecting"><segment><source>The connection dropped. Reconnecting…</source><target state="final">The connection dropped. Reconnecting…</target></segment></unit>
+    <unit id="StartupDetailDataPreparing"><segment><source>Checking your data…</source><target state="final">Checking your data…</target></segment></unit>
+    <unit id="StartupDetailLoadingProjects"><segment><source>Loading your projects…</source><target state="final">Loading your projects…</target></segment></unit>
+    <unit id="StartupDetailLoadingSessions"><segment><source>Loading your sessions…</source><target state="final">Loading your sessions…</target></segment></unit>
+    <unit id="StartupDetailSettling"><segment><source>Getting everything ready…</source><target state="final">Getting everything ready…</target></segment></unit>
+    <unit id="StartupSlowGeneric"><segment><source>This is taking a little longer than usual. Hang tight.</source><target state="final">This is taking a little longer than usual. Hang tight.</target></segment></unit>
+    <unit id="StartupSlowAgent"><segment><source>The local agent is slow to answer. A first launch or a security scan can cause this.</source><target state="final">The local agent is slow to answer. A first launch or a security scan can cause this.</target></segment></unit>
+    <unit id="StartupSlowData"><segment><source>Upgrading your data can take a few minutes. Please keep the app open.</source><target state="final">Upgrading your data can take a few minutes. Please keep the app open.</target></segment></unit>
+    <unit id="StartupSlowContent"><segment><source>Reading your projects and sessions. A long history takes a little more time.</source><target state="final">Reading your projects and sessions. A long history takes a little more time.</target></segment></unit>
+    <unit id="StartupFailTitleUnknown"><segment><source>NextCoWork could not start</source><target state="final">NextCoWork could not start</target></segment></unit>
+    <unit id="StartupFailHintUnknown"><segment><source>Something went wrong while starting. Try again, or copy the diagnostics.</source><target state="final">Something went wrong while starting. Try again, or copy the diagnostics.</target></segment></unit>
+    <unit id="StartupFailTitleAgentNotFound"><segment><source>The local agent is missing</source><target state="final">The local agent is missing</target></segment></unit>
+    <unit id="StartupFailHintAgentNotFound"><segment><source>NextCoWork could not find its agent program. The installation looks incomplete; reinstalling usually fixes it.</source><target state="final">NextCoWork could not find its agent program. The installation looks incomplete; reinstalling usually fixes it.</target></segment></unit>
+    <unit id="StartupFailTitleLaunchFailed"><segment><source>The local agent could not start</source><target state="final">The local agent could not start</target></segment></unit>
+    <unit id="StartupFailHintLaunchFailed"><segment><source>The system refused to start the agent (permissions or security software may be blocking it). Check the details, then try again.</source><target state="final">The system refused to start the agent (permissions or security software may be blocking it). Check the details, then try again.</target></segment></unit>
+    <unit id="StartupFailTitleAlreadyRunningElsewhere"><segment><source>Another agent is using your data</source><target state="final">Another agent is using your data</target></segment></unit>
+    <unit id="StartupFailHintAlreadyRunningElsewhere"><segment><source>Another NextCoWork agent that this app cannot talk to holds your data folder (another user account, or a leftover process). Quit it, then try again.</source><target state="final">Another NextCoWork agent that this app cannot talk to holds your data folder (another user account, or a leftover process). Quit it, then try again.</target></segment></unit>
+    <unit id="StartupFailTitleAgentOutdated"><segment><source>The installed agent is out of date</source><target state="final">The installed agent is out of date</target></segment></unit>
+    <unit id="StartupFailHintAgentOutdated"><segment><source>The app and its agent do not match, so the installation is incomplete. Please reinstall NextCoWork.</source><target state="final">The app and its agent do not match, so the installation is incomplete. Please reinstall NextCoWork.</target></segment></unit>
+    <unit id="StartupFailTitleClientOutdated"><segment><source>This app needs an update</source><target state="final">This app needs an update</target></segment></unit>
+    <unit id="StartupFailHintClientOutdated"><segment><source>The agent running on this computer is newer than this app. Update NextCoWork to continue.</source><target state="final">The agent running on this computer is newer than this app. Update NextCoWork to continue.</target></segment></unit>
+    <unit id="StartupFailTitleCrashLoop"><segment><source>The local agent keeps stopping</source><target state="final">The local agent keeps stopping</target></segment></unit>
+    <unit id="StartupFailHintCrashLoop"><segment><source>It stopped several times in a row, so automatic restarts have paused. Copy the diagnostics for support, then try again.</source><target state="final">It stopped several times in a row, so automatic restarts have paused. Copy the diagnostics for support, then try again.</target></segment></unit>
+    <unit id="StartupFailTitleConnectionFailed"><segment><source>Could not connect to the local agent</source><target state="final">Could not connect to the local agent</target></segment></unit>
+    <unit id="StartupFailHintConnectionFailed"><segment><source>The agent is running but did not accept the connection. Try again; if it keeps happening, copy the diagnostics.</source><target state="final">The agent is running but did not accept the connection. Try again; if it keeps happening, copy the diagnostics.</target></segment></unit>
+    <unit id="StartupFailTitleTimeout"><segment><source>Starting is taking too long</source><target state="final">Starting is taking too long</target></segment></unit>
+    <unit id="StartupFailHintTimeout"><segment><source>A step did not finish in time. You can keep waiting, try again, or copy the diagnostics.</source><target state="final">A step did not finish in time. You can keep waiting, try again, or copy the diagnostics.</target></segment></unit>
+    <unit id="StartupShowDiagnostics"><segment><source>View diagnostics</source><target state="final">View diagnostics</target></segment></unit>
+    <unit id="StartupHideDiagnostics"><segment><source>Hide diagnostics</source><target state="final">Hide diagnostics</target></segment></unit>
+    <unit id="StartupCopyDiagnostics"><segment><source>Copy diagnostics</source><target state="final">Copy diagnostics</target></segment></unit>
+    <unit id="StartupQuit"><segment><source>Quit</source><target state="final">Quit</target></segment></unit>
   </file>
 </xliff>

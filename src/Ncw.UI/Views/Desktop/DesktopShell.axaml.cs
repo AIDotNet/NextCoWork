@@ -45,7 +45,7 @@ public partial class DesktopShell : UserControl
     /// </summary>
     private void WatchOverlays()
     {
-        var overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay).Append(DrawerScrim).ToList();
+        var overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay or StartupOverlay).Append(DrawerScrim).ToList();
         void Recompute()
         {
             var any = overlays.Any(c => c.IsVisible);
@@ -68,6 +68,16 @@ public partial class DesktopShell : UserControl
                 {
                     Recompute();
                 }
+            };
+        }
+
+        // 启动加载界面淡出后自己摘掉:别让这里的记录继续引用它
+        if (overlays.OfType<StartupOverlay>().FirstOrDefault() is { } startup)
+        {
+            startup.Released += (_, _) =>
+            {
+                overlays.Remove(startup);
+                Recompute();
             };
         }
 

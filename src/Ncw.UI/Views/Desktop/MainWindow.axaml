@@ -1,5 +1,6 @@
 <ui:NcwWindow xmlns="https://github.com/avaloniaui"
               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
               xmlns:ui="using:Ncw.UI.Controls"
               xmlns:desktop="using:Ncw.UI.Views.Desktop"
               xmlns:vm="using:Ncw.Client.ViewModels"
@@ -10,9 +11,11 @@
               Height="900"
               MinWidth="760"
               MinHeight="520"
+              Background="{arc:ArcDesignTokenResource Background}"
               IsTitleBarVisible="False"
               ExtendClientAreaTitleBarHeightHint="40"
               WindowStartupLocation="CenterScreen">
-  <!-- 没有标题栏:内容铺到窗口顶端,系统按钮浮在顶部 40px 这一行里(见 Chrome/WindowChrome.cs)。 -->
+  <!-- 没有标题栏:内容铺到窗口顶端,系统按钮浮在顶部 40px 这一行里(见 Chrome/WindowChrome.cs)。
+       窗口底色显式写成 Background token:和启动加载界面的底色是同一个 token,窗口第一帧就是加载界面的底色(docs/design/03 §10.6)。 -->
   <desktop:DesktopShell x:Name="Shell" />
 </ui:NcwWindow>

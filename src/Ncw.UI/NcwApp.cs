@@ -7,9 +7,12 @@ using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Client.Updates;
 using Ncw.Client.ViewModels;
+using Ncw.Core.Domain;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using Ncw.UI.Views.Desktop;
+using TKCode.Arc;
+using TKCode.Arc.DesignTokens;
 
 namespace Ncw.UI;
 
@@ -32,6 +35,17 @@ public class NcwApp : Application
     /// 手机宿主不设置(商店分发,不自更新)。
     /// </summary>
     public static Func<NcwUpdateContext, IUpdateService?>? UpdateServiceFactory { get; set; }
+
+    /// <summary>
+    /// 宿主在启动前记下的早期里程碑(进程创建时间、单实例锁拿到的时间):Avalonia 起来之前就发生了,界面起来后一并写进启动事实(docs/design/03 §10)。
+    /// </summary>
+    public static IReadOnlyList<(StartupMilestone Milestone, DateTimeOffset At)> EarlyMilestones { get; set; } = [];
+
+    /// <summary>
+    /// 宿主在主窗口创建之后、显示之前调用:参数是窗口和加载界面底色(Arc 的 Background token 此刻解析出的 RGB)。
+    /// 桌面宿主据此把原生窗口的背景色设成同一个底色——窗口出现的第一帧就是加载界面的底色,不先白屏再变深色(docs/design/03 §10.6)。
+    /// </summary>
+    public static Action<Avalonia.Controls.Window, byte, byte, byte>? NativeWindowBackground { get; set; }
 
     /// <summary>
     /// 控制端自己的文件(界面偏好等)放在 <c>~/.next-cowork/client/</c>,和 Agent 的数据分开。
@@ -58,12 +72,20 @@ public class NcwApp : Application
             else
             {
                 stores = new ClientStores();
+                // 启动加载界面(docs/design/03 §10):先开始跟踪,再拉起后端——后端的第一个信号就已经能记下来
+                stores.Startup.Begin(StartupProfile.Desktop);
+                foreach (var (milestone, at) in EarlyMilestones)
+                {
+                    stores.Startup.Reach(milestone, at);
+                }
+
                 _backend = BackendFactory?.Invoke();
                 _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             }
 
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
+            stores.Startup.Reach(StartupMilestone.PlatformReady);
             ShellViewModel? shell = null;
             if (UseMockData)
             {
@@ -89,7 +111,26 @@ public class NcwApp : Application
             shell = new ShellViewModel(stores, devices: devices, inspector: UseMockData ? MockInspectorServices.Create(stores) : null,
                 account: _account, links: _account is null ? null : new LinkRouter(_account), updates: _updates);
             shell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();
-            desktop.MainWindow = new MainWindow { DataContext = shell };
+            if (!UseMockData)
+            {
+                // 启动加载界面的宿主能力:本机 Agent 守护的重试 / 诊断,和「退出」走应用自己的退出流程(让 Agent 收尾)
+                shell.StartupHost = _backend?.StartupHost;
+                shell.RequestExit = () => Avalonia.Threading.Dispatcher.UIThread.Post(() => desktop.Shutdown());
+                if (_account is null)
+                {
+                    stores.Startup.Reach(StartupMilestone.AccountDecided);   // 没有账户服务:没有要读的账户记录
+                }
+            }
+
+            var window = new MainWindow { DataContext = shell };
+            desktop.MainWindow = window;
+            if (!UseMockData)
+            {
+                var background = ArcTokens.GetColor(window, ArcDesignTokenKind.Background);
+                NativeWindowBackground?.Invoke(window, background.R, background.G, background.B);
+                window.Opened += (_, _) => stores.Startup.Reach(StartupMilestone.WindowShown);
+            }
+
             if (_updates is not null)
             {
                 _ = _updates.InitializeAsync();
@@ -119,13 +160,25 @@ public class NcwApp : Application
             // 手机只连远程设备:宿主的后端(BackendFactory)创建 RemoteDeviceManager,身份存进 Keychain / Keystore(IControllerIdentityStore)。
             var devices = new DeviceRegistry();
             var stores = new ClientStores();
+            // 启动加载界面(简化版式):同一个 Core 纯函数和 Store;手机没有本机 Agent,阶段是 应用 → 连接 → 内容,设备连不上不算失败
+            stores.Startup.Begin(StartupProfile.Remote);
+            foreach (var (milestone, at) in EarlyMilestones)
+            {
+                stores.Startup.Reach(milestone, at);
+            }
+
+            stores.Startup.Reach(StartupMilestone.InstanceReady);   // 手机没有单实例
+            stores.Startup.Reach(StartupMilestone.AccountDecided);  // 手机壳还没有账户页
             _backend = BackendFactory?.Invoke();
             _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
+            stores.Startup.Reach(StartupMilestone.PlatformReady);
             var mobileShell = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke());
             mobileShell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();
-            single.MainView = new Views.AdaptiveShell { DataContext = mobileShell };
+            var adaptive = new Views.AdaptiveShell { DataContext = mobileShell };
+            adaptive.AttachedToVisualTree += (_, _) => stores.Startup.Reach(StartupMilestone.WindowShown);
+            single.MainView = adaptive;
             AttachMobileLinks(mobileShell);
         }
 

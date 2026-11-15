@@ -99,6 +99,9 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
     /// <summary>当前阶段有真实的步骤进度(否则是不确定的:只有阶段数,标识上转一段「正在进行」的弧)。</summary>
     [ObservableProperty] public partial bool IsDeterminate { get; private set; }
 
+    /// <summary>在等、而且当前阶段没有真实的步骤进度:标识上转一小段「正在进行」的弧(不确定)。失败、数据需要用户处理、等外壳布局时不转。</summary>
+    [ObservableProperty] public partial bool IsIndeterminate { get; private set; }
+
     [ObservableProperty] public partial bool IsSlow { get; private set; }
 
     [ObservableProperty] public partial StartupSlowHint SlowHint { get; private set; }
@@ -241,6 +244,7 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         IsRevealing = false;
         IsAwaitingShell = false;
         IsFailed = false;
+        IsIndeterminate = false;
         NextWake = null;
     }
 
@@ -267,6 +271,7 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         SubStep = view.Progress.SubStep;
         SubTotal = view.Progress.SubTotal;
         IsDeterminate = view.Progress.IsDeterminateInStage;
+        IsIndeterminate = view.Phase == StartupPhase.Loading && !view.Progress.IsDeterminateInStage;
         IsSlow = view.IsSlow;
         SlowHint = view.SlowHint;
         IsReconnecting = view.IsReconnecting;
@@ -302,5 +307,6 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         IsContentVisible = false;
         IsRevealing = false;
         IsAwaitingShell = false;
+        IsIndeterminate = false;
     }
 }

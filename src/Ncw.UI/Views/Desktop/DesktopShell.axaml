@@ -118,6 +118,10 @@
     <!-- 启动时的数据页:本机数据没就绪(接管 2.x 数据中 / 被挡住)时盖住整个窗口 -->
     <desktop:DataGateOverlay DataContext="{Binding DataGate}" />
 
+    <!-- 启动加载界面(docs/design/03 §10):由真实的加载状态驱动,盖住整个窗口(含项目栏和主工作区);数据需要用户处理时让位给上面的数据页;
+         淡出结束后从界面树里摘掉。窗口按钮和拖动区域仍可用(下面的右上角常驻在它之上,顶部 40px 的按下不被拦截) -->
+    <desktop:StartupOverlay x:Name="StartupLayer" DataContext="{Binding Startup}" />
+
     <!-- 右上角常驻:检查器开关 + (Windows / Linux)窗口按钮 -->
     <StackPanel x:Name="TopRight" Orientation="Horizontal" Height="40" Spacing="2" Margin="0,0,8,0"
                 HorizontalAlignment="Right" VerticalAlignment="Top">
@@ -127,7 +131,8 @@
                     arc:Tooltip.Tip="{l:NcwText RightPanelHint}">
         <ui:NcwButton.IsVisible>
           <MultiBinding Converter="{x:Static BoolConverters.And}">
-            <Binding Path="!DataGate.IsVisible" />
+            <Binding Path="!DataGate.IsPresented" />
+            <Binding Path="!Startup.OwnsScreen" />
             <Binding Path="!Settings.IsOpen" />
             <Binding Path="!Onboarding.IsOpen" />
           </MultiBinding>

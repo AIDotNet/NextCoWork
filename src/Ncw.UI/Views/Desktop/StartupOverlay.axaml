@@ -1,0 +1,192 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.StartupOverlay"
+             x:DataType="vm:StartupViewModel"
+             ui:NcwMotion.IsPresent="{Binding IsPresented}" ui:NcwMotion.PresenceKind="Fade"
+             AutomationProperties.Name="{l:NcwText StartupA11yName}">
+  <!--
+    启动加载界面(docs/design/03 §10):整窗覆盖层,由真实的加载状态驱动(StartupViewModel ← 启动事实 Store)。
+    · 底色(Background token)从第一帧起就在;内容(标识、清单、提示)等一个很短的延迟才出现,更快就绪时内容根本不出现。
+    · 顶部 40px 不拦截按下:MainWindow 用它拖动窗口;窗口按钮(Windows / Linux)在 DesktopShell 里排在本层之上。
+    · 动画只动 Opacity / RenderTransform 和一段圆弧的弧长(Arc 的 Smooth 弹簧);全部走 NcwMotion,减弱 / 关闭级别终态一致。
+    · 数据接管的步骤和数据页读同一个事实;数据需要用户处理时本层整个让位给数据页(IsPresented 变假)。
+  -->
+  <UserControl.Styles>
+    <!-- 加载图标的旋转由 NcwMotion.Busy 驱动(这个覆盖层没有合并 NcwStyles) -->
+    <Style Selector="lucide|LucideIcon.spin">
+      <Setter Property="ui:NcwMotion.Busy" Value="Spin" />
+    </Style>
+    <Style Selector="TextBlock.detail">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <!-- 清单一行:待做暗淡、进行中最亮、已完成淡色。状态切换本身是立即的;「轻微的过渡」是勾 / 转圈图标的淡入淡出(NcwMotion.IsPresent,遵守动效级别)。
+         这里故意不用 Avalonia 样式的 Transitions:淡出结束时覆盖层会被摘出界面树,而样式过渡在控件离开界面树时仍在被时钟驱动(Headless 下复现过 NullReferenceException) -->
+    <Style Selector="Grid.step">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Grid.step.active">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Grid.step.done">
+      <Setter Property="Opacity" Value="0.7" />
+    </Style>
+    <Style Selector="Grid.step.active TextBlock.label">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <!-- 接管的四段进度 -->
+    <Style Selector="Border.seg">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="4" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Border}" />
+    </Style>
+    <Style Selector="Border.seg.on">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Foreground}" />
+    </Style>
+    <!-- 标识的外圈:平时是前景色,失败时换成危险色(颜色走样式,不写在控件上:本地值会盖过样式) -->
+    <Style Selector="ui|NcwProgressArc.ring">
+      <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Foreground}" />
+    </Style>
+    <Style Selector="Border.failed ui|NcwProgressArc.ring">
+      <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Danger}" />
+    </Style>
+    <!-- 「正在进行」的短弧:只在完整 / 减弱级别画(完整:旋转;减弱:Arc 的「忙」明暗呼吸);关闭级别不画——静止的一段弧会被误读成进度。Arc 只有 :motion-full / :motion-reduced 两个伪类 -->
+    <Style Selector="ui|NcwProgressArc.comet">
+      <Setter Property="arc:ArcMotion.Tracks" Value="True" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="ui|NcwProgressArc.comet:motion-full, ui|NcwProgressArc.comet:motion-reduced">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <!-- 窄窗口 / 手机壳(.compact 由代码按宽度设置):不画整张清单,只留标识、当前阶段的名字和说明 -->
+    <Style Selector=".compact StackPanel.steps">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="TextBlock.stageName">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".compact TextBlock.stageName">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 底色:覆盖整个窗口;顶部 40px 没有被控件处理的按下由 MainWindow 用来拖动窗口 -->
+  <Border x:Name="Backdrop" Background="{arc:ArcDesignTokenResource Background}" Classes.failed="{Binding IsFailed}">
+    <ScrollViewer Margin="0,40,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  ui:NcwMotion.IsPresent="{Binding IsContentVisible}" ui:NcwMotion.PresenceKind="Fade">
+      <StackPanel MaxWidth="400" Margin="24,16,24,32" Spacing="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+        <!-- 标识:外圈的弧长 = 真实进度;当前阶段没有真实步骤时再转一小段短弧 -->
+        <Panel Width="104" Height="104" HorizontalAlignment="Center">
+          <ui:NcwProgressArc x:Name="Ring" Classes="ring" Thickness="3" Progress="{Binding Fraction}"
+                             TrackStroke="{arc:ArcDesignTokenResource Border}" />
+          <Panel ui:NcwMotion.IsPresent="{Binding IsIndeterminate}" ui:NcwMotion.PresenceKind="Fade">
+            <ui:NcwProgressArc x:Name="Comet" Classes="comet" Thickness="3" Progress="0.14"
+                               Stroke="{arc:ArcDesignTokenResource TextSecondary}" ui:NcwMotion.Busy="Spin" />
+          </Panel>
+          <Border Width="52" Height="52" CornerRadius="14" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Background="{arc:ArcDesignTokenResource Foreground}">
+            <Panel>
+              <lucide:LucideIcon Kind="Sparkles" Size="26" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Foreground="{arc:ArcDesignTokenResource Background}" IsVisible="{Binding !IsFailed}" />
+              <lucide:LucideIcon Kind="TriangleAlert" Size="26" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding IsFailed}"
+                                 ui:NcwMotion.ShowMotion="Fade" />
+            </Panel>
+          </Border>
+        </Panel>
+
+        <!-- 加载中 -->
+        <StackPanel Spacing="18" IsVisible="{Binding !IsFailed}">
+          <TextBlock Text="NextCoWork" HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="SemiBold" />
+
+          <!-- 清单:每个阶段一行,已完成的打勾并淡色,当前阶段最亮,后续暗淡 -->
+          <StackPanel Classes="steps" Spacing="10" HorizontalAlignment="Center" AutomationProperties.Name="{l:NcwText StartupProgressLabel}">
+            <ItemsControl ItemsSource="{Binding Steps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StartupStepViewModel">
+                  <Grid Classes="step" Classes.active="{Binding IsActive}" Classes.done="{Binding IsDone}" ColumnDefinitions="22,Auto" Margin="0,4">
+                    <Panel Width="16" Height="16" HorizontalAlignment="Left" VerticalAlignment="Center">
+                      <Panel ui:NcwMotion.IsPresent="{Binding IsDone}" ui:NcwMotion.PresenceKind="Fade">
+                        <lucide:LucideIcon Kind="CircleCheckBig" Size="16" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                      </Panel>
+                      <Panel ui:NcwMotion.IsPresent="{Binding IsActive}" ui:NcwMotion.PresenceKind="Fade">
+                        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" Foreground="{arc:ArcDesignTokenResource Foreground}" />
+                      </Panel>
+                      <lucide:LucideIcon Kind="Circle" Size="16" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsPending}" />
+                    </Panel>
+                    <TextBlock Classes="label" Grid.Column="1" VerticalAlignment="Center"
+                               Text="{Binding Stage, Converter={x:Static cv:StartupStageTextConverter.Instance}}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- 当前在做什么(屏幕阅读器只在这一行变化时播报:阶段 / 子步骤变了才变,不是每一帧) -->
+          <StackPanel Spacing="4" HorizontalAlignment="Center">
+            <TextBlock Classes="stageName" HorizontalAlignment="Center" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap"
+                       Text="{Binding Current, Converter={x:Static cv:StartupStageTextConverter.Instance}}" />
+            <TextBlock x:Name="DetailText" Classes="detail" HorizontalAlignment="Center" TextAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite">
+              <TextBlock.Text>
+                <MultiBinding Converter="{x:Static cv:StartupDetailTextConverter.Instance}">
+                  <Binding Path="Detail" />
+                  <Binding Path="DataStep" />
+                </MultiBinding>
+              </TextBlock.Text>
+            </TextBlock>
+          </StackPanel>
+
+          <!-- 数据接管的真实步骤(备份 → 升级 → 提交 → 凭据):只有在接管时才有 -->
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center"
+                      ui:NcwMotion.IsPresent="{Binding IsDeterminate}" ui:NcwMotion.PresenceKind="Fade">
+            <Border Classes="seg" Classes.on="{Binding SubStep, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=1}" />
+            <Border Classes="seg" Classes.on="{Binding SubStep, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=2}" />
+            <Border Classes="seg" Classes.on="{Binding SubStep, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=3}" />
+            <Border Classes="seg" Classes.on="{Binding SubStep, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=4}" />
+          </StackPanel>
+
+          <!-- 慢启动:一行温和的提示(不是错误) -->
+          <TextBlock Classes="detail" HorizontalAlignment="Center" TextAlignment="Center"
+                     ui:NcwMotion.IsPresent="{Binding IsSlow}" ui:NcwMotion.PresenceKind="Rise"
+                     AutomationProperties.LiveSetting="Polite"
+                     Text="{Binding SlowHint, Converter={x:Static cv:StartupSlowTextConverter.Instance}}" />
+        </StackPanel>
+
+        <!-- 失败:明确的错误面板,不无限转圈 -->
+        <StackPanel Spacing="14" IsVisible="{Binding IsFailed}" ui:NcwMotion.ShowMotion="Rise">
+          <TextBlock x:Name="FailureTitle" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                     FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"
+                     AutomationProperties.LiveSetting="Assertive"
+                     Text="{Binding FailureReason, Converter={x:Static cv:StartupFailureTextConverter.Instance}}" />
+          <TextBlock Classes="detail" HorizontalAlignment="Center" TextAlignment="Center"
+                     Text="{Binding FailureReason, Converter={x:Static cv:StartupFailureTextConverter.Instance}, ConverterParameter=hint}" />
+          <WrapPanel HorizontalAlignment="Center" ItemSpacing="8" LineSpacing="8">
+            <ui:NcwButton Variant="Primary" IsVisible="{Binding CanRetry}" Command="{Binding RetryCommand}" Content="{l:NcwText Retry}" />
+            <ui:NcwButton Variant="Secondary" Command="{Binding ToggleDiagnosticsCommand}" Content="{l:NcwText StartupShowDiagnostics}" IsVisible="{Binding !IsDiagnosticsOpen}" />
+            <ui:NcwButton Variant="Secondary" Command="{Binding ToggleDiagnosticsCommand}" Content="{l:NcwText StartupHideDiagnostics}" IsVisible="{Binding IsDiagnosticsOpen}" />
+            <ui:NcwButton Variant="Secondary" Command="{Binding CopyDiagnosticsCommand}" Content="{l:NcwText StartupCopyDiagnostics}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding QuitCommand}" Content="{l:NcwText StartupQuit}" />
+          </WrapPanel>
+          <ui:NcwCollapsible IsOpen="{Binding IsDiagnosticsOpen}">
+            <Border CornerRadius="8" Padding="12,10" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+              <ScrollViewer MaxHeight="180" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <SelectableTextBlock Text="{Binding DiagnosticsText}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}"
+                                     FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              </ScrollViewer>
+            </Border>
+          </ui:NcwCollapsible>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

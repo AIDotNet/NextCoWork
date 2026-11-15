@@ -41,12 +41,15 @@ public enum StartupStage
 
 /// <summary>
 /// 时间线上的里程碑(每个只记「第一次到达」的时间,单调)。<see cref="StartupStage"/> 的完成条件由它们组合而成;
-/// <see cref="ProcessStarted"/> / <see cref="AgentSpawned"/> 只用于时间线(校准阈值、诊断),不是任何阶段的完成条件。
+/// <see cref="ProcessStarted"/> / <see cref="MainEntered"/> / <see cref="AgentSpawned"/> 只用于时间线(校准阈值、诊断),不是任何阶段的完成条件。
 /// </summary>
 public enum StartupMilestone
 {
     /// <summary>进程启动(操作系统记的进程创建时间)。</summary>
     ProcessStarted,
+
+    /// <summary>进入 <c>Main</c>(运行时初始化完成;只用于时间线:ProcessStarted → MainEntered 是运行时自己的启动耗时)。</summary>
+    MainEntered,
 
     /// <summary>单实例锁拿到(此后才创建窗口)。</summary>
     InstanceReady,
@@ -499,6 +502,20 @@ public static class StartupProgress
         {
             var reason = failed.Issue ?? "crash-loop";
             return new StartupFailure(reason, CanRetry: reason is not ("client-outdated" or "agent-outdated"), failed.Detail);
+        }
+
+        // 守护在退避重启,但这类问题不先有人处理(退出占着数据目录的进程 / 放开权限或安全软件)就不会好:不让用户对着转圈干等——
+        // 守护每隔一会儿还会再试,一旦成功这条失败就自己消失(失败是派生的,不是锁存的)
+        if (f.Sidecar is { Phase: StartupSidecarPhase.Restarting, Issue: "already-running-elsewhere" or "launch-failed" } blocked)
+        {
+            return new StartupFailure(blocked.Issue!, CanRetry: true, blocked.Detail);
+        }
+
+        // Agent 一次都没就绪过,却已经连续退出两次:再等下去只是在重复同一个结局(守护要等到第 8 次连续崩溃才放弃,中间一百多秒)。
+        // 同样不是锁存:哪一次启动成功了,失败就消失
+        if (f.Sidecar is { Phase: StartupSidecarPhase.Restarting, Issue: null, RestartCount: >= 2 } crashing && !f.Has(StartupMilestone.AgentReady))
+        {
+            return new StartupFailure("crash-loop", CanRetry: true, crashing.Detail);
         }
 
         // Agent 在运行,但本机通道连不上(连接层退避三次后标记离线):给出口,而不是无限转圈

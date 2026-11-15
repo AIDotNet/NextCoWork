@@ -10,4 +10,7 @@ namespace Ncw.UI;
 public interface INcwBackend : IAsyncDisposable
 {
     void Start(ClientStores stores, DeviceRegistry devices, IUiDispatcher ui, IClientText text);
+
+    /// <summary>启动加载界面需要的宿主能力(桌面:本机 Agent 守护的重试和诊断);没有(手机、预览)为 null,界面据此隐藏对应的动作。</summary>
+    IStartupHost? StartupHost => null;
 }

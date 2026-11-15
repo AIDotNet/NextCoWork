@@ -406,10 +406,48 @@ public class StartupProgressTests
         Assert.False(view.IsSlow);   // 失败了就不再说「慢」
     }
 
+    [Theory]
+    [InlineData("already-running-elsewhere")]
+    [InlineData("launch-failed")]
+    public void A_problem_that_needs_the_user_is_shown_as_a_failure_while_the_guard_keeps_retrying_and_clears_itself(string issue)
+    {
+        var f = Reach(UpToAgent(), 200, StartupMilestone.AgentSpawned) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, issue, 1, TimeSpan.FromSeconds(5), "exit 75") };
+
+        var view = StartupProgress.Derive(f, At(400));
+
+        Assert.Equal(StartupPhase.Failed, view.Phase);
+        Assert.Equal(issue, view.Failure!.Reason);
+        Assert.True(view.Failure.CanRetry);
+
+        // 守护下一轮成功了(那个进程退出了 / 权限放开了):失败自己消失
+        var back = StartupProgress.Derive(f with { Sidecar = new StartupSidecar(StartupSidecarPhase.Starting) }, At(6000));
+        Assert.Null(back.Failure);
+    }
+
+    [Fact]
+    public void An_agent_that_exits_twice_before_ever_becoming_ready_is_a_crash_loop_failure_that_clears_when_a_start_succeeds()
+    {
+        var f = Reach(UpToAgent(), 200, StartupMilestone.AgentSpawned);
+
+        Assert.Null(StartupProgress.Derive(f with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, RestartCount: 1, Detail: "exit 3") }, At(400)).Failure);
+
+        var twice = StartupProgress.Derive(f with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, RestartCount: 2, Detail: "exit 3") }, At(4000));
+        Assert.Equal("crash-loop", twice.Failure!.Reason);
+        Assert.Equal("exit 3", twice.Failure.Detail);
+
+        // 这一轮握手成功了:没有失败
+        var ok = Reach(f, 5000, StartupMilestone.AgentReady) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Running, RestartCount: 2) };
+        Assert.Null(StartupProgress.Derive(ok, At(5010)).Failure);
+
+        // 已经就绪过的 Agent 之后崩溃重启,不算「启动失败」(运行中的事,走断线条)
+        var laterCrash = ok with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, RestartCount: 3) };
+        Assert.Null(StartupProgress.Derive(laterCrash, At(6000)).Failure);
+    }
+
     [Fact]
     public void A_restarting_agent_is_not_a_failure_but_says_so()
     {
-        var f = Reach(UpToAgent(), 200, StartupMilestone.AgentSpawned) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, RestartCount: 2, RetryIn: TimeSpan.FromSeconds(2)) };
+        var f = Reach(UpToAgent(), 200, StartupMilestone.AgentSpawned) with { Sidecar = new StartupSidecar(StartupSidecarPhase.Restarting, RestartCount: 1, RetryIn: TimeSpan.FromSeconds(2)) };
 
         var view = StartupProgress.Derive(f, At(400));
 

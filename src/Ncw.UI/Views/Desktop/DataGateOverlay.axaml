@@ -8,7 +8,7 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.DataGateOverlay"
              x:DataType="vm:DataGateViewModel"
-             ui:NcwMotion.IsPresent="{Binding IsVisible}" ui:NcwMotion.PresenceKind="Fade">
+             ui:NcwMotion.IsPresent="{Binding IsPresented}" ui:NcwMotion.PresenceKind="Fade">
   <!--
     启动时的数据页(docs/design/04 §4、07 §1):本机数据没就绪时盖住整个窗口。
     接管中显示步骤,被挡住 / 失败时显示原因和「重试」,刚接管完显示迁移摘要和「继续」。
