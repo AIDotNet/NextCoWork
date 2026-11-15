@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.FileRow"
+             x:DataType="vm:FileNodeViewModel">
+  <!-- 文件树的一行:文件 / 目录(图标、名字、Git 状态字母、含变更的目录后的点)、「加载中」占位、「显示更多」。右键菜单由 code-behind 按节点类型挂上。 -->
+  <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+    <!-- 真实的行 -->
+    <Panel Width="16" Margin="0,0,8,0" VerticalAlignment="Center" IsVisible="{Binding IsEntry}">
+      <lucide:LucideIcon Kind="Folder" Size="15" IsVisible="{Binding IsClosedDirectory}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      <lucide:LucideIcon Kind="FolderOpen" Size="15" IsVisible="{Binding IsOpenDirectory}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+      <lucide:LucideIcon Kind="FileCode" Size="15" IsVisible="{Binding IsCodeFile}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      <lucide:LucideIcon Kind="FileText" Size="15" IsVisible="{Binding IsTextFile}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      <lucide:LucideIcon Kind="FileImage" Size="15" IsVisible="{Binding IsImageFile}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      <lucide:LucideIcon Kind="FileCog" Size="15" IsVisible="{Binding IsConfigFile}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      <lucide:LucideIcon Kind="File" Size="15" IsVisible="{Binding IsOtherFile}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Panel>
+    <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center"
+               Text="{Binding Name}" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsEntry}"
+               Classes.dim="{Binding IsDimmed}" />
+    <TextBlock Grid.Column="2" Classes="letter" Margin="8,0,6,0" Text="{Binding ChangeLetter}"
+               IsVisible="{Binding HasChange}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+    <Ellipse Grid.Column="3" Width="6" Height="6" Margin="8,0" VerticalAlignment="Center"
+             IsVisible="{Binding HasChangedDescendant}" Fill="{arc:ArcDesignTokenResource Warning}" />
+    <!-- 加载中 -->
+    <StackPanel Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsPlaceholder}">
+      <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      <TextBlock Classes="hint" Text="{l:NcwText FileLoading}" />
+    </StackPanel>
+    <!-- 显示更多 -->
+    <TextBlock Grid.ColumnSpan="4" Classes="hint" Foreground="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsMore}"
+               Text="{Binding Remaining, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=FilesShowMore}" />
+  </Grid>
+</UserControl>

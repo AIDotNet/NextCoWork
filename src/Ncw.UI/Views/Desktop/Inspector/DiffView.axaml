@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.DiffView"
+             x:DataType="vm:DiffViewModel">
+  <!--
+    一个文件的 diff(Git 页签和审查页签共用):统计 + 统一 / 并排切换,行来自 UnifiedDiff(纯函数)。
+    窄面板里长行换行显示(不横向滚动,免得每行的底色宽度参差)。没有行可显示时(二进制 / 过大 / 没有差异)给一句说明。
+  -->
+  <Grid RowDefinitions="Auto,Auto,*">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,0,10,6" IsVisible="{Binding HasRows}">
+      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasStats}">
+        <TextBlock Classes="letter added" Text="{Binding Added, StringFormat=+{0}}" />
+        <TextBlock Classes="letter deleted" Text="{Binding Removed, StringFormat=−{0}}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+        <ui:PlainButton Height="24" Padding="10,0" Command="{Binding SetModeCommand}" CommandParameter="{x:Static vm:DiffMode.Unified}" Classes.active="{Binding IsUnified}">
+          <TextBlock Classes="hint" Classes.sel="{Binding IsUnified}" VerticalAlignment="Center" Text="{l:NcwText DiffUnified}" />
+        </ui:PlainButton>
+        <ui:PlainButton Height="24" Padding="10,0" Command="{Binding SetModeCommand}" CommandParameter="{x:Static vm:DiffMode.Split}" Classes.active="{Binding IsSplit}">
+          <TextBlock Classes="hint" Classes.sel="{Binding IsSplit}" VerticalAlignment="Center" Text="{l:NcwText DiffSplit}" />
+        </ui:PlainButton>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="4">
+      <TextBlock Classes="hint" IsVisible="{Binding IsBinary}" Text="{l:NcwText GitDiffBinary}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsOversize}" Text="{l:NcwText DiffOversize}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" Text="{l:NcwText DiffEmpty}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsTruncated}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText DiffTruncated}" />
+    </StackPanel>
+
+    <Panel Grid.Row="2" IsVisible="{Binding HasRows}">
+      <!-- 统一 -->
+      <ScrollViewer IsVisible="{Binding IsUnified}" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Rows}" Margin="0,0,0,12">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:DiffRow">
+              <Border Classes="diffRow" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}" Classes.fold="{Binding IsFold}" Padding="6,1">
+                <Grid ColumnDefinitions="30,30,14,*" ColumnSpacing="4">
+                  <TextBlock Classes="lineNo" Text="{Binding OldNumber}" />
+                  <TextBlock Classes="lineNo" Grid.Column="1" Text="{Binding NewNumber}" />
+                  <TextBlock Classes="diffText" Grid.Column="2" Text="{Binding Sign}" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding !IsFold}" />
+                  <TextBlock Classes="diffText" Grid.Column="3" TextWrapping="Wrap" Text="{Binding Text}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" IsVisible="{Binding IsFold}" />
+                  <TextBlock Classes="diffText" Grid.Column="3" TextWrapping="Wrap" Text="{Binding Text}" IsVisible="{Binding !IsFold}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+      <!-- 并排 -->
+      <ScrollViewer IsVisible="{Binding IsSplit}" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding SplitRows}" Margin="0,0,0,12">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SplitRow">
+              <Panel>
+                <Border Classes="diffRow fold" Padding="6,1" IsVisible="{Binding IsHunk}">
+                  <TextBlock Classes="diffText" Text="{Binding Hunk}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                </Border>
+                <Grid ColumnDefinitions="*,1,*" IsVisible="{Binding !IsHunk}">
+                  <Border Classes="diffRow" Classes.removed="{Binding LeftRemoved}" Padding="4,1">
+                    <Grid ColumnDefinitions="26,*" ColumnSpacing="4">
+                      <TextBlock Classes="lineNo" Text="{Binding LeftNumber}" />
+                      <TextBlock Classes="diffText" Grid.Column="1" TextWrapping="Wrap" Text="{Binding LeftText}" />
+                    </Grid>
+                  </Border>
+                  <Border Grid.Column="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                  <Border Grid.Column="2" Classes="diffRow" Classes.added="{Binding RightAdded}" Padding="4,1">
+                    <Grid ColumnDefinitions="26,*" ColumnSpacing="4">
+                      <TextBlock Classes="lineNo" Text="{Binding RightNumber}" />
+                      <TextBlock Classes="diffText" Grid.Column="1" TextWrapping="Wrap" Text="{Binding RightText}" />
+                    </Grid>
+                  </Border>
+                </Grid>
+              </Panel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

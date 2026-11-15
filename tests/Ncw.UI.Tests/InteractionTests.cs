@@ -184,7 +184,7 @@ public class InteractionTests
         Snapshot(window, "rename-dialog");
 
         input.Text = "前端";
-        var save = popupVisuals.OfType<TKCode.Arc.Button>().First(b => b.Content as string == "保存");
+        var save = popupVisuals.OfType<TKCode.Arc.Button>().First(b => b.Content as string == "保存" && b.IsEffectivelyVisible); // 检查器里(文件预览的)「保存」按钮此刻是隐藏的,不能点它
         Click(window, save);
         await pending;
 

@@ -34,6 +34,44 @@ public partial class DesktopShell : UserControl
         InitializeComponent();
         DataContextChanged += (_, _) => AttachViewModel();
         ApplyChrome();
+        WatchOverlays();
+    }
+
+    private IDisposable? _airspace;
+
+    /// <summary>
+    /// 盖在工作区上的整窗覆盖层(设置页、首次启动页、数据页、窄屏抽屉的遮罩)打开时,挂起所有 widget 的 WebView:原生视图是盖在窗口上的,
+    /// Avalonia 画的覆盖层盖不住它(<see cref="NcwWidgetAirspace"/>)。
+    /// </summary>
+    private void WatchOverlays()
+    {
+        var overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay).Append(DrawerScrim).ToList();
+        void Recompute()
+        {
+            var any = overlays.Any(c => c.IsVisible);
+            if (any && _airspace is null)
+            {
+                _airspace = NcwWidgetAirspace.Suspend();
+            }
+            else if (!any && _airspace is not null)
+            {
+                _airspace.Dispose();
+                _airspace = null;
+            }
+        }
+
+        foreach (var overlay in overlays)
+        {
+            overlay.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty)
+                {
+                    Recompute();
+                }
+            };
+        }
+
+        Recompute();
     }
 
     public ShellBreakpoint Breakpoint { get; private set; } = ShellBreakpoint.Wide;
@@ -84,6 +122,8 @@ public partial class DesktopShell : UserControl
             _vm.PropertyChanged += OnViewModelChanged;
             // 弹窗盖在这个外壳所在的窗口上;Client 层的文字按当前语言提供。
             _vm.Dialogs = new NcwDialogService(this);
+            _vm.Launcher = new NcwUrlLauncher(this);
+            _vm.WidgetConfirmations = new NcwWidgetConfirmations(this, id => _vm.Stores.Workspace.State.Devices.TryGetValue(id, out var device) ? device.Name : id);
             _vm.Text = Localization.NcwClientText.Instance;
         }
 

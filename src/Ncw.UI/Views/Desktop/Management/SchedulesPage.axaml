@@ -1,0 +1,226 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:sys="using:System"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.SchedulesPage"
+             x:DataType="vm:SchedulesViewModel">
+  <!--
+    侧栏「定时任务」页(docs/design/03 §1,盖在主工作区上):当前项目的任务、新建 / 编辑(一次 / 每天 / 每周几 + 当天窗口内重复)、启停、立即运行、运行记录与详情、删除确认。
+    定时任务无人值守地以 full 权限运行,所以所有写入只有 owner;设备断开时状态是「未知」。
+  -->
+  <Border Background="{arc:ArcDesignTokenResource Background}">
+    <ScrollViewer>
+      <StackPanel MaxWidth="760" Margin="24,12,24,32" Spacing="8" HorizontalAlignment="Stretch">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:NcwText ScheduledTasks}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+            <TextBlock Classes="hint" Text="{l:NcwText SchedHint}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="1" Variant="Primary" VerticalAlignment="Top" Command="{Binding NewCommand}" IsEnabled="{Binding CanWrite}"
+                        arc:Tooltip.Tip="{Binding WriteGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Plus" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText SchedNew}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton Grid.Column="2" Classes="icon" Variant="Ghost" VerticalAlignment="Top" Command="{Binding CloseCommand}" AutomationProperties.Name="{l:NcwText Close}" arc:Tooltip.Tip="{l:NcwText Close}">
+            <lucide:LucideIcon Kind="X" Size="16" />
+          </ui:NcwButton>
+        </Grid>
+        <m:PageStatus />
+
+        <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+          <Border Classes="card" IsVisible="{Binding !HasProject}">
+            <TextBlock Classes="hint" TextAlignment="Center" Text="{l:NcwText SchedNoProject}" />
+          </Border>
+
+          <!-- 删除确认 -->
+          <Border Classes="card danger" IsVisible="{Binding HasPendingDelete}">
+            <StackPanel Spacing="8">
+              <TextBlock FontWeight="SemiBold" Text="{Binding PendingDelete.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SchedDeleteTitle}" />
+              <TextBlock Classes="hint" Text="{l:NcwText SchedDeleteHint}" />
+              <WrapPanel Orientation="Horizontal">
+                <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmDeleteCommand}" Content="{l:NcwText DeleteLabel}" />
+                <ui:NcwButton Variant="Ghost" Command="{Binding CancelDeleteCommand}" Content="{l:NcwText Cancel}" />
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+
+          <!-- 编辑器 -->
+          <Border Classes="card" IsVisible="{Binding Editor.IsOpen}">
+            <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:ScheduleEditorViewModel">
+              <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText SchedNewTitle}" />
+              <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText SchedEditTitle}" />
+              <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" MaxLength="200" Label="{l:NcwText SchedName}" />
+              <ui:NcwTextArea Text="{Binding Prompt, Mode=TwoWay}" Label="{l:NcwText SchedPrompt}" Description="{l:NcwText SchedPromptHint}" MinHeight="96" />
+              <ui:NcwSelect ItemsSource="{Binding ModelChoices}" SelectedValue="{Binding ModelKey, Mode=TwoWay}" Label="{l:NcwText SchedModel}" Description="{l:NcwText SchedModelHint}" />
+
+              <ui:NcwSelect ChoiceSet="ScheduleKind" SelectedValue="{Binding Kind, Mode=TwoWay}" Label="{l:NcwText SchedKind}" />
+              <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="10">
+                <ui:NcwInput Width="220" Text="{Binding Date, Mode=TwoWay}" IsVisible="{Binding IsOnce}" Label="{l:NcwText SchedDate}" Placeholder="2026-11-20" />
+                <ui:NcwInput Width="220" Text="{Binding Time, Mode=TwoWay}" Label="{l:NcwText SchedTime}" Placeholder="09:00" />
+              </WrapPanel>
+              <StackPanel Spacing="4" IsVisible="{Binding IsWeekly}">
+                <TextBlock Classes="hint" Text="{l:NcwText SchedWeekdays}" />
+                <ItemsControl ItemsSource="{Binding Weekdays}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WeekdayToggle">
+                      <ui:NcwCheckbox Margin="0,0,12,4" IsChecked="{Binding IsOn, Mode=TwoWay}" Content="{Binding Day, Converter={x:Static cv:WeekdayTextConverter.Instance}}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <ui:NcwInput Text="{Binding Timezone, Mode=TwoWay}" Label="{l:NcwText SchedTimezone}" Description="{l:NcwText SchedTimezoneHint}" Placeholder="Asia/Shanghai" />
+
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{l:NcwText SchedRepeat}" />
+                  <TextBlock Classes="hint" Text="{l:NcwText SchedRepeatHint}" />
+                </StackPanel>
+                <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RepeatEnabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SchedRepeat}" />
+              </Grid>
+              <Grid ColumnDefinitions="*,12,*" IsVisible="{Binding RepeatEnabled}">
+                <ui:NcwInput Text="{Binding RepeatEnd, Mode=TwoWay}" Label="{l:NcwText SchedRepeatEnd}" Placeholder="18:00" />
+                <ui:NcwNumberField Grid.Column="2" Minimum="1" Maximum="1440" Step="5" UseGrouping="False" Value="{Binding RepeatInterval, Mode=TwoWay}" Label="{l:NcwText SchedRepeatEvery}" />
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock VerticalAlignment="Center" Text="{l:NcwText SchedEnabled}" />
+                <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SchedEnabled}" />
+              </Grid>
+
+              <!-- 接下来的触发时间预览(Core 纯函数,和设备同一套) -->
+              <Border Classes="notice" IsVisible="{Binding CanSave}">
+                <StackPanel Spacing="3">
+                  <TextBlock Classes="section" Text="{l:NcwText SchedPreviewTitle}" />
+                  <ItemsControl ItemsSource="{Binding Preview}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="sys:DateTimeOffset"><TextBlock Classes="mono" Text="{Binding Converter={x:Static cv:ZonedTimeTextConverter.Instance}}" /></DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding !CanSave}" Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" />
+              <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+                         Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+              <WrapPanel Orientation="Horizontal">
+                <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding $parent[UserControl].((vm:SchedulesViewModel)DataContext).SaveCommand}" IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
+                <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:SchedulesViewModel)DataContext).CloseEditorCommand}" Content="{l:NcwText Cancel}" />
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+            <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+              <lucide:LucideIcon Kind="CalendarClock" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText SchedEmptyTitle}" />
+              <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText SchedEmptyHint}" />
+            </StackPanel>
+          </Border>
+
+          <ItemsControl ItemsSource="{Binding Tasks}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ScheduleTaskRowViewModel">
+                <Border Classes="card" Padding="14,12">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <StackPanel Spacing="3">
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                          <Border Classes="chip" IsVisible="{Binding IsRunning}">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="11" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                              <TextBlock Classes="hint" Text="{l:NcwText SchedStatusRunning}" />
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="chip" IsVisible="{Binding CreatedByAgent}"><TextBlock Classes="hint" Text="{l:NcwText SchedCreatedByAgent}" /></Border>
+                          <Border Classes="chip" IsVisible="{Binding !Enabled}"><TextBlock Classes="hint" Text="{l:NcwText SchedPaused}" /></Border>
+                        </WrapPanel>
+                        <TextBlock Classes="hint" Text="{Binding Prompt}" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="2">
+                          <TextBlock Classes="hint" Text="{Binding ., Converter={x:Static cv:ScheduleSummaryConverter.Instance}}" />
+                          <TextBlock Classes="hint" Text="{Binding Timezone}" />
+                          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding NextRunAt, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <TextBlock Classes="hint" Text="{l:NcwText SchedNextRun}" />
+                            <TextBlock Classes="hint" Text="{Binding NextRunAt, Converter={x:Static cv:DateTimeTextConverter.Instance}}" />
+                          </StackPanel>
+                        </WrapPanel>
+                      </StackPanel>
+                      <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Top" IsChecked="{Binding Enabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
+                                    IsEnabled="{Binding $parent[ItemsControl].((vm:SchedulesViewModel)DataContext).CanWrite}" AutomationProperties.Name="{l:NcwText SchedEnabled}" arc:Tooltip.Tip="{l:NcwText SchedEnabled}" />
+                    </Grid>
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">
+                      <ui:NcwButton Variant="Secondary" Command="{Binding RunNowCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:SchedulesViewModel)DataContext).CanWrite}" Content="{l:NcwText SchedRunNow}" />
+                      <ui:NcwButton Variant="Secondary" Command="{Binding ShowRunsCommand}" Content="{l:NcwText SchedRuns}" />
+                      <ui:NcwButton Variant="Ghost" Command="{Binding EditCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:SchedulesViewModel)DataContext).CanWrite}" Content="{l:NcwText Edit}" />
+                      <ui:NcwButton Variant="Ghost" Command="{Binding AskDeleteCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:SchedulesViewModel)DataContext).CanWrite}" Content="{l:NcwText DeleteLabel}" />
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- 运行记录与详情 -->
+          <Border Classes="card" IsVisible="{Binding SelectedTask, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock FontWeight="SemiBold" Text="{Binding SelectedTask.Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SchedRunsTitle}" />
+                <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseRunsCommand}" AutomationProperties.Name="{l:NcwText Close}"><lucide:LucideIcon Kind="X" Size="14" /></ui:NcwButton>
+              </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding RunsLoading}">
+                <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+                <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+              </StackPanel>
+              <TextBlock Classes="hint" IsVisible="{Binding !HasRuns}" Text="{l:NcwText SchedRunsEmpty}" />
+              <ItemsControl ItemsSource="{Binding Runs}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ScheduleRunRowViewModel">
+                    <Border BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}" Padding="0,6">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <ui:NcwStatusDot VerticalAlignment="Top" Margin="0,6,0,0" Tone="{Binding Status, Converter={x:Static cv:ToneConverter.Instance}}" />
+                        <ui:PlainButton Grid.Column="1" HorizontalContentAlignment="Left" Padding="4,2" Command="{Binding SelectCommand}">
+                          <StackPanel Spacing="1">
+                            <WrapPanel Orientation="Horizontal" ItemSpacing="8">
+                              <TextBlock Text="{Binding Status, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SchedStatus}" />
+                              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Trigger, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SchedTrigger}" />
+                              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding ScheduledAt, Converter={x:Static cv:DateTimeTextConverter.Instance}}" />
+                              <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding Duration, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Duration, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+                            </WrapPanel>
+                            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding ErrorKey, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding ErrorKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+                          </StackPanel>
+                        </ui:PlainButton>
+                        <ui:NcwButton Grid.Column="2" Classes="icon" Variant="Ghost" Command="{Binding DeleteCommand}" IsVisible="{Binding !IsActive}"
+                                      IsEnabled="{Binding $parent[ItemsControl].((vm:SchedulesViewModel)DataContext).CanWrite}" AutomationProperties.Name="{l:NcwText SchedRunDelete}" arc:Tooltip.Tip="{l:NcwText SchedRunDelete}">
+                          <lucide:LucideIcon Kind="Trash2" Size="13" />
+                        </ui:NcwButton>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding MoreRunsCommand}" IsVisible="{Binding HasMoreRuns}" Content="{l:NcwText UsageLogsMore}" />
+              <!-- 详情 -->
+              <Border Classes="notice" IsVisible="{Binding RunDetail, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="section" Text="{l:NcwText SchedRunDetail}" />
+                  <SelectableTextBlock TextWrapping="Wrap" IsVisible="{Binding RunDetail.Summary, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding RunDetail.Summary}" />
+                  <TextBlock Classes="hint" IsVisible="{Binding RunDetail.Summary, Converter={x:Static ObjectConverters.IsNull}}" Text="{l:NcwText SchedRunNoSummary}" />
+                  <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding RunDetail.Error, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding RunDetail.Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+                  <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding RunDetail.SessionId}" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

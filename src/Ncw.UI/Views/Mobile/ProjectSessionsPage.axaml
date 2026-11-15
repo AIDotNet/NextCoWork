@@ -1,0 +1,64 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            xmlns:conv="using:Ncw.UI.Views.Desktop.Conversation"
+            x:Class="Ncw.UI.Views.Mobile.ProjectSessionsPage"
+            x:DataType="vm:ProjectPanelViewModel">
+  <!--
+    一个项目的会话列表(推入的页面)。数据是桌面项目面板同一个 ProjectPanelViewModel(会话列表镜像、搜索、归档过滤);
+    会话行复用桌面的 SessionRow(状态点来自 activeRuns,设备断开时是「未知」)。点一行 → 进对话页。
+    左滑一行:停止 / 归档(Arc SwipeActions;动作接到 SessionItemViewModel 的命令)。设备断开时顶部提示状态未知。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{Binding Name}">
+      <ui:NcwNavbar.Trailing>
+        <ui:PlainButton Width="44" Height="44" Command="{Binding NewSessionCommand}" AutomationProperties.Name="{l:NcwText NewSession}">
+          <lucide:LucideIcon Kind="Plus" Size="20" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+      </ui:NcwNavbar.Trailing>
+    </ui:NcwNavbar>
+  </ui:NcwPage.Header>
+
+  <ui:NcwPage.Styles>
+    <Style Selector="conv|SessionRow ui|PlainButton"><Setter Property="MinHeight" Value="48" /><Setter Property="Padding" Value="12,8" /></Style>
+  </ui:NcwPage.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*">
+    <StackPanel Margin="16,8,16,0" Spacing="4">
+      <TextBlock Classes="hint">
+        <TextBlock.Text>
+          <MultiBinding Converter="{x:Static cv:JoinDotConverter.Instance}">
+            <Binding Path="DeviceName" />
+            <Binding Path="Branch" />
+          </MultiBinding>
+        </TextBlock.Text>
+      </TextBlock>
+      <Border Classes="notice" IsVisible="{Binding IsDeviceUnknown}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText ConversationDeviceUnknown}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+    <ui:NcwSearchField Grid.Row="1" Margin="16,8" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="{l:NcwText SearchInProject}" />
+    <ui:NcwPullToRefresh x:Name="Refresher" Grid.Row="2">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="12,0,12,24" Spacing="2">
+          <TextBlock Classes="hint" Margin="4,12" IsVisible="{Binding ShowsEmptyHint}" Text="{l:NcwText OpenASession}" />
+          <ui:NcwSwipeActions x:Name="List" Label="{l:NcwText Sessions}" ItemsSource="{Binding Sessions}">
+            <ui:NcwSwipeActions.ItemTemplate>
+              <DataTemplate x:DataType="vm:SessionItemViewModel">
+                <conv:SessionRow />
+              </DataTemplate>
+            </ui:NcwSwipeActions.ItemTemplate>
+          </ui:NcwSwipeActions>
+        </StackPanel>
+      </ScrollViewer>
+    </ui:NcwPullToRefresh>
+  </Grid>
+</ui:NcwPage>

@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:insp="using:Ncw.UI.Views.Desktop.Inspector"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.TerminalPane"
+             x:DataType="vm:TerminalPanelViewModel">
+  <!--
+    终端页签:多标签,标题上是「设备 · 环境」(执行环境标识);本机直接创建,远程环境先出批准卡片。
+    终端控件(Arc.Terminal 的 TerminalView)只有一个,切换标签时换挂的显示面;输出不进 Store,经标签的 Relay 直接写进控件。
+    设备断开时标签显示「未知」,不继续计时、不接受输入;重连后设备按游标补发错过的输出。
+  -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <!-- 标签栏 -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,0,8,4">
+      <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Tabs}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="2" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TerminalTabViewModel">
+              <ui:PlainButton Height="28" Padding="8,0,4,0" Classes.active="{Binding IsSelected}"
+                              Command="{Binding $parent[insp:TerminalPane].((vm:TerminalPanelViewModel)DataContext).ActivateCommand}" CommandParameter="{Binding}"
+                              arc:Tooltip.Tip="{Binding EnvLabel}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Panel Width="12" VerticalAlignment="Center">
+                    <lucide:LucideIcon Kind="SquareTerminal" Size="12" IsVisible="{Binding IsLive}" />
+                    <lucide:LucideIcon Kind="SquareTerminal" Size="12" IsVisible="{Binding !IsLive}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  </Panel>
+                  <TextBlock Text="{Binding Title}" FontSize="{arc:ArcDesignTokenResource TypeSM}" MaxWidth="110" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Border Classes="chip" IsVisible="{Binding IsUnknown}"><TextBlock Classes="hint" Text="?" /></Border>
+                  <ui:PlainButton Width="18" Height="18" CornerRadius="5"
+                                  Command="{Binding $parent[insp:TerminalPane].((vm:TerminalPanelViewModel)DataContext).CloseCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText TerminalCloseTab}" arc:Tooltip.Tip="{l:NcwText TerminalCloseTab}">
+                    <lucide:LucideIcon Kind="X" Size="10" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                </StackPanel>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+      <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding NewTerminalCommand}" IsEnabled="{Binding CanCreate}"
+                    AutomationProperties.Name="{l:NcwText TerminalNew}" arc:Tooltip.Tip="{l:NcwText TerminalNew}">
+        <lucide:LucideIcon Kind="Plus" Size="15" />
+      </ui:NcwButton>
+    </Grid>
+
+    <!-- 执行环境标识(设备 + 环境)和目录;远程环境标出来 -->
+    <Panel Grid.Row="1" IsVisible="{Binding HasTabs}">
+    <Grid Margin="12,0,12,6" ColumnDefinitions="*,Auto" DataContext="{Binding Active}" x:DataType="vm:TerminalTabViewModel">
+      <StackPanel Spacing="1">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="Monitor" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          <TextBlock FontSize="{arc:ArcDesignTokenResource TypeSM}" FontWeight="SemiBold" Text="{Binding EnvLabel}" TextTrimming="CharacterEllipsis" />
+          <Border Classes="chip" IsVisible="{Binding IsRemote}"><TextBlock Classes="hint" Text="{l:NcwText TerminalRemote}" /></Border>
+        </StackPanel>
+        <TextBlock Classes="hint" Text="{Binding Cwd}" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <ui:NcwButton Classes="icon" Variant="Ghost" IsVisible="{Binding CanKill}"
+                      Command="{Binding $parent[insp:TerminalPane].((vm:TerminalPanelViewModel)DataContext).KillCommand}" CommandParameter="{Binding}"
+                      AutomationProperties.Name="{l:NcwText TerminalKill}" arc:Tooltip.Tip="{l:NcwText TerminalKill}">
+          <lucide:LucideIcon Kind="Square" Size="13" />
+        </ui:NcwButton>
+      </StackPanel>
+    </Grid>
+    </Panel>
+
+    <!-- 内容 -->
+    <Panel Grid.Row="2">
+      <!-- 没有终端 -->
+      <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="24,32" Spacing="10" MaxWidth="280">
+        <lucide:LucideIcon Kind="SquareTerminal" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <TextBlock Classes="hint" TextAlignment="Center" Text="{l:NcwText TerminalEmpty}" />
+        <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding NewTerminalCommand}" IsEnabled="{Binding CanCreate}" Content="{l:NcwText TerminalNew}" />
+        <insp:ProblemBar Problem="{Binding Failure}" />
+      </StackPanel>
+
+      <!-- 终端显示面:Arc.Terminal 的 TerminalView(只有这一个,切换标签时换挂) -->
+      <Border x:Name="SurfaceFrame" Margin="8,0,8,0" CornerRadius="8" ClipToBounds="True" Background="{arc:ArcDesignTokenResource SurfaceMuted}" IsVisible="False">
+        <ui:NcwTerminal x:Name="Surface" TextElement.FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" TextElement.FontSize="{arc:ArcDesignTokenResource TypeXS}" />
+      </Border>
+
+      <!-- 等批准的远程终端 -->
+      <Border x:Name="ApprovalCard" Classes="card" Margin="10,4,10,0" VerticalAlignment="Top" IsVisible="False">
+        <StackPanel Spacing="10" DataContext="{Binding Active}" x:DataType="vm:TerminalTabViewModel">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding EnvLabel, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=TerminalApprovalTitle}" />
+          </StackPanel>
+          <TextBlock Classes="hint" Text="{l:NcwText TerminalApprovalHint}" />
+          <StackPanel Spacing="2">
+            <TextBlock Classes="diffText" Text="{Binding Shell}" TextWrapping="Wrap" />
+            <TextBlock Classes="diffText" Text="{Binding Cwd}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          </StackPanel>
+          <insp:ProblemBar Problem="{Binding Failure}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <ui:NcwButton Variant="Primary" Command="{Binding $parent[insp:TerminalPane].((vm:TerminalPanelViewModel)DataContext).ApproveCommand}" CommandParameter="{Binding}" Content="{l:NcwText TerminalAllow}" />
+            <ui:NcwButton Variant="Secondary" Command="{Binding $parent[insp:TerminalPane].((vm:TerminalPanelViewModel)DataContext).DenyCommand}" CommandParameter="{Binding}" Content="{l:NcwText TerminalDeny}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- 终端已经不存在 -->
+      <TextBlock x:Name="GoneNote" Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,32,0,0" IsVisible="False" Text="{l:NcwText TerminalGone}" />
+    </Panel>
+
+    <!-- 状态条:未知(设备断开,不计时)/ 已退出 / 启动中 -->
+    <Border Grid.Row="3" Margin="10,6,10,10" Classes="notice" IsVisible="{Binding HasStatus}">
+      <StackPanel Orientation="Horizontal" Spacing="8" DataContext="{Binding Active}" x:DataType="vm:TerminalTabViewModel">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding IsUnknown}" />
+        <lucide:LucideIcon Kind="CircleCheck" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" IsVisible="{Binding IsExited}" />
+        <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsUnknown}" Text="{l:NcwText TerminalUnknown}" />
+        <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsExited}" Text="{Binding Exit, Converter={x:Static cv:TerminalExitTextConverter.Instance}}" />
+        <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStarting}" Text="{l:NcwText TerminalStarting}" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,34 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            xmlns:conv="using:Ncw.UI.Views.Desktop.Conversation"
+            x:Class="Ncw.UI.Views.Mobile.SessionPage"
+            x:DataType="vm:ConversationViewModel"
+            AvoidKeyboard="True">
+  <!--
+    会话页:不显示底部标签栏,把空间留给输入框(docs/design/03 §3)。内容就是桌面的 ConversationView(同一个 ConversationViewModel、同一套转录行 /
+    审批卡片 / 输入框),手机壳设置的触控密度(NcwDensity.IsTouch)让审批卡片变成「拒绝 + 长按允许」、输入框变成紧凑工具行。
+    软键盘由 Page 的 AvoidKeyboard 处理:内容缩短,输入框贴着键盘。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{Binding Title}">
+      <ui:NcwNavbar.Trailing>
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,12,0" VerticalAlignment="Center">
+          <!-- 设备断开:状态未知(规则 7),旋转图标,不判结束 -->
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" VerticalAlignment="Center" IsVisible="{Binding IsDeviceUnknown}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsRunning}" />
+          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasContext}" arc:Tooltip.Tip="{l:NcwText ContextUsage}">
+            <lucide:LucideIcon Kind="Gauge" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <TextBlock Classes="hint" VerticalAlignment="Center"><Run Text="{Binding ContextPercent}" /><Run Text="%" /></TextBlock>
+          </StackPanel>
+        </StackPanel>
+      </ui:NcwNavbar.Trailing>
+    </ui:NcwNavbar>
+  </ui:NcwPage.Header>
+
+  <conv:ConversationView />
+</ui:NcwPage>

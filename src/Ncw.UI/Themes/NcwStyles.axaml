@@ -1,6 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+        xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
         xmlns:ui="using:Ncw.UI.Controls"
         x:Class="Ncw.UI.Themes.NcwStyles">
   <!-- 顶部这一行和工具栏里的小方形图标按钮。NcwButton 的样式键是 Arc 的 Button,所以选择器写 arc|Button。 -->
@@ -17,5 +18,122 @@
     <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 对话区和设置页共用的几个小样式:卡片、说明文字、等宽字、小标签、旋转的加载图标。颜色全部来自 Arc token。 -->
+  <Style Selector="Border.card">
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+  </Style>
+  <Style Selector="Border.card.attention">
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Warning}" />
+  </Style>
+  <Style Selector="Border.card.danger">
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Danger}" />
+  </Style>
+  <Style Selector="Border.chip">
+    <Setter Property="Padding" Value="6,1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.hint">
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.mono">
+    <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+  </Style>
+  <Style Selector="TextBlock.sectionTitle">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,18,0,6" />
+  </Style>
+  <Style Selector="lucide|LucideIcon.spin">
+    <Setter Property="RenderTransform" Value="rotate(0deg)" />
+    <Style.Animations>
+      <Animation Duration="0:0:0.9" IterationCount="Infinite">
+        <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <!-- 右侧检查器各页签共用:分节标题、状态字母、diff 行、等宽小字。颜色全部来自 Arc token。 -->
+  <Style Selector="TextBlock.section">
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.hint.sel">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.dim">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+  </Style>
+  <Style Selector="TextBlock.letter">
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.letter.modified">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Warning}" />
+  </Style>
+  <Style Selector="TextBlock.letter.added">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Success}" />
+  </Style>
+  <Style Selector="TextBlock.letter.deleted">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Danger}" />
+  </Style>
+  <Style Selector="TextBlock.letter.conflicted">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Danger}" />
+  </Style>
+  <Style Selector="TextBlock.diffText">
+    <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.lineNo">
+    <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    <Setter Property="TextAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.diffRow.added">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SuccessSubtle}" />
+  </Style>
+  <Style Selector="Border.diffRow.removed">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource DangerSubtle}" />
+  </Style>
+  <Style Selector="Border.diffRow.fold">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+  </Style>
+  <!-- 管理页的状态小圆点:ok / warn / bad / mute(NcwStatusDot) -->
+  <Style Selector="Border.dot">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource TextMuted}" />
+  </Style>
+  <Style Selector="Border.dot.ok"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Success}" /></Style>
+  <Style Selector="Border.dot.warn"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Warning}" /></Style>
+  <Style Selector="Border.dot.bad"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Danger}" /></Style>
+  <Style Selector="Border.problem">
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource DangerSubtle}" />
+  </Style>
+  <Style Selector="Border.notice">
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource WarningSubtle}" />
   </Style>
 </Styles>

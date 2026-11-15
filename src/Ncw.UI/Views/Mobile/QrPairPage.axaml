@@ -1,0 +1,113 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.QrPairPage"
+            x:DataType="vm:QrPairingViewModel"
+            AvoidKeyboard="True">
+  <!--
+    扫码配对(docs/design/09 §3):相机预览与解码是宿主的 IQrScanner(没有时这里是占位框),解析和配对在共享层(PairingQr.TryParse → DeviceActions.PairWithQrAsync)。
+    阶段:开始 → 要相机权限 → 扫描 → 解析成功(确认)→ 配对中 → 成功 / 失败。没有相机、权限被拒时,「粘贴二维码内容」走同一条解析和配对路径。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText QrPairTitle}" />
+  </ui:NcwPage.Header>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="16,8,16,24" Spacing="14" MaxWidth="480">
+      <!-- 相机预览(宿主有原生预览就放进 PreviewHost,否则占位框) -->
+      <Border x:Name="PreviewFrame" IsVisible="{Binding ShowsScanner}" CornerRadius="16" ClipToBounds="True" Height="240"
+              Background="{arc:ArcDesignTokenResource SurfaceMuted}" BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <Panel>
+          <ContentControl x:Name="PreviewHost" />
+          <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+            <lucide:LucideIcon Kind="ScanLine" Size="40" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock HorizontalAlignment="Center" Classes="hint" Text="{l:NcwText QrPreviewPlaceholder}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" IsVisible="{Binding IsScanning}">
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+              <TextBlock Classes="hint" Text="{l:NcwText QrScanning}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" IsVisible="{Binding IsRequestingAccess}">
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+              <TextBlock Classes="hint" Text="{l:NcwText QrRequestingAccess}" />
+            </StackPanel>
+          </StackPanel>
+        </Panel>
+      </Border>
+      <TextBlock Classes="hint" IsVisible="{Binding ShowsScanner}" Text="{l:NcwText QrScanHint}" />
+      <ui:NcwButton Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding StartScanCommand}" IsVisible="{Binding CanStartScan}" Content="{l:NcwText QrStartScan}" />
+
+      <!-- 失败 -->
+      <Border Classes="problem" IsVisible="{Binding IsFailed}">
+        <StackPanel Spacing="8">
+          <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}">
+            <TextBlock.Text>
+              <MultiBinding Converter="{x:Static cv:QrFailureTextConverter.Instance}">
+                <Binding Path="Failure" />
+                <Binding Path="Outcome" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
+          <ui:NcwButton Variant="Secondary" HorizontalAlignment="Left" Command="{Binding ResetCommand}" Content="{l:NcwText QrTryAgain}" />
+        </StackPanel>
+      </Border>
+
+      <!-- 解析成功:确认 -->
+      <Border Classes="card" Padding="16" IsVisible="{Binding IsParsed}">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <lucide:LucideIcon Kind="CircleCheck" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Success}" />
+            <TextBlock FontWeight="SemiBold" Text="{l:NcwText QrParsedTitle}" />
+          </StackPanel>
+          <TextBlock Classes="hint" Text="{l:NcwText QrParsedHint}" />
+          <StackPanel Spacing="2" DataContext="{Binding Device}" x:DataType="vm:QrDeviceInfo">
+            <TextBlock Classes="hint" Text="{l:NcwText QrDeviceId}" />
+            <TextBlock Classes="mono" FontSize="{arc:ArcDesignTokenResource TypeLG}" Text="{Binding ShortId}" />
+            <TextBlock Classes="hint" Margin="0,6,0,0" Text="{l:NcwText QrAddresses}" />
+            <ItemsControl ItemsSource="{Binding Addresses}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Classes="mono" Text="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="hint" Margin="0,6,0,0" Text="{Binding ExpiresAt, Converter={x:Static cv:ClockTimeConverter.Instance}}" />
+          </StackPanel>
+          <Grid ColumnDefinitions="Auto,10,*">
+            <ui:NcwButton Variant="Secondary" MinHeight="44" Padding="20,0" Command="{Binding ResetCommand}" Content="{l:NcwText Cancel}" />
+            <ui:NcwButton Grid.Column="2" Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding ConfirmCommand}" Content="{l:NcwText PairDevice}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 配对中 -->
+      <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" IsVisible="{Binding IsPairing}">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+        <TextBlock VerticalAlignment="Center" Text="{l:NcwText PairingInProgress}" />
+      </StackPanel>
+
+      <!-- 成功 -->
+      <Border Classes="card" Padding="16" IsVisible="{Binding IsPaired}">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+            <lucide:LucideIcon Kind="CircleCheck" Size="20" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Success}" />
+            <TextBlock Grid.Column="1" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText PairSucceeded}" />
+          </Grid>
+          <ui:NcwButton Variant="Secondary" MinHeight="44" HorizontalAlignment="Left" Command="{Binding ResetCommand}" Content="{l:NcwText QrPairAnother}" />
+        </StackPanel>
+      </Border>
+
+      <!-- 备用入口:粘贴二维码内容(没有相机、权限被拒、模拟器) -->
+      <StackPanel Spacing="8" IsVisible="{Binding ShowsPaste}">
+        <TextBlock FontWeight="SemiBold" Text="{l:NcwText QrPasteTitle}" />
+        <ui:NcwTextArea x:Name="PasteInput" Text="{Binding PastedText, Mode=TwoWay}" PlaceholderText="nextcowork://pair?…" FrameMinHeight="72" IsResizable="False" />
+        <TextBlock Classes="hint" Text="{l:NcwText QrPasteHint}" />
+        <ui:NcwButton Variant="Secondary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding SubmitPastedCommand}" Content="{l:NcwText QrPasteSubmit}" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</ui:NcwPage>

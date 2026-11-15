@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Controls.NcwWidgetHost"
+             x:DataType="vm:WidgetRowViewModel">
+  <!--
+    一张内联可视化卡片的内容区:桌面是 WebView(NcwWidgetSurface,由 code-behind 放进 SurfaceSlot),手机 / WebView 不可用时是静态快照的文字;
+    下面几块是各状态的占位:加载中 / 失败 / 过期 / 设备断开(状态未知)/ WebView 崩溃。图标与文字全部来自 Arc token 和 NcwText。
+  -->
+  <Grid>
+    <Border x:Name="SurfaceSlot" />
+
+    <!-- 降级:静态快照。只读,没有任何可执行的东西 -->
+    <StackPanel x:Name="SnapshotPanel" Spacing="6" Margin="12,10" IsVisible="False">
+      <TextBlock x:Name="SnapshotNote" Classes="hint" Text="{l:NcwText WidgetStaticPreview}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding SnapshotText}" IsVisible="{Binding HasSnapshotText}" TextWrapping="Wrap" />
+      <TextBlock Classes="hint" Text="{l:NcwText WidgetSnapshotEmpty}" IsVisible="{Binding !HasSnapshotText}" />
+    </StackPanel>
+
+    <!-- 加载中:模型正在写(模型给的加载提示轮换,没有就用默认文案) -->
+    <StackPanel x:Name="LoadingPanel" Orientation="Horizontal" Spacing="8" Margin="12,10" IsVisible="{Binding IsLoading}">
+      <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+      <TextBlock x:Name="LoadingText" Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WidgetLoading}" />
+    </StackPanel>
+
+    <!-- 出错:调用失败(被消毒拒绝 / 参数不合法),或结束了却没有卡片 -->
+    <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,10" IsVisible="{Binding IsFailed}">
+      <lucide:LucideIcon Kind="CircleX" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WidgetFailed}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <!-- 已过期:调用没有回执而 Run 已经不在了 -->
+    <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,10" IsVisible="{Binding ShowExpiredPlaceholder}">
+      <lucide:LucideIcon Kind="CircleSlash" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WidgetExpired}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <!-- 设备断开:状态未知(规则 7),不判结束、不继续转加载 -->
+    <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,10" IsVisible="{Binding ShowUnknownPlaceholder}">
+      <lucide:LucideIcon Kind="WifiOff" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WidgetUnknown}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <!-- WebView 崩了 / 加载失败 / 桥被锁死:可以重新加载 -->
+    <StackPanel x:Name="CrashPanel" Orientation="Horizontal" Spacing="10" Margin="12,10" IsVisible="False">
+      <lucide:LucideIcon Kind="TriangleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WidgetCrashed}" TextWrapping="Wrap" />
+      <ui:NcwButton Variant="Ghost" Click="OnReloadClick" Content="{l:NcwText WidgetReload}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

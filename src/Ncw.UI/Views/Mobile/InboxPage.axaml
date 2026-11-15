@@ -1,0 +1,165 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.InboxPage"
+            x:DataType="vm:InboxViewModel">
+  <!--
+    活动收件箱(docs/design/03 §3):所有设备上「待我处理」,按设备分组。数据全部来自 InboxViewModel(Core 的 ActivityInboxView 派生),这里只画。
+    设备断开:分组标「状态未知」,待办灰显且不可处理(规则 7);被另一台设备先处理的显示「已在另一台设备上处理」。点一条 → 进对应会话并定位到卡片。
+    下拉刷新重拉会话列表。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText InboxTitle}">
+      <ui:NcwNavbar.Trailing>
+        <ui:PlainButton Height="44" Padding="12,0" Command="{Binding DismissAllCommand}" IsVisible="{Binding !IsEmpty}" AutomationProperties.Name="{l:NcwText InboxDismissAll}">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText InboxDismissAll}" />
+        </ui:PlainButton>
+      </ui:NcwNavbar.Trailing>
+    </ui:NcwNavbar>
+  </ui:NcwPage.Header>
+
+  <Panel>
+    <!-- 空状态 -->
+    <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="32" MaxWidth="320">
+      <lucide:LucideIcon Kind="CircleCheck" Size="32" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="{l:NcwText InboxEmptyTitle}" />
+      <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText InboxEmptyHint}" />
+    </StackPanel>
+
+    <ui:NcwPullToRefresh x:Name="Refresher" IsVisible="{Binding !IsEmpty}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="16,8,16,24" Spacing="14">
+          <!-- 有设备断开 -->
+          <Border Classes="notice" IsVisible="{Binding HasUnknown}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <lucide:LucideIcon Kind="WifiOff" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText InboxUnknownBanner}" />
+            </StackPanel>
+          </Border>
+
+          <ItemsControl ItemsSource="{Binding Groups}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Spacing="18" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:InboxGroupViewModel">
+                <StackPanel Spacing="8">
+                  <!-- 设备分组头:名字、种类、状态未知 / 运行数 -->
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="4,0">
+                    <lucide:LucideIcon Kind="Monitor" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Kind, Converter={x:Static cv:DeviceKindTextConverter.Instance}}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <Border Classes="chip" IsVisible="{Binding IsUnknown}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="10" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                          <TextBlock Classes="hint" Text="{l:NcwText InboxStateUnknown}" />
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsUnknown}"
+                                 Text="{Binding RunningRuns, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=InboxRunning}" />
+                    </StackPanel>
+                  </Grid>
+
+                  <ItemsControl ItemsSource="{Binding Entries}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Spacing="8" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:InboxEntryViewModel">
+                        <ui:PlainButton Padding="0" Click="OnEntryClick" CornerRadius="12" AutomationProperties.Name="{Binding Converter={x:Static cv:InboxHeadlineConverter.Instance}}">
+                          <Border Classes="card" Padding="14,12" Classes.attention="{Binding NeedsAction}" Classes.danger="{Binding ShowsDanger}"
+                                  Opacity="{Binding IsDimmed, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                              <!-- 种类图标 -->
+                              <Panel Width="22" VerticalAlignment="Top">
+                                <Panel.Styles>
+                                  <Style Selector="lucide|LucideIcon"><Setter Property="Size" Value="20" /></Style>
+                                </Panel.Styles>
+                                <lucide:LucideIcon Kind="ShieldAlert" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=ToolApproval}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                                <lucide:LucideIcon Kind="CircleHelp" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Question}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                                <lucide:LucideIcon Kind="ClipboardList" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=PlanApproval}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                                <lucide:LucideIcon Kind="Target" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=GoalProposal}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                                <lucide:LucideIcon Kind="Link" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=DeviceApproval}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                                <lucide:LucideIcon Kind="Play" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=WorkflowApproval}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                                <lucide:LucideIcon Kind="CircleCheck" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=RunCompleted}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                                <lucide:LucideIcon Kind="CircleAlert" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=RunFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                              </Panel>
+
+                              <StackPanel Grid.Column="1" Spacing="4">
+                                <!-- 「已在另一台设备上处理」:待办在设备上已经被处理,不是本机回答的 -->
+                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsHandledElsewhere}">
+                                  <lucide:LucideIcon Kind="MonitorCheck" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                  <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText HandledElsewhere}" />
+                                </StackPanel>
+                                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding !IsHandledElsewhere}"
+                                           Text="{Binding Converter={x:Static cv:InboxHeadlineConverter.Instance}}" />
+                                <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">
+                                  <TextBlock.Text>
+                                    <MultiBinding Converter="{x:Static cv:JoinDotConverter.Instance}">
+                                      <Binding Path="ProjectName" />
+                                      <Binding Path="SessionTitle" />
+                                    </MultiBinding>
+                                  </TextBlock.Text>
+                                </TextBlock>
+                                <!-- 被审批的调用 -->
+                                <Border Padding="8,6" CornerRadius="6" Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                        IsVisible="{Binding Target, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                  <TextBlock Classes="mono" Text="{Binding Target}" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
+                                </Border>
+                                <TextBlock Classes="hint" Text="{Binding Detail}" MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"
+                                           IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                <WrapPanel Orientation="Horizontal">
+                                  <!-- 执行环境标识(设备 · 环境) -->
+                                  <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding EnvLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <TextBlock Classes="hint" Text="{Binding EnvLabel}" />
+                                  </Border>
+                                  <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsDangerous}">
+                                    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{l:NcwText ApprovalDangerous}" />
+                                  </Border>
+                                  <Border Classes="chip" Margin="0,0,6,0">
+                                    <Border.IsVisible>
+                                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="IsUnknown" />
+                                        <Binding Path="!IsHandledElsewhere" />
+                                      </MultiBinding>
+                                    </Border.IsVisible>
+                                    <TextBlock Classes="hint" Text="{l:NcwText InboxLastKnown}" />
+                                  </Border>
+                                </WrapPanel>
+                              </StackPanel>
+
+                              <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Top" HorizontalAlignment="Right">
+                                <TextBlock Classes="hint" HorizontalAlignment="Right" Text="{Binding At, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+                                <ui:PlainButton Width="32" Height="32" HorizontalAlignment="Right" IsVisible="{Binding CanDismiss}" Click="OnDismissClick"
+                                                AutomationProperties.Name="{l:NcwText Dismiss}">
+                                  <lucide:LucideIcon Kind="X" Size="14" HorizontalAlignment="Center" />
+                                </ui:PlainButton>
+                              </StackPanel>
+                            </Grid>
+                          </Border>
+                        </ui:PlainButton>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </ui:NcwPullToRefresh>
+  </Panel>
+</ui:NcwPage>

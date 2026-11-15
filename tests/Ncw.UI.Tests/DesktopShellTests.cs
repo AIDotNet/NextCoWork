@@ -130,8 +130,7 @@ public class DesktopShellTests
         var (window, shell, vm) = Render(1500);
 
         Assert.True(vm.Inspector.IsFiles);
-        Assert.True(shell.FindControl<Ncw.UI.Views.Desktop.InspectorPanel>("Inspector")!
-            .FindControl<Ncw.UI.Controls.NcwTreeView>("Tree")!.IsEffectivelyVisible);
+        Assert.Contains(shell.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwTreeView>(), t => t.Name == "Tree" && t.IsEffectivelyVisible);
         Snapshot(window, "panel-files");
     }
 

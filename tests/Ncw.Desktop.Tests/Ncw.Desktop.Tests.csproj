@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Ncw.Desktop 是 WinExe;测试项目引用它只为了测守护逻辑(Sidecar/ 和 LocalAgentSidecar),不启动任何窗口。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 自更新测试的签名工具、假引擎 / 假宿主、手动时钟:和 Ncw.Client.Tests 共用同一份源码 -->
+    <Compile Include="../Ncw.Client.Tests/Updates/UpdateFakes.cs" Link="Updates/UpdateFakes.cs" />
+    <Compile Include="../Ncw.Client.Tests/Accounts/AccountFakes.cs" Link="Updates/AccountFakes.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Desktop/Ncw.Desktop.csproj" />
+    <!-- 只为了构建顺序:真实冒烟测试要用刚构建出来的 ncw-agent(不引用它的代码,客户端项目不能引用 Ncw.Agent.*)。 -->
+    <ProjectReference Include="../../src/Ncw.Agent/Ncw.Agent.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

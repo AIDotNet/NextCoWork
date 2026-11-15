@@ -100,6 +100,12 @@
       </Border>
     </Grid>
 
+    <!-- 账户状态条:浮在工作区顶部(登录进行中 / 失败 / 过期 / 连不上 / 要选团队) -->
+    <desktop:AccountStatusBar />
+
+    <!-- 首次启动:账户还没做过决定时整窗覆盖(设置页和数据页盖在它上面,所以排在它们前面) -->
+    <desktop:OnboardingOverlay DataContext="{Binding Onboarding}" />
+
     <!-- 设置页:整窗覆盖(数据页优先,所以排在它前面) -->
     <desktop:SettingsOverlay DataContext="{Binding Settings}" />
 
@@ -117,6 +123,7 @@
           <MultiBinding Converter="{x:Static BoolConverters.And}">
             <Binding Path="!DataGate.IsVisible" />
             <Binding Path="!Settings.IsOpen" />
+            <Binding Path="!Onboarding.IsOpen" />
           </MultiBinding>
         </ui:NcwButton.IsVisible>
         <lucide:LucideIcon Kind="PanelRight" Size="16" />

@@ -1,0 +1,62 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.SettingsHomePage"
+            x:DataType="vm:ShellViewModel"
+            IsScrollable="True">
+  <!--
+    手机设置的入口列表(导航栈的根页,docs/design/07):本应用、设备、项目三组。点一行推入对应的设置页(同一批页面内容,不重做)。
+    桌面窄窗口的图标栏版式保留在 SettingsOverlay;手机上改用导航栈。「连接与远程」「开放网关」是本机 Agent 的开关,手机没有本机 Agent,所以不列。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText Settings}" />
+  </ui:NcwPage.Header>
+
+  <StackPanel Spacing="8" Margin="0,8,0,24">
+    <ui:NcwListGroup Header="{l:NcwText SettingsAppGroup}">
+      <ui:NcwListItem Tag="Devices" Content="{l:NcwText SettingsDevices}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Monitor" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Notifications" Content="{l:NcwText SettingsNotifications}" ShowChevron="True" Click="OnNotificationsClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Bell" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+    </ui:NcwListGroup>
+
+    <ui:NcwListGroup Header="{l:NcwText SettingsDeviceGroup}">
+      <ui:NcwListItem Tag="General" Content="{l:NcwText SettingsGeneral}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="SlidersHorizontal" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Models" Content="{l:NcwText SettingsModels}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Cpu" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Skills" Content="{l:NcwText SettingsSkills}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Sparkles" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Commands" Content="{l:NcwText SettingsCommands}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="SquareSlash" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Hooks" Content="{l:NcwText SettingsHooks}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Webhook" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Mcp" Content="{l:NcwText SettingsMcp}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Plug" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Usage" Content="{l:NcwText SettingsUsage}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="ChartColumn" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+      <ui:NcwListItem Tag="Storage" Content="{l:NcwText SettingsStorage}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="HardDrive" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+    </ui:NcwListGroup>
+
+    <ui:NcwListGroup Header="{l:NcwText SettingsProjectGroup}">
+      <ui:NcwListItem Tag="Project" Content="{l:NcwText SettingsProject}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="FolderCog" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
+    </ui:NcwListGroup>
+  </StackPanel>
+</ui:NcwPage>

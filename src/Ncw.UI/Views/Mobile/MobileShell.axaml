@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:themes="using:Ncw.UI.Themes"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Mobile.MobileShell"
+             x:DataType="vm:ShellViewModel"
+             ui:NcwDensity.IsTouch="True">
+  <!--
+    手机外壳(docs/design/03 §3):底部四个标签 + 每个标签一个导航栈(推入的页面从右侧滑入,左缘右滑或返回按钮弹出)。
+    会话页不显示标签栏。和桌面外壳共用同一个 ShellViewModel;栈的内容(要推哪些页)是 MobileNavigationViewModel 的纯 UI 状态,这里只同步到 Arc 的 NavigationStack。
+    NcwDensity.IsTouch 是继承属性:对话区的审批卡片、输入框据此切换成触控版式。
+  -->
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <themes:NcwTheme />
+        <themes:NcwMobileTheme />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <themes:NcwStyles />
+    <!-- 推入的页面要有自己的不透明底色,否则滑动时下面一页会透出来 -->
+    <Style Selector="ui|NcwPage">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Background}" />
+    </Style>
+  </UserControl.Styles>
+
+  <ui:NcwPage x:Name="Frame" Background="{arc:ArcDesignTokenResource Background}">
+    <ContentControl x:Name="StackHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+    <ui:NcwPage.Footer>
+      <!-- 标签栏;「收件箱」的待处理角标叠在第一个标签的图标上(Arc 的 Tabbar 自己没有角标) -->
+      <Grid x:Name="TabBarHost" IsVisible="{Binding Navigation.IsTabBarVisible}">
+        <ui:NcwTabbar x:Name="Tabs">
+          <ui:NcwTabbarItem x:Name="InboxTab" Content="{l:NcwText MobileTabInbox}" />
+          <ui:NcwTabbarItem x:Name="SessionsTab" Content="{l:NcwText Sessions}" />
+          <ui:NcwTabbarItem x:Name="DevicesTab" Content="{l:NcwText MobileTabDevices}" />
+          <ui:NcwTabbarItem x:Name="SettingsTab" Content="{l:NcwText Settings}" />
+        </ui:NcwTabbar>
+        <Grid ColumnDefinitions="*,*,*,*" IsHitTestVisible="False" VerticalAlignment="Top">
+          <Border x:Name="InboxBadge" MinWidth="18" Height="18" Padding="5,0" CornerRadius="9" Margin="26,2,0,0"
+                  HorizontalAlignment="Center" VerticalAlignment="Top" Background="{arc:ArcDesignTokenResource Danger}"
+                  IsVisible="{Binding Inbox.BadgeCount, Converter={x:Static cv:NameNotEqualsConverter.Instance}, ConverterParameter=0}">
+            <TextBlock Text="{Binding Inbox.BadgeCount}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
+          </Border>
+        </Grid>
+      </Grid>
+    </ui:NcwPage.Footer>
+  </ui:NcwPage>
+</UserControl>

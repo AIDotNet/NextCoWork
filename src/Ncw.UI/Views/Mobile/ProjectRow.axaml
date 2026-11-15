@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Mobile.ProjectRow"
+             x:DataType="vm:RailProjectViewModel">
+  <!-- 项目列表里的一行(顶层项目和项目组里的项目共用):色块头像、名字、设备 · 分支、状态点 / 角标。点击由所在页面处理(冒泡的 Click)。 -->
+  <ui:PlainButton Padding="0" CornerRadius="12" AutomationProperties.Name="{Binding Name}">
+    <Border Classes="card" Padding="12,10" MinHeight="64" Opacity="{Binding IsOffline, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <Border Width="40" Height="40" CornerRadius="10" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}">
+          <TextBlock Text="{Binding Glyph}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">
+            <TextBlock.Text>
+              <MultiBinding Converter="{x:Static cv:JoinDotConverter.Instance}">
+                <Binding Path="DeviceName" />
+                <Binding Path="Branch" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border Width="8" Height="8" CornerRadius="4" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsRunning}" />
+          <lucide:LucideIcon Kind="WifiOff" Size="13" IsVisible="{Binding IsOffline}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <Border MinWidth="18" Height="18" Padding="5,0" CornerRadius="9" Background="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasPending}">
+            <TextBlock Text="{Binding PendingCount}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
+          </Border>
+          <lucide:LucideIcon Kind="ChevronRight" Size="16" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </ui:PlainButton>
+</UserControl>

@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Management.PageHeader"
+             x:Name="Root"
+             x:DataType="vm:ManagementPageViewModel">
+  <!--
+    设置 / 管理页的页头:标题、说明、作用域(设备切换器,项目页再加项目切换器)、本控制端在这台设备上的角色和连接状态(docs/design/07 §3)。
+    窄屏下切换器折行排在标题下面。数据来自共用的 SettingsScope(纯 UI 选择 + Store 里的设备事实)。
+  -->
+  <StackPanel Spacing="4">
+    <TextBlock Text="{Binding #Root.Title}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextWrapping="Wrap" />
+    <TextBlock Classes="hint" Text="{Binding #Root.Hint}" IsVisible="{Binding #Root.Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <WrapPanel Orientation="Horizontal" Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
+      <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding #Root.ScopeText}" /></Border>
+      <ui:NcwSelect MinWidth="200" ItemsSource="{Binding Scope.DeviceChoices}" SelectedValue="{Binding Scope.DeviceId, Mode=TwoWay}"
+                    IsVisible="{Binding Scope.HasDevices}" AutomationProperties.Name="{l:NcwText SettingsDeviceSwitcher}" />
+      <ui:NcwSelect MinWidth="200" ItemsSource="{Binding Scope.ProjectChoices}" SelectedValue="{Binding Scope.WorkspaceId, Mode=TwoWay}"
+                    IsVisible="{Binding #Root.ShowProject}" AutomationProperties.Name="{l:NcwText SettingsProjectSwitcher}" />
+      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <ui:NcwStatusDot Tone="{Binding Scope.Connection, Converter={x:Static cv:ConnectionToneConverter.Instance}}" />
+        <TextBlock Classes="hint" Text="{Binding Scope.Connection, Converter={x:Static cv:DeviceConnectionTextConverter.Instance}}" />
+      </StackPanel>
+      <Border Classes="chip" IsVisible="{Binding Scope.Role, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Classes="hint" Text="{Binding Scope.Role, Converter={x:Static cv:RoleTextConverter.Instance}}" />
+      </Border>
+    </WrapPanel>
+  </StackPanel>
+</UserControl>

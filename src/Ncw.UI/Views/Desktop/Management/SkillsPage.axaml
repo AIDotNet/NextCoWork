@@ -1,0 +1,207 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:p="using:Ncw.Protocol.Methods"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.SkillsPage"
+             x:DataType="vm:SkillsViewModel">
+  <!--
+    设置 · 设备 · 技能:已安装(清单、搜索、全局启停 owner、按工作区激活 member、从 zip 安装 ≤ 3 MB、卸载二次确认、加载诊断)和市场(浏览 / 搜索 / 详情 / 安装)。
+    viewer 只读;市场安装需要设备上的账户令牌(authRequired 时提示先登录)。
+  -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsSkills}" Hint="{l:NcwText SettingsSkillsHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+      <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding Tab, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SkillsTabs}">
+        <ui:NcwSegmentedOption Value="{x:Static vm:SkillsTab.Installed}" Label="{l:NcwText SkillsTabInstalled}" />
+        <ui:NcwSegmentedOption Value="{x:Static vm:SkillsTab.Market}" Label="{l:NcwText SkillsTabMarket}" />
+      </ui:NcwSegmented>
+
+      <!-- 安装后的确认 / 登录提示 -->
+      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Text="{Binding JustInstalled, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsInstalled}" TextWrapping="Wrap" />
+      </Border>
+      <Border Classes="card attention" IsVisible="{Binding AuthRequired}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock FontWeight="SemiBold" Text="{l:NcwText SkillsAuthRequiredTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText SkillsAuthRequiredHint}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- 卸载二次确认 -->
+      <Border Classes="card danger" IsVisible="{Binding HasPendingUninstall}">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsUninstallTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText SkillsUninstallHint}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText SkillsUninstall}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ═══ 已安装 ═══ -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <ui:NcwSearchField Text="{Binding Filter, Mode=TwoWay}" PlaceholderText="{l:NcwText SkillsFilter}" />
+          <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding InstallZipCommand}" IsEnabled="{Binding GlobalGate.Allowed}"
+                        arc:Tooltip.Tip="{Binding GlobalGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Upload" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText SkillsInstallZip}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </Grid>
+        <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4" IsVisible="{Binding GlobalGate.Allowed}">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText SkillsInstallScope}" />
+          <ui:NcwSelect ChoiceSet="InstallScope" MinWidth="140" SelectedValue="{Binding InstallScope, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SkillsInstallScope}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText SkillsZipLimit}" />
+        </WrapPanel>
+
+        <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+          <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+            <lucide:LucideIcon Kind="Sparkles" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText SkillsEmptyTitle}" />
+            <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText SkillsEmptyHint}" />
+          </StackPanel>
+        </Border>
+        <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText SkillsNoMatch}" />
+
+        <ItemsControl ItemsSource="{Binding Skills}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SkillRowViewModel">
+              <Border Classes="card" Padding="14,12">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="4">
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                        <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Scope, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SkillScope}" /></Border>
+                        <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding SourceKind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SkillSource}" /></Border>
+                        <Border Classes="chip" IsVisible="{Binding Version, Converter={x:Static ObjectConverters.IsNotNull}}"><TextBlock Classes="hint" Text="{Binding Version}" /></Border>
+                        <Border Classes="chip" IsVisible="{Binding ClientAssetsOnly}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText SkillsClientAssetsOnly}" /></Border>
+                      </WrapPanel>
+                      <TextBlock Classes="hint" Text="{Binding Description}" TextTrimming="CharacterEllipsis" MaxLines="2" />
+                    </StackPanel>
+                    <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" VerticalAlignment="Top" Command="{Binding AskUninstallCommand}" IsVisible="{Binding CanUninstall}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).GlobalGate.Allowed}"
+                                  AutomationProperties.Name="{l:NcwText SkillsUninstall}" arc:Tooltip.Tip="{l:NcwText SkillsUninstall}">
+                      <lucide:LucideIcon Kind="Trash2" Size="14" />
+                    </ui:NcwButton>
+                  </Grid>
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="16" LineSpacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <ui:NcwSwitch IsChecked="{Binding GlobalEnabled, Mode=OneWay}" Command="{Binding ToggleGlobalCommand}"
+                                    IsEnabled="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).GlobalGate.Allowed}" AutomationProperties.Name="{l:NcwText SkillsGlobalEnabled}" />
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText SkillsGlobalEnabled}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <ui:NcwSwitch IsChecked="{Binding ActiveInWorkspace, Mode=OneWay}" Command="{Binding ToggleActiveCommand}"
+                                    IsEnabled="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).CanActivate}" AutomationProperties.Name="{l:NcwText SkillsActiveInProject}" />
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText SkillsActiveInProject}" />
+                    </StackPanel>
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding UsageCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsUsageCount}" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 加载诊断:哪个目录为什么被跳过 -->
+        <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}">
+          <TextBlock Classes="sectionTitle" Text="{l:NcwText DiagnosticsTitle}" />
+          <ItemsControl ItemsSource="{Binding Diagnostics}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="p:SkillDiagnosticDto">
+                <StackPanel Spacing="1" Margin="0,2">
+                  <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{Binding Key, Converter={x:Static cv:DiagnosticTextConverter.Instance}}" />
+                  <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </StackPanel>
+
+      <!-- ═══ 市场 ═══ -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <ui:NcwSearchField Text="{Binding MarketQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText SkillsMarketSearch}" />
+          <ui:NcwSelect Grid.Column="1" MinWidth="140" NullText="{l:NcwText SkillsMarketAllCategories}" Placeholder="{l:NcwText SkillsMarketAllCategories}" ItemsSource="{Binding Categories}" SelectedValue="{Binding MarketCategory, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SkillsMarketCategory}" />
+          <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Search}" />
+        </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+        </StackPanel>
+        <Border Classes="card danger" IsVisible="{Binding MarketFailed}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MarketFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Retry}" />
+          </Grid>
+        </Border>
+        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" Text="{l:NcwText SkillsMarketEmpty}" />
+
+        <ItemsControl ItemsSource="{Binding Market}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:MarketItemViewModel">
+              <Border Classes="card" Padding="14,12">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <StackPanel Spacing="3">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                      <Border Classes="chip" IsVisible="{Binding Version, Converter={x:Static ObjectConverters.IsNotNull}}"><TextBlock Classes="hint" Text="{Binding Version}" /></Border>
+                      <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding Author, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Author}" />
+                    </WrapPanel>
+                    <TextBlock Classes="hint" Text="{Binding Description}" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                    <ui:NcwButton Variant="Ghost" Command="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).ShowDetailCommand}" CommandParameter="{Binding}" Content="{l:NcwText SkillsMarketDetail}" />
+                    <ui:NcwButton Variant="Secondary" Command="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).InstallMarketCommand}" CommandParameter="{Binding Slug}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).GlobalGate.Allowed}" Content="{l:NcwText SkillsMarketInstall}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 详情 -->
+        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Spacing="8" DataContext="{Binding Detail}" x:DataType="p:SkillMarketDetailDto">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Item.DisplayName}" />
+              <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:SkillsViewModel)DataContext).CloseDetailCommand}" AutomationProperties.Name="{l:NcwText Close}">
+                <lucide:LucideIcon Kind="X" Size="14" />
+              </ui:NcwButton>
+            </Grid>
+            <TextBlock Classes="hint" Text="{Binding Item.Description}" />
+            <ItemsControl ItemsSource="{Binding Versions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="p:SkillMarketVersionDto">
+                  <StackPanel Spacing="1" Margin="0,3">
+                    <TextBlock Classes="mono" Text="{Binding Version}" />
+                    <TextBlock Classes="hint" Text="{Binding Changelog}" IsVisible="{Binding Changelog, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

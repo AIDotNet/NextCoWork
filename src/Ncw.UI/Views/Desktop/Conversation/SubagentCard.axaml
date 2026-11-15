@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Conversation.SubagentCard"
+             x:DataType="vm:SubagentRowViewModel">
+  <!-- 转录里的子代理卡片(Task 调用)。状态文案、计时、能否停止都来自 Core 的 SubagentView.Of,和右侧面板、手机详情页是同一份。 -->
+  <Border Classes="card" Margin="0,3" Padding="12,10">
+    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="3">
+      <Panel Width="16" Height="16" VerticalAlignment="Center">
+        <lucide:LucideIcon Kind="Bot" Size="15" Foreground="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsActive}" />
+        <lucide:LucideIcon Kind="Bot" Size="15" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsUnknown}" />
+        <lucide:LucideIcon Kind="Bot" Size="15" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsDone}" />
+        <lucide:LucideIcon Kind="Bot" Size="15" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding IsError}" />
+        <lucide:LucideIcon Kind="Bot" Size="15" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsAborted}" />
+      </Panel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Description}" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Border Classes="chip">
+          <TextBlock Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" IsVisible="{Binding !IsUnknown}" />
+        </Border>
+        <Border Classes="chip" IsVisible="{Binding IsUnknown}">
+          <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
+        </Border>
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding StopCommand}" CommandParameter="{Binding Ref}" IsVisible="{Binding CanStop}"
+                      AutomationProperties.Name="{l:NcwText StopSubagent}" arc:Tooltip.Tip="{l:NcwText StopSubagent}">
+          <lucide:LucideIcon Kind="Square" Size="12" />
+        </ui:NcwButton>
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding Ref}" IsVisible="{Binding CanOpen}"
+                      AutomationProperties.Name="{l:NcwText OpenSubagent}" arc:Tooltip.Tip="{l:NcwText OpenSubagent}">
+          <lucide:LucideIcon Kind="PanelRightOpen" Size="14" />
+        </ui:NcwButton>
+      </StackPanel>
+      <!-- 详情:工具调用次数、耗时;运行中带当前工具 -->
+      <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint"
+                 Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Detail}}" />
+      <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint" IsVisible="{Binding HasSummary}"
+                 Text="{Binding Summary}" TextTrimming="CharacterEllipsis" MaxLines="2" />
+    </Grid>
+  </Border>
+</UserControl>

@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.AccountLoginStatus"
+             x:DataType="vm:AccountViewModel">
+  <!--
+    登录进行中和登录失败的状态卡片(设置页的「账户」和首次启动的欢迎页共用,规则 3:同一个事实只有一份展示逻辑):
+    等浏览器(取消 / 改用登录码)、设备授权码(大号短码 + 验证地址)、换令牌、失败(原因 + 重试)。数据都来自账户会话的 Store。
+  -->
+  <StackPanel Spacing="10">
+    <Border Classes="card" IsVisible="{Binding IsBrowserLogin}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="18" VerticalAlignment="Top" />
+        <StackPanel Grid.Column="1" Spacing="6">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding !IsExchanging}" Text="{l:NcwText AccountSigningInTitle}" />
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding IsExchanging}" Text="{l:NcwText AccountExchangingTitle}" />
+          <TextBlock Classes="hint" IsVisible="{Binding !IsExchanging}" Text="{l:NcwText AccountSigningInHint}" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8" Margin="0,4,0,0" IsVisible="{Binding !IsExchanging}">
+            <ui:NcwButton Variant="Secondary" Command="{Binding CancelLoginCommand}" Content="{l:NcwText Cancel}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding SignInWithCodeCommand}" Content="{l:NcwText AccountSignInWithCode}" />
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══ 登录进行中:设备授权码(备用) ═══ -->
+    <Border Classes="card attention" IsVisible="{Binding IsDeviceCodeLogin}">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="18" VerticalAlignment="Top" />
+          <TextBlock Grid.Column="1" FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountCodeTitle}" />
+        </Grid>
+        <Border Classes="chip" HorizontalAlignment="Left" Padding="14,8">
+          <SelectableTextBlock x:Name="UserCode" Classes="mono" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="SemiBold" Text="{Binding UserCode}" />
+        </Border>
+        <TextBlock Classes="hint" Text="{Binding VerificationUri, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=AccountCodeHint}" />
+        <WrapPanel ItemSpacing="8" LineSpacing="8">
+          <ui:NcwButton Variant="Secondary" Command="{Binding CancelLoginCommand}" Content="{l:NcwText Cancel}" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- ═══ 登录失败 ═══ -->
+    <Border Classes="card danger" IsVisible="{Binding HasLoginError}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <StackPanel Grid.Column="1" Spacing="6">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountLoginFailedTitle}" />
+          <TextBlock Classes="hint" Text="{Binding LoginError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8" Margin="0,4,0,0">
+            <ui:NcwButton Variant="Secondary" Command="{Binding SignInCommand}" IsEnabled="{Binding HasService}" Content="{l:NcwText AccountSignIn}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding SignInWithCodeCommand}" IsEnabled="{Binding HasService}" Content="{l:NcwText AccountSignInWithCode}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding DismissLoginErrorCommand}" Content="{l:NcwText Dismiss}" />
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

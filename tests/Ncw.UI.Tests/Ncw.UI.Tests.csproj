@@ -4,6 +4,15 @@
     <PackageReference Include="Avalonia.Skia" />
   </ItemGroup>
   <ItemGroup>
+    <!-- 设置 / 管理页的脚本化后端:和 Ncw.Client.Tests 共用同一份源码(截图和状态机单测看到同样的数据形状) -->
+    <Compile Include="../Ncw.Client.Tests/Management/ManagementFakes.cs" Link="Management/ManagementFakes.cs" />
+    <Compile Include="../Ncw.Client.Tests/Management/PluginsFakes.cs" Link="Management/PluginsFakes.cs" />
+    <!-- 账户 / 首次启动截图用的假账户后端、手动时钟(同一份源码) -->
+    <Compile Include="../Ncw.Client.Tests/Accounts/AccountFakes.cs" Link="Accounts/AccountFakes.cs" />
+    <!-- 自更新(设置 · 关于)截图用的签名工具、假引擎、手动时钟(同一份源码) -->
+    <Compile Include="../Ncw.Client.Tests/Updates/UpdateFakes.cs" Link="Updates/UpdateFakes.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/Ncw.UI/Ncw.UI.csproj" />
     <!-- 端到端:界面连接进程内的真实 Agent(只有测试可以同时引用两边) -->
     <ProjectReference Include="../../src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />

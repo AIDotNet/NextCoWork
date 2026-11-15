@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- 桌面宿主:窗口、sidecar(本机 Agent)管理;托盘、Velopack 更新在后续里程碑。 -->
+  <!-- 桌面宿主:窗口、sidecar(本机 Agent)管理、Velopack 自更新(Updates/);托盘在后续里程碑。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>NextCoWork</AssemblyName>
@@ -8,6 +8,17 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />
+    <!-- 自更新运行时。版本和 .config/dotnet-tools.json 里的 vpk 一致(Ncw.Build.Tests 核对)。 -->
+    <PackageReference Include="Velopack" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      内置的发布公钥(Ed25519,可轮换):<kid>:<base64>[,<kid>:<base64>…]。发布构建时由 tools/Ncw.Build 的 publish-desktop 从环境变量
+      NCW_RELEASE_PUBLIC_KEYS 传进来(-p:NcwReleasePublicKeys=…);没传的构建(开发)里没有任何公钥,自更新会拒绝一切清单,而不是跳过验证。
+      公钥是公开信息,私钥永远不进仓库。
+    -->
+    <AssemblyMetadata Include="NcwReleasePublicKeys" Value="$(NcwReleasePublicKeys)" Condition="'$(NcwReleasePublicKeys)' != ''" />
+    <InternalsVisibleTo Include="Ncw.Desktop.Tests" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />

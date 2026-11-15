@@ -87,6 +87,8 @@ public sealed class InspectorTabTitleConverter : IValueConverter
         InspectorTabKind.Git => NcwTextKind.TabGit,
         InspectorTabKind.Context => NcwTextKind.TabContext,
         InspectorTabKind.History => NcwTextKind.TabHistory,
+        InspectorTabKind.Review => NcwTextKind.TabReview,
+        InspectorTabKind.Terminal => NcwTextKind.TabTerminal,
         _ => NcwTextKind.TabSubagents,
     });
 
@@ -281,3 +283,60 @@ public sealed class RemoteErrorConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>到中继的注册状态(off / connecting / registered / failed)→ 文字。</summary>
+public sealed class RelayStateConverter : IValueConverter
+{
+    public static readonly RelayStateConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        "registered" => NcwTexts.Get(NcwTextKind.RemoteRelayRegistered),
+        "connecting" => NcwTexts.Get(NcwTextKind.RemoteRelayConnecting),
+        "failed" => NcwTexts.Get(NcwTextKind.RemoteRelayFailed),
+        "off" => NcwTexts.Get(NcwTextKind.RemoteRelayOff),
+        _ => null,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>控制端角色(owner / member / viewer)→ 文字。</summary>
+public sealed class RoleTextConverter : IValueConverter
+{
+    public static readonly RoleTextConverter Instance = new();
+
+    public static string Text(string? role) => role switch
+    {
+        "owner" => NcwTexts.Get(NcwTextKind.RoleOwner),
+        "viewer" => NcwTexts.Get(NcwTextKind.RoleViewer),
+        _ => NcwTexts.Get(NcwTextKind.RoleMember),
+    };
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>bool → 不透明度(可用 1,不可用 0.3):展开箭头在没有内容可展开时淡掉。</summary>
+public sealed class BoolOpacityConverter : IValueConverter
+{
+    public static readonly BoolOpacityConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is true ? 1.0 : 0.3;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>已归档的会话行淡一点。</summary>
+public sealed class ArchivedOpacityConverter : IValueConverter
+{
+    public static readonly ArchivedOpacityConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is true ? 0.55 : 1.0;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

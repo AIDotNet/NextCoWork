@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.ProblemBar">
+  <!-- 一次失败的提示条(文字按稳定的错误 key 翻译;设备给的英文诊断放在悬停提示里)。没有失败时不占位。 -->
+  <Border x:Name="Bar" Classes="problem" IsVisible="False">
+    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Danger}" />
+      <TextBlock x:Name="Message" Grid.Column="1" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" />
+    </Grid>
+  </Border>
+</UserControl>

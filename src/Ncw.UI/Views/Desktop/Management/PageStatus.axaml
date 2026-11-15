@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Management.PageStatus"
+             x:DataType="vm:ManagementPageViewModel">
+  <!--
+    管理页的状态条:加载中 / 设备未知(断开,规则 7)/ 角色读不了 / 读取失败(可重试)/ 只读说明 / 写操作失败条。
+    各页把它放在页头下面;内容区只在「就绪」时显示。
+  -->
+  <StackPanel Spacing="8">
+    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8" IsVisible="{Binding IsLoading}">
+      <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+      <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <Border Classes="card attention" IsVisible="{Binding IsUnknown}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="WifiOff" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock FontWeight="SemiBold" Text="{l:NcwText PageUnknownTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText PageUnknownHint}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Classes="card" IsVisible="{Binding IsForbidden}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="Lock" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock FontWeight="SemiBold" Text="{l:NcwText PageForbiddenTitle}" />
+          <TextBlock Classes="hint" Text="{Binding ReadGate, Converter={x:Static cv:ForbiddenTextConverter.Instance}}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Classes="card danger" IsVisible="{Binding IsError}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock FontWeight="SemiBold" Text="{l:NcwText PageErrorTitle}" />
+          <TextBlock Classes="hint" Text="{Binding LoadFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        </StackPanel>
+        <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding ReloadCommand}" Content="{l:NcwText Retry}" />
+      </Grid>
+    </Border>
+
+    <Border Classes="notice" IsVisible="{Binding IsReadOnly}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="Eye" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Grid.Column="1" Classes="hint" Text="{Binding WriteGate, Converter={x:Static cv:GateTextConverter.Instance}}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+      </Grid>
+    </Border>
+
+    <Border Classes="problem" IsVisible="{Binding ActionFailure, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding ActionFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        <ui:PlainButton Grid.Column="2" Width="24" Height="24" Command="{Binding DismissFailureCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
+          <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

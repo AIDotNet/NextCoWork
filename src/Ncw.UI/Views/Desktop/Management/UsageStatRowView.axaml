@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Management.UsageStatRowView"
+             x:DataType="vm:UsageStatRow">
+  <!-- 用量页「按供应商 / 模型」的一行:名称、请求数、成功率、token、费用、延迟,下面一条按请求数占比的进度。费用为空 = 未知。 -->
+  <Border Classes="card" Padding="12,9">
+    <StackPanel Spacing="6">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Classes="hint" Text="{Binding Cost, TargetNullValue=—}" />
+      </Grid>
+      <ui:NcwProgress Maximum="1" Value="{Binding Share}" />
+      <WrapPanel Orientation="Horizontal" ItemSpacing="12">
+        <TextBlock Classes="hint" Text="{Binding Requests, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UsageRequestsCount}" />
+        <TextBlock Classes="hint" IsVisible="{Binding SuccessRate, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding SuccessRate, Converter={x:Static cv:PercentTextConverter.Instance}}" />
+        <TextBlock Classes="hint" Text="{Binding Tokens, Converter={x:Static cv:CompactNumberConverter.Instance}}" />
+        <TextBlock Classes="hint" IsVisible="{Binding AverageLatencyMs, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding AverageLatencyMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+      </WrapPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

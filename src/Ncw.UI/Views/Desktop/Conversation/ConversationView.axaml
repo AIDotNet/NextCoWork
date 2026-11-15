@@ -1,0 +1,262 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:conv="using:Ncw.UI.Views.Desktop.Conversation"
+             x:Class="Ncw.UI.Views.Desktop.Conversation.ConversationView"
+             x:DataType="vm:ConversationViewModel">
+  <!--
+    栏 3 的会话内容(docs/design/03 §1、02 B1):转录(虚拟化列表,跟随最新)+ 待办 + 目标条 + 输入框。
+    转录的行都来自 ConversationViewModel.Rows(Store 派生);这里的 code-behind 只管滚动和「跟随最新」这类纯 UI 状态。
+    宽度跟着容器走:列表最大宽度取 ContentMaxWidthLG,窄屏下左右各留 16px,卡片内部都能换行,手机宽度下可用。
+  -->
+  <Grid RowDefinitions="Auto,*,Auto">
+    <!-- 设备断开:运行中的状态未知,不判结束、不继续计时(规则 7) -->
+    <Border Grid.Row="0" IsVisible="{Binding IsDeviceUnknown}" Padding="16,8" Margin="16,8,16,0" CornerRadius="10"
+            Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Text="{l:NcwText ConversationDeviceUnknown}" Classes="hint" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <Panel Grid.Row="1">
+      <!-- 空会话 -->
+      <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="24" MaxWidth="480">
+        <lucide:LucideIcon Kind="Sparkles" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"
+                   Text="{l:NcwText EmptySessionTitle}" TextAlignment="Center" TextWrapping="Wrap" />
+        <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText EmptySessionHint}" />
+      </StackPanel>
+      <!-- 订阅中:选中了会话,快照还没到 -->
+      <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <TextBlock Classes="hint" Text="{l:NcwText SessionLoading}" />
+      </StackPanel>
+
+      <!-- 转录:虚拟化,模板里带 ScrollViewer(code-behind 据此实现「跟随最新」) -->
+      <ItemsControl x:Name="Transcript" ItemsSource="{Binding Rows}">
+        <ItemsControl.Template>
+          <ControlTemplate>
+            <ScrollViewer x:Name="PART_Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}"
+                              MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}" Margin="16,12" />
+            </ScrollViewer>
+          </ControlTemplate>
+        </ItemsControl.Template>
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Vertical" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.DataTemplates>
+          <!-- 用户消息:右对齐的气泡 -->
+          <DataTemplate DataType="vm:UserRowViewModel">
+            <Border Margin="0,6" HorizontalAlignment="Right" MaxWidth="560" Padding="12,8" CornerRadius="12"
+                    BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                    Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+              <StackPanel Spacing="6">
+                <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasFiles}">
+                  <lucide:LucideIcon Kind="Paperclip" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <TextBlock Classes="hint" Text="{Binding FilesText}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasImages}">
+                  <lucide:LucideIcon Kind="Image" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <TextBlock Classes="hint" Text="{Binding ImageCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ImageCount}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+          <!-- 助手文字:Markdown,流式时末尾一个小圆点 -->
+          <DataTemplate DataType="vm:AssistantRowViewModel">
+            <StackPanel Margin="0,4" Spacing="4">
+              <ui:NcwMarkdown Text="{Binding Text}" />
+              <Border IsVisible="{Binding IsStreaming}" Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Left"
+                      Background="{arc:ArcDesignTokenResource Accent}" />
+            </StackPanel>
+          </DataTemplate>
+          <!-- 思考块:默认折叠 -->
+          <DataTemplate DataType="vm:ThinkingRowViewModel">
+            <StackPanel Margin="0,2" Spacing="4">
+              <ui:PlainButton HorizontalAlignment="Left" Padding="6,3" Click="OnToggleThinking" AutomationProperties.Name="{l:NcwText ThinkingLabel}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <lucide:LucideIcon Kind="ChevronRight" Size="12" VerticalAlignment="Center" IsVisible="{Binding !IsExpanded}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" IsVisible="{Binding IsExpanded}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <lucide:LucideIcon Kind="Brain" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsStreaming}"
+                             Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
+                </StackPanel>
+              </ui:PlainButton>
+              <Border IsVisible="{Binding IsExpanded}" Margin="8,0,0,0" Padding="12,0,0,0" BorderThickness="2,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+                <SelectableTextBlock Classes="hint" Text="{Binding Text}" TextWrapping="Wrap" />
+              </Border>
+            </StackPanel>
+          </DataTemplate>
+          <DataTemplate DataType="vm:ToolRowViewModel">
+            <conv:ToolCard />
+          </DataTemplate>
+          <DataTemplate DataType="vm:WidgetRowViewModel">
+            <conv:WidgetCard />
+          </DataTemplate>
+          <DataTemplate DataType="vm:SubagentRowViewModel">
+            <conv:SubagentCard />
+          </DataTemplate>
+          <DataTemplate DataType="vm:InteractionRowViewModel">
+            <conv:InteractionCard />
+          </DataTemplate>
+          <!-- 子代理汇报行 -->
+          <DataTemplate DataType="vm:ReportRowViewModel">
+            <StackPanel Margin="0,2" Spacing="2">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Kind="CornerDownRight" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <TextBlock Classes="hint" Text="{l:NcwText SubagentReportRow}" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Classes="hint" Margin="19,0,0,0" IsVisible="{Binding HasSummary}" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" MaxLines="2" />
+            </StackPanel>
+          </DataTemplate>
+          <!-- 压缩边界 -->
+          <DataTemplate DataType="vm:CompactRowViewModel">
+            <Grid ColumnDefinitions="*,Auto,*" Margin="0,8" ColumnSpacing="10">
+              <Border Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Kind="Shrink" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center"
+                           Text="{Binding IsAuto, Converter={x:Static cv:CompactTriggerTextConverter.Instance}}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center">
+                  <Run Text="{Binding PreText}" /><Run Text=" → " /><Run Text="{Binding PostText}" />
+                </TextBlock>
+              </StackPanel>
+              <Border Grid.Column="2" Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+          <!-- 错误与重试 -->
+          <DataTemplate DataType="vm:ErrorRowViewModel">
+            <Border Classes="card danger" Margin="0,4">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Row, Converter={x:Static cv:ErrorTextConverter.Instance}}" />
+                <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}" Content="{l:NcwText Retry}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+          <!-- 目标状态行 -->
+          <DataTemplate DataType="vm:GoalStatusRowViewModel">
+            <StackPanel Margin="0,4" Spacing="2">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Kind="Target" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsMet}" Text="{l:NcwText GoalMet}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsNotMet}" Text="{l:NcwText GoalNotMet}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsSet}" Text="{l:NcwText GoalSetRow}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsCleared}" Text="{l:NcwText GoalClearedRow}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsFailed}" Text="{l:NcwText GoalFailedRow}" />
+              </StackPanel>
+              <TextBlock Classes="hint" Margin="19,0,0,0" Text="{Binding Condition}" TextWrapping="Wrap" />
+              <TextBlock Classes="hint" Margin="19,0,0,0" IsVisible="{Binding HasReason}" Text="{Binding Reason}" TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+          <!-- 运行状态提示 -->
+          <DataTemplate DataType="vm:StatusRowViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4">
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsRetrying}"
+                         Text="{Binding Attempt, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StatusRetrying}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsCompacting}" Text="{l:NcwText StatusCompacting}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsUnknown}" Text="{l:NcwText ConversationDeviceUnknown}" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.DataTemplates>
+      </ItemsControl>
+
+      <!-- 不在底部时的「回到最新」 -->
+      <ui:NcwButton x:Name="JumpButton" IsVisible="False" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,12"
+                    Variant="Secondary" Click="OnJumpToLatest">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="ArrowDown" Size="14" VerticalAlignment="Center" />
+          <TextBlock Text="{l:NcwText JumpToLatest}" />
+        </StackPanel>
+      </ui:NcwButton>
+    </Panel>
+
+    <!-- 底部:提示、待办、目标条、输入框 -->
+    <StackPanel Grid.Row="2" Margin="16,0,16,16" Spacing="8" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
+      <!-- 已在另一台设备上处理 -->
+      <ItemsControl ItemsSource="{Binding Notices}" IsVisible="{Binding HasNotices}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="6" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:HandledNotice">
+            <Border Classes="card" Padding="12,8">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                <lucide:LucideIcon Kind="MonitorCheck" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Converter={x:Static cv:HandledNoticeTextConverter.Title}}" />
+                  <TextBlock Classes="hint" Text="{Binding Converter={x:Static cv:HandledNoticeTextConverter.Detail}}" />
+                </StackPanel>
+                <ui:PlainButton Grid.Column="2" Width="24" Height="24" Click="OnDismissNotice" AutomationProperties.Name="{l:NcwText Dismiss}">
+                  <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
+                </ui:PlainButton>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- 待办 -->
+      <Border Classes="card" Padding="12,8" IsVisible="{Binding Todo, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel Spacing="6" DataContext="{Binding Todo}" x:DataType="vm:TodoPanelViewModel">
+          <ui:PlainButton Padding="2,2" Click="OnToggleTodo" AutomationProperties.Name="{l:NcwText Todos}">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+              <lucide:LucideIcon Kind="ListTodo" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Grid.Column="1" Text="{l:NcwText Todos}" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Current}" />
+              <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center">
+                <Run Text="{Binding Completed}" /><Run Text=" / " /><Run Text="{Binding Total}" />
+              </TextBlock>
+            </Grid>
+          </ui:PlainButton>
+          <ItemsControl ItemsSource="{Binding Items}" IsVisible="{Binding IsExpanded}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:TodoRowView">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,2">
+                  <Panel Width="14" VerticalAlignment="Top" Margin="0,2,0,0">
+                    <lucide:LucideIcon Kind="CircleCheck" Size="14" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                    <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" IsVisible="{Binding IsActive}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                    <lucide:LucideIcon Kind="Circle" Size="14" IsVisible="{Binding IsPending}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  </Panel>
+                  <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- 目标条 -->
+      <Border Classes="card" Padding="12,8" IsVisible="{Binding Goal, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid DataContext="{Binding Goal}" x:DataType="vm:GoalBarViewModel" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="Target" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Classes="hint" Text="{l:NcwText GoalBarTitle}" />
+            <TextBlock Text="{Binding Condition}" TextWrapping="Wrap" />
+            <TextBlock Classes="hint" IsVisible="{Binding HasLastReason}" Text="{Binding LastReason}" />
+            <TextBlock Classes="hint" IsVisible="{Binding HasIterations}"
+                       Text="{Binding Iterations, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=GoalIterations}" />
+            <TextBlock Classes="hint" IsVisible="{Binding IsUnknown}" Text="{l:NcwText ConversationDeviceUnknown}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="2" Variant="Ghost" Command="{Binding ClearCommand}" Content="{l:NcwText GoalClear}" VerticalAlignment="Top" />
+        </Grid>
+      </Border>
+
+      <conv:ComposerView DataContext="{Binding Composer}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

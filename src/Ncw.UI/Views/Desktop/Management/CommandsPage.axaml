@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:p="using:Ncw.Protocol.Methods"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.CommandsPage"
+             x:DataType="vm:CommandsViewModel">
+  <!-- 设置 · 设备 · 命令:斜杠命令管理清单(被关掉的也列出)、启停(owner)、加载诊断。viewer 可读。 -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsCommands}" Hint="{l:NcwText SettingsCommandsHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+      <ui:NcwSearchField Text="{Binding Filter, Mode=TwoWay}" PlaceholderText="{l:NcwText CommandsFilter}" />
+      <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+        <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+          <lucide:LucideIcon Kind="SquareSlash" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText CommandsEmptyTitle}" />
+          <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText CommandsEmptyHint}" />
+        </StackPanel>
+      </Border>
+      <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText CommandsNoMatch}" />
+
+      <ItemsControl ItemsSource="{Binding Commands}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:CommandRowViewModel">
+            <Border Classes="card" Padding="14,12">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Spacing="3">
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                    <TextBlock Classes="mono" FontWeight="SemiBold" Text="{Binding Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=CommandSlash}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ArgumentHint, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding ArgumentHint}" />
+                    <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Scope, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=CommandScope}" /></Border>
+                  </WrapPanel>
+                  <TextBlock Classes="hint" Text="{Binding Description}" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding Enabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
+                              IsEnabled="{Binding $parent[ItemsControl].((vm:CommandsViewModel)DataContext).CanWrite}"
+                              AutomationProperties.Name="{l:NcwText CommandsEnabled}" arc:Tooltip.Tip="{l:NcwText CommandsEnabled}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText DiagnosticsTitle}" />
+        <ItemsControl ItemsSource="{Binding Diagnostics}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="p:CommandDiagnosticDto">
+              <StackPanel Spacing="1" Margin="0,2">
+                <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{Binding Key, Converter={x:Static cv:DiagnosticTextConverter.Instance}}" />
+                <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

@@ -1,9 +1,10 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Controls;
 using TKCode.Arc;
 
 namespace Ncw.UI.Views.Desktop;
@@ -11,13 +12,13 @@ namespace Ncw.UI.Views.Desktop;
 public partial class InspectorPanel : UserControl
 {
     private InspectorViewModel? _vm;
+    private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public InspectorPanel()
     {
         InitializeComponent();
-        Tree.ChildrenSelector = static node => (node as FileNodeViewModel)?.Children;
-        Tree.ItemExpanded += (_, e) => SetExpanded(e.Item, true);
-        Tree.ItemCollapsed += (_, e) => SetExpanded(e.Item, false);
+        // 运行中的子代理要计时:只在需要时开定时器,定时器只调 Tick(重新派生一遍,不持有任何状态)
+        _tick.Tick += (_, _) => _vm?.Tick();
     }
 
     /// <summary>
@@ -33,24 +34,51 @@ public partial class InspectorPanel : UserControl
         if (_vm is not null)
         {
             _vm.Addable.CollectionChanged -= OnAddableChanged;
-            _vm.Files.Roots.CollectionChanged -= OnRootsChanged;
+            _vm.PropertyChanged -= OnViewModelChanged;
         }
 
         _vm = DataContext as InspectorViewModel;
         if (_vm is not null)
         {
             _vm.Addable.CollectionChanged += OnAddableChanged;
-            _vm.Files.Roots.CollectionChanged += OnRootsChanged;
+            _vm.PropertyChanged += OnViewModelChanged;
+            // 弹窗、本机文件动作、弹窗文字:盖在这个面板所在的窗口上,按当前语言
+            _vm.Dialogs = new NcwDialogService(this);
+            _vm.LocalFiles = new NcwLocalFiles(this);
+            _vm.Text = Localization.NcwInspectorText.Instance;
         }
 
         RebuildAddMenu();
-        RestoreExpanded();
+        UpdateTimer();
+    }
+
+    private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(InspectorViewModel.NeedsTick))
+        {
+            UpdateTimer();
+        }
+    }
+
+    private void UpdateTimer()
+    {
+        if (_vm is { NeedsTick: true })
+        {
+            _tick.Start();
+        }
+        else
+        {
+            _tick.Stop();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _tick.Stop();
+        base.OnDetachedFromVisualTree(e);
     }
 
     private void OnAddableChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildAddMenu();
-
-    private void OnRootsChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
-        Dispatcher.UIThread.Post(RestoreExpanded, DispatcherPriority.Loaded);
 
     /// <summary>「+」菜单的条目来自 ViewModel 的 Addable;点选即调用同一个 AddCommand。</summary>
     private void RebuildAddMenu()
@@ -69,64 +97,5 @@ public partial class InspectorPanel : UserControl
                 CommandParameter = kind,
             })
             .ToList();
-    }
-
-    /// <summary>树重建后,按 ViewModel 里记住的展开状态重新展开。</summary>
-    private void RestoreExpanded()
-    {
-        if (_vm is null)
-        {
-            return;
-        }
-
-        foreach (var node in _vm.Files.Roots)
-        {
-            Expand(node);
-        }
-    }
-
-    private void Expand(FileNodeViewModel node)
-    {
-        if (!node.IsExpanded)
-        {
-            return;
-        }
-
-        Tree.Expand(node);
-        foreach (var child in node.Children)
-        {
-            Expand(child);
-        }
-    }
-
-    private static void SetExpanded(object? item, bool expanded)
-    {
-        if (item is FileNodeViewModel node)
-        {
-            node.IsExpanded = expanded;
-        }
-    }
-
-    private void OnCollapseAll(object? sender, RoutedEventArgs e)
-    {
-        Tree.CollapseAll();
-        if (_vm is null)
-        {
-            return;
-        }
-
-        foreach (var node in _vm.Files.Roots)
-        {
-            Collapse(node);
-        }
-
-        static void Collapse(FileNodeViewModel node)
-        {
-            node.IsExpanded = false;
-            foreach (var child in node.Children)
-            {
-                Collapse(child);
-            }
-        }
     }
 }

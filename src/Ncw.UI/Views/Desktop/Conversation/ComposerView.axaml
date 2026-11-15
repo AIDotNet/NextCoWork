@@ -1,0 +1,250 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Conversation.ComposerView"
+             x:DataType="vm:ComposerViewModel">
+  <!--
+    输入框(docs/design/03 §1、02 B1):多行输入、发送 / 中止、运行中的排队与插话、模型 / 思考 / 权限档位。
+    Enter 发送(运行中是排队),Shift+Enter 换行。能做什么由 ComposerLogic 算(code-behind 只接键盘)。
+    `@` 弹出项目文件候选(files.suggest),选中后变成输入框上方的文件引用 chip,发送时作为文件块一起发出;
+    `/` 弹出设备上的命令清单(commands.list,带说明);内置命令还没接入的保持占位。
+  -->
+  <UserControl.Styles>
+    <!-- 紧凑(手机 / 窄容器):三个选择器只留图标,模型名截短,触控按钮更高 -->
+    <Style Selector=":is(UserControl).compact lucide|LucideIcon.chev"><Setter Property="IsVisible" Value="False" /></Style>
+    <Style Selector=":is(UserControl).compact TextBlock.opt"><Setter Property="IsVisible" Value="False" /></Style>
+    <Style Selector=":is(UserControl).compact TextBlock.modelName"><Setter Property="MaxWidth" Value="84" /></Style>
+    <Style Selector=":is(UserControl).compact ui|PlainButton.tool"><Setter Property="Height" Value="40" /><Setter Property="Padding" Value="10,0" /></Style>
+    <Style Selector=":is(UserControl).compact Border.panel"><Setter Property="Padding" Value="10,8" /></Style>
+  </UserControl.Styles>
+  <Border Classes="panel" Padding="12,10" CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}" BorderThickness="1"
+          BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource Surface}">
+    <StackPanel Spacing="8">
+      <!-- 排队中的消息 -->
+      <ItemsControl ItemsSource="{Binding Queue}" IsVisible="{Binding HasQueue}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="4" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:QueueItemView">
+            <Border Padding="10,6" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                <lucide:LucideIcon Kind="Clock" Size="13" VerticalAlignment="Center" IsVisible="{Binding !IsPromoted}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <lucide:LucideIcon Kind="CornerDownRight" Size="13" VerticalAlignment="Center" IsVisible="{Binding IsPromoted}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                <TextBlock Grid.Column="1" Text="{Binding Text}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <ui:PlainButton Grid.Column="2" Padding="8,3" Click="OnPromote" Classes.active="{Binding IsPromoted}"
+                                arc:Tooltip.Tip="{l:NcwText QueueSteerHint}" AutomationProperties.Name="{l:NcwText QueueSteer}">
+                  <TextBlock Classes="hint" Text="{l:NcwText QueueSteer}" VerticalAlignment="Center" />
+                </ui:PlainButton>
+                <ui:PlainButton Grid.Column="3" Width="22" Height="22" Click="OnRemoveQueued" AutomationProperties.Name="{l:NcwText QueueRemove}" arc:Tooltip.Tip="{l:NcwText QueueRemove}">
+                  <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
+                </ui:PlainButton>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- 不能发送的原因 / 发送失败 -->
+      <TextBlock Classes="hint" IsVisible="{Binding HasBlock}" Foreground="{arc:ArcDesignTokenResource Warning}"
+                 Text="{Binding State, Converter={x:Static cv:ComposerHintConverter.Block}}" />
+      <TextBlock Classes="hint" IsVisible="{Binding HasFailure}" Foreground="{arc:ArcDesignTokenResource Danger}"
+                 Text="{Binding LastFailure, Converter={x:Static cv:ComposerHintConverter.Failure}}" />
+
+      <!-- 已选的文件引用 -->
+      <ItemsControl ItemsSource="{Binding FileRefs}" IsVisible="{Binding HasFileRefs}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:FileRefChip">
+            <Border Classes="chip" Margin="0,0,6,4" Padding="8,3" arc:Tooltip.Tip="{Binding Path}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Kind="File" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                <TextBlock Text="{Binding Name}" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" />
+                <ui:PlainButton Width="16" Height="16" CornerRadius="4" Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).RemoveFileCommand}" CommandParameter="{Binding}"
+                                AutomationProperties.Name="{l:NcwText FileRefRemove}" arc:Tooltip.Tip="{l:NcwText FileRefRemove}">
+                  <lucide:LucideIcon Kind="X" Size="10" HorizontalAlignment="Center" />
+                </ui:PlainButton>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- 附件托盘:选好的照片 / 文件,上传进度、失败原因、重试 / 移除 -->
+      <ItemsControl ItemsSource="{Binding Attachments.Items}" IsVisible="{Binding Attachments.HasItems}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="6" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:AttachmentItemViewModel">
+            <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="4">
+                <Panel Grid.RowSpan="2" VerticalAlignment="Center" Width="20">
+                  <lucide:LucideIcon Kind="Image" Size="18" IsVisible="{Binding IsImage}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <lucide:LucideIcon Kind="File" Size="18" IsVisible="{Binding !IsImage}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                </Panel>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center" Text="{Binding Size, Converter={x:Static cv:AttachmentSizeConverter.Instance}}" />
+                <!-- 上传中:细进度条 + 百分比;完成:已上传;失败:原因 -->
+                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*" IsVisible="{Binding IsUploading}" Height="4" VerticalAlignment="Center">
+                  <Border CornerRadius="2" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="{Binding Progress, Converter={x:Static cv:StarLengthConverter.Fill}}" />
+                      <ColumnDefinition Width="{Binding Progress, Converter={x:Static cv:StarLengthConverter.Rest}}" />
+                    </Grid.ColumnDefinitions>
+                    <Border CornerRadius="2" Background="{arc:ArcDesignTokenResource Accent}" />
+                  </Grid>
+                </Grid>
+                <TextBlock Grid.Row="1" Grid.Column="2" Classes="hint" IsVisible="{Binding IsUploading}" Text="{Binding Progress, Converter={x:Static cv:UploadPercentTextConverter.Instance}}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" Text="{l:NcwText AttachmentDone}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="hint" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}"
+                           Text="{Binding Failure, Converter={x:Static cv:AttachmentFailureTextConverter.Instance}}" TextWrapping="Wrap" />
+                <StackPanel Grid.Column="3" Grid.RowSpan="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                  <ui:PlainButton Width="32" Height="32" IsVisible="{Binding IsFailed}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).Attachments.RetryCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText AttachmentRetry}" arc:Tooltip.Tip="{l:NcwText AttachmentRetry}">
+                    <lucide:LucideIcon Kind="RotateCw" Size="14" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <ui:PlainButton Width="32" Height="32"
+                                  Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).Attachments.RemoveCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText AttachmentRemove}" arc:Tooltip.Tip="{l:NcwText AttachmentRemove}">
+                    <lucide:LucideIcon Kind="X" Size="14" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Classes="hint" IsVisible="{Binding Attachments.IsUploading}" Text="{l:NcwText AttachmentUploadingWait}" />
+
+      <ui:NcwTextArea x:Name="Input" Text="{Binding Draft, Mode=TwoWay}" PlaceholderText="{l:NcwText ComposerPlaceholder}" FrameMinHeight="56" IsResizable="False" />
+
+      <!-- 斜杠命令:设备上的命令清单(带说明);内置命令还没接入的是占位 -->
+      <Border x:Name="SlashPopup" IsVisible="{Binding HasSlashQuery}" Padding="6" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+        <ItemsControl ItemsSource="{Binding SlashCommands}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SlashCommandItem">
+              <ui:PlainButton Padding="6,4" Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).InsertSlashCommand}" CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="mono" Text="{Binding Command}" VerticalAlignment="Center" />
+                    <TextBlock Classes="hint" Text="{Binding ArgumentHint}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Classes="hint" TextTrimming="CharacterEllipsis" Text="{Binding Description}" IsVisible="{Binding IsAvailable}" />
+                  <TextBlock Grid.Column="1" Classes="hint" Text="{l:NcwText SlashComingSoon}" IsVisible="{Binding !IsAvailable}" />
+                </Grid>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- @ 文件引用:项目文件候选 -->
+      <Border x:Name="FilePopup" IsVisible="{Binding ShowsSuggestions}" Padding="6" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+        <StackPanel Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="6,2" IsVisible="{Binding IsSuggesting}">
+            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Classes="hint" Text="{l:NcwText FileRefSearching}" />
+          </StackPanel>
+          <TextBlock Classes="hint" Margin="6,2" IsVisible="{Binding HasNoSuggestions}" Text="{l:NcwText FileRefNone}" />
+          <TextBlock Classes="hint" Margin="6,2" IsVisible="{Binding SuggestFailed}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText FileRefFailed}" />
+          <ItemsControl ItemsSource="{Binding FileSuggestions}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FileSuggestionRow">
+                <ui:PlainButton Padding="6,4" Classes.active="{Binding IsActive}" Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).PickFileCommand}" CommandParameter="{Binding Item}">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <lucide:LucideIcon Kind="File" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                    <TextBlock Text="{Binding Name}" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" />
+                    <TextBlock Classes="hint" Text="{Binding Directory}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </ui:PlainButton>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- 附件:宿主提供选择器时(手机:相册 / 拍照 / 文件)可用;桌面没有选择器,保持灰掉 -->
+          <ui:NcwDropdownMenu x:Name="AttachMenu" Margin="0,0,4,0" IsEnabled="{Binding Attachments.CanPick}">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:PlainButton Classes="tool" Width="30" Height="30" AutomationProperties.Name="{l:NcwText AddAttachment}" arc:Tooltip.Tip="{l:NcwText AddAttachment}">
+                <lucide:LucideIcon Kind="Paperclip" Size="15" HorizontalAlignment="Center" />
+              </ui:PlainButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
+          <!-- 模型:来自设备算好的候选(目录 + 供应商别名),显示上下文窗口和能力 -->
+          <ui:NcwDropdownMenu x:Name="ModelMenu" Margin="0,0,4,0" MaxDropDownHeight="360">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:PlainButton Classes="tool" Height="30" Padding="8,0" AutomationProperties.Name="{l:NcwText ModelPickerLabel}" arc:Tooltip.Tip="{l:NcwText ModelPickerLabel}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <lucide:LucideIcon Kind="Cpu" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <TextBlock x:Name="ModelText" Classes="modelName" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                  <lucide:LucideIcon Classes="chev" Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+                </StackPanel>
+              </ui:PlainButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
+          <ui:NcwDropdownMenu x:Name="ThinkingMenu" Margin="0,0,4,0">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:PlainButton Classes="tool" Height="30" Padding="8,0" AutomationProperties.Name="{l:NcwText ThinkingPickerLabel}" arc:Tooltip.Tip="{l:NcwText ThinkingPickerLabel}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <lucide:LucideIcon Kind="Brain" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <TextBlock x:Name="ThinkingText" Classes="opt" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
+                  <lucide:LucideIcon Classes="chev" Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+                </StackPanel>
+              </ui:PlainButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
+          <ui:NcwDropdownMenu x:Name="PermissionMenu">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:PlainButton Classes="tool" Height="30" Padding="8,0" AutomationProperties.Name="{l:NcwText PermissionPickerLabel}" arc:Tooltip.Tip="{l:NcwText PermissionPickerLabel}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <lucide:LucideIcon Kind="ShieldCheck" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <TextBlock x:Name="PermissionText" Classes="opt" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
+                  <lucide:LucideIcon Classes="chev" Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+                </StackPanel>
+              </ui:PlainButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
+        </WrapPanel>
+
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <!-- 运行中有文字:插话(立即送进当前 Run) -->
+          <ui:NcwButton Variant="Secondary" Command="{Binding SteerCommand}" IsVisible="{Binding State.CanSteer}"
+                        arc:Tooltip.Tip="{l:NcwText ComposerSteerHint}" Content="{l:NcwText ComposerSteer}" />
+          <!-- 主按钮:发送 / 排队 / 停止 -->
+          <ui:NcwButton x:Name="SendButton" Variant="Primary" Width="34" Height="34" Padding="0" Command="{Binding SubmitCommand}"
+                        IsEnabled="{Binding State.CanSend}" IsVisible="{Binding PrimaryIsSend}"
+                        AutomationProperties.Name="{l:NcwText Send}" arc:Tooltip.Tip="{l:NcwText Send}">
+            <lucide:LucideIcon Kind="ArrowUp" Size="16" />
+          </ui:NcwButton>
+          <ui:NcwButton x:Name="QueueButton" Variant="Primary" Width="34" Height="34" Padding="0" Command="{Binding SubmitCommand}"
+                        IsVisible="{Binding PrimaryIsQueue}" AutomationProperties.Name="{l:NcwText ComposerQueue}" arc:Tooltip.Tip="{l:NcwText ComposerQueueHint}">
+            <lucide:LucideIcon Kind="ListPlus" Size="16" />
+          </ui:NcwButton>
+          <ui:NcwButton x:Name="StopButton" Variant="Danger" Width="34" Height="34" Padding="0" Command="{Binding StopCommand}"
+                        IsVisible="{Binding PrimaryIsStop}" AutomationProperties.Name="{l:NcwText Stop}" arc:Tooltip.Tip="{l:NcwText Stop}">
+            <lucide:LucideIcon Kind="Square" Size="14" />
+          </ui:NcwButton>
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

@@ -1,0 +1,66 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+                    xmlns:ui="using:Ncw.UI.Controls"
+                    xmlns:cv="using:Ncw.UI.Converters"
+                    x:Class="Ncw.UI.Themes.NcwMobileTheme">
+  <!-- 手机壳专用控件的外观。颜色、圆角全部来自 Arc token(AGENTS.md §2)。 -->
+
+  <!-- 「长按确认」按钮:底色 + 从左往右的填充条(宽度 = Progress)+ 居中的文字。最小高度 44px(触控目标)。 -->
+  <ControlTheme x:Key="{x:Type ui:NcwHoldButton}" TargetType="ui:NcwHoldButton">
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                ClipToBounds="True">
+          <Panel>
+            <!-- 底层文字(前景色)。填充条盖在上面,条里叠一份反色文字,被条的宽度裁剪:填充边缘两侧的文字都有对比度 -->
+            <TextBlock Name="PART_Label" Text="{TemplateBinding Text}" Padding="{TemplateBinding Padding}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold"
+                       Foreground="{TemplateBinding Foreground}" />
+            <Border Name="PART_Fill" HorizontalAlignment="Left" ClipToBounds="True" IsHitTestVisible="False">
+              <Border.Width>
+                <MultiBinding Converter="{x:Static cv:ProgressWidthConverter.Instance}">
+                  <Binding Path="Progress" RelativeSource="{RelativeSource TemplatedParent}" />
+                  <Binding Path="Bounds.Width" RelativeSource="{RelativeSource TemplatedParent}" />
+                </MultiBinding>
+              </Border.Width>
+              <TextBlock Name="PART_FillLabel" Text="{TemplateBinding Text}" Padding="{TemplateBinding Padding}"
+                         HorizontalAlignment="Left" VerticalAlignment="Center" TextAlignment="Center" FontWeight="SemiBold"
+                         Foreground="{arc:ArcDesignTokenResource AccentForeground}"
+                         Width="{Binding Bounds.Width, RelativeSource={RelativeSource TemplatedParent}}" />
+            </Border>
+          </Panel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:dangerous">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Danger}" />
+    </Style>
+    <!-- 填充色放在样式里而不是模板里:模板里的局部值会盖过样式 -->
+    <Style Selector="^ /template/ Border#PART_Fill">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}" />
+    </Style>
+    <Style Selector="^:dangerous /template/ Border#PART_Fill">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Danger}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

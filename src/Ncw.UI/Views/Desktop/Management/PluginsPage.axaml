@@ -1,0 +1,680 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:p="using:Ncw.Protocol.Methods"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.PluginsPage"
+             x:DataType="vm:PluginsViewModel">
+  <!--
+    设置 · 设备 · 插件:待处理提示置顶(插件在等用户回答,执行类审批带设备 + 环境);已安装(启停、卸载二次确认、zip 安装 ≤ 3 MB、逐项授予 / 撤销能力、配置表单、命令)、
+    市场(浏览 / 搜索 / 分页 / 详情 / 安装 / 更新;没有账户令牌时提示先登录)、活动与诊断(最近的宿主调用、诊断、faulted 恢复)。
+    读取 member 起(viewer 读不了:整页说明);写入 owner;member 可答复提示、运行命令、浏览市场。窄屏全部折行,不横向溢出。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.danger.chip">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource DangerSubtle}" />
+    </Style>
+    <Style Selector="Border.danger.chip > TextBlock">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Danger}" />
+    </Style>
+    <Style Selector="Border.perm">
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    </Style>
+    <Style Selector="Border.perm.sensitive">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource DangerSubtle}" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsPlugins}" Hint="{l:NcwText SettingsPluginsHint}" ScopeText="{l:NcwText ScopeDevice}" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+
+      <!-- ═══ 待处理提示(插件在等你回答) ═══ -->
+      <StackPanel Spacing="8" IsVisible="{Binding HasPrompts}">
+        <TextBlock Classes="sectionTitle" Margin="0,8,0,0" Text="{l:NcwText PluginPromptsTitle}" />
+        <TextBlock Classes="hint" Text="{l:NcwText PluginPromptsHint}" />
+        <ItemsControl ItemsSource="{Binding Prompts}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginPromptViewModel">
+              <Border Classes="card attention" Classes.danger="{Binding Danger}" Padding="14,12">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" IsVisible="{Binding Danger}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                    <lucide:LucideIcon Kind="MessageSquare" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" IsVisible="{Binding !Danger}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PluginName, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginPromptFrom}" />
+                      <TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginPromptKind}" />
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock TextWrapping="Wrap" IsVisible="{Binding Title, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Title}" />
+                  <TextBlock Classes="hint" IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Detail}" />
+
+                  <!-- 执行类审批:命令行 + 在哪个设备的哪个环境里跑(AGENTS.md §5) -->
+                  <StackPanel Spacing="6" IsVisible="{Binding IsExec}">
+                    <TextBlock Classes="hint" Text="{l:NcwText PluginPromptExecWants}" />
+                    <Border Classes="perm sensitive">
+                      <TextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Command}" />
+                    </Border>
+                  </StackPanel>
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4" IsVisible="{Binding HasEnvironment}">
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText PluginPromptRunsOn}" />
+                    <Border Classes="chip">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <lucide:LucideIcon Kind="Server" Size="12" VerticalAlignment="Center" />
+                        <TextBlock Classes="hint" Text="{Binding EnvironmentName}" />
+                        <TextBlock Classes="hint" Text="{Binding EnvironmentType}" />
+                      </StackPanel>
+                    </Border>
+                    <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding DeviceId, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginPromptDevice}" /></Border>
+                    <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding EnvironmentId, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginPromptEnvironment}" /></Border>
+                  </WrapPanel>
+
+                  <!-- 运行时权限申请 -->
+                  <StackPanel Spacing="6" IsVisible="{Binding IsPermissions}">
+                    <TextBlock Classes="hint" Text="{l:NcwText PluginPromptPermsWants}" />
+                    <ItemsControl ItemsSource="{Binding Permissions}">
+                      <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                          <StackPanel Spacing="1">
+                            <TextBlock Classes="mono" Text="{Binding}" />
+                            <TextBlock Classes="hint" Text="{Binding, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginPerm}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+
+                  <!-- 输入 -->
+                  <ui:NcwInput IsVisible="{Binding IsInput}" Text="{Binding Text, Mode=TwoWay}" Placeholder="{Binding Placeholder}" IsEnabled="{Binding CanAnswer}" />
+
+                  <!-- 选择 -->
+                  <ItemsControl ItemsSource="{Binding Items}" IsVisible="{Binding IsPick}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PluginPickChoice">
+                        <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Content="{Binding Label}" CommandParameter="{Binding Id}"
+                                      Command="{Binding $parent[ItemsControl].((vm:PluginPromptViewModel)DataContext).PickCommand}"
+                                      IsEnabled="{Binding $parent[ItemsControl].((vm:PluginPromptViewModel)DataContext).CanAnswer}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
+                    <ui:NcwButton Variant="Primary" IsVisible="{Binding IsAllowDeny}" Command="{Binding AllowCommand}" IsEnabled="{Binding CanAnswer}"
+                                  arc:Tooltip.Tip="{Binding MemberGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+                      <TextBlock Text="{l:NcwText PluginPromptAllow}" />
+                    </ui:NcwButton>
+                    <ui:NcwButton Variant="Secondary" IsVisible="{Binding IsAllowDeny}" Command="{Binding DenyCommand}" IsEnabled="{Binding CanAnswer}" Content="{l:NcwText PluginPromptDeny}" />
+                    <ui:NcwButton Variant="Primary" IsVisible="{Binding IsInput}" Command="{Binding SubmitCommand}" IsEnabled="{Binding CanAnswer}" Content="{l:NcwText PluginPromptSubmit}" />
+                    <ui:NcwButton Variant="Ghost" Command="{Binding CancelCommand}" IsEnabled="{Binding CanAnswer}" Content="{l:NcwText PluginPromptDismiss}" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+      <Border Classes="notice" IsVisible="{Binding PromptHandledElsewhere}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{l:NcwText PluginPromptHandled}" />
+          <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding DismissHandledCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
+            <lucide:LucideIcon Kind="X" Size="12" />
+          </ui:NcwButton>
+        </Grid>
+      </Border>
+
+      <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding Tab, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText PluginTabs}">
+        <ui:NcwSegmentedOption Value="{x:Static vm:PluginsTab.Installed}" Label="{l:NcwText PluginTabInstalled}" />
+        <ui:NcwSegmentedOption Value="{x:Static vm:PluginsTab.Market}" Label="{l:NcwText PluginTabMarket}" />
+        <ui:NcwSegmentedOption Value="{x:Static vm:PluginsTab.Activity}" Label="{l:NcwText PluginTabActivity}" />
+      </ui:NcwSegmented>
+
+      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Text="{Binding JustInstalled, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginInstalledNotice}" TextWrapping="Wrap" />
+      </Border>
+      <Border Classes="notice" IsVisible="{Binding JustRan, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Text="{Binding JustRan, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginRanNotice}" TextWrapping="Wrap" />
+      </Border>
+
+      <!-- 卸载二次确认 -->
+      <Border Classes="card danger" IsVisible="{Binding HasPendingUninstall}">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginUninstallTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText PluginUninstallHint}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText PluginUninstall}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+      <!-- 撤销必选能力的二次确认 -->
+      <Border Classes="card danger" IsVisible="{Binding HasPendingRevoke}">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PendingRevoke, Converter={x:Static cv:PluginRevokeTitleConverter.Instance}}" />
+          <TextBlock Classes="hint" Text="{l:NcwText PluginRevokeHint}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRevokeCommand}" Content="{l:NcwText PluginRevokeConfirm}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ═══════════ 已安装 ═══════════ -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="2">
+            <TextBlock Classes="hint" Text="{l:NcwText PluginInstalledNote}" />
+            <TextBlock Classes="hint" Text="{Binding ApiVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginApiVersion}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="1" Variant="Secondary" VerticalAlignment="Top" Command="{Binding InstallZipCommand}" IsEnabled="{Binding OwnerGate.Allowed}"
+                        arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Upload" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText PluginInstallZip}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </Grid>
+        <TextBlock Classes="hint" IsVisible="{Binding OwnerGate.Allowed}" Text="{l:NcwText PluginZipLimit}" />
+
+        <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+          <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+            <lucide:LucideIcon Kind="Puzzle" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText PluginEmptyTitle}" />
+            <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText PluginEmptyHint}" />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Plugins}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginRowViewModel">
+              <Border Classes="card" Padding="14,12">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <ui:NcwStatusDot Tone="{Binding Tone}" VerticalAlignment="Top" Margin="0,6,0,0" />
+                    <StackPanel Grid.Column="1" Spacing="3">
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Version}" /></Border>
+                        <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Status, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginStatus}" /></Border>
+                        <Border Classes="chip" IsVisible="{Binding FromMarket}"><TextBlock Classes="hint" Text="{l:NcwText PluginFromMarket}" /></Border>
+                        <Border Classes="chip" IsVisible="{Binding HasDiagnostics}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{Binding DiagnosticCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginDiagCount}" /></Border>
+                      </WrapPanel>
+                      <TextBlock Classes="hint" Text="{Binding Description}" TextTrimming="CharacterEllipsis" MaxLines="2" />
+                      <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding Id}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Top">
+                      <ui:NcwSwitch Margin="0,0,6,0" VerticalAlignment="Center" IsChecked="{Binding Enabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}" IsEnabled="{Binding CanToggleEnabled}"
+                                    arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" AutomationProperties.Name="{l:NcwText PluginEnabledLabel}" />
+                      <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleExpandedCommand}" AutomationProperties.Name="{l:NcwText PluginExpand}" arc:Tooltip.Tip="{l:NcwText PluginExpand}">
+                        <Panel>
+                          <lucide:LucideIcon Kind="ChevronDown" Size="14" IsVisible="{Binding !IsExpanded}" />
+                          <lucide:LucideIcon Kind="ChevronUp" Size="14" IsVisible="{Binding IsExpanded}" />
+                        </Panel>
+                      </ui:NcwButton>
+                      <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding AskUninstallCommand}" IsEnabled="{Binding CanWrite}"
+                                    AutomationProperties.Name="{l:NcwText PluginUninstall}" arc:Tooltip.Tip="{l:NcwText PluginUninstall}">
+                        <lucide:LucideIcon Kind="Trash2" Size="14" />
+                      </ui:NcwButton>
+                    </StackPanel>
+                  </Grid>
+
+                  <!-- 状态说明 -->
+                  <Border Classes="problem" IsVisible="{Binding IsFaulted}">
+                    <StackPanel Spacing="6">
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                        <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                        <TextBlock Grid.Column="1" TextWrapping="Wrap" Text="{l:NcwText PluginStatusHintFaulted}" />
+                      </Grid>
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+                        <ui:NcwButton Variant="Secondary" Command="{Binding RecoverCommand}" IsEnabled="{Binding CanWrite}"
+                                      arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText PluginRecover}" />
+                        <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText PluginRecoverHint}" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="problem" IsVisible="{Binding IsError}">
+                    <TextBlock TextWrapping="Wrap" Text="{l:NcwText PluginStatusHintError}" />
+                  </Border>
+                  <Border Classes="notice" IsVisible="{Binding IsPendingApproval}">
+                    <StackPanel Spacing="6">
+                      <TextBlock FontWeight="SemiBold" Text="{l:NcwText PluginPendingTitle}" />
+                      <ItemsControl ItemsSource="{Binding PendingPermissions}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="x:String">
+                            <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{l:NcwText PluginPendingHint}" />
+                      <ui:NcwButton Variant="Secondary" HorizontalAlignment="Left" Command="{Binding GrantPendingCommand}" IsEnabled="{Binding CanWrite}"
+                                    arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText PluginGrantAll}" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- 展开:权限 / 配置 / 命令 -->
+                  <StackPanel Spacing="10" IsVisible="{Binding IsExpanded}">
+                    <TextBlock Classes="hint" IsVisible="{Binding !IsFaulted}" Text="{Binding Status, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginStatusHint}" />
+
+                    <StackPanel Spacing="6" IsVisible="{Binding HasPermissions}">
+                      <TextBlock FontWeight="SemiBold" Text="{l:NcwText PluginPermissionsTitle}" />
+                      <TextBlock Classes="hint" Text="{l:NcwText PluginPermissionsHint}" />
+                      <ItemsControl ItemsSource="{Binding Permissions}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PluginPermissionRowViewModel">
+                            <Border Classes="perm" Classes.sensitive="{Binding IsDangerous}">
+                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <StackPanel Spacing="3">
+                                  <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                                    <TextBlock Classes="mono" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Name}" />
+                                    <Border Classes="chip" IsVisible="{Binding IsRequired}"><TextBlock Classes="hint" Text="{l:NcwText PluginPermRequired}" /></Border>
+                                    <Border Classes="chip" IsVisible="{Binding IsOptional}"><TextBlock Classes="hint" Text="{l:NcwText PluginPermOptional}" /></Border>
+                                    <Border Classes="chip danger" IsVisible="{Binding IsDangerous}"><TextBlock Classes="hint" Text="{l:NcwText PluginPermDanger}" /></Border>
+                                    <Border Classes="chip" IsVisible="{Binding IsGranted}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" Text="{l:NcwText PluginPermGranted}" /></Border>
+                                    <Border Classes="chip" IsVisible="{Binding IsPending}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText PluginPermPending}" /></Border>
+                                  </WrapPanel>
+                                  <TextBlock Classes="hint" Text="{Binding Name, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginPerm}" />
+                                </StackPanel>
+                                <ui:NcwButton Grid.Column="1" Variant="Secondary" VerticalAlignment="Center" Command="{Binding ToggleCommand}" IsEnabled="{Binding CanWrite}"
+                                              arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+                                  <Panel>
+                                    <TextBlock IsVisible="{Binding IsPending}" Text="{l:NcwText PluginPermGrant}" />
+                                    <TextBlock IsVisible="{Binding IsGranted}" Text="{l:NcwText PluginPermRevoke}" />
+                                  </Panel>
+                                </ui:NcwButton>
+                              </Grid>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <StackPanel Spacing="4" IsVisible="{Binding HasAllowedCommands}">
+                        <TextBlock Classes="hint" Text="{l:NcwText PluginAllowedCommands}" />
+                        <ItemsControl ItemsSource="{Binding AllowedCommands}">
+                          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                              <Border Classes="chip danger" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                      <StackPanel Spacing="4" IsVisible="{Binding HasHostPermissions}">
+                        <TextBlock Classes="hint" Text="{l:NcwText PluginHostPermissions}" />
+                        <ItemsControl ItemsSource="{Binding HostPermissions}">
+                          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                              <Border Classes="chip danger" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" TextTrimming="CharacterEllipsis" /></Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- 配置表单 -->
+                    <StackPanel Spacing="8" IsVisible="{Binding HasConfig}">
+                      <TextBlock FontWeight="SemiBold" Text="{Binding ConfigTitle}" />
+                      <ItemsControl ItemsSource="{Binding ConfigFields}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PluginConfigFieldViewModel">
+                            <StackPanel Spacing="4">
+                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding IsBoolean}">
+                                <StackPanel Spacing="2">
+                                  <TextBlock TextWrapping="Wrap" Text="{Binding Title}" />
+                                  <TextBlock Classes="hint" IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Description}" />
+                                </StackPanel>
+                                <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Flag, Mode=TwoWay}" IsEnabled="{Binding CanWrite}" VerticalAlignment="Center"
+                                              arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" AutomationProperties.Name="{Binding Title}" />
+                              </Grid>
+                              <ui:NcwSelect IsVisible="{Binding IsEnum}" ItemsSource="{Binding Options}" SelectedValue="{Binding Text, Mode=TwoWay}" IsEnabled="{Binding CanWrite}"
+                                            Label="{Binding Title}" Description="{Binding Description}" />
+                              <ui:NcwInput IsVisible="{Binding IsText}" Text="{Binding Text, Mode=TwoWay}" IsEnabled="{Binding CanWrite}" Label="{Binding Title}" Description="{Binding Description}" />
+                              <ui:NcwNumberField IsVisible="{Binding IsNumber}" Value="{Binding Number, Mode=TwoWay}" IsEnabled="{Binding CanWrite}" UseGrouping="False" Label="{Binding Title}" Description="{Binding Description}" />
+                              <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4" IsVisible="{Binding CanWrite}">
+                                <ui:NcwButton Variant="Secondary" IsVisible="{Binding IsDirty}" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}" Content="{l:NcwText PluginConfigApply}" />
+                                <ui:NcwButton Variant="Ghost" IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}" Content="{l:NcwText PluginConfigReset}" />
+                              </WrapPanel>
+                              <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+
+                    <!-- 命令 -->
+                    <StackPanel Spacing="6" IsVisible="{Binding HasCommands}">
+                      <TextBlock FontWeight="SemiBold" Text="{l:NcwText PluginCommandsTitle}" />
+                      <TextBlock Classes="hint" Text="{l:NcwText PluginCommandsHint}" />
+                      <ItemsControl ItemsSource="{Binding Commands}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PluginCommandRowViewModel">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                              <StackPanel Spacing="0" VerticalAlignment="Center">
+                                <TextBlock TextWrapping="Wrap" Text="{Binding Title}" />
+                                <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding CommandId}" TextTrimming="CharacterEllipsis" />
+                              </StackPanel>
+                              <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding RunCommand}" IsEnabled="{Binding CanRun}"
+                                            arc:Tooltip.Tip="{Binding MemberGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText PluginCommandRun}" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+                        <ui:NcwButton Variant="Ghost" IsEnabled="False" Content="{l:NcwText PluginCommandPalette}" />
+                        <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText PluginCommandPaletteSoon}" />
+                      </WrapPanel>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding HasTools}">
+                      <TextBlock Classes="hint" Text="{l:NcwText PluginToolsTitle}" />
+                      <ItemsControl ItemsSource="{Binding RegisteredTools}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="x:String">
+                            <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                    <TextBlock Classes="hint" IsVisible="{Binding HasSkills}" Text="{Binding SkillCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginSkillsCount}" />
+                    <StackPanel Spacing="4" IsVisible="{Binding HasUnsupported}">
+                      <TextBlock Classes="hint" Text="{l:NcwText PluginUnsupportedTitle}" />
+                      <ItemsControl ItemsSource="{Binding Unsupported}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="x:String">
+                            <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- ═══════════ 市场 ═══════════ -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}">
+        <Border Classes="card attention" IsVisible="{Binding AuthRequired}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+            <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText PluginAuthRequiredTitle}" />
+              <TextBlock Classes="hint" Text="{l:NcwText PluginAuthRequiredHint}" />
+            </StackPanel>
+            <ui:NcwButton Grid.Column="2" Variant="Primary" VerticalAlignment="Top" Command="{Binding SignInCommand}" Content="{l:NcwText PluginSignIn}" />
+          </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <ui:NcwSearchField Text="{Binding MarketQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText PluginMarketSearch}" />
+          <ui:NcwSelect Grid.Column="1" MinWidth="130" NullText="{l:NcwText PluginMarketAllCategories}" Placeholder="{l:NcwText PluginMarketAllCategories}" ItemsSource="{Binding Categories}"
+                        SelectedValue="{Binding MarketCategory, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText PluginMarketCategory}" />
+          <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Search}" />
+        </Grid>
+
+        <!-- 更新 -->
+        <Border Classes="card" Padding="14,12">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:NcwText PluginUpdatesTitle}" />
+              <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+                <ui:NcwButton Variant="Ghost" Command="{Binding CheckUpdatesCommand}" Content="{l:NcwText PluginUpdatesCheck}" />
+                <ui:NcwButton Variant="Secondary" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}" IsVisible="{Binding HasUpdates}"
+                              arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}"
+                              Content="{Binding UpdatableCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginUpdatesAll}" />
+              </WrapPanel>
+            </Grid>
+            <TextBlock Classes="hint" IsVisible="{Binding UpdateSummary, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding UpdateSummary, Converter={x:Static cv:PluginUpdateResultConverter.Instance}}" />
+            <ItemsControl ItemsSource="{Binding Updates}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PluginUpdateRow">
+                  <StackPanel Spacing="3">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="2">
+                      <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" />
+                      <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding, Converter={x:Static cv:PluginUpdateLineConverter.Instance}}" />
+                    </WrapPanel>
+                    <StackPanel Spacing="3" IsVisible="{Binding HasEscalation}">
+                      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText PluginUpdateNewPerms}" />
+                      <ItemsControl ItemsSource="{Binding Dto.EscalatedPermissions}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="x:String">
+                            <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                    <TextBlock Classes="hint" IsVisible="{Binding NotBatchable}" Text="{l:NcwText PluginUpdateNotBatch}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding InstallingSlug, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Classes="hint" Text="{l:NcwText PluginMarketInstalling}" />
+        </StackPanel>
+        <Border Classes="card danger" IsVisible="{Binding MarketFailed}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MarketFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Retry}" />
+          </Grid>
+        </Border>
+        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" Text="{l:NcwText PluginMarketEmpty}" />
+
+        <ItemsControl ItemsSource="{Binding Market}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginMarketRowViewModel">
+              <Border Classes="card" Padding="14,12">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <StackPanel Spacing="4">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <Border Classes="chip" IsVisible="{Binding Version, Converter={x:Static ObjectConverters.IsNotNull}}"><TextBlock Classes="hint" Text="{Binding Version}" /></Border>
+                      <Border Classes="chip" IsVisible="{Binding IsInstalled}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" Text="{Binding InstalledVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginMarketInstalledVersion}" /></Border>
+                      <Border Classes="chip" IsVisible="{Binding HasUpdate}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{Binding Update.LatestVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginMarketUpdateTo}" /></Border>
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Author}" />
+                    </WrapPanel>
+                    <TextBlock Classes="hint" Text="{Binding Description}" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                    <ItemsControl ItemsSource="{Binding Permissions}" IsVisible="{Binding HasPermissions}">
+                      <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                          <Border Classes="chip" Margin="0,0,6,2"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                    <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).ShowDetailCommand}" CommandParameter="{Binding}" Content="{l:NcwText PluginMarketDetail}" />
+                    <ui:NcwButton Variant="Secondary" IsVisible="{Binding !IsInstalled}" Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).InstallMarketCommand}" CommandParameter="{Binding Slug}"
+                                  IsEnabled="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).OwnerGate.Allowed}"
+                                  arc:Tooltip.Tip="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText PluginMarketInstall}" />
+                    <ui:NcwButton Variant="Secondary" IsVisible="{Binding HasUpdate}" Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).InstallMarketCommand}" CommandParameter="{Binding Slug}"
+                                  IsEnabled="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).OwnerGate.Allowed}"
+                                  Content="{Binding Update.LatestVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginMarketUpdateTo}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding MarketReady}">
+          <ui:NcwButton Variant="Ghost" Command="{Binding PreviousPageCommand}" IsEnabled="{Binding HasPreviousPage}" Content="{l:NcwText PluginMarketPrevious}" />
+          <TextBlock Grid.Column="1" Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding MarketPage, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginMarketPage}" />
+          <ui:NcwButton Grid.Column="2" Variant="Ghost" Command="{Binding NextPageCommand}" IsEnabled="{Binding MarketHasNext}" Content="{l:NcwText PluginMarketNext}" />
+        </Grid>
+
+        <!-- 详情 -->
+        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Spacing="8" DataContext="{Binding Detail}" x:DataType="p:PluginMarketDetailDto">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Item.DisplayName}" />
+              <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:PluginsViewModel)DataContext).CloseDetailCommand}" AutomationProperties.Name="{l:NcwText Close}">
+                <lucide:LucideIcon Kind="X" Size="14" />
+              </ui:NcwButton>
+            </Grid>
+            <TextBlock Classes="hint" Text="{Binding Item.Description}" />
+            <StackPanel Spacing="4">
+              <TextBlock Classes="hint" Text="{l:NcwText PluginMarketRequires}" />
+              <ItemsControl ItemsSource="{Binding Item.Permissions}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <StackPanel Spacing="4" IsVisible="{Binding Item.Skills.Length, Converter={x:Static cv:PluginAnyConverter.Instance}}">
+              <TextBlock Classes="hint" Text="{l:NcwText PluginMarketSkills}" />
+              <ItemsControl ItemsSource="{Binding Item.Skills}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Border Classes="chip" Margin="0,0,6,4"><TextBlock Classes="mono" Text="{Binding}" /></Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <TextBlock Classes="hint" Text="{l:NcwText PluginMarketVersions}" />
+            <ItemsControl ItemsSource="{Binding Versions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="p:PluginMarketVersionDto">
+                  <StackPanel Spacing="1" Margin="0,3">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="8">
+                      <TextBlock Classes="mono" Text="{Binding Version}" />
+                      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding PermissionEscalated, Converter={x:Static cv:PluginIsTrueConverter.Instance}}" Text="{l:NcwText PluginMarketEscalated}" />
+                    </WrapPanel>
+                    <TextBlock Classes="hint" Text="{Binding Changelog}" IsVisible="{Binding Changelog, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- ═══════════ 活动与诊断 ═══════════ -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsActivityTab}">
+        <!-- 出错停止的插件 -->
+        <StackPanel Spacing="6" IsVisible="{Binding HasFaulted}">
+          <TextBlock Classes="sectionTitle" Margin="0,4,0,0" Text="{l:NcwText PluginFaultedTitle}" />
+          <ItemsControl ItemsSource="{Binding Faulted}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PluginRowViewModel">
+                <Border Classes="card danger" Padding="14,12">
+                  <StackPanel Spacing="6">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                      <ui:NcwStatusDot Tone="{Binding Tone}" />
+                      <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" />
+                      <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Status, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginStatus}" /></Border>
+                    </WrapPanel>
+                    <TextBlock Classes="hint" Text="{l:NcwText PluginStatusHintFaulted}" />
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+                      <ui:NcwButton Variant="Secondary" Command="{Binding RecoverCommand}" IsEnabled="{Binding CanWrite}"
+                                    arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText PluginRecover}" />
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText PluginRecoverHint}" />
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <TextBlock Classes="sectionTitle" Margin="0,4,0,0" Text="{l:NcwText PluginDiagnosticsTitle}" />
+        <TextBlock Classes="hint" IsVisible="{Binding !HasDiagnostics}" Text="{l:NcwText PluginDiagnosticsEmpty}" />
+        <ItemsControl ItemsSource="{Binding Diagnostics}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginDiagnosticRow">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                <ui:NcwStatusDot Tone="{Binding Tone}" VerticalAlignment="Top" Margin="0,5,0,0" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="6">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding PluginName}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding KeySuffix, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginDiag}" />
+                  </WrapPanel>
+                  <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" TextWrapping="Wrap" Text="{Binding Dto.Message}" />
+                  <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding Dto.Path}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText PluginActivityTitle}" />
+        <TextBlock Classes="hint" Text="{l:NcwText PluginActivityHint}" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <ui:NcwSelect NullText="{l:NcwText PluginActivityAll}" Placeholder="{l:NcwText PluginActivityAll}" ItemsSource="{Binding ActivityChoices}" SelectedValue="{Binding ActivityFilter, Mode=TwoWay}"
+                        AutomationProperties.Name="{l:NcwText PluginActivityFilter}" />
+          <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding LoadActivityCommand}" AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+            <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+          </ui:NcwButton>
+        </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ActivityLoading}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+        </StackPanel>
+        <Border Classes="card danger" IsVisible="{Binding ActivityFailed}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding ActivityFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding LoadActivityCommand}" Content="{l:NcwText Retry}" />
+          </Grid>
+        </Border>
+        <TextBlock Classes="hint" IsVisible="{Binding ActivityEmpty}" Text="{l:NcwText PluginActivityEmpty}" />
+        <ItemsControl ItemsSource="{Binding Activity}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginActivityRow">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <ui:NcwStatusDot Tone="{Binding Tone}" VerticalAlignment="Top" Margin="0,5,0,0" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="6">
+                    <TextBlock Text="{Binding PluginName}" FontWeight="SemiBold" />
+                    <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding Method}" />
+                  </WrapPanel>
+                  <TextBlock Classes="hint" Text="{Binding Summary}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="1" HorizontalAlignment="Right">
+                  <TextBlock Classes="hint" HorizontalAlignment="Right" Text="{Binding Verdict, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginVerdict}" />
+                  <TextBlock Classes="hint" HorizontalAlignment="Right" Text="{Binding At, Converter={x:Static cv:DateTimeTextConverter.Instance}}" />
+                  <TextBlock Classes="hint" HorizontalAlignment="Right" Text="{Binding DurationMs, Converter={x:Static cv:PluginDurationConverter.Instance}}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

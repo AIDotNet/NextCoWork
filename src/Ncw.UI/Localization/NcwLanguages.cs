@@ -43,4 +43,22 @@ public sealed class NcwClientText : IClientText
     public string AddProjectFailedTitle => NcwTexts.Get(NcwTextKind.AddProjectFailedTitle);
 
     public string DeviceNotConnected => NcwTexts.Get(NcwTextKind.DeviceNotConnected);
+
+    public string RenameSessionTitle => NcwTexts.Get(NcwTextKind.RenameSessionTitle);
+
+    public string RenameSessionDescription => NcwTexts.Get(NcwTextKind.RenameSessionDescription);
+
+    public string DeleteSessionTitle => NcwTexts.Get(NcwTextKind.DeleteSessionTitle);
+
+    public string DeleteSessionMessage(string sessionTitle) => NcwTexts.Format(NcwTextKind.DeleteSessionMessage, sessionTitle);
+
+    public string DeleteLabel => NcwTexts.Get(NcwTextKind.DeleteLabel);
+
+    public string DeleteProviderTitle => NcwTexts.Get(NcwTextKind.DeleteProviderTitle);
+
+    public string DeleteProviderMessage(string providerName) => NcwTexts.Format(NcwTextKind.DeleteProviderMessage, providerName);
+
+    public string RenameAliasTitle => NcwTexts.Get(NcwTextKind.RenameAliasTitle);
+
+    public string RenameAliasDescription => NcwTexts.Get(NcwTextKind.RenameAliasDescription);
 }

@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Conversation.InteractionCard"
+             x:DataType="vm:InteractionRowViewModel">
+  <!--
+    待处理的交互卡片:工具审批(允许一次 / 总是允许 + 记住范围 / 拒绝)、提问、计划批准、目标提案。
+    审批必须带执行环境标识(设备 · 环境)。按钮放在 WrapPanel 里,手机宽度下自动换行。
+    回答带着看到的版本号;被另一台设备先处理时,卡片消失,转录底部显示「已在另一台设备上处理」。
+  -->
+  <UserControl.Styles>
+    <!-- 手机(触控)模式:只显示「拒绝 + 长按允许」,桌面的按钮行藏起来;从收件箱定位过来的卡片加一圈强调色边框 -->
+    <Style Selector=":is(UserControl).touch WrapPanel.pointerOnly"><Setter Property="IsVisible" Value="False" /></Style>
+    <Style Selector="StackPanel.touchOnly"><Setter Property="IsVisible" Value="False" /></Style>
+    <Style Selector=":is(UserControl).touch StackPanel.touchOnly"><Setter Property="IsVisible" Value="True" /></Style>
+    <Style Selector="Border.card.focused">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+  </UserControl.Styles>
+  <Border Classes="card attention" Classes.focused="{Binding IsHighlighted}" Margin="0,6" Padding="14">
+    <StackPanel Spacing="10">
+      <!-- 工具审批 -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsToolPermission}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="ShieldAlert" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                     Text="{Binding ToolName, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=InteractionToolTitle}" />
+        </StackPanel>
+        <WrapPanel Orientation="Horizontal">
+          <Border Classes="chip" Margin="0,0,6,4">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <lucide:LucideIcon Kind="Monitor" Size="11" VerticalAlignment="Center" IsVisible="{Binding !IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <lucide:LucideIcon Kind="Link" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Classes="hint" Text="{Binding EnvLabel}" TextWrapping="NoWrap" />
+            </StackPanel>
+          </Border>
+          <Border Classes="chip" Margin="0,0,6,4" IsVisible="{Binding IsDangerous}">
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{l:NcwText ApprovalDangerous}" />
+          </Border>
+          <Border Classes="chip" Margin="0,0,6,4" IsVisible="{Binding OutsideWorkspace}">
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ApprovalOutsideWorkspace}" />
+          </Border>
+          <Border Classes="chip" Margin="0,0,6,4" IsVisible="{Binding NeedsNetwork}">
+            <TextBlock Classes="hint" Text="{l:NcwText ApprovalNeedsNetwork}" />
+          </Border>
+          <Border Classes="chip" Margin="0,0,6,4" IsVisible="{Binding IsReadOnlyTool}">
+            <TextBlock Classes="hint" Text="{l:NcwText ApprovalReadOnly}" />
+          </Border>
+        </WrapPanel>
+        <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}" IsVisible="{Binding Target, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <SelectableTextBlock Classes="mono" Text="{Binding Target}" TextWrapping="Wrap" />
+        </Border>
+        <!-- 手机:拒绝(点按)+ 长按允许(防误触:按满才算,移出 / 松手 / 卡片更新即取消) -->
+        <StackPanel Classes="touchOnly" Spacing="8">
+          <Grid ColumnDefinitions="Auto,12,*">
+            <ui:NcwButton Variant="Secondary" MinHeight="44" Padding="20,0" Command="{Binding DenyCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalDeny}" />
+            <ui:NcwHoldButton x:Name="HoldAllow" Grid.Column="2" Progress="{Binding HoldProgress}" IsHolding="{Binding IsHolding}" IsDangerous="{Binding IsDangerous}"
+                              IsEnabled="{Binding !IsBusy}"
+                              AutomationProperties.Name="{l:NcwText ApprovalHoldToAllow}" AutomationProperties.HelpText="{l:NcwText ApprovalHoldHint}">
+              <ui:NcwHoldButton.Text>
+                <MultiBinding Converter="{x:Static cv:HoldLabelConverter.Instance}">
+                  <Binding Path="IsHolding" />
+                  <Binding Path="HoldCompleted" />
+                </MultiBinding>
+              </ui:NcwHoldButton.Text>
+            </ui:NcwHoldButton>
+          </Grid>
+          <TextBlock Classes="hint" Text="{l:NcwText ApprovalHoldHint}" />
+        </StackPanel>
+        <WrapPanel Classes="pointerOnly" Orientation="Horizontal">
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding AllowOnceCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalAllowOnce}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Command="{Binding AlwaysAllowCommand}" IsEnabled="{Binding !IsBusy}" IsVisible="{Binding CanAlwaysAllow}"
+                        Content="{l:NcwText ApprovalAlwaysAllow}" />
+          <ui:NcwSelect x:Name="ScopeSelect" Margin="0,0,8,6" Width="160" IsVisible="{Binding CanAlwaysAllow}" ItemsSource="{Binding Scopes}"
+                        SelectedValue="{Binding SelectedScope, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText ApprovalRememberScope}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding DenyCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalDeny}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- 提问 -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsAskUser}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="CircleHelp" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:NcwText InteractionAskTitle}" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding Questions}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="12" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:AskQuestionViewModel">
+              <StackPanel Spacing="6">
+                <Border Classes="chip" HorizontalAlignment="Left"><TextBlock Classes="hint" Text="{Binding Header}" /></Border>
+                <TextBlock Text="{Binding Question}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Options}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Spacing="4" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AskOptionViewModel">
+                      <ui:PlainButton Padding="10,8" Click="OnToggleOption" Classes.active="{Binding IsSelected}">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                          <Panel Width="16" Height="16" VerticalAlignment="Top">
+                            <lucide:LucideIcon Kind="CircleCheck" Size="15" IsVisible="{Binding IsSelected}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                            <lucide:LucideIcon Kind="Circle" Size="15" IsVisible="{Binding !IsSelected}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                          </Panel>
+                          <StackPanel Grid.Column="1" Spacing="1">
+                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                            <TextBlock Classes="hint" Text="{Binding Description}" IsVisible="{Binding HasDescription}" />
+                          </StackPanel>
+                        </Grid>
+                      </ui:PlainButton>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ui:NcwInput IsVisible="{Binding AllowFreeform}" Text="{Binding Freeform, Mode=TwoWay}" PlaceholderText="{l:NcwText InteractionFreeform}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <WrapPanel Orientation="Horizontal">
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding SubmitAnswersCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionSubmit}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Ghost" Command="{Binding DismissAskCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionSkip}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- 计划批准 -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsPlan}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="ClipboardList" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:NcwText InteractionPlanTitle}" />
+        </StackPanel>
+        <Border Padding="12,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}" MaxHeight="260">
+          <ScrollViewer><ui:NcwMarkdown Text="{Binding Plan}" /></ScrollViewer>
+        </Border>
+        <ui:NcwInput Text="{Binding Feedback, Mode=TwoWay}" PlaceholderText="{l:NcwText InteractionPlanFeedback}" />
+        <WrapPanel Orientation="Horizontal">
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding ApprovePlanCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanApprove}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Command="{Binding RequestRevisionCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanRevise}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding RejectPlanCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanReject}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- 目标提案 -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsGoalProposal}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="Target" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{l:NcwText InteractionGoalTitle}" />
+        </StackPanel>
+        <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+          <TextBlock Text="{Binding Condition}" TextWrapping="Wrap" />
+        </Border>
+        <WrapPanel Orientation="Horizontal">
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding ApproveGoalCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionGoalApprove}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Ghost" Command="{Binding RejectGoalCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionGoalReject}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- 工作流 / 小部件:桌面端以后接入完整界面,这里只给「运行 / 取消」 -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsWorkflow}">
+        <TextBlock FontWeight="SemiBold" Text="{l:NcwText InteractionWorkflowTitle}" />
+        <WrapPanel Orientation="Horizontal">
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding RunWorkflowCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionWorkflowRun}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Ghost" Command="{Binding CancelWorkflowCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText Cancel}" />
+        </WrapPanel>
+      </StackPanel>
+      <StackPanel Spacing="10" IsVisible="{Binding IsWidget}">
+        <TextBlock FontWeight="SemiBold" Text="{Binding WidgetTitle}" TextWrapping="Wrap" />
+        <TextBlock Classes="hint" Text="{l:NcwText InteractionWidgetHint}" />
+        <ui:NcwButton HorizontalAlignment="Left" Variant="Ghost" Command="{Binding DismissWidgetCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionSkip}" />
+      </StackPanel>
+
+      <!-- 回答没成功 -->
+      <TextBlock IsVisible="{Binding HasProblem}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                 Text="{Binding Problem, Converter={x:Static cv:InteractionProblemConverter.Instance}}" />
+    </StackPanel>
+  </Border>
+</UserControl>

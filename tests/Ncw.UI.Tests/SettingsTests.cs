@@ -111,7 +111,37 @@ public class SettingsTests
         Assert.Equal("482 915", remote.PairingCode);
         Assert.Equal(["192.168.1.23:7810", "[fd12::5]:7810"], remote.Addresses);
         Assert.Equal("9F3A C2E1", Assert.Single(remote.Controllers).ShortFingerprint);
+        Assert.Equal(7810, remote.Port);
+        Assert.True(remote.LanOnly);
+        var menu = window.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwDropdownMenu>().Single(m => m.Name == "RoleMenu");
+        Assert.Equal(3, menu.ItemsSource!.Cast<object>().Count());
         Snapshot(window, "settings-remote");
+    }
+
+    [AvaloniaFact]
+    public void Remote_page_shows_the_relay_address_state_and_lets_the_user_edit_it()
+    {
+        var (window, vm, stores) = Render();
+        var state = new RemoteState(
+            new RemoteStatus(true, 7810, 7810, true, ["192.168.1.23"], "482915", null, "wss://relay.example.com", "registered", null), []);
+        stores.Workspace.Update(s => s with { Devices = s.Devices.SetItem("local", s.Devices["local"] with { Remote = state }) });
+        vm.Settings.OpenCommand.Execute(null);
+        vm.Settings.ShowCommand.Execute(SettingsSection.Remote);
+        Dispatch();
+
+        var remote = vm.Settings.Remote;
+        Assert.Equal("wss://relay.example.com", remote.RelayUrl);
+        Assert.Equal("wss://relay.example.com", remote.RelayDraft); // 输入框跟随设备上的值
+        Assert.False(remote.CanApplyRelay);
+        var input = window.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwInput>().Single(i => i.Name == "RelayInput");
+        Assert.Equal("wss://relay.example.com", input.Text);
+        var stateText = window.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "RelayStateText");
+        Assert.True(stateText.IsVisible);
+        Assert.Equal(Ncw.UI.Localization.NcwTexts.Get(Ncw.UI.Localization.NcwTextKind.RemoteRelayRegistered), stateText.Text);
+
+        remote.RelayDraft = "";                       // 清空 = 关闭中继
+        Assert.True(remote.CanApplyRelay);
+        Snapshot(window, "settings-remote-relay");
     }
 
     [AvaloniaFact]

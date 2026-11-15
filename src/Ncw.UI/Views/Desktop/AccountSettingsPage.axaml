@@ -1,0 +1,236 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             x:Class="Ncw.UI.Views.Desktop.AccountSettingsPage"
+             x:DataType="vm:AccountViewModel">
+  <!--
+    设置 · 本应用 · 账户(docs/design/07 §3):账户信息、团队、已登录的控制端、退出登录;不涉及支付。
+    状态都来自 Store 里的账户会话:登录进行中(等浏览器 / 登录码 / 换令牌)、登录失败、登录已过期、连不上、要选团队、无法安全保存。
+    窄屏:所有行都可以折行,按钮用 WrapPanel。
+  -->
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:NcwText SettingsAccount}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsAccountHint}" />
+      <WrapPanel Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText ScopeApp}" /></Border>
+      </WrapPanel>
+    </StackPanel>
+
+    <!-- ═══ 登录进行中(等浏览器 / 登录码 / 换令牌)和登录失败:首次启动页共用同一个控件 ═══ -->
+    <desktop:AccountLoginStatus />
+
+    <!-- ═══ 登录已过期 ═══ -->
+    <Border Classes="card attention" IsVisible="{Binding IsExpired}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <StackPanel Grid.Column="1" Spacing="6">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountExpiredTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountExpiredHint}" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8" Margin="0,4,0,0">
+            <ui:NcwButton Variant="Primary" Command="{Binding SignInCommand}" IsEnabled="{Binding CanSignIn}" Content="{l:NcwText AccountSignInAgain}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding UseOfflineCommand}" Content="{l:NcwText AccountOfflineContinue}" />
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══ 暂时的提示:连不上、无法安全保存 ═══ -->
+    <Border Classes="notice" IsVisible="{Binding Health, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Unreachable}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="WifiOff" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountUnreachableTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountUnreachableHint}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border Classes="notice" IsVisible="{Binding SecureStorageUnavailable}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="ShieldAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSecureStorageTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountSecureStorageHint}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══ 没登录 ═══ -->
+    <Border Classes="card" IsVisible="{Binding IsSignedOut}">
+      <StackPanel Spacing="8" Margin="0,6">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <lucide:LucideIcon Kind="CircleUser" Size="28" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <StackPanel Grid.Column="1" Spacing="4">
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignedOutTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText AccountSignedOutHint}" />
+            <TextBlock Classes="hint" FontWeight="SemiBold" Margin="0,2,0,0" IsVisible="{Binding Mode, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Offline}" Text="{l:NcwText AccountOfflineMode}" />
+          </StackPanel>
+        </Grid>
+        <WrapPanel ItemSpacing="8" LineSpacing="8" Margin="0,4,0,0">
+          <ui:NcwButton Variant="Primary" Command="{Binding SignInCommand}" IsEnabled="{Binding CanSignIn}" Content="{l:NcwText AccountSignIn}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding SignInWithCodeCommand}" IsEnabled="{Binding CanSignIn}" Content="{l:NcwText AccountSignInWithCode}" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- ═══ 已登录:账户信息 ═══ -->
+    <Border Classes="card" IsVisible="{Binding IsSignedIn}">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+          <Border Width="40" Height="40" CornerRadius="20" Background="{arc:ArcDesignTokenResource SurfaceRaised}" VerticalAlignment="Top">
+            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}" Text="{Binding Initial}" />
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding UserLabel}" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding Email}" IsVisible="{Binding Email, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="2" Variant="Secondary" VerticalAlignment="Top" Command="{Binding AskSignOutCommand}" IsEnabled="{Binding !IsBusy}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="LogOut" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText AccountSignOut}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasAgentLink}">
+          <lucide:LucideIcon Kind="Cpu" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Classes="hint" FontWeight="SemiBold" Text="{l:NcwText AccountAgentTitle}" />
+            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkAttached}" Text="{l:NcwText AccountAgentAttached}" />
+            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkPending}" Text="{l:NcwText AccountAgentPending}" />
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding AgentLinkFailed}" Text="{l:NcwText AccountAgentFailed}" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- 退出登录的二次确认 -->
+    <Border Classes="card danger" IsVisible="{Binding ConfirmingSignOut}">
+      <StackPanel Spacing="8">
+        <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutTitle}" />
+        <TextBlock Classes="hint" Text="{l:NcwText AccountSignOutHint}" />
+        <WrapPanel ItemSpacing="8" LineSpacing="8">
+          <ui:NcwButton Variant="Danger" Command="{Binding ConfirmSignOutCommand}" Content="{l:NcwText AccountSignOut}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding CancelSignOutCommand}" Content="{l:NcwText Cancel}" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- 账户操作失败(选团队、撤销控制端) -->
+    <Border Classes="problem" IsVisible="{Binding HasActionError}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding ActionError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        <ui:PlainButton Grid.Column="2" Width="24" Height="24" Command="{Binding DismissActionErrorCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
+          <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+      </Grid>
+    </Border>
+
+    <!-- ═══ 团队 ═══ -->
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsTeams}">
+      <Border Classes="card attention" IsVisible="{Binding NeedsTeam}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="Users" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountTeamRequiredTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText AccountTeamRequiredHint}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <StackPanel Spacing="2">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText AccountTeamsTitle}" />
+        <TextBlock Classes="hint" Text="{l:NcwText AccountTeamsHint}" />
+      </StackPanel>
+      <ItemsControl ItemsSource="{Binding Teams}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TeamRow">
+            <Border Classes="card" Padding="14,10">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Spacing="4">
+                  <WrapPanel ItemSpacing="6" LineSpacing="4">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <Border Classes="chip" IsVisible="{Binding IsSelected}"><TextBlock Classes="hint" Text="{l:NcwText AccountTeamCurrent}" /></Border>
+                    <Border Classes="chip" IsVisible="{Binding Role, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"><TextBlock Classes="hint" Text="{Binding Role, Converter={x:Static cv:TeamRoleTextConverter.Instance}}" /></Border>
+                  </WrapPanel>
+                  <TextBlock Classes="hint" Text="{Binding MemberCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=AccountTeamMembers}" />
+                </StackPanel>
+                <ui:NcwButton Grid.Column="1" Variant="Secondary" VerticalAlignment="Center" IsVisible="{Binding !IsSelected}"
+                              Command="{Binding $parent[ItemsControl].((vm:AccountViewModel)DataContext).SelectTeamCommand}" CommandParameter="{Binding Id}"
+                              IsEnabled="{Binding !$parent[ItemsControl].((vm:AccountViewModel)DataContext).IsBusy}" Content="{l:NcwText AccountTeamUse}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <!-- ═══ 已登录的控制端 ═══ -->
+    <StackPanel Spacing="8" IsVisible="{Binding IsActive}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel Spacing="2">
+          <TextBlock Classes="sectionTitle" Text="{l:NcwText AccountControllersTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountControllersHint}" />
+        </StackPanel>
+        <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" VerticalAlignment="Top" Command="{Binding RefreshCommand}"
+                      AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+          <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+        </ui:NcwButton>
+      </Grid>
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ControllersLoading}">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+        <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+      </StackPanel>
+      <Border Classes="card danger" IsVisible="{Binding ControllersFailed}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ControllersError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+          <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding LoadControllersCommand}" Content="{l:NcwText Retry}" />
+        </Grid>
+      </Border>
+      <TextBlock Classes="hint" IsVisible="{Binding ControllersEmptyOthers}" Text="{l:NcwText AccountControllersEmpty}" />
+
+      <Border Classes="card danger" IsVisible="{Binding HasConfirmingRevoke}">
+        <StackPanel Spacing="8" DataContext="{Binding ConfirmingRevoke}" x:DataType="vm:ControllerRow">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=AccountControllerRevokeTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountControllerRevokeHint}" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8">
+            <ui:NcwButton Variant="Danger" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).ConfirmRevokeCommand}" Content="{l:NcwText AccountControllerRevoke}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <ItemsControl ItemsSource="{Binding Controllers}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ControllerRow">
+            <Border Classes="card" Padding="14,10">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <Panel VerticalAlignment="Center">
+                  <lucide:LucideIcon Kind="Monitor" Size="18" Foreground="{arc:ArcDesignTokenResource TextSecondary}" IsVisible="{Binding !IsMobile}" />
+                  <lucide:LucideIcon Kind="Smartphone" Size="18" Foreground="{arc:ArcDesignTokenResource TextSecondary}" IsVisible="{Binding IsMobile}" />
+                </Panel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <WrapPanel ItemSpacing="6" LineSpacing="4">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <Border Classes="chip" IsVisible="{Binding IsCurrent}"><TextBlock Classes="hint" Text="{l:NcwText AccountControllerThis}" /></Border>
+                    <Border Classes="chip" IsVisible="{Binding Platform, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"><TextBlock Classes="hint" Text="{Binding Platform}" /></Border>
+                  </WrapPanel>
+                  <TextBlock Classes="hint" IsVisible="{Binding HasLastActive}" Text="{Binding LastActiveAt, Converter={x:Static cv:ControllerActivityConverter.Instance}}" />
+                </StackPanel>
+                <ui:NcwButton Grid.Column="2" Variant="Ghost" VerticalAlignment="Center" IsVisible="{Binding CanRevoke}"
+                              Command="{Binding $parent[ItemsControl].((vm:AccountViewModel)DataContext).AskRevokeCommand}" CommandParameter="{Binding}" Content="{l:NcwText AccountControllerRevoke}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

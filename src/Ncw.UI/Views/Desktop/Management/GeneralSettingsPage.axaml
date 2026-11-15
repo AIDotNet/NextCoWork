@@ -1,0 +1,194 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.GeneralSettingsPage"
+             x:DataType="vm:GeneralSettingsViewModel">
+  <!--
+    设置 · 设备 · 通用(docs/design/07 §3「Agent 配置」):辅助模型、权限与目标、账号轮换与故障转移、压缩与上下文、超时与上限、代理、个性化指令。
+    值来自 settings 主题的镜像;开关与下拉立即写入,数字 / 文本在草稿里改、点「应用」整块写入。读取 member 起,写入 owner。
+  -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsGeneral}" Hint="{l:NcwText SettingsGeneralHint}" ScopeText="{l:NcwText ScopeDevice}" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" IsEnabled="{Binding CanWrite}">
+      <!-- 模型:辅助模型的选择(默认模型、权限审查、目标评估、压缩、补全、图像、子代理) -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralModelsTitle}" />
+      <TextBlock Classes="hint" Text="{l:NcwText GeneralModelsHint}" />
+      <Border Classes="card">
+        <ItemsControl ItemsSource="{Binding Picks}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ModelPickRow">
+              <ui:NcwSelect ItemsSource="{Binding Choices}" SelectedValue="{Binding Key, Mode=TwoWay}"
+                            Label="{Binding Field, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PickField}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- 权限与目标 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralBehaviorTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <ui:NcwSelect ChoiceSet="PermissionMode" SelectedValue="{Binding PermissionModeValue, Mode=TwoWay}" Label="{l:NcwText GeneralPermissionMode}" Description="{l:NcwText GeneralPermissionModeHint}" />
+          <ui:NcwSelect ChoiceSet="ModelProposedGoals" SelectedValue="{Binding ModelProposedGoalsValue, Mode=TwoWay}" Label="{l:NcwText GeneralProposedGoals}" Description="{l:NcwText GeneralProposedGoalsHint}" />
+          <ui:NcwSelect ChoiceSet="Shell" SelectedValue="{Binding ShellValue, Mode=TwoWay}" Label="{l:NcwText GeneralShell}" />
+        </StackPanel>
+      </Border>
+
+      <!-- 账号轮换与故障转移 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralRoutingTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralAccountRotation}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralAccountRotationHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AccountRotation, Mode=OneWay}" Command="{Binding ToggleAccountRotationCommand}"
+                          AutomationProperties.Name="{l:NcwText GeneralAccountRotation}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralFailover}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralFailoverHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding Failover, Mode=OneWay}" Command="{Binding ToggleFailoverCommand}"
+                          AutomationProperties.Name="{l:NcwText GeneralFailover}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 压缩与上下文 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralCompactTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralAutoCompact}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralAutoCompactHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AutoCompact, Mode=OneWay}" Command="{Binding ToggleAutoCompactCommand}"
+                          AutomationProperties.Name="{l:NcwText GeneralAutoCompact}" />
+          </Grid>
+          <ui:NcwSelect ChoiceSet="ThinkingInherit" SelectedValue="{Binding CompactThinkingValue, Mode=TwoWay}" Label="{l:NcwText GeneralCompactThinking}" Description="{l:NcwText GeneralCompactThinkingHint}" />
+        </StackPanel>
+      </Border>
+
+      <!-- 超时与上限(草稿 + 应用) -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralLimitsTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralIdleTimeout}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralIdleTimeoutHint}" />
+            </StackPanel>
+            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="60" Maximum="3600" Step="30" UseGrouping="False" Value="{Binding IdleTimeout, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralIdleTimeout}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralGoalCheckin}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralGoalCheckinHint}" />
+            </StackPanel>
+            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="1" Maximum="1440" Step="5" UseGrouping="False" Value="{Binding GoalCheckin, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralGoalCheckin}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralMaxOutput}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralMaxOutputHint}" />
+            </StackPanel>
+            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="1024" Maximum="200000" Step="1024" UseGrouping="False" Value="{Binding MaxOutputTokens, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralMaxOutput}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralSubagentPerSession}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralSubagentLimitsHint}" />
+            </StackPanel>
+            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="1" Maximum="10" Step="1" UseGrouping="False" Value="{Binding PerSessionLimit, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralSubagentPerSession}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <TextBlock Text="{l:NcwText GeneralSubagentGlobal}" VerticalAlignment="Center" />
+            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="0" Maximum="10" Step="1" UseGrouping="False" Value="{Binding GlobalLimit, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralSubagentGlobal}" />
+          </Grid>
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding LimitsInvalid}" Text="{l:NcwText GeneralLimitsInvalid}" />
+          <WrapPanel Orientation="Horizontal" IsVisible="{Binding LimitsDirty}">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding ApplyLimitsCommand}" IsEnabled="{Binding !LimitsInvalid}" Content="{l:NcwText Apply}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding ResetLimitsCommand}" Content="{l:NcwText Reset}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- 代理 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralProxyTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GeneralProxyEnabled}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GeneralProxyHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralProxyEnabled}" />
+          </Grid>
+          <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
+            <ui:NcwSelect ChoiceSet="ProxyMode" SelectedValue="{Binding ProxyMode, Mode=TwoWay}" Label="{l:NcwText GeneralProxyMode}" />
+            <StackPanel Spacing="12" IsVisible="{Binding ProxyManual}">
+              <Grid ColumnDefinitions="140,12,*,12,110">
+                <ui:NcwSelect ChoiceSet="ProxyScheme" SelectedValue="{Binding ProxyScheme, Mode=TwoWay}" Label="{l:NcwText GeneralProxyScheme}" />
+                <ui:NcwInput Grid.Column="2" Text="{Binding ProxyHost, Mode=TwoWay}" Label="{l:NcwText GeneralProxyHost}" Placeholder="127.0.0.1" />
+                <ui:NcwNumberField Grid.Column="4" Minimum="0" Maximum="65535" Step="1" UseGrouping="False" Value="{Binding ProxyPort, Mode=TwoWay}" Label="{l:NcwText GeneralProxyPort}" />
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{l:NcwText GeneralProxyAuth}" VerticalAlignment="Center" />
+                <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding ProxyAuthEnabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText GeneralProxyAuth}" />
+              </Grid>
+              <ui:NcwInput Text="{Binding ProxyUser, Mode=TwoWay}" Label="{l:NcwText GeneralProxyUser}" IsVisible="{Binding ProxyAuthEnabled}" />
+              <ui:NcwTextArea Text="{Binding ProxyBypass, Mode=TwoWay}" Label="{l:NcwText GeneralProxyBypass}" Description="{l:NcwText GeneralProxyBypassHint}" MinHeight="72" />
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding ProxyInvalid}" Text="{l:NcwText GeneralProxyInvalid}" />
+          <WrapPanel Orientation="Horizontal" IsVisible="{Binding ProxyDirty}">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding ApplyProxyCommand}" IsEnabled="{Binding !ProxyInvalid}" Content="{l:NcwText Apply}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding ResetProxyCommand}" Content="{l:NcwText Reset}" />
+          </WrapPanel>
+          <!-- 代理密码:只写不读,只能本机 owner(明文密码不经远程连接) -->
+          <StackPanel Spacing="8" IsVisible="{Binding ProxyAuthEnabled}">
+            <TextBlock Classes="hint" Text="{l:NcwText GeneralProxyPasswordHint}" />
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <ui:NcwInput Text="{Binding ProxyPassword, Mode=TwoWay}" PasswordChar="•" Label="{l:NcwText GeneralProxyPassword}" IsEnabled="{Binding PasswordGate.Allowed}" />
+              <ui:NcwButton Grid.Column="1" VerticalAlignment="Bottom" Variant="Secondary" Command="{Binding SetProxyPasswordCommand}" IsEnabled="{Binding PasswordGate.Allowed}"
+                            arc:Tooltip.Tip="{Binding PasswordGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText GeneralProxyPasswordSet}" />
+              <ui:NcwButton Grid.Column="2" VerticalAlignment="Bottom" Variant="Ghost" Command="{Binding ClearProxyPasswordCommand}" IsEnabled="{Binding PasswordGate.Allowed}"
+                            IsVisible="{Binding ProxyHasPassword}" Content="{l:NcwText GeneralProxyPasswordClear}" />
+            </Grid>
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding ProxyHasPassword}" Text="{l:NcwText GeneralProxyPasswordIsSet}" />
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding !PasswordGate.Allowed}" Text="{Binding PasswordGate, Converter={x:Static cv:GateTextConverter.Instance}}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- 个性化指令 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralPersonalizationTitle}" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="hint" Text="{l:NcwText GeneralPersonalizationHint}" />
+          <ui:NcwInput Text="{Binding PersonName, Mode=TwoWay}" MaxLength="64" Label="{l:NcwText GeneralPersonName}" />
+          <ui:NcwTextArea Text="{Binding Background, Mode=TwoWay}" Label="{l:NcwText GeneralBackground}" MinHeight="72" />
+          <ui:NcwTextArea Text="{Binding Instructions, Mode=TwoWay}" Label="{l:NcwText GeneralInstructions}" MinHeight="96" />
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding PersonalizationTooLong}" Text="{l:NcwText GeneralPersonalizationTooLong}" />
+          <WrapPanel Orientation="Horizontal" IsVisible="{Binding PersonalizationDirty}">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding ApplyPersonalizationCommand}" IsEnabled="{Binding !PersonalizationTooLong}" Content="{l:NcwText Apply}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding ResetPersonalizationCommand}" Content="{l:NcwText Reset}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

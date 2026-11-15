@@ -1,0 +1,118 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:insp="using:Ncw.UI.Views.Desktop.Inspector"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.ReviewPane"
+             x:DataType="vm:ReviewPanelViewModel">
+  <!--
+    改动审查页签:当前会话里改过文件的各轮(一个下拉选轮)、这一轮的文件和 +X −Y、点文件看 before / after 的 diff、撤销 / 重做。
+    撤销前先预检:磁盘上又被改过的文件列出来,用户确认后才带 force 撤销。变更集摘要读自 Review 镜像(设备断开时未知,按钮停用)。
+  -->
+  <Grid RowDefinitions="Auto,*">
+    <StackPanel Grid.Row="0" Margin="10,2,10,6" Spacing="6" IsVisible="{Binding !HasDiff}">
+      <!-- 轮的选择 + 撤销 / 重做 -->
+      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRuns}">
+        <ui:NcwDropdownMenu x:Name="RunMenu" HorizontalAlignment="Left" MaxDropDownHeight="320">
+          <ui:NcwDropdownMenu.Trigger>
+            <ui:PlainButton Height="30" Padding="8,0" AutomationProperties.Name="{l:NcwText ReviewRounds}" arc:Tooltip.Tip="{l:NcwText ReviewRounds}">
+              <StackPanel Orientation="Horizontal" Spacing="6" DataContext="{Binding Selected}" x:DataType="vm:ReviewRunItem">
+                <lucide:LucideIcon Kind="FileDiff" Size="14" VerticalAlignment="Center" />
+                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+                <Border Classes="chip" IsVisible="{Binding IsReverted}"><TextBlock Classes="hint" Text="{l:NcwText ReviewReverted}" /></Border>
+                <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+              </StackPanel>
+            </ui:PlainButton>
+          </ui:NcwDropdownMenu.Trigger>
+        </ui:NcwDropdownMenu>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+          <ui:NcwButton Variant="Secondary" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" IsVisible="{Binding !Selected.IsReverted}" Content="{l:NcwText ReviewUndo}" />
+          <ui:NcwButton Variant="Secondary" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" IsVisible="{Binding Selected.IsReverted}" Content="{l:NcwText ReviewRedo}" />
+        </StackPanel>
+      </Grid>
+      <Panel IsVisible="{Binding HasRuns}">
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0" DataContext="{Binding Selected}" x:DataType="vm:ReviewRunItem">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding FileCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ReviewFiles}" />
+          <TextBlock Classes="letter added" Text="{Binding Additions, StringFormat=+{0}}" />
+          <TextBlock Classes="letter deleted" Text="{Binding Deletions, StringFormat=−{0}}" />
+        </StackPanel>
+      </Panel>
+      <insp:ProblemBar Problem="{Binding Failure}" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsUnknown}">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
+      </StackPanel>
+      <!-- 预检发现的冲突:确认后才强制撤销 -->
+      <Border Classes="notice" IsVisible="{Binding HasPendingConflicts}">
+        <StackPanel Spacing="6">
+          <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{l:NcwText ReviewConflicts}" />
+          <ItemsControl ItemsSource="{Binding PendingConflicts}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Classes="diffText" TextWrapping="Wrap" Text="{Binding}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ui:NcwButton Variant="Danger" Command="{Binding ForceUndoCommand}" Content="{l:NcwText ReviewForceUndo}" />
+            <ui:NcwButton Variant="Secondary" Command="{Binding CancelUndoCommand}" Content="{l:NcwText Cancel}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <TextBlock Classes="hint" IsVisible="{Binding LastOutcome, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 Text="{Binding LastOutcome, Converter={x:Static cv:ReviewOutcomeTextConverter.Instance}}" />
+    </StackPanel>
+
+    <Panel Grid.Row="1">
+      <!-- 空 -->
+      <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="24,32" Spacing="8" MaxWidth="280">
+        <lucide:LucideIcon Kind="FileDiff" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <TextBlock Classes="hint" TextAlignment="Center" Text="{l:NcwText ReviewEmpty}" />
+      </StackPanel>
+
+      <!-- 文件列表 -->
+      <ScrollViewer IsVisible="{Binding ShowsList}" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Files}" Margin="6,0,6,10">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ReviewFileItem">
+              <ui:PlainButton Padding="8,5" Command="{Binding $parent[insp:ReviewPane].((vm:ReviewPanelViewModel)DataContext).OpenFileCommand}" CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="14,*,Auto" ColumnSpacing="8">
+                  <TextBlock Classes="letter" Text="{Binding Letter}" Classes.modified="{Binding IsModified}" Classes.added="{Binding IsCreated}" Classes.deleted="{Binding IsDeleted}" />
+                  <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding Name}" /><Run Text="  " /><Run Text="{Binding Directory}" FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  </TextBlock>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasStats}">
+                    <TextBlock Classes="letter added" Text="{Binding Additions, StringFormat=+{0}}" />
+                    <TextBlock Classes="letter deleted" Text="{Binding Deletions, StringFormat=−{0}}" />
+                  </StackPanel>
+                </Grid>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- diff -->
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding HasDiff}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4" Margin="8,0,8,4" Height="32">
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CloseDiffCommand}" AutomationProperties.Name="{l:NcwText ReviewBack}" arc:Tooltip.Tip="{l:NcwText ReviewBack}">
+            <lucide:LucideIcon Kind="ArrowLeft" Size="15" />
+          </ui:NcwButton>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding DiffFile.Name}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DiffFile.Directory}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Grid>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsVisible="{Binding IsDiffLoading}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <TextBlock Classes="hint" Text="{l:NcwText FileLoading}" />
+        </StackPanel>
+        <insp:DiffView Grid.Row="1" DataContext="{Binding Diff}" />
+      </Grid>
+    </Panel>
+  </Grid>
+</UserControl>

@@ -1,0 +1,88 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.DevicesPage"
+            x:DataType="vm:DevicesPageViewModel">
+  <!--
+    设备页(docs/design/03 §3):所有设备(本机、云端、配对过的电脑)的连接状态,以及「添加设备」:扫码 / 输入 IP:端口 + 配对码。
+    设备断开时运行 / 待处理数是「未知」,不显示数字(规则 7)。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText DevicesPageTitle}" />
+  </ui:NcwPage.Header>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="16,8,16,24" Spacing="14">
+      <!-- 添加设备 -->
+      <Grid ColumnDefinitions="*,10,*">
+        <ui:NcwButton Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding AddByQrCommand}" AutomationProperties.Name="{l:NcwText DevicesAddByQr}">
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+            <lucide:LucideIcon Kind="QrCode" Size="16" VerticalAlignment="Center" />
+            <TextBlock Text="{l:NcwText DevicesAddByQr}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:NcwButton>
+        <ui:NcwButton Grid.Column="2" Variant="Secondary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding AddManuallyCommand}" AutomationProperties.Name="{l:NcwText DevicesAddManually}">
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+            <lucide:LucideIcon Kind="Keyboard" Size="16" VerticalAlignment="Center" />
+            <TextBlock Text="{l:NcwText DevicesAddManually}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:NcwButton>
+      </Grid>
+
+      <!-- 空 -->
+      <StackPanel IsVisible="{Binding !HasItems}" HorizontalAlignment="Center" Spacing="8" Margin="0,32" MaxWidth="320">
+        <lucide:LucideIcon Kind="Monitor" Size="32" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextAlignment="Center" Text="{l:NcwText DevicesEmptyTitle}" />
+        <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText DevicesEmptyHint}" />
+      </StackPanel>
+
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="10" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:DeviceRow">
+            <Border Classes="card" Padding="14,12">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <Panel Width="24" VerticalAlignment="Top">
+                  <lucide:LucideIcon Kind="Monitor" Size="22" IsVisible="{Binding Kind, Converter={x:Static cv:NameNotEqualsConverter.Instance}, ConverterParameter=Cloud}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <lucide:LucideIcon Kind="Cloud" Size="22" IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Cloud}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                </Panel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <Border Classes="chip">
+                      <TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static cv:DeviceKindTextConverter.Instance}}" />
+                    </Border>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Border Classes="dot" Classes.ok="{Binding IsConnected}" Classes.warn="{Binding Unknown}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Connection, Converter={x:Static cv:DeviceConnectionTextConverter.Instance}}" />
+                  </StackPanel>
+                  <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding Address}" IsVisible="{Binding Address, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  <WrapPanel Orientation="Horizontal">
+                    <TextBlock Classes="hint" Margin="0,0,10,0" Text="{Binding Projects, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=DeviceProjectsCount}" />
+                    <TextBlock Classes="hint" Margin="0,0,10,0" IsVisible="{Binding HasRunning}"
+                               Text="{Binding Running, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=InboxRunning}" />
+                    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding HasPending}"
+                               Text="{Binding Pending, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=InboxNeedYou}" />
+                    <TextBlock Classes="hint" IsVisible="{Binding Unknown}" Text="{l:NcwText InboxStateUnknown}" />
+                  </WrapPanel>
+                </StackPanel>
+                <ui:NcwButton Grid.Column="2" Variant="Ghost" VerticalAlignment="Top" IsVisible="{Binding CanRemove}" Content="{l:NcwText RemoveDevice}"
+                              Command="{Binding $parent[ItemsControl].((vm:DevicesPageViewModel)DataContext).RemoveCommand}" CommandParameter="{Binding DeviceId}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</ui:NcwPage>

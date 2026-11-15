@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.ProjectSettingsPage"
+             x:DataType="vm:ProjectSettingsViewModel">
+  <!-- 设置 · 项目 · 项目设置(settings.project.get / update):作用域是项目,页头有设备和项目两个切换器。读取 member 起,写入 owner。 -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsProject}" Hint="{l:NcwText SettingsProjectHint}" ScopeText="{l:NcwText ScopeProject}" ShowProject="True" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+      <!-- 这台设备上没有项目:空状态 -->
+      <Border Classes="card" IsVisible="{Binding !HasProjects}">
+        <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+          <lucide:LucideIcon Kind="FolderPlus" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText ProjectSettingsNoProject}" />
+          <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText ProjectSettingsNoProjectHint}" />
+        </StackPanel>
+      </Border>
+      <Border Classes="card" IsVisible="{Binding HasProjects}" IsEnabled="{Binding CanWrite}">
+        <StackPanel Spacing="12">
+          <ui:NcwSelect ChoiceSet="PermissionMode" SelectedValue="{Binding PermissionMode, Mode=TwoWay}" Label="{l:NcwText ProjectPermissionMode}" Description="{l:NcwText ProjectPermissionModeHint}" />
+          <ui:NcwSelect ItemsSource="{Binding ModelChoices}" SelectedValue="{Binding ModelKey, Mode=TwoWay}" Label="{l:NcwText ProjectDefaultModel}" />
+          <ui:NcwSelect ChoiceSet="ProjectMode" SelectedValue="{Binding DefaultMode, Mode=TwoWay}" Label="{l:NcwText ProjectDefaultMode}" />
+          <ui:NcwSelect ChoiceSet="Thinking" SelectedValue="{Binding DefaultThinking, Mode=TwoWay}" Label="{l:NcwText ProjectDefaultThinking}" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText ProjectWebSearch}" />
+              <TextBlock Classes="hint" Text="{l:NcwText ProjectWebSearchHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding WebSearch, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText ProjectWebSearch}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText ProjectMaxContext}" />
+              <TextBlock Classes="hint" Text="{l:NcwText ProjectMaxContextHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding MaxContext, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText ProjectMaxContext}" />
+          </Grid>
+          <TextBlock Classes="sectionTitle" Margin="0,6,0,0" Text="{l:NcwText ProjectCompactTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText ProjectCompactHint}" />
+          <ui:NcwSelect ItemsSource="{Binding CompactChoices}" SelectedValue="{Binding CompactKey, Mode=TwoWay}" Label="{l:NcwText ProjectCompactModel}" />
+          <ui:NcwSelect ChoiceSet="ThinkingFollow" SelectedValue="{Binding CompactThinking, Mode=TwoWay}" Label="{l:NcwText ProjectCompactThinking}" />
+          <WrapPanel Orientation="Horizontal" IsVisible="{Binding Dirty}">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding SaveCommand}" IsLoading="{Binding IsBusy}" Content="{l:NcwText Save}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding ResetCommand}" Content="{l:NcwText Reset}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

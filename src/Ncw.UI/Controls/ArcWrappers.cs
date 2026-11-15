@@ -85,3 +85,27 @@ public class NcwSwitch : TKCode.Arc.Switch
 {
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.Switch);
 }
+
+/// <summary>Arc 数字输入(带步进按钮)。</summary>
+public class NcwNumberField : TKCode.Arc.NumberField
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.NumberField);
+}
+
+/// <summary>Arc Markdown(助手回复、计划、子代理汇报)。<c>Text</c> 绑定即可,流式增量到来时整段重排。</summary>
+public class NcwMarkdown : TKCode.Arc.Markdown
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.Markdown);
+}
+
+/// <summary>Arc 复选框(导入模型列表的勾选)。</summary>
+public class NcwCheckbox : TKCode.Arc.Checkbox
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.Checkbox);
+}
+
+/// <summary>Arc 代码块(只读,带语法着色和复制按钮):文件预览。</summary>
+public class NcwCodeBlock : TKCode.Arc.CodeBlock
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.CodeBlock);
+}

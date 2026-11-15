@@ -36,6 +36,38 @@
                       IsChecked="{Binding Enabled}" IsEnabled="{Binding !IsBusy}"
                       AutomationProperties.Name="{l:NcwText RemoteToggle}" />
       </Grid>
+      <!-- 端口 + 仅允许局域网地址 -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+        <StackPanel Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{l:NcwText RemotePort}" />
+          <TextBlock Classes="muted" Text="{l:NcwText RemotePortHint}" />
+        </StackPanel>
+        <ui:NcwNumberField x:Name="PortField" Grid.Column="1" Width="150" Margin="16,0,0,0" VerticalAlignment="Center"
+                           Minimum="1024" Maximum="65535" Step="1" UseGrouping="False"
+                           Value="{Binding Port}" AutomationProperties.Name="{l:NcwText RemotePort}" />
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{l:NcwText RemoteLanOnly}" />
+          <TextBlock Classes="muted" Text="{l:NcwText RemoteLanOnlyHint}" />
+        </StackPanel>
+        <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0"
+                      IsChecked="{Binding LanOnly}" AutomationProperties.Name="{l:NcwText RemoteLanOnly}" />
+      </Grid>
+      <!-- 中继地址(默认空 = 关闭):局域网外的控制端经中继连到这台设备;中继只转发端到端加密的数据(docs/design/09 §9) -->
+      <StackPanel Spacing="2" Margin="0,10,0,0">
+        <TextBlock Text="{l:NcwText RemoteRelay}" />
+        <TextBlock Classes="muted" Text="{l:NcwText RemoteRelayHint}" />
+        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+          <ui:NcwInput x:Name="RelayInput" Text="{Binding RelayDraft, Mode=TwoWay}" PlaceholderText="{l:NcwText RemoteRelayPlaceholder}"
+                       AutomationProperties.Name="{l:NcwText RemoteRelay}" />
+          <ui:NcwButton x:Name="RelayApply" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Bottom"
+                        Content="{l:NcwText RemoteRelayApply}" Command="{Binding ApplyRelayCommand}" IsEnabled="{Binding CanApplyRelay}" />
+        </Grid>
+        <TextBlock x:Name="RelayStateText" Classes="muted" Text="{Binding RelayState, Converter={x:Static cv:RelayStateConverter.Instance}}"
+                   IsVisible="{Binding RelayState, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" Text="{l:NcwText RemoteRelayInvalid}" IsVisible="{Binding RelayInvalid}" />
+      </StackPanel>
       <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap"
                  IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
                  Text="{Binding Error, Converter={x:Static cv:RemoteErrorConverter.Instance}}" />
@@ -72,7 +104,7 @@
       <!-- 已配对的控制端 -->
       <TextBlock Classes="section" Text="{l:NcwText PairedControllers}" />
       <TextBlock Classes="muted" Text="{l:NcwText NoControllers}" IsVisible="{Binding !HasControllers}" />
-      <ItemsControl ItemsSource="{Binding Controllers}">
+      <ItemsControl x:Name="ControllerList" ItemsSource="{Binding Controllers}">
         <ItemsControl.ItemTemplate>
           <DataTemplate DataType="vm:ControllerItem">
             <Border Padding="12,10" Margin="0,0,0,6" CornerRadius="10"
@@ -86,9 +118,22 @@
                   </StackPanel>
                   <TextBlock Classes="muted" Text="{Binding ShortFingerprint}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
                 </StackPanel>
-                <ui:NcwButton Grid.Column="2" Variant="Ghost" VerticalAlignment="Center" Content="{l:NcwText Revoke}"
-                              Command="{Binding $parent[ItemsControl].((vm:RemoteSettingsViewModel)DataContext).RevokeCommand}"
-                              CommandParameter="{Binding Fingerprint}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                  <!-- 角色:条目在 code-behind 里按行生成(RoleChange) -->
+                  <ui:NcwDropdownMenu x:Name="RoleMenu" Tag="{Binding Fingerprint}">
+                    <ui:NcwDropdownMenu.Trigger>
+                      <ui:NcwButton Variant="Ghost" AutomationProperties.Name="{l:NcwText ChangeRole}" arc:Tooltip.Tip="{l:NcwText ChangeRole}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="{Binding Role, Converter={x:Static cv:RoleTextConverter.Instance}}" />
+                          <lucide:LucideIcon Kind="ChevronDown" Size="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </ui:NcwButton>
+                    </ui:NcwDropdownMenu.Trigger>
+                  </ui:NcwDropdownMenu>
+                  <ui:NcwButton Variant="Ghost" Content="{l:NcwText Revoke}"
+                                Command="{Binding $parent[ItemsControl].((vm:RemoteSettingsViewModel)DataContext).RevokeCommand}"
+                                CommandParameter="{Binding Fingerprint}" />
+                </StackPanel>
               </Grid>
             </Border>
           </DataTemplate>

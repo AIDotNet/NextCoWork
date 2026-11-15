@@ -1,0 +1,176 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:upd="using:Ncw.Client.Updates"
+             x:Class="Ncw.UI.Views.Desktop.AboutSettingsPage"
+             x:DataType="vm:AboutViewModel">
+  <!--
+    设置 · 本应用 · 关于(docs/design/07 §3、04 §3):当前版本、更新通道、检查更新、下载进度、「立即重启并更新」、
+    必需更新的阻断提示、签名校验失败的提示、上次检查时间。事实都来自 Store 里的更新状态(UpdateService 是唯一写入者),这里只读;动作都经 UpdateActions。
+    「必需 / 阻断」由 Core 的 UpdatePolicy 按时钟派生(和 Agent 侧共用)。窄屏:所有行都可以折行,按钮用 WrapPanel。
+  -->
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:NcwText SettingsAbout}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsAboutHint}" />
+      <WrapPanel Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText ScopeApp}" /></Border>
+      </WrapPanel>
+    </StackPanel>
+
+    <!-- ═══ 版本与通道 ═══ -->
+    <Border Classes="card">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+          <Border Width="40" Height="40" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceRaised}" VerticalAlignment="Top">
+            <lucide:LucideIcon Kind="Sparkles" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock FontWeight="SemiBold" Text="{l:NcwText AboutAppName}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="hint" Text="{l:NcwText AboutVersion}" VerticalAlignment="Center" />
+              <SelectableTextBlock x:Name="VersionText" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding CurrentVersion}" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:NcwText AboutChannel}" />
+            <TextBlock Classes="hint" Text="{l:NcwText AboutChannelHint}" />
+          </StackPanel>
+          <ui:NcwSegmented x:Name="ChannelPicker" Grid.Column="1" VerticalAlignment="Center" SelectedValue="{Binding SelectedChannel, Mode=TwoWay}"
+                           IsEnabled="{Binding CanChangeChannel}" AutomationProperties.Name="{l:NcwText AboutChannel}">
+            <ui:NcwSegmentedOption Value="{x:Static upd:UpdateChannel.Stable}" Label="{l:NcwText UpdateChannelStable}" />
+            <ui:NcwSegmentedOption Value="{x:Static upd:UpdateChannel.Beta}" Label="{l:NcwText UpdateChannelBeta}" />
+          </ui:NcwSegmented>
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- ═══ 必需的更新:阻断 / 提示 ═══ -->
+    <Border x:Name="BlockingCard" Classes="card danger" IsVisible="{Binding IsBlocking}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText UpdateBlockingTitle}" />
+          <TextBlock x:Name="BlockingHint" Classes="hint" TextWrapping="Wrap">
+            <TextBlock.Text>
+              <MultiBinding Converter="{x:Static cv:TextFormatMultiConverter.Instance}" ConverterParameter="UpdateBlockingHint">
+                <Binding Path="CurrentVersion" />
+                <Binding Path="NewVersion" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border x:Name="RequiredCard" Classes="card attention" IsVisible="{Binding IsRequired}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="TriangleAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText UpdateRequiredTitle}" />
+          <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding NewVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateRequiredHint}" />
+          <WrapPanel x:Name="GraceRow" ItemSpacing="4" IsVisible="{Binding InGracePeriod}">
+            <TextBlock Classes="hint" Text="{l:NcwText UpdateGraceLabel}" />
+            <TextBlock x:Name="GraceText" Classes="hint" FontWeight="SemiBold"
+                       Text="{Binding GraceUntil, Converter={x:Static cv:DateTimeTextConverter.Instance}, ConverterParameter=full}" />
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══ 失败:签名 / 清单类(不可信)和普通失败 ═══ -->
+    <Border x:Name="TrustCard" Classes="card danger" IsVisible="{Binding IsTrustFailure}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="ShieldX" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText UpdateTrustTitle}" />
+          <TextBlock x:Name="TrustReason" TextWrapping="Wrap" Text="{Binding Failure, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=UpdateFail}" />
+          <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText UpdateTrustHint}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border x:Name="FailureCard" Classes="problem" IsVisible="{Binding ShowsPlainFailure}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <TextBlock Grid.Column="1" TextWrapping="Wrap" Text="{Binding Failure, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=UpdateFail}" />
+      </Grid>
+    </Border>
+
+    <!-- ═══ 更新 ═══ -->
+    <StackPanel Spacing="2">
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText AboutUpdatesTitle}" />
+    </StackPanel>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <!-- 状态一句话(按阶段) -->
+        <StackPanel Spacing="2">
+          <TextBlock x:Name="StatusDisabled" TextWrapping="Wrap" IsVisible="{Binding IsDisabled}" Text="{l:NcwText UpdateStatusDisabled}" />
+          <TextBlock x:Name="StatusIdle" TextWrapping="Wrap" IsVisible="{Binding IsIdle}" Text="{l:NcwText UpdateStatusIdle}" />
+          <TextBlock x:Name="StatusChecking" TextWrapping="Wrap" IsVisible="{Binding IsChecking}" Text="{l:NcwText UpdateStatusChecking}" />
+          <TextBlock x:Name="StatusUpToDate" TextWrapping="Wrap" IsVisible="{Binding IsUpToDate}" Text="{l:NcwText UpdateStatusUpToDate}" />
+          <TextBlock x:Name="StatusAvailable" TextWrapping="Wrap" IsVisible="{Binding CanDownload}" Text="{Binding NewVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateStatusAvailable}" />
+          <TextBlock x:Name="StatusDownloading" TextWrapping="Wrap" IsVisible="{Binding IsDownloading}" Text="{Binding NewVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateStatusDownloading}" />
+          <TextBlock x:Name="StatusReady" TextWrapping="Wrap" IsVisible="{Binding IsReady}" Text="{Binding NewVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateStatusReady}" />
+          <TextBlock x:Name="StatusInstalling" TextWrapping="Wrap" IsVisible="{Binding IsInstalling}" Text="{Binding NewVersion, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateStatusInstalling}" />
+          <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding IsDisabled}" Text="{l:NcwText UpdateDisabledHint}" />
+        </StackPanel>
+
+        <!-- 下载进度 -->
+        <Grid x:Name="ProgressRow" ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding IsDownloading}">
+          <ui:NcwProgress x:Name="DownloadProgress" Maximum="100" Value="{Binding Progress}" VerticalAlignment="Center" AutomationProperties.Name="{l:NcwText UpdateProgressLabel}" />
+          <TextBlock Grid.Column="1" x:Name="ProgressText" Classes="hint" VerticalAlignment="Center" MinWidth="36" TextAlignment="Right"
+                     Text="{Binding Progress, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateProgressPercent}" />
+        </Grid>
+
+        <!-- 更新说明 -->
+        <StackPanel Spacing="2" IsVisible="{Binding HasNotes}">
+          <TextBlock Classes="hint" FontWeight="SemiBold" Text="{l:NcwText UpdateNotes}" />
+          <SelectableTextBlock x:Name="NotesText" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding Notes}" />
+        </StackPanel>
+
+        <!-- 重启会中断本机上还在运行的任务 -->
+        <Border Classes="notice" IsVisible="{Binding ShowsRunWarning}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+            <lucide:LucideIcon Kind="TriangleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
+            <TextBlock x:Name="RunWarning" Grid.Column="1" Classes="hint" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                       Text="{Binding ActiveRuns, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=UpdateActiveRuns}" />
+          </Grid>
+        </Border>
+
+        <WrapPanel ItemSpacing="8" LineSpacing="8">
+          <ui:NcwButton x:Name="CheckButton" Variant="Secondary" Command="{Binding CheckCommand}" arc:Tooltip.Tip="{l:NcwText UpdateCheckHint}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="RefreshCw" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText UpdateCheck}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton x:Name="DownloadButton" Variant="Primary" Command="{Binding DownloadCommand}" IsVisible="{Binding CanDownload}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Download" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText UpdateDownload}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton x:Name="RestartButton" Variant="Primary" Command="{Binding RestartCommand}" IsVisible="{Binding IsReady}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="RotateCw" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText UpdateRestart}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </WrapPanel>
+
+        <!-- 上次检查时间 -->
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Classes="hint" Text="{l:NcwText UpdateLastChecked}" />
+          <TextBlock x:Name="LastCheckedText" Classes="hint" IsVisible="{Binding HasLastChecked}" Text="{Binding LastCheckedAt, Converter={x:Static cv:DateTimeTextConverter.Instance}, ConverterParameter=full}" />
+          <TextBlock x:Name="NeverCheckedText" Classes="hint" IsVisible="{Binding !HasLastChecked}" Text="{l:NcwText UpdateNeverChecked}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

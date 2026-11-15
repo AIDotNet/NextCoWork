@@ -1,0 +1,38 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.NotificationsPage"
+            x:DataType="vm:PushViewModel">
+  <!--
+    通知(推送):令牌的取得是宿主的 IPushRegistration,登记是共享层的 push.register(设备只存不发,发送由推送中继负责)。
+    这里显示状态,并在没开启时给「开启通知」。提醒里只有「哪台设备、哪类事件、一个不透明 id」,不含对话内容。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText SettingsNotifications}" />
+  </ui:NcwPage.Header>
+
+  <StackPanel Margin="16,8,16,24" Spacing="12" MaxWidth="480">
+    <TextBlock Classes="hint" Text="{l:NcwText PushHint}" />
+    <Border Classes="card" Padding="14">
+      <StackPanel Spacing="12">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <lucide:LucideIcon Kind="Bell" Size="18" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+          <TextBlock TextWrapping="Wrap" VerticalAlignment="Center">
+            <TextBlock.Text>
+              <MultiBinding Converter="{x:Static cv:PushStatusTextConverter.Instance}">
+                <Binding Path="Status" />
+                <Binding Path="RegisteredDevices" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
+        </StackPanel>
+        <ui:NcwButton Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding EnableCommand}" IsVisible="{Binding CanEnable}" Content="{l:NcwText PushEnable}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</ui:NcwPage>

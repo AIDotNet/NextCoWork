@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:p="using:Ncw.Protocol.Methods"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.GatewayPage"
+             x:DataType="vm:GatewayViewModel">
+  <!--
+    设置 · 设备 · 网关(gateway.*):开关(仅本机 owner)、实际可访问的地址、OpenAPI 链接、API 密钥(显示与轮换仅本机 owner)、供应商健康。
+    网关是明文 HTTP:默认只绑回环地址;允许局域网访问前先确认风险。读取需要 owner(gateway.getStatus 是 owner 方法)。
+  -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsGateway}" Hint="{l:NcwText SettingsGatewayHint}" ScopeText="{l:NcwText ScopeDevice}" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+      <!-- 始终显示的明文 HTTP 提示;暴露到局域网时更醒目 -->
+      <Border Classes="notice">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+          <lucide:LucideIcon Kind="TriangleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <TextBlock Grid.Column="1" Classes="hint" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{l:NcwText GatewayPlainHttp}" />
+        </Grid>
+      </Border>
+      <Border Classes="card danger" IsVisible="{Binding ExposedToLan}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayLanExposedTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GatewayEnabled}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GatewayEnabledHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" IsEnabled="{Binding LocalGate.Allowed}"
+                          x:Name="EnabledSwitch" arc:Tooltip.Tip="{Binding LocalGate, Converter={x:Static cv:GateTextConverter.Instance}}" AutomationProperties.Name="{l:NcwText GatewayEnabled}" />
+          </Grid>
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding !LocalGate.Allowed}" Text="{Binding LocalGate, Converter={x:Static cv:GateTextConverter.Instance}}" />
+          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding Status.Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                     Text="{Binding Status.Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+
+          <!-- 允许局域网访问 -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:NcwText GatewayAllowRemote}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GatewayAllowRemoteHint}" />
+            </StackPanel>
+            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllowRemote, Mode=OneWay}" Command="{Binding ToggleAllowRemoteCommand}" IsEnabled="{Binding CanWrite}"
+                          AutomationProperties.Name="{l:NcwText GatewayAllowRemote}" />
+          </Grid>
+          <Border Classes="card danger" IsVisible="{Binding ConfirmingAllowRemote}">
+            <StackPanel Spacing="8">
+              <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayAllowRemoteConfirmTitle}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
+              <WrapPanel Orientation="Horizontal">
+                <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmAllowRemoteCommand}" Content="{l:NcwText GatewayAllowRemoteConfirm}" />
+                <ui:NcwButton Variant="Ghost" Command="{Binding CancelAllowRemoteCommand}" Content="{l:NcwText Cancel}" />
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- 地址与 OpenAPI -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsListening}">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText GatewayAddressesTitle}" />
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <ItemsControl ItemsSource="{Binding Addresses}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String"><SelectableTextBlock Classes="mono" Text="{Binding}" /></DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <WrapPanel Orientation="Horizontal" IsVisible="{Binding OpenApiUrl, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <ui:NcwButton Variant="Secondary" Command="{Binding OpenApiCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <lucide:LucideIcon Kind="ExternalLink" Size="14" VerticalAlignment="Center" />
+                  <TextBlock Text="{l:NcwText GatewayOpenApi}" />
+                </StackPanel>
+              </ui:NcwButton>
+            </WrapPanel>
+            <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding OpenApiUrl, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding OpenApiUrl}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- API 密钥:只在本机 owner 点「显示」后短暂可见,离开页面即清掉 -->
+      <TextBlock Classes="sectionTitle" Text="{l:NcwText GatewayKeysTitle}" />
+      <TextBlock Classes="hint" Text="{l:NcwText GatewayKeysHint}" />
+      <Border Classes="card danger" IsVisible="{Binding HasPendingRotate}">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" Text="{Binding PendingRotate.Subject, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=GatewayRotateTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText GatewayRotateHint}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRotateCommand}" Content="{l:NcwText GatewayRotate}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding CancelRotateCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+      <ItemsControl ItemsSource="{Binding Keys}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:GatewayKeyRowViewModel">
+            <Border Classes="card" Padding="14,12">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <StackPanel Spacing="2">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Role, Converter={x:Static cv:RoleTextConverter.Instance}}" />
+                    <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding IsRevealed}" Text="{Binding Key}" />
+                    <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding !IsRevealed}" Text="••••••••••••••••" />
+                  </StackPanel>
+                  <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" VerticalAlignment="Top">
+                    <ui:NcwButton Variant="Secondary" Command="{Binding RevealCommand}" IsVisible="{Binding !IsRevealed}" IsLoading="{Binding IsLoading}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:GatewayViewModel)DataContext).LocalGate.Allowed}" Content="{l:NcwText GatewayReveal}" />
+                    <ui:NcwButton Variant="Ghost" Command="{Binding HideCommand}" IsVisible="{Binding IsRevealed}" Content="{l:NcwText GatewayHide}" />
+                    <ui:NcwButton Variant="Ghost" Command="{Binding AskRotateCommand}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:GatewayViewModel)DataContext).LocalGate.Allowed}" Content="{l:NcwText GatewayRotate}" />
+                  </WrapPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- 供应商健康 -->
+      <StackPanel Spacing="6" IsVisible="{Binding IsListening}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="sectionTitle" Margin="0,10,0,0" Text="{l:NcwText GatewayHealthTitle}" />
+          <ui:NcwButton Grid.Column="1" Variant="Ghost" VerticalAlignment="Bottom" Command="{Binding ResetHealthCommand}" CommandParameter="" IsEnabled="{Binding CanWrite}" Content="{l:NcwText GatewayHealthReset}" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Status.Health}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="p:GatewayHealthDto">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,4">
+                <ui:NcwStatusDot Tone="{Binding Healthy, Converter={x:Static cv:BoolToneConverter.Instance}}" />
+                <StackPanel Grid.Column="1" Spacing="1">
+                  <TextBlock Text="{Binding ProviderId}" />
+                  <TextBlock Classes="hint" IsVisible="{Binding LastError, Converter={x:Static ObjectConverters.IsNotNull}}" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{Binding LastError}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Classes="hint" IsVisible="{Binding LastLatencyMs, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding LastLatencyMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

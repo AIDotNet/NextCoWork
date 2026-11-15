@@ -13,6 +13,12 @@ public static class NcwMenus
     /// <summary>一行菜单。带 <see cref="Children"/> 的行打开子菜单;破坏性操作放最后并标红。</summary>
     public sealed record Item(string Header, ICommand? Command, object? Parameter = null, bool IsDestructive = false, bool SeparatorBefore = false)
     {
+        /// <summary>灰显、不可点(例如停用的模型:显示出来,但标成不可用)。</summary>
+        public bool IsDisabled { get; init; }
+
+        /// <summary>前面打勾:当前选中项。</summary>
+        public bool IsChecked { get; init; }
+
         public Geometry? Glyph { get; init; }
 
         /// <summary>图标位里的小控件(颜色色块),优先于 <see cref="Glyph"/>。</summary>
@@ -32,6 +38,10 @@ public static class NcwMenus
         TKCode.Arc.ContextMenu.SetMenu(target, surface);
     }
 
+    /// <summary>下拉菜单(<see cref="NcwDropdownMenu"/>)的条目:每次数据变了重新填一遍。</summary>
+    public static void Populate(NcwDropdownMenu menu, IEnumerable<Item> items) =>
+        menu.ItemsSource = items.Select(Build).ToList();
+
     private static MenuEntry Build(Item item)
     {
         var row = new MenuEntry
@@ -39,7 +49,15 @@ public static class NcwMenus
             Header = item.Header,
             IsDestructive = item.IsDestructive,
             HasSeparatorBefore = item.SeparatorBefore,
+            IsEnabled = !item.IsDisabled,
         };
+
+        if (item.IsChecked)
+        {
+            // 当前选中项:单选行,前面显示圆点(图标位没有图标时)
+            row.ToggleType = MenuEntryToggleType.Radio;
+            row.IsChecked = true;
+        }
 
         if (item.Children is { Count: > 0 } children)
         {

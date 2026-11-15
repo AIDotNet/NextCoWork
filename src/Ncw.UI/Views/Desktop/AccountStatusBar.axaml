@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.AccountStatusBar"
+             x:DataType="vm:ShellViewModel"
+             IsVisible="{Binding Account.ShowsBanner}"
+             HorizontalAlignment="Stretch" VerticalAlignment="Top" MaxWidth="600" Margin="12,48,12,0">
+  <!--
+    账户状态条(浮在工作区顶部):登录进行中 / 登录失败 / 登录已过期 / 连不上账户服务 / 要选团队 / 无法安全保存登录状态。
+    一行一件事,窄屏折行;状态来自账户会话的 Store(AccountBanner 是唯一的派生函数,设置页的「账户」页用同一份)。
+  -->
+  <Border Classes="card" Padding="12,10">
+    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+      <Panel VerticalAlignment="Center">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" IsVisible="{Binding Account.IsLoggingIn}" />
+        <lucide:LucideIcon Kind="CircleAlert" Size="16" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=LoginFailed}" />
+        <lucide:LucideIcon Kind="LogIn" Size="16" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Expired}" />
+        <lucide:LucideIcon Kind="WifiOff" Size="16" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Unreachable}" />
+        <lucide:LucideIcon Kind="Users" Size="16" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=TeamRequired}" />
+        <lucide:LucideIcon Kind="ShieldAlert" Size="16" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=SecureStorageUnavailable}" />
+      </Panel>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <Panel>
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.IsLoggingIn}" Text="{Binding Account.IsExchanging, Converter={x:Static cv:AccountBarProgressTextConverter.Instance}}" />
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=LoginFailed}"
+                     Text="{Binding Account.LoginError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Expired}" Text="{l:NcwText AccountBarExpired}" />
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Unreachable}" Text="{l:NcwText AccountBarUnreachable}" />
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=TeamRequired}" Text="{l:NcwText AccountBarTeam}" />
+          <TextBlock TextWrapping="Wrap" IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=SecureStorageUnavailable}" Text="{l:NcwText AccountBarSecureStorage}" />
+        </Panel>
+      </StackPanel>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ui:NcwButton Variant="Secondary" Command="{Binding Account.CancelLoginCommand}" IsVisible="{Binding Account.IsLoggingIn}" IsEnabled="{Binding !Account.IsExchanging}" Content="{l:NcwText Cancel}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding Account.SignInWithCodeCommand}" IsVisible="{Binding Account.IsBrowserLogin}" IsEnabled="{Binding !Account.IsExchanging}" Content="{l:NcwText AccountSignInWithCode}" />
+          <ui:NcwButton Variant="Primary" Command="{Binding Account.SignInCommand}" IsEnabled="{Binding Account.CanSignIn}"
+                        IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Expired}" Content="{l:NcwText AccountSignInAgain}" />
+          <ui:NcwButton Variant="Secondary" Command="{Binding Account.SignInCommand}" IsEnabled="{Binding Account.CanSignIn}"
+                        IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=LoginFailed}" Content="{l:NcwText Retry}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding Account.DismissLoginErrorCommand}"
+                        IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=LoginFailed}" Content="{l:NcwText Dismiss}" />
+          <ui:NcwButton Variant="Secondary" Command="{Binding OpenAccountSettingsCommand}"
+                        IsVisible="{Binding Account.Banner, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=TeamRequired}" Content="{l:NcwText AccountChoose}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

@@ -1,0 +1,172 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.OnboardingOverlay"
+             x:DataType="vm:OnboardingViewModel"
+             IsVisible="{Binding IsOpen}">
+  <!--
+    首次启动(docs/design/07 §1):欢迎(登录 / 使用自己的模型供应商 / 跳过)→ 数据(2.x 接管的结果)→ 选模型供应商 → 完成(打开第一个项目)。
+    整窗覆盖,内容居中、最大宽度 440,窄窗口 / 矮窗口可以滚动。顶部 40px 仍留给拖动窗口。设置页和数据页盖在它上面。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.pill">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="4" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+    </Style>
+    <Style Selector="Border.pill.on">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.lead">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="{arc:ArcDesignTokenResource Background}">
+    <ScrollViewer Margin="0,40,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel MaxWidth="440" Margin="24,16,24,32" Spacing="14" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+
+        <!-- 步骤进度 -->
+        <StackPanel Spacing="6" HorizontalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" AutomationProperties.Name="{Binding Step, Converter={x:Static cv:OnboardingStepTextConverter.Instance}}">
+            <Border Classes="pill" Classes.on="{Binding StepNumber, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=1}" />
+            <Border Classes="pill" Classes.on="{Binding StepNumber, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=2}" />
+            <Border Classes="pill" Classes.on="{Binding StepNumber, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=3}" />
+            <Border Classes="pill" Classes.on="{Binding StepNumber, Converter={x:Static cv:AtLeastConverter.Instance}, ConverterParameter=4}" />
+          </StackPanel>
+          <TextBlock Classes="hint" HorizontalAlignment="Center" Text="{Binding Step, Converter={x:Static cv:OnboardingStepTextConverter.Instance}}" />
+        </StackPanel>
+
+        <!-- ═══ 欢迎 ═══ -->
+        <StackPanel Spacing="14" IsVisible="{Binding IsWelcome}">
+          <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,6">
+            <Border Width="44" Height="44" CornerRadius="12" HorizontalAlignment="Center" Background="{arc:ArcDesignTokenResource Foreground}">
+              <lucide:LucideIcon Kind="Sparkles" Size="24" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Background}" />
+            </Border>
+            <TextBlock Text="NextCoWork" HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource Type2XL}" FontWeight="SemiBold" />
+            <TextBlock Classes="lead" Text="{l:NcwText OnboardingTagline}" />
+          </StackPanel>
+
+          <desktop:AccountLoginStatus DataContext="{Binding Account}" />
+
+          <ui:NcwButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Primary"
+                        Command="{Binding Account.SignInCommand}" IsEnabled="{Binding Account.CanSignIn}">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+              <lucide:LucideIcon Kind="LogIn" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText OnboardingSignIn}" TextWrapping="Wrap" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Secondary"
+                        Command="{Binding UseOwnProviderCommand}" IsEnabled="{Binding !Account.IsLoggingIn}" Content="{l:NcwText OnboardingOwnProvider}" />
+          <ui:NcwButton HorizontalAlignment="Center" Variant="Ghost"
+                        Command="{Binding SkipCommand}" IsEnabled="{Binding !Account.IsLoggingIn}" Content="{l:NcwText OnboardingSkip}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,6,0,0">
+            <lucide:LucideIcon Kind="ShieldCheck" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Classes="hint" MaxWidth="400" TextWrapping="Wrap" Text="{l:NcwText OnboardingLocalHint}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- ═══ 数据 ═══ -->
+        <StackPanel Spacing="12" IsVisible="{Binding IsDataStep}">
+          <Panel Height="36" HorizontalAlignment="Center" Margin="0,10,0,0">
+            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="28" Foreground="{arc:ArcDesignTokenResource TextSecondary}">
+              <lucide:LucideIcon.IsVisible>
+                <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                  <Binding Path="DataBusy" />
+                  <Binding Path="DataConnecting" />
+                </MultiBinding>
+              </lucide:LucideIcon.IsVisible>
+            </lucide:LucideIcon>
+            <lucide:LucideIcon Kind="TriangleAlert" Size="28" IsVisible="{Binding DataBlocked}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <lucide:LucideIcon Kind="CircleCheckBig" Size="28" IsVisible="{Binding DataReady}" Foreground="{arc:ArcDesignTokenResource Success}" />
+          </Panel>
+          <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" Text="{l:NcwText OnboardingDataTitle}" />
+          <TextBlock Classes="lead" IsVisible="{Binding DataConnecting}" Text="{l:NcwText OnboardingDataConnecting}" />
+          <TextBlock Classes="lead" IsVisible="{Binding DataBusy}" Text="{l:NcwText OnboardingDataBusy}" />
+          <StackPanel Spacing="4" IsVisible="{Binding DataBlocked}">
+            <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontWeight="SemiBold" Text="{l:NcwText OnboardingDataBlocked}" />
+            <TextBlock Classes="lead" Text="{Binding DataReason, Converter={x:Static cv:DataReasonConverter.Instance}}" />
+            <ui:NcwButton HorizontalAlignment="Center" Variant="Secondary" Margin="0,6,0,0" Command="{Binding RetryDataCommand}" Content="{l:NcwText Retry}" />
+          </StackPanel>
+          <StackPanel Spacing="4" IsVisible="{Binding DataReady}">
+            <TextBlock Classes="lead" IsVisible="{Binding HasTakeover}" Text="{Binding TakenOver, Converter={x:Static cv:TakeoverSummaryConverter.Instance}}" />
+            <TextBlock Classes="lead" IsVisible="{Binding !HasTakeover}" Text="{l:NcwText OnboardingDataFresh}" />
+          </StackPanel>
+          <ui:NcwButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Primary" Margin="0,6,0,0"
+                        Command="{Binding NextCommand}" IsEnabled="{Binding CanContinueFromData}" Content="{l:NcwText Continue}" />
+        </StackPanel>
+
+        <!-- ═══ 选模型供应商 ═══ -->
+        <StackPanel Spacing="12" IsVisible="{Binding IsProvider}">
+          <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" Margin="0,10,0,0" Text="{l:NcwText OnboardingProviderTitle}" />
+          <Border Classes="card">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+              <lucide:LucideIcon Kind="CircleUser" Size="20" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText OnboardingProviderAccountTitle}" />
+                <TextBlock Classes="hint" IsVisible="{Binding HasAccountModels}" Text="{l:NcwText OnboardingProviderAccountReady}" />
+                <TextBlock Classes="hint" IsVisible="{Binding !HasAccountModels}" Text="{l:NcwText OnboardingProviderAccountLater}" />
+              </StackPanel>
+            </Grid>
+          </Border>
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <lucide:LucideIcon Kind="KeyRound" Size="20" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText OnboardingProviderOwnTitle}" />
+                  <TextBlock Classes="hint" Text="{l:NcwText OnboardingProviderOwnHint}" />
+                </StackPanel>
+              </Grid>
+              <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding OpenModelSettingsCommand}" Content="{l:NcwText OnboardingProviderOpen}" />
+            </StackPanel>
+          </Border>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+            <ui:NcwButton Variant="Ghost" Command="{Binding BackCommand}" Content="{l:NcwText OnboardingBack}" />
+            <ui:NcwButton Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Primary" Command="{Binding NextCommand}" Content="{l:NcwText OnboardingProviderLater}" />
+          </Grid>
+        </StackPanel>
+
+        <!-- ═══ 完成:打开第一个项目 ═══ -->
+        <StackPanel Spacing="12" IsVisible="{Binding IsDone}">
+          <lucide:LucideIcon Kind="CircleCheckBig" Size="28" HorizontalAlignment="Center" Margin="0,10,0,0" Foreground="{arc:ArcDesignTokenResource Success}" />
+          <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" Text="{l:NcwText OnboardingDoneTitle}" />
+          <TextBlock Classes="lead" Text="{l:NcwText OnboardingDoneHint}" />
+          <ui:NcwButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Primary" Command="{Binding OpenFolderCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+              <lucide:LucideIcon Kind="FolderOpen" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText OnboardingOpenFolder}" TextWrapping="Wrap" />
+            </StackPanel>
+          </ui:NcwButton>
+          <Border Classes="card" Padding="14,10" Opacity="0.7">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <lucide:LucideIcon Kind="Terminal" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:NcwText OnboardingConnectSsh}" />
+              <Border Grid.Column="2" Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText OnboardingLater}" /></Border>
+            </Grid>
+          </Border>
+          <Border Classes="card" Padding="14,10" Opacity="0.7">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <lucide:LucideIcon Kind="Cloud" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:NcwText OnboardingCloudAgent}" />
+              <Border Grid.Column="2" Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText OnboardingComingSoon}" /></Border>
+            </Grid>
+          </Border>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+            <ui:NcwButton Variant="Ghost" Command="{Binding BackCommand}" Content="{l:NcwText OnboardingBack}" />
+            <ui:NcwButton Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Variant="Secondary" Command="{Binding FinishCommand}" Content="{l:NcwText OnboardingStart}" />
+          </Grid>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

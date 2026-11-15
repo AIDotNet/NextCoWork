@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.SubagentsPane"
+             x:DataType="vm:InspectorViewModel">
+  <!--
+    子代理页签:卡片列表(状态文案、计时、能否停止都来自 Core 的 SubagentView.Of)→ 点卡片看这个子代理的只读转录(订阅子会话,子 Run 还在跑时再订阅 run/&lt;childRunId&gt;;
+    和主对话同一个归约与转录派生)。只靠回执重建的旧卡片(重启后没有子会话 id)点不开:给一句明确的提示,不发请求。
+  -->
+  <Grid RowDefinitions="Auto,*">
+    <Border Grid.Row="0" Classes="notice" Margin="10,2,10,6" IsVisible="{Binding HasNotice}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="Info" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Grid.Column="1" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding Notice, Converter={x:Static cv:SubagentNoticeTextConverter.Instance}}" />
+        <ui:PlainButton Grid.Column="2" Width="22" Height="22" Command="{Binding DismissNoticeCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
+          <lucide:LucideIcon Kind="X" Size="11" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+      </Grid>
+    </Border>
+
+    <Panel Grid.Row="1">
+      <!-- 卡片列表 -->
+      <ScrollViewer IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNull}}" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl Margin="10,4,10,12" ItemsSource="{Binding Subagents}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SubagentItemViewModel">
+              <Border Classes="card">
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowSpacing="4">
+                  <Panel Width="10" Height="10" VerticalAlignment="Center">
+                    <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsActive}" />
+                    <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsUnknown}" />
+                    <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsTerminal}" />
+                  </Panel>
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" VerticalAlignment="Center" IsVisible="{Binding !IsUnknown}" />
+                  <TextBlock Grid.Column="2" Classes="hint" Text="{l:NcwText DeviceConnecting}" VerticalAlignment="Center" IsVisible="{Binding IsUnknown}" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Detail}}" VerticalAlignment="Center" />
+                  <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                    <ui:NcwButton Classes="icon" Variant="Ghost" Width="26" Height="26"
+                                  Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).OpenSubagentCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText OpenSubagent}" arc:Tooltip.Tip="{l:NcwText OpenSubagent}">
+                      <lucide:LucideIcon Kind="PanelRightOpen" Size="13" />
+                    </ui:NcwButton>
+                    <ui:NcwButton Classes="icon" Variant="Ghost" Width="26" Height="26" IsVisible="{Binding CanStop}"
+                                  Command="{Binding $parent[ItemsControl].((vm:InspectorViewModel)DataContext).StopSubagentCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText StopSubagent}" arc:Tooltip.Tip="{l:NcwText StopSubagent}">
+                      <lucide:LucideIcon Kind="Square" Size="12" />
+                    </ui:NcwButton>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- 转录 -->
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="4" Margin="8,0,8,4" Height="32">
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CloseTranscriptCommand}" AutomationProperties.Name="{l:NcwText SubagentBack}" arc:Tooltip.Tip="{l:NcwText SubagentBack}">
+            <lucide:LucideIcon Kind="ArrowLeft" Size="15" />
+          </ui:NcwButton>
+          <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Transcript.Title}" TextTrimming="CharacterEllipsis" />
+        </Grid>
+        <Panel Grid.Row="1" DataContext="{Binding Transcript}" x:DataType="vm:SubagentTranscriptViewModel">
+          <StackPanel IsVisible="{Binding IsLoading}" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
+            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Classes="hint" Text="{l:NcwText SubagentTranscriptLoading}" />
+          </StackPanel>
+          <StackPanel IsVisible="{Binding IsUnknown}" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
+            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Warning}" />
+            <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
+          </StackPanel>
+          <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" Text="{l:NcwText SubagentTranscriptEmpty}" />
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Rows}" Margin="10,0,10,12">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="6" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.DataTemplates>
+                <DataTemplate DataType="vm:UserRowViewModel">
+                  <Border Padding="10,6" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" />
+                  </Border>
+                </DataTemplate>
+                <DataTemplate DataType="vm:AssistantRowViewModel">
+                  <ui:NcwMarkdown Text="{Binding Text}" />
+                </DataTemplate>
+                <DataTemplate DataType="vm:ThinkingRowViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <lucide:LucideIcon Kind="Brain" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsStreaming}"
+                               Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
+                  </StackPanel>
+                </DataTemplate>
+                <DataTemplate DataType="vm:ToolRowViewModel">
+                  <Border Classes="card" Padding="10,6">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                      <Panel Width="14" VerticalAlignment="Center">
+                        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="13" IsVisible="{Binding IsRunning}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                        <lucide:LucideIcon Kind="CircleCheck" Size="13" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                        <lucide:LucideIcon Kind="CircleAlert" Size="13" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                      </Panel>
+                      <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Name}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding Target}" FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                      </TextBlock>
+                      <TextBlock Grid.Column="2" Classes="hint" Text="{Binding EnvLabel}" VerticalAlignment="Center" IsVisible="{Binding IsCommand}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+                <DataTemplate DataType="vm:SubagentRowViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <lucide:LucideIcon Kind="Bot" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" />
+                  </StackPanel>
+                </DataTemplate>
+                <DataTemplate DataType="vm:ErrorRowViewModel">
+                  <Border Classes="problem">
+                    <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding Row, Converter={x:Static cv:ErrorTextConverter.Instance}}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.DataTemplates>
+            </ItemsControl>
+          </ScrollViewer>
+        </Panel>
+      </Grid>
+    </Panel>
+  </Grid>
+</UserControl>

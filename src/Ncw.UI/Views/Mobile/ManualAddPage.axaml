@@ -1,0 +1,33 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            x:Class="Ncw.UI.Views.Mobile.ManualAddPage"
+            x:DataType="vm:DevicesSettingsViewModel"
+            AvoidKeyboard="True">
+  <!-- 用 IP:端口 + 配对码添加设备。和桌面「设置 → 设备」是同一个 DevicesSettingsViewModel(同一个 PairAsync 意图),这里只是手机的版式。 -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText ManualAddTitle}" />
+  </ui:NcwPage.Header>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="16,8,16,24" Spacing="12" MaxWidth="480">
+      <TextBlock Classes="hint" Text="{l:NcwText AddDeviceHint}" />
+      <ui:NcwInput Label="{l:NcwText DeviceAddressLabel}" Placeholder="192.168.1.23:7810" Text="{Binding Address}" />
+      <ui:NcwInput Label="{l:NcwText PairingCodeLabel}" Placeholder="123 456" Text="{Binding Code}" MaxLength="7" />
+      <ui:NcwButton Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding PairCommand}" IsEnabled="{Binding !IsPairing}">
+        <Panel>
+          <TextBlock Text="{l:NcwText PairDevice}" IsVisible="{Binding !IsPairing}" />
+          <TextBlock Text="{l:NcwText PairingInProgress}" IsVisible="{Binding IsPairing}" />
+        </Panel>
+      </ui:NcwButton>
+      <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                 IsVisible="{Binding LastError, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 Text="{Binding LastError, Converter={x:Static cv:PairOutcomeConverter.Instance}}" />
+      <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding JustPaired}" Text="{l:NcwText PairSucceeded}" />
+    </StackPanel>
+  </ScrollViewer>
+</ui:NcwPage>

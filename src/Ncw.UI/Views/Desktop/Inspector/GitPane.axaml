@@ -1,0 +1,190 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:insp="using:Ncw.UI.Views.Desktop.Inspector"
+             x:Class="Ncw.UI.Views.Desktop.Inspector.GitPane"
+             x:DataType="vm:GitPanelViewModel">
+  <!--
+    Git 页签:分支、拉取 / 推送、变更分组(冲突 / 暂存区 / 未暂存 / 未跟踪;分组完全由 Core 的 GitStatus 派生)、点文件看 diff、提交框(含「生成提交信息」)、提交历史。
+    分支名、领先 / 落后、分组全部读自 Git 镜像(设备断开时是「未知」,按钮停用);提交信息草稿、打开的 diff、分支列表是这个页签自己的 UI 状态。
+  -->
+  <UserControl.Resources>
+    <!-- 变更列表的一行:状态字母 + 文件名 + 目录 + 暂存 / 取消暂存;点一下看 diff -->
+    <DataTemplate x:Key="GitRow" x:DataType="vm:GitFileItem">
+      <ui:PlainButton Padding="8,5" Command="{Binding $parent[insp:GitPane].((vm:GitPanelViewModel)DataContext).OpenDiffCommand}" CommandParameter="{Binding}">
+        <Grid ColumnDefinitions="14,*,Auto" ColumnSpacing="8">
+          <TextBlock Classes="letter" Text="{Binding Letter}" Classes.modified="{Binding IsModified}" Classes.added="{Binding IsAdded}"
+                     Classes.deleted="{Binding IsDeleted}" Classes.conflicted="{Binding IsConflicted}" />
+          <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding Name}" /><Run Text="  " /><Run Text="{Binding Directory}" FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          </TextBlock>
+          <StackPanel Grid.Column="2" Orientation="Horizontal">
+            <ui:NcwButton Classes="icon" Variant="Ghost" Width="24" Height="24" IsVisible="{Binding CanStage}"
+                          Command="{Binding $parent[insp:GitPane].((vm:GitPanelViewModel)DataContext).StageCommand}" CommandParameter="{Binding}"
+                          AutomationProperties.Name="{l:NcwText GitStage}" arc:Tooltip.Tip="{l:NcwText GitStage}">
+              <lucide:LucideIcon Kind="Plus" Size="13" />
+            </ui:NcwButton>
+            <ui:NcwButton Classes="icon" Variant="Ghost" Width="24" Height="24" IsVisible="{Binding CanUnstage}"
+                          Command="{Binding $parent[insp:GitPane].((vm:GitPanelViewModel)DataContext).UnstageCommand}" CommandParameter="{Binding}"
+                          AutomationProperties.Name="{l:NcwText GitUnstage}" arc:Tooltip.Tip="{l:NcwText GitUnstage}">
+              <lucide:LucideIcon Kind="Minus" Size="13" />
+            </ui:NcwButton>
+          </StackPanel>
+        </Grid>
+      </ui:PlainButton>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <!-- 头:分支 + 刷新 / 拉取 / 推送 / 历史 -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,2,8,4" IsVisible="{Binding !HasDiff}">
+      <ui:NcwDropdownMenu x:Name="BranchMenu" HorizontalAlignment="Left" MaxDropDownHeight="320" IsEnabled="{Binding CanOperate}">
+        <ui:NcwDropdownMenu.Trigger>
+          <ui:PlainButton Height="30" Padding="8,0" AutomationProperties.Name="{l:NcwText GitBranches}" arc:Tooltip.Tip="{l:NcwText GitBranches}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="GitBranch" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Branch}" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="150" TextTrimming="CharacterEllipsis" IsVisible="{Binding !IsDetached}" />
+              <TextBlock Text="{l:NcwText GitDetached}" FontWeight="SemiBold" VerticalAlignment="Center" IsVisible="{Binding IsDetached}" />
+              <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+            </StackPanel>
+          </ui:PlainButton>
+        </ui:NcwDropdownMenu.Trigger>
+      </ui:NcwDropdownMenu>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0">
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RefreshCommand}" AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+          <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+        </ui:NcwButton>
+        <ui:NcwButton Variant="Ghost" Padding="6,0" Height="28" Command="{Binding PullCommand}" IsEnabled="{Binding CanOperate}" AutomationProperties.Name="{l:NcwText GitPull}" arc:Tooltip.Tip="{l:NcwText GitPull}">
+          <StackPanel Orientation="Horizontal" Spacing="3">
+            <lucide:LucideIcon Kind="ArrowDown" Size="14" />
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Behind}" IsVisible="{Binding HasBehind}" />
+          </StackPanel>
+        </ui:NcwButton>
+        <ui:NcwButton Variant="Ghost" Padding="6,0" Height="28" Command="{Binding PushCommand}" IsEnabled="{Binding CanOperate}" AutomationProperties.Name="{l:NcwText GitPush}" arc:Tooltip.Tip="{l:NcwText GitPush}">
+          <StackPanel Orientation="Horizontal" Spacing="3">
+            <lucide:LucideIcon Kind="ArrowUp" Size="14" />
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Ahead}" IsVisible="{Binding HasAhead}" />
+          </StackPanel>
+        </ui:NcwButton>
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleHistoryCommand}" AutomationProperties.Name="{l:NcwText GitHistory}" arc:Tooltip.Tip="{l:NcwText GitHistory}">
+          <lucide:LucideIcon Kind="History" Size="14" />
+        </ui:NcwButton>
+      </StackPanel>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6">
+      <insp:ProblemBar Problem="{Binding Failure}" />
+      <!-- 设备断开:状态未知(规则 7) -->
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsUnknown}">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
+      </StackPanel>
+      <TextBlock Classes="hint" IsVisible="{Binding UnavailableReason, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 Text="{Binding UnavailableReason, Converter={x:Static cv:GitUnavailableTextConverter.Instance}}" />
+      <TextBlock Classes="hint" IsVisible="{Binding HasLastCommit}" Foreground="{arc:ArcDesignTokenResource Success}"
+                 Text="{Binding LastCommitShortHash, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=GitCommitted}" />
+    </StackPanel>
+
+    <Panel Grid.Row="2">
+      <!-- 变更列表 -->
+      <ScrollViewer IsVisible="{Binding ShowsChanges}" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="6,0,6,10" Spacing="10">
+          <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding IsClean}" Text="{l:NcwText GitClean}" />
+          <StackPanel Spacing="2" IsVisible="{Binding HasConflicted}">
+            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitConflicted}" />
+            <ItemsControl ItemsSource="{Binding Conflicted}" ItemTemplate="{StaticResource GitRow}" />
+          </StackPanel>
+          <StackPanel Spacing="2" IsVisible="{Binding HasStaged}">
+            <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0,2,0">
+              <TextBlock Classes="section" VerticalAlignment="Center" Text="{l:NcwText GitStaged}" />
+              <TextBlock Classes="hint" Grid.Column="1" Margin="6,0" VerticalAlignment="Center" Text="{Binding Summary.Staged}" />
+              <ui:NcwButton Grid.Column="2" Variant="Ghost" Height="24" Padding="6,0" Command="{Binding UnstageAllCommand}" IsEnabled="{Binding CanOperate}" Content="{l:NcwText GitUnstageAll}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Staged}" ItemTemplate="{StaticResource GitRow}" />
+          </StackPanel>
+          <StackPanel Spacing="2" IsVisible="{Binding HasUnstaged}">
+            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitUnstaged}" />
+            <ItemsControl ItemsSource="{Binding Unstaged}" ItemTemplate="{StaticResource GitRow}" />
+          </StackPanel>
+          <StackPanel Spacing="2" IsVisible="{Binding HasUntracked}">
+            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitUntracked}" />
+            <ItemsControl ItemsSource="{Binding Untracked}" ItemTemplate="{StaticResource GitRow}" />
+          </StackPanel>
+          <ui:NcwButton Variant="Ghost" HorizontalAlignment="Left" Command="{Binding StageAllCommand}" IsEnabled="{Binding CanOperate}" Content="{l:NcwText GitStageAll}">
+            <ui:NcwButton.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                <Binding Path="HasUnstaged" />
+                <Binding Path="HasUntracked" />
+              </MultiBinding>
+            </ui:NcwButton.IsVisible>
+          </ui:NcwButton>
+          <TextBlock Classes="hint" Margin="8,0" IsVisible="{Binding FilesTruncated}" Text="{l:NcwText GitTruncatedHint}" />
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- diff -->
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding HasDiff}">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4" Margin="8,0,8,4" Height="32">
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CloseDiffCommand}" AutomationProperties.Name="{l:NcwText GitBackToChanges}" arc:Tooltip.Tip="{l:NcwText GitBackToChanges}">
+            <lucide:LucideIcon Kind="ArrowLeft" Size="15" />
+          </ui:NcwButton>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding DiffItem.Name}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DiffItem.Directory}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Grid>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsVisible="{Binding IsDiffLoading}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <TextBlock Classes="hint" Text="{l:NcwText FileLoading}" />
+        </StackPanel>
+        <insp:DiffView Grid.Row="1" DataContext="{Binding Diff}" />
+      </Grid>
+
+      <!-- 历史 -->
+      <ScrollViewer IsVisible="{Binding ShowHistory}" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="6,0,6,10" Spacing="2">
+          <TextBlock Classes="section" Margin="8,0,8,4" Text="{l:NcwText GitHistory}" />
+          <ItemsControl ItemsSource="{Binding Commits}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:GitCommitItem">
+                <Border Padding="8,6" CornerRadius="8">
+                  <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Classes="letter" Foreground="{arc:ArcDesignTokenResource Accent}" Text="{Binding ShortHash}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Subject}" FontSize="{arc:ArcDesignTokenResource TypeSM}" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                      <TextBlock Classes="hint" Text="{Binding Author}" />
+                      <TextBlock Classes="hint" Text="{Binding At, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
+
+    <!-- 提交框 -->
+    <Border Grid.Row="3" Margin="10,4,10,10" IsVisible="{Binding ShowsChanges}" Padding="10" CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+            BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource Surface}">
+      <StackPanel Spacing="8">
+        <ui:NcwTextArea x:Name="MessageBox" Text="{Binding CommitMessage, Mode=TwoWay}" PlaceholderText="{l:NcwText GitCommitPlaceholder}" FrameMinHeight="64" IsResizable="False" />
+        <Grid ColumnDefinitions="*,Auto">
+          <ui:NcwButton Variant="Ghost" HorizontalAlignment="Left" Command="{Binding GenerateMessageCommand}" IsEnabled="{Binding CanGenerate}" arc:Tooltip.Tip="{l:NcwText GitGenerateMessage}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" IsVisible="{Binding IsGenerating}" />
+              <lucide:LucideIcon Kind="Sparkles" Size="14" IsVisible="{Binding !IsGenerating}" />
+              <TextBlock VerticalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{l:NcwText GitGenerateMessage}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton Grid.Column="1" Variant="Primary" Command="{Binding CommitCommand}" IsEnabled="{Binding CanCommit}" Content="{l:NcwText GitCommit}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

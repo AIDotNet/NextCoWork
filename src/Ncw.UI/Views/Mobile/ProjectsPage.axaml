@@ -1,0 +1,69 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:vm="using:Ncw.Client.ViewModels"
+            xmlns:local="using:Ncw.UI.Views.Mobile"
+            x:Class="Ncw.UI.Views.Mobile.ProjectsPage"
+            x:DataType="vm:RailViewModel">
+  <!--
+    「会话」标签的根页:项目列表,按项目组分组(和桌面项目栏是同一份 RailViewModel:布局、角标、离线标记都来自它)。
+    点项目 → 推入这个项目的会话列表。运行中 = 绿点,待处理交互数 = 红色角标,设备离线 = 整行淡显。
+  -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{l:NcwText MobileProjectsTitle}" />
+  </ui:NcwPage.Header>
+
+  <Panel>
+    <StackPanel IsVisible="{Binding Items.Count, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=0}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="32" MaxWidth="320">
+      <lucide:LucideIcon Kind="FolderOpen" Size="32" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextAlignment="Center" Text="{l:NcwText MobileNoProjects}" />
+      <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText MobileNoProjectsHint}" />
+    </StackPanel>
+
+    <ui:NcwPullToRefresh x:Name="Refresher">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Items}" Margin="16,8,16,24">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="10" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.DataTemplates>
+            <!-- 项目组:组头 + 组内项目 -->
+            <DataTemplate DataType="vm:RailGroupViewModel">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="4,6,4,0">
+                  <Border Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <Border Grid.Column="2" MinWidth="18" Height="18" Padding="5,0" CornerRadius="9" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasPending}">
+                    <TextBlock Text="{Binding PendingCount}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
+                  </Border>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Members}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Spacing="6" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RailProjectViewModel">
+                      <local:ProjectRow />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+            <!-- 顶层项目 -->
+            <DataTemplate DataType="vm:RailProjectViewModel">
+              <local:ProjectRow />
+            </DataTemplate>
+          </ItemsControl.DataTemplates>
+        </ItemsControl>
+      </ScrollViewer>
+    </ui:NcwPullToRefresh>
+  </Panel>
+</ui:NcwPage>
