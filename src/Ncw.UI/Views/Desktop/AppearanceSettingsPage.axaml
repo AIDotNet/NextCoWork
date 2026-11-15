@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:st="using:Ncw.Client.Stores"
+             x:Class="Ncw.UI.Views.Desktop.AppearanceSettingsPage"
+             x:DataType="vm:AppearanceViewModel">
+  <!--
+    设置 · 本应用 · 外观(docs/design/07 §3、03 §9):动效级别(跟随系统 / 完整 / 减弱 / 关闭)。选择存在偏好 Store(UiPrefs.Motion),立即生效,
+    由 NcwMotion.Bind 写进 Arc 的主题级别——Arc 自带控件和本应用的展开收起、出现消失、导航过渡一起降级。主题、强调色等其余外观项随各自功能加入。
+  -->
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:NcwText SettingsAppearance}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsAppearanceHint}" />
+      <WrapPanel Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText ScopeApp}" /></Border>
+      </WrapPanel>
+    </StackPanel>
+
+    <Border Classes="card">
+      <StackPanel Spacing="12">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{l:NcwText AppearanceMotionTitle}" FontWeight="SemiBold" />
+          <TextBlock Classes="hint" Text="{l:NcwText AppearanceMotionHint}" />
+        </StackPanel>
+        <ui:NcwSegmented x:Name="MotionPicker" HorizontalAlignment="Left" SelectedValue="{Binding Motion, Mode=TwoWay}"
+                         AutomationProperties.Name="{l:NcwText AppearanceMotionTitle}">
+          <ui:NcwSegmentedOption Value="{x:Static st:UiMotionPreference.System}" Label="{l:NcwText MotionSystem}" />
+          <ui:NcwSegmentedOption Value="{x:Static st:UiMotionPreference.Full}" Label="{l:NcwText MotionFull}" />
+          <ui:NcwSegmentedOption Value="{x:Static st:UiMotionPreference.Reduced}" Label="{l:NcwText MotionReduced}" />
+          <ui:NcwSegmentedOption Value="{x:Static st:UiMotionPreference.Off}" Label="{l:NcwText MotionOff}" />
+        </ui:NcwSegmented>
+        <TextBlock Classes="hint" Text="{Binding EffectiveLevel, Converter={x:Static cv:MotionLevelTextConverter.Effective}}" />
+        <TextBlock Classes="hint" IsVisible="{Binding SystemUnknown}" Text="{l:NcwText AppearanceMotionSystemUnknown}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

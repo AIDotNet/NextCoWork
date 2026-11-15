@@ -63,7 +63,7 @@ public class AboutScreenshotTests
         host.Window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"about-{name}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
     }
 
-    private static void Finish() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Full));
+    private static void Finish() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
 
     private static IEnumerable<T> Find<T>(Host host) where T : Avalonia.Visual => host.Window.GetVisualDescendants().OfType<T>().Where(v => v.IsEffectivelyVisible);
 

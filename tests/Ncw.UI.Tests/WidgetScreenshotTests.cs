@@ -270,7 +270,7 @@ public class WidgetScreenshotTests
         finally
         {
             NcwWidgetSurface.DisableForTesting = true;
-            ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(ArcMotionLevel.Full));
+            ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(ArcMotionLevel.Off));
         }
     }
 }

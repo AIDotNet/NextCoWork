@@ -217,10 +217,7 @@
                       <ui:NcwSwitch Margin="0,0,6,0" VerticalAlignment="Center" IsChecked="{Binding Enabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}" IsEnabled="{Binding CanToggleEnabled}"
                                     arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" AutomationProperties.Name="{l:NcwText PluginEnabledLabel}" />
                       <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleExpandedCommand}" AutomationProperties.Name="{l:NcwText PluginExpand}" arc:Tooltip.Tip="{l:NcwText PluginExpand}">
-                        <Panel>
-                          <lucide:LucideIcon Kind="ChevronDown" Size="14" IsVisible="{Binding !IsExpanded}" />
-                          <lucide:LucideIcon Kind="ChevronUp" Size="14" IsVisible="{Binding IsExpanded}" />
-                        </Panel>
+                        <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding IsExpanded}" Kind="ChevronDown" Size="14" />
                       </ui:NcwButton>
                       <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding AskUninstallCommand}" IsEnabled="{Binding CanWrite}"
                                     AutomationProperties.Name="{l:NcwText PluginUninstall}" arc:Tooltip.Tip="{l:NcwText PluginUninstall}">
@@ -264,7 +261,8 @@
                   </Border>
 
                   <!-- 展开:权限 / 配置 / 命令 -->
-                  <StackPanel Spacing="10" IsVisible="{Binding IsExpanded}">
+                  <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+                  <StackPanel Spacing="10">
                     <TextBlock Classes="hint" IsVisible="{Binding !IsFaulted}" Text="{Binding Status, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PluginStatusHint}" />
 
                     <StackPanel Spacing="6" IsVisible="{Binding HasPermissions}">
@@ -402,7 +400,7 @@
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
                     </StackPanel>
-                  </StackPanel>
+                  </StackPanel></ui:NcwCollapsible>
                 </StackPanel>
               </Border>
             </DataTemplate>

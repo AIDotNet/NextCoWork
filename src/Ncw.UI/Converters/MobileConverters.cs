@@ -160,13 +160,16 @@ public sealed class AttachmentSizeConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>时刻 → 「HH:mm」(二维码有效期)。</summary>
+/// <summary>
+/// 时刻 → 本地化的短时间(二维码有效期):格式跟<b>界面语言</b>(<see cref="TKCode.Arc.Localization.ArcLanguage.Culture"/>)走,不跟操作系统的区域走——
+/// 中文界面 → 「12:30」,英文界面 → 「12:30 PM」。以前用的是绑定传进来的当前区域(操作系统的 en-US),中文界面里也显示成英文 12 小时制。
+/// </summary>
 public sealed class ClockTimeConverter : IValueConverter
 {
     public static readonly ClockTimeConverter Instance = new();
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is DateTimeOffset at ? NcwTexts.Format(NcwTextKind.QrExpiresAt, at.ToLocalTime().ToString("t", culture)) : null;
+        value is DateTimeOffset at ? NcwTexts.Format(NcwTextKind.QrExpiresAt, at.ToLocalTime().ToString("t", TKCode.Arc.Localization.ArcLanguage.Culture)) : null;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }

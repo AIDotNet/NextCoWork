@@ -307,6 +307,19 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | Android 宿主(身份封存 / 扫码 / 附件选择 / 推送 / 深链 / 后台策略) | `src/Ncw.Mobile.Android`(Keystore `AndroidKeystoreSecretBox`、Camera2 `CameraSession` + `QrPreviewImage`、`AndroidAttachmentPicker`、`AndroidPushRegistration`、`MainActivity` 的 intent-filter);`src/Ncw.Mobile.Shared`(`SealedIdentityStore`、`ConnectionPolicy` / `ConnectionSupervisor`、`RemoteOnlyBackend`、`QrFrameDecoder`、`YuvPreviewRenderer`);Client `MobileLinks`、`RemoteDeviceManager.SuspendAsync / Resume / ReconnectAsync` | `Ncw.Mobile.Shared.Tests`(44:封存存储、策略状态机、监督器、ZXing 解码含二维码墙 / 旋转 / 反色 / 行距、预览渲染)、`Ncw.Client.Tests.Mobile.MobileLinkTests`(26)、`PushViewModelTests`(新增「未配置」);`tools/Ncw.MobileSmoke`(默认不跑):**Android 模拟器上真实走通** 深链配对 → 审批卡片 → 长按允许 → Run 继续 | 新增,**模拟器已验证,真机未验证** | 差异与限制见 [11 §3 / §6 / §8](design/11-mobile-hosts.md):推送没有 Firebase 配置与后端中继(报「未配置」,不伪造令牌);扫码用 ZXing.Net 而非 ML Kit(没有 GMS 依赖,真机识别率待评估);预览是软件渲染;相册走 SAF 而非 Photo Picker;`TKCode.Arc.Mobile` 的安全区用法与 Android 上 Skia 的 BGRA / 字重 400 CJK 缺陷在宿主与 `NcwPage` 里绕行。 |
 | 附件选择与上传进度 | Client `AttachmentTrayViewModel`、`IAttachmentPicker`、`AttachmentActions.UploadAsync`(追加 `IProgress<long>` 重载)、`InputFile.Attachment`、`ComposerViewModel.Attachments`;UI `ComposerView` 的托盘 | `AttachmentTrayTests`、`DevicesAndComposerTests`(带附件发送、传输中禁发)、`MobileScreenshotTests`(上传中 / 完成 / 失败) | 新增 | 非图片附件作为 `file` 块、`Path` = `ncw://` 引用发出,设备读取这种引用的行为**未验证**(图片的 `ncw://` 解析 M4 已做)。 |
 
+## 界面动效(3.0 新增,2.x 没有对应的统一动效系统;登记位置、测试和与设计的差异)
+
+2.x 的动效是渲染进程里零散的 CSS 过渡,没有统一规则,也没有「减少动画」设置;3.0 是新设计(设计见 [03 §9](design/03-ui-layout.md#9-动效统一的动效系统)),不是移植。
+
+| 3.0 模块 | 位置 | 测试 | 状态 | 差异 / 未完成 |
+| --- | --- | --- | --- | --- |
+| 动效偏好与级别解析(跟随系统 / 完整 / 减弱 / 关闭) | Client `Stores/UiMotion`(`UiMotion.Resolve`)、`UiPrefs.Motion`(`ui.json` 的 `motion`)、`AppearanceViewModel`;UI `NcwMotion.Bind` / `Apply`;桌面 `SystemMotionProbe` | `Ncw.Client.Tests.UiMotionTests`、`Ncw.UI.Tests.MotionTests`(级别应用、不重置外观)、`Ncw.Desktop.Tests.SystemMotionProbeTests` | 新增 | Avalonia 12.1.5 读不到系统的「减少动态效果」:macOS(实测)/ Windows(没有机器可测)由桌面宿主探测,Linux、iOS、Android 读不到,按「完整」处理并在外观页说明 |
+| 展开 / 收起容器与可折叠分区 | UI `NcwCollapsible`、`NcwSection` | `MotionTests`(状态机:中间帧、快速连点、动画途中内容变高 / 变矮、减弱 / 关闭、离开界面树、容器回收)、`MotionScreenshotTests`(终态 × 四个断点 × 深浅 × 关闭 / 减弱,中间帧截图) | 新增 | 用 Arc 的 `MotionValue` + `Smooth` 弹簧;Arc 没有公开的通用展开容器 |
+| 出现 / 消失 / 到达 / 运行中指示 | UI `NcwMotion`(`Arrive` / `Leave` / `IsPresent` / `ShowMotion` / `ArriveOnAttach` / `Busy`) | `MotionTests`、`MotionScreenshotTests`(新行到达只给新追加的行) | 新增 | 转录里被删除的行没有退出动画(虚拟化列表) |
+| 左右栏滑动、右侧检查器抽屉(< 1440) | UI `DesktopShell`;Client `ShellViewModel.IsInspectorNarrow / IsInspectorDrawerOpen` | `MotionScreenshotTests`(滑出 / 滑入 / 中途反向 / 缩窗口不播放 / 抽屉与遮罩 / 检查器抽屉) | 新增 | 与旧设计的差异:03 §1 原来写「1024–1440 抽屉还没有实现」,现在实现了 |
+| 手机标签淡入、再点已选中的标签回根页、扫码有效期按界面语言 | UI `MobileShell`、`ClockTimeConverter` | `MotionMobileTests` | 新增 / 缺陷修复 | 页面推入 / 弹出、手势返回是 Arc `NavigationStack` 自带,真机手感待验证 |
+| 真窗口动效冒烟 | `tools/MotionSmoke`(开发用) | 手动运行;不进 CI | 新增 | 只在 macOS 上验证过 |
+
 ## 中继(M6:2.x `src/relay`(TS)→ 3.0 `Ncw.Relay` + `Ncw.Protocol/Transport/Relay*`;全新设计,不兼容 2.x)
 
 2.x 的中继是 TypeScript 服务,协议(设备协议、配对、路由)整个换了,所以**没有逐条移植**的用例;下面登记 3.0 的对应物、测试和与设计(09 §9)的差异。

@@ -9,7 +9,7 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.OnboardingOverlay"
              x:DataType="vm:OnboardingViewModel"
-             IsVisible="{Binding IsOpen}">
+             ui:NcwMotion.IsPresent="{Binding IsOpen}" ui:NcwMotion.PresenceKind="Fade">
   <!--
     首次启动(docs/design/07 §1):欢迎(登录 / 使用自己的模型供应商 / 跳过)→ 数据(2.x 接管的结果)→ 选模型供应商 → 完成(打开第一个项目)。
     整窗覆盖,内容居中、最大宽度 440,窄窗口 / 矮窗口可以滚动。顶部 40px 仍留给拖动窗口。设置页和数据页盖在它上面。

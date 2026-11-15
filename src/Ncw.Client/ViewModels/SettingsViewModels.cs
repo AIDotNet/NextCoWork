@@ -56,6 +56,9 @@ public enum SettingsSection
 
     /// <summary>本应用:关于与更新(当前版本、通道、检查更新、下载、重启并更新)。</summary>
     About,
+
+    /// <summary>本应用:外观(目前只有动效级别,docs/design/03 §9)。</summary>
+    Appearance,
 }
 
 /// <summary>设置页:整窗覆盖在外壳上,左侧导航 + 内容区。打开与否、当前分组是纯 UI 状态。</summary>
@@ -65,6 +68,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         Account = account ?? new AccountViewModel(stores, null);
         About = about ?? new AboutViewModel(stores, new UpdateActions(null));
+        Appearance = new AppearanceViewModel(stores);
         Devices = new DevicesSettingsViewModel(stores, devices, actions);
         Remote = new RemoteSettingsViewModel(stores, devices, actions);
         Models = models;
@@ -79,6 +83,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>「关于」页(本应用作用域):当前版本、通道、检查更新、下载进度、重启并更新。</summary>
     public AboutViewModel About { get; }
+
+    /// <summary>「外观」页(本应用作用域):动效级别。</summary>
+    public AppearanceViewModel Appearance { get; }
 
     public ModelsSettingsViewModel Models { get; }
 
@@ -100,9 +107,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public bool IsAboutSection => Section == SettingsSection.About;
 
+    public bool IsAppearanceSection => Section == SettingsSection.Appearance;
+
     partial void OnSectionChanged(SettingsSection value)
     {
         OnPropertyChanged(nameof(IsAboutSection));
+        OnPropertyChanged(nameof(IsAppearanceSection));
         OnPropertyChanged(nameof(IsDevicesSection));
         OnPropertyChanged(nameof(IsRemoteSection));
         OnPropertyChanged(nameof(IsModelsSection));
@@ -119,9 +129,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             _ = Account.ActivateAsync(); // 打开「账户」页时读已登录的控制端
         }
-        else if (section == SettingsSection.About)
+        else if (section is SettingsSection.About or SettingsSection.Appearance)
         {
-            // 「关于」是本应用的页:没有设备数据要读(自更新状态在 Store 里,服务自己维护)
+            // 「关于」「外观」是本应用的页:没有设备数据要读(自更新状态、界面偏好都在 Store 里)
         }
         else
         {

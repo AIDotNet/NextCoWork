@@ -8,7 +8,7 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.AccountStatusBar"
              x:DataType="vm:ShellViewModel"
-             IsVisible="{Binding Account.ShowsBanner}"
+             ui:NcwMotion.IsPresent="{Binding Account.ShowsBanner}"
              HorizontalAlignment="Stretch" VerticalAlignment="Top" MaxWidth="600" Margin="12,48,12,0">
   <!--
     账户状态条(浮在工作区顶部):登录进行中 / 登录失败 / 登录已过期 / 连不上账户服务 / 要选团队 / 无法安全保存登录状态。

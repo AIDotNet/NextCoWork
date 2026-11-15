@@ -21,6 +21,9 @@
       <ui:NcwListItem Tag="Devices" Content="{l:NcwText SettingsDevices}" ShowChevron="True" Click="OnSectionClick">
         <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Monitor" Size="18" /></ui:NcwListItem.Leading>
       </ui:NcwListItem>
+      <ui:NcwListItem Tag="Appearance" Content="{l:NcwText SettingsAppearance}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Palette" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
       <ui:NcwListItem Tag="Notifications" Content="{l:NcwText SettingsNotifications}" ShowChevron="True" Click="OnNotificationsClick">
         <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Bell" Size="18" /></ui:NcwListItem.Leading>
       </ui:NcwListItem>

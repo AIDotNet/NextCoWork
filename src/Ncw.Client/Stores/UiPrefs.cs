@@ -4,7 +4,7 @@ using Ncw.Client.ViewModels;
 namespace Ncw.Client.Stores;
 
 /// <summary>
-/// 控制端本机的界面偏好:栏宽、栏的开关、右侧面板添加了哪些页签。
+/// 控制端本机的界面偏好:栏宽、栏的开关、右侧面板添加了哪些页签、动效级别。
 /// 这是「本应用」作用域的设置(docs/design/07 §3),只在 <see cref="ClientStores.Prefs"/> 里有一份,ViewModel 读写它。
 /// </summary>
 public sealed record UiPrefs(
@@ -12,7 +12,8 @@ public sealed record UiPrefs(
     double InspectorWidth,
     bool IsSidebarOpen,
     bool IsInspectorOpen,
-    ImmutableArray<InspectorTabKind> InspectorTabs)
+    ImmutableArray<InspectorTabKind> InspectorTabs,
+    UiMotionPreference Motion = UiMotionPreference.System)
 {
     public const double SidebarDefaultWidth = 352;
     public const double SidebarMinWidth = 304;   // 项目栏 64 + 项目面板 240
@@ -31,6 +32,7 @@ public sealed record UiPrefs(
         InspectorTabs = InspectorTabs.IsDefault
             ? []
             : [.. InspectorTabs.Where(ViewModels.InspectorTabs.Addable.Contains).Distinct()],
+        Motion = Enum.IsDefined(Motion) ? Motion : UiMotionPreference.System,
     };
 
     private static double Clamp(double value, double min, double max, double fallback) =>
@@ -43,7 +45,8 @@ public sealed record UiPrefs(
         && InspectorWidth.Equals(other.InspectorWidth)
         && IsSidebarOpen == other.IsSidebarOpen
         && IsInspectorOpen == other.IsInspectorOpen
+        && Motion == other.Motion
         && (InspectorTabs.IsDefault ? [] : InspectorTabs).SequenceEqual(other.InspectorTabs.IsDefault ? [] : other.InspectorTabs);
 
-    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen);
+    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen, Motion);
 }

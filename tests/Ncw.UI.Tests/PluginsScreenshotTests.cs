@@ -146,7 +146,7 @@ public class PluginsScreenshotTests
         host.Window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"plugins-{name}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
     }
 
-    private static void Finish() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Full));
+    private static void Finish() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
 
     private static SettingsOverlay Overlay(Host host) => host.Window.GetVisualDescendants().OfType<SettingsOverlay>().Single();
 

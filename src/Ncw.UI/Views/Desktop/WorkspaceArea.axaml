@@ -31,7 +31,7 @@
                     <!-- 状态点:运行中(权威广播)/ 设备断开时未知 / 空闲时是会话图标 -->
                     <Panel Width="14" VerticalAlignment="Center">
                       <lucide:LucideIcon Kind="MessageSquare" Size="13" IsVisible="{Binding !IsRunning}" />
-                      <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" />
+                      <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
                     </Panel>
                     <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                     <ui:PlainButton Width="18" Height="18" CornerRadius="5"
@@ -69,15 +69,15 @@
     </Border>
 
     <!-- 内容:当前会话;没有打开的会话时是空状态(与项目面板的「+」是同一个意图:新建会话) -->
-    <conv:ConversationView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Conversation}" IsVisible="{Binding HasSession}" />
+    <conv:ConversationView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Conversation}" IsVisible="{Binding HasSession}" ui:NcwMotion.ShowMotion="Fade" />
     <StackPanel Grid.Row="1" Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="520" Margin="24"
-                IsVisible="{Binding !Conversation.HasSession}">
+                IsVisible="{Binding !Conversation.HasSession}" ui:NcwMotion.ShowMotion="Fade">
       <lucide:LucideIcon Kind="MessageSquare" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
       <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap"
                  Text="{l:NcwText OpenASession}" />
       <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding Panel.NewSessionCommand}" IsVisible="{Binding Panel.HasProject}" Content="{l:NcwText NewSession}" />
     </StackPanel>
     <!-- 侧栏「定时任务」页:盖在内容区上(选了别的会话就让位) -->
-    <mgmt:SchedulesPage Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding ScheduledTasks}" IsVisible="{Binding IsOpen}" />
+    <mgmt:SchedulesPage Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding ScheduledTasks}" IsVisible="{Binding IsOpen}" ui:NcwMotion.ShowMotion="Fade" />
   </Grid>
 </UserControl>

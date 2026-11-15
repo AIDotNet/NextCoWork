@@ -74,49 +74,58 @@
     <ScrollViewer Grid.Row="2">
       <StackPanel Margin="8,4,8,12" Spacing="2">
         <!-- 会话:sessions.list 的镜像;运行状态点来自 activeRuns 的权威广播(Core 的 SessionActivityView),设备断开时是「未知」 -->
-        <Grid ColumnDefinitions="*,Auto,Auto" Margin="8,6,4,4">
-          <TextBlock Classes="section" Text="{l:NcwText Sessions}" />
-          <ui:PlainButton Grid.Column="1" Width="24" Height="24" Command="{Binding ToggleArchivedCommand}" Classes.active="{Binding ShowArchived}"
-                          AutomationProperties.Name="{l:NcwText ShowArchived}" arc:Tooltip.Tip="{l:NcwText ShowArchived}">
-            <lucide:LucideIcon Kind="Archive" Size="13" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-          <ui:PlainButton Grid.Column="2" Width="24" Height="24" Command="{Binding NewSessionCommand}" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
-            <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-        </Grid>
-        <TextBlock Classes="muted" Margin="8,2" TextWrapping="Wrap" IsVisible="{Binding ShowsEmptyHint}" Text="{l:NcwText NoSessionsHint}" />
-        <TextBlock Classes="muted" Margin="8,2" TextWrapping="Wrap" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText NoMatchingSessions}" />
-        <ItemsControl ItemsSource="{Binding Sessions}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="vm:SessionItemViewModel">
-              <conv:SessionRow />
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <!-- 分区可以折叠(设计 03 §1「栏 2」;NcwSection,展开状态是纯 UI 状态) -->
+        <ui:NcwSection Margin="0,2,0,0">
+          <ui:NcwSection.Header><TextBlock Classes="section" Text="{l:NcwText Sessions}" /></ui:NcwSection.Header>
+          <ui:NcwSection.Trailing>
+            <StackPanel Orientation="Horizontal" Margin="0,0,4,0">
+              <ui:PlainButton Width="24" Height="24" Command="{Binding ToggleArchivedCommand}" Classes.active="{Binding ShowArchived}"
+                              AutomationProperties.Name="{l:NcwText ShowArchived}" arc:Tooltip.Tip="{l:NcwText ShowArchived}">
+                <lucide:LucideIcon Kind="Archive" Size="13" HorizontalAlignment="Center" />
+              </ui:PlainButton>
+              <ui:PlainButton Width="24" Height="24" Command="{Binding NewSessionCommand}" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
+                <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
+              </ui:PlainButton>
+            </StackPanel>
+          </ui:NcwSection.Trailing>
+          <StackPanel>
+            <TextBlock Classes="muted" Margin="8,2" TextWrapping="Wrap" IsVisible="{Binding ShowsEmptyHint}" Text="{l:NcwText NoSessionsHint}" />
+            <TextBlock Classes="muted" Margin="8,2" TextWrapping="Wrap" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText NoMatchingSessions}" />
+            <ItemsControl ItemsSource="{Binding Sessions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:SessionItemViewModel">
+                  <conv:SessionRow />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ui:NcwSection>
 
         <!-- 终端和智能体 -->
-        <Grid ColumnDefinitions="*,Auto" Margin="8,14,4,4">
-          <TextBlock Classes="section" Text="{l:NcwText TerminalsAndAgents}" />
-          <ui:PlainButton Grid.Column="1" Width="24" Height="24" AutomationProperties.Name="{l:NcwText NewTerminal}" arc:Tooltip.Tip="{l:NcwText NewTerminal}">
-            <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-        </Grid>
-        <ItemsControl ItemsSource="{Binding Terminals}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="vm:TerminalItemViewModel">
-              <ui:PlainButton Padding="8,7">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Panel Width="14">
-                    <lucide:LucideIcon Kind="Bot" Size="14" IsVisible="{Binding IsExternalAgent}"
-                                       Foreground="{arc:ArcDesignTokenResource Accent}" />
-                    <lucide:LucideIcon Kind="SquareTerminal" Size="14" IsVisible="{Binding !IsExternalAgent}" />
-                  </Panel>
-                  <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
-                </StackPanel>
-              </ui:PlainButton>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <ui:NcwSection Margin="0,10,0,0">
+          <ui:NcwSection.Header><TextBlock Classes="section" Text="{l:NcwText TerminalsAndAgents}" /></ui:NcwSection.Header>
+          <ui:NcwSection.Trailing>
+            <ui:PlainButton Width="24" Height="24" Margin="0,0,4,0" AutomationProperties.Name="{l:NcwText NewTerminal}" arc:Tooltip.Tip="{l:NcwText NewTerminal}">
+              <lucide:LucideIcon Kind="Plus" Size="14" HorizontalAlignment="Center" />
+            </ui:PlainButton>
+          </ui:NcwSection.Trailing>
+          <ItemsControl ItemsSource="{Binding Terminals}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:TerminalItemViewModel">
+                <ui:PlainButton Padding="8,7">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Panel Width="14">
+                      <lucide:LucideIcon Kind="Bot" Size="14" IsVisible="{Binding IsExternalAgent}"
+                                         Foreground="{arc:ArcDesignTokenResource Accent}" />
+                      <lucide:LucideIcon Kind="SquareTerminal" Size="14" IsVisible="{Binding !IsExternalAgent}" />
+                    </Panel>
+                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </ui:PlainButton>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ui:NcwSection>
 
         <!-- 其他入口 -->
         <TextBlock Classes="section" Text="{l:NcwText ProjectSection}" Margin="8,14,4,4" />

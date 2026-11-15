@@ -7,6 +7,7 @@ using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Client.Updates;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using Ncw.UI.Views.Desktop;
 
@@ -19,6 +20,7 @@ public sealed record NcwUpdateContext(ClientStores Stores, IUiDispatcher Ui, Act
 public class NcwApp : Application
 {
     private PrefsPersistence? _prefs;
+    private IDisposable? _motion;
     private INcwBackend? _backend;
     private IUpdateService? _updates;
 
@@ -61,6 +63,7 @@ public class NcwApp : Application
             }
 
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
+            _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
             ShellViewModel? shell = null;
             if (UseMockData)
             {
@@ -85,6 +88,7 @@ public class NcwApp : Application
 
             shell = new ShellViewModel(stores, devices: devices, inspector: UseMockData ? MockInspectorServices.Create(stores) : null,
                 account: _account, links: _account is null ? null : new LinkRouter(_account), updates: _updates);
+            shell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();
             desktop.MainWindow = new MainWindow { DataContext = shell };
             if (_updates is not null)
             {
@@ -102,6 +106,7 @@ public class NcwApp : Application
                 NcwLinkInbox.Detach();
                 _updates?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
                 _account?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
+                _motion?.Dispose();
                 _prefs?.Dispose();
                 // 退出时让 Agent 收尾;最多等 3 秒,不能卡住退出。
                 _backend?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
@@ -117,7 +122,9 @@ public class NcwApp : Application
             _backend = BackendFactory?.Invoke();
             _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
+            _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
             var mobileShell = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke());
+            mobileShell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();
             single.MainView = new Views.AdaptiveShell { DataContext = mobileShell };
             AttachMobileLinks(mobileShell);
         }

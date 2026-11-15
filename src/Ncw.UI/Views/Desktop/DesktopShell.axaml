@@ -24,6 +24,12 @@
   </UserControl.Resources>
   <UserControl.Styles>
     <themes:NcwStyles />
+    <!-- 检查器以抽屉 / 滑出的覆盖层形态出现时要有自己的底(停靠时靠根网格的底色透出来) -->
+    <Style Selector="Border#InspectorColumn.overlay">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+      <Setter Property="BorderThickness" Value="1,0,0,0" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+    </Style>
   </UserControl.Styles>
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Meta+B" Command="{Binding ToggleSidebarCommand}" />
@@ -35,7 +41,7 @@
   <Grid x:Name="Root" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
     <Grid x:Name="Main" ColumnDefinitions="352,4,*,4,320">
       <!-- 窄窗口下抽屉打开时的遮罩:点一下关闭抽屉 -->
-      <Border x:Name="DrawerScrim" Grid.Column="0" Grid.ColumnSpan="5" ZIndex="9" IsVisible="False"
+      <Border x:Name="DrawerScrim" Grid.Column="0" Grid.ColumnSpan="5" ZIndex="9" IsVisible="False" ui:NcwMotion.PresenceKind="Fade"
               Background="{arc:ArcDesignTokenResource Scrim}" PointerPressed="OnScrimPressed" />
 
       <!-- 左侧区域:头部 + 项目栏 + 项目面板。窄窗口下作为抽屉跨列覆盖在工作区上。 -->
@@ -76,7 +82,7 @@
         <Panel>
           <desktop:WorkspaceArea x:Name="Workspace" />
           <!-- 左侧区域收起时:红绿灯留白、名称和展开按钮并入标签栏的最左边 -->
-          <StackPanel x:Name="CollapsedLead" Orientation="Horizontal" Height="40"
+          <StackPanel x:Name="CollapsedLead" Orientation="Horizontal" Height="40" ui:NcwMotion.ShowMotion="Fade"
                       HorizontalAlignment="Left" VerticalAlignment="Top" IsVisible="False">
             <Border x:Name="CollapsedInset" Width="0" />
             <TextBlock Text="NextCoWork" FontWeight="SemiBold" VerticalAlignment="Center" Margin="14,0,6,0" />

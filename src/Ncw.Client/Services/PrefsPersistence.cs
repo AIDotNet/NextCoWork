@@ -125,23 +125,25 @@ public sealed class JsonFilePrefsRepository(string path) : IPrefsRepository
     }
 }
 
-/// <summary>文件里的形状。字段名固定,和 <see cref="UiPrefs"/> 解耦,以后改记录不会破坏旧文件。</summary>
+/// <summary>文件里的形状。字段名固定,和 <see cref="UiPrefs"/> 解耦,以后改记录不会破坏旧文件;新增字段只追加成可空项(<c>Motion</c> 缺失 = 跟随系统),版本号不动。</summary>
 public sealed record UiPrefsDto(
     int Version,
     double SidebarWidth,
     double InspectorWidth,
     bool IsSidebarOpen,
     bool IsInspectorOpen,
-    string[]? InspectorTabs)
+    string[]? InspectorTabs,
+    string? Motion = null)
 {
     public static UiPrefsDto From(UiPrefs prefs) => new(
         1, prefs.SidebarWidth, prefs.InspectorWidth, prefs.IsSidebarOpen, prefs.IsInspectorOpen,
-        [.. prefs.InspectorTabs.Select(t => t.ToString())]);
+        [.. prefs.InspectorTabs.Select(t => t.ToString())], prefs.Motion.ToString());
 
     public UiPrefs ToPrefs() => new(
         SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen,
         [.. (InspectorTabs ?? []).Select(t => Enum.TryParse<InspectorTabKind>(t, out var kind) ? kind : (InspectorTabKind?)null)
-            .Where(k => k is not null).Select(k => k!.Value)]);
+            .Where(k => k is not null).Select(k => k!.Value)],
+        Enum.TryParse<UiMotionPreference>(Motion, out var motion) && Enum.IsDefined(motion) ? motion : UiMotionPreference.System);
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

@@ -246,6 +246,12 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>窄窗口下左侧抽屉是否打开(纯 UI 状态,不持久化)。</summary>
     [ObservableProperty] public partial bool IsDrawerOpen { get; set; }
 
+    /// <summary>窗口是否窄到检查器停靠不下(&lt; 1440,由视图按断点设置):此时检查器只能以抽屉出现(docs/design/03 §2)。</summary>
+    [ObservableProperty] public partial bool IsInspectorNarrow { get; set; }
+
+    /// <summary>窄窗口下右侧检查器抽屉是否打开(纯 UI 状态,不持久化;停靠偏好 <see cref="IsInspectorOpen"/> 不受影响)。</summary>
+    [ObservableProperty] public partial bool IsInspectorDrawerOpen { get; set; }
+
     /// <summary>⌘B:宽窗口收起 / 展开左侧区域;窄窗口打开 / 关闭抽屉。</summary>
     [RelayCommand]
     private void ToggleSidebar()
@@ -260,8 +266,13 @@ public sealed partial class ShellViewModel : ObservableObject
         }
     }
 
+    /// <summary>点遮罩 / Esc:关掉打开着的抽屉(左侧区域或检查器)。</summary>
     [RelayCommand]
-    private void CloseDrawer() => IsDrawerOpen = false;
+    private void CloseDrawer()
+    {
+        IsDrawerOpen = false;
+        IsInspectorDrawerOpen = false;
+    }
 
     /// <summary>账户状态条上的「去选择 / 打开账户设置」:打开设置页的「账户」标签。</summary>
     [RelayCommand]
@@ -274,8 +285,19 @@ public sealed partial class ShellViewModel : ObservableObject
         }
     }
 
+    /// <summary>⌘⌥I:宽窗口停靠 / 收起检查器(偏好);窄窗口打开 / 关闭检查器抽屉。</summary>
     [RelayCommand]
-    private void ToggleInspector() => IsInspectorOpen = !IsInspectorOpen;
+    private void ToggleInspector()
+    {
+        if (IsInspectorNarrow)
+        {
+            IsInspectorDrawerOpen = !IsInspectorDrawerOpen;
+        }
+        else
+        {
+            IsInspectorOpen = !IsInspectorOpen;
+        }
+    }
 
     [RelayCommand]
     private void SelectByIndex(int oneBased) => Actions.SelectByIndex(oneBased);
@@ -285,6 +307,14 @@ public sealed partial class ShellViewModel : ObservableObject
         if (!value)
         {
             IsDrawerOpen = false;
+        }
+    }
+
+    partial void OnIsInspectorNarrowChanged(bool value)
+    {
+        if (!value)
+        {
+            IsInspectorDrawerOpen = false;
         }
     }
 

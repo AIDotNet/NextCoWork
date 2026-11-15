@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using TKCode.Arc.Motion;
 
 namespace Ncw.UI.Controls;
 
@@ -10,11 +12,16 @@ namespace Ncw.UI.Controls;
 /// 「长按确认」按钮(审批卡片的「长按允许」,docs/design/02 B2)。它只负责<b>输入和画面</b>:把按下 / 移动 / 松手 / 打断转成事件,
 /// 按住期间每帧发一个 <see cref="Tick"/>,并把 <see cref="Progress"/>(0–1)画成从左到右的填充条;
 /// 「按多久算数、移出多远算取消、什么时候触发动作」全在 Client 的 <c>HoldGesture</c>(纯逻辑,时间可注入)。
+/// <b>填充的缓动</b>:按住时的填充是<b>线性</b>的、直接等于手势的进度——它就是手势的时钟,加缓动会让条满的时刻和动作触发的时刻对不上,所以不走统一的缓动;
+/// 只有<b>回退</b>(松手早了 / 移出 / 被取消,<see cref="Progress"/> 变小)走统一的退出缓动,条平滑退回去而不是瞬间归零(<see cref="DisplayProgress"/>;减弱 / 关闭级别直接归零)。
 /// 键盘也能操作:聚焦后按住空格或回车,松开即松手,失焦即打断。外观在 <c>Themes/NcwMobileTheme.axaml</c>(颜色全部是 Arc token)。
 /// </summary>
 public class NcwHoldButton : ContentControl
 {
     public static readonly StyledProperty<double> ProgressProperty = AvaloniaProperty.Register<NcwHoldButton, double>(nameof(Progress));
+
+    /// <summary>模板实际画的进度:按住时等于 <see cref="Progress"/>,回退时平滑退回。</summary>
+    public static readonly StyledProperty<double> DisplayProgressProperty = AvaloniaProperty.Register<NcwHoldButton, double>(nameof(DisplayProgress));
 
     public static readonly StyledProperty<string?> TextProperty = AvaloniaProperty.Register<NcwHoldButton, string?>(nameof(Text));
 
@@ -24,6 +31,7 @@ public class NcwHoldButton : ContentControl
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private bool _pressed;
+    private MotionValue<double>? _rewind;
 
     public NcwHoldButton()
     {
@@ -46,6 +54,13 @@ public class NcwHoldButton : ContentControl
     {
         get => GetValue(ProgressProperty);
         set => SetValue(ProgressProperty, value);
+    }
+
+    /// <summary>画面上的填充进度(见类说明)。</summary>
+    public double DisplayProgress
+    {
+        get => GetValue(DisplayProgressProperty);
+        private set => SetValue(DisplayProgressProperty, value);
     }
 
     /// <summary>手势正在进行(来自 ViewModel)。它变回假(按满、被取消)时本控件停掉帧定时器。</summary>
@@ -78,7 +93,11 @@ public class NcwHoldButton : ContentControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == IsHoldingProperty)
+        if (change.Property == ProgressProperty)
+        {
+            OnProgress(change.GetOldValue<double>(), change.GetNewValue<double>());
+        }
+        else if (change.Property == IsHoldingProperty)
         {
             PseudoClasses.Set(":holding", change.GetNewValue<bool>());
             if (!change.GetNewValue<bool>())
@@ -163,6 +182,32 @@ public class NcwHoldButton : ContentControl
     {
         base.OnDetachedFromVisualTree(e);
         Interrupt();
+        if (_rewind is not null)
+        {
+            _rewind.Dispose();
+            _rewind = null;
+            DisplayProgress = Progress;
+        }
+    }
+
+    private void OnProgress(double from, double to)
+    {
+        if (to >= from || !this.IsAttachedToVisualTree() || NcwMotion.EffectiveLevel(this) != ArcMotionLevel.Full)
+        {
+            // 前进(按住中,线性,直接跟手势)/ 没有动画条件(关闭、减弱):画面等于进度
+            _rewind?.Stop();
+            DisplayProgress = to;
+            return;
+        }
+
+        // 回退:从画面当前位置退回去(被打断、又按下时从当前位置接着走)
+        if (_rewind is null)
+        {
+            _rewind = new MotionValue<double>(this, DisplayProgress, MotionVectors.Double);
+            _rewind.Changed += v => DisplayProgress = v;
+        }
+
+        _ = _rewind.AnimateTo(to, NcwMotion.ExitSpec);
     }
 
     private void Begin()

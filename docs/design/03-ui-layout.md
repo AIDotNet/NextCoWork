@@ -110,7 +110,7 @@
 - **终端**:本机和 SSH 项目同一条握手路径。键盘输入「没有写在途就立刻发,写在途期间的输入合成下一个命令」(`TerminalInputPump`,单次 ≤ 64 KiB,写失败丢弃攒着的输入而不是重放),大小变化只发最新的(`TerminalResizePump`)。设备断开时标签是「未知」(不判成结束、不接受输入、没有计时),重连后由连接层按游标续传(补发错过的批,续不上就整个缓冲重置显示);已退出的终端终态压过一切。
 - **子代理转录**:点开才订阅子会话(子 Run 还在跑时再订阅 `run/<childRunId>`),行由和主对话同一个 `TranscriptBuilder` 从 Store 派生;只靠回执重建的旧卡片(没有子会话 id)点不开,给明确的提示而不是静默没反应。
 - **输入区**:`@` 弹出项目文件候选(`files.suggest`,候选里已选的不再出现),选中后变成输入框上方的文件引用 chip,发送时作为 `InputPartKinds.File` 块(项目相对路径)和正文一起发出(排队 / 插话同样);`/` 弹出设备上的命令清单(`commands.list`,带说明),内置命令还没接入的保持占位;以 `/` 开头的草稿发送前先展开(Core 的 `CommandExpansion`,失败不静默地当普通文本发出)。
-- **窄窗口**:检查器目前只在 ≥ 1440 的宽度停靠;1024–1440 的「抽屉」形态还没有实现(截图测试把面板单独放在 400 / 480 / 520 宽度下验证版式)。
+- **窄窗口**:检查器在 ≥ 1440 的宽度停靠(偏好 `IsInspectorOpen`);< 1440(1024–1440 和更窄)时右上角的检查器开关 / ⌘⌥I 打开的是**右侧抽屉**:盖在工作区上、靠右、宽度同检查器宽度,有遮罩(点遮罩关闭,和左侧抽屉共用一个遮罩),带滑入 / 滑出动效(§9)。抽屉开着与否是纯 UI 状态(`ShellViewModel.IsInspectorDrawerOpen`,不持久化,不改停靠偏好;窗口宽到能停靠时自动收掉)。
 
 ## 2. 响应式断点
 
@@ -162,7 +162,7 @@
 - 字体:正文用 Geist,代码和终端用 Geist Mono,中文回退到系统字体(苹方 / 微软雅黑 / Noto Sans CJK)。
 - 图标:Lucide。运行时才确定的图标要在 csproj 里显式声明(否则报 ARCL002)。
 - 窗口:Arc 的 `Window`,自定义标题栏。macOS 上保留红绿灯按钮,和项目栏顶部对齐。
-- 动效:遵守 Arc 的 `MotionLevel`,在设置里提供「完整 / 减弱 / 关闭」三档。
+- 动效:统一的动效系统见 [§9](#9-动效统一的动效系统)——时长 / 缓动 / 级别全部是 Arc 的,「设置 · 外观」里提供「跟随系统 / 完整 / 减弱 / 关闭」。
 - 语言:简体中文、英文(Arc 自带的控件文字另有繁体中文)。界面文字用 Arc 的语言目录生成器:`NcwTextKind` 枚举 +
   `en-US.xlf` / `zh-CN.xlf`,XAML 写 `{l:NcwText Key}`,切换语言时界面跟着变。Core、Client 不产出界面文字,
   只给结构化数据(例如子代理状态是枚举,由 UI 按语言写成「运行中 / Running」)。启动语言暂由环境变量 `NCW_LANG` 决定,
@@ -210,7 +210,7 @@ iOS / Android 宿主项目、相机、推送令牌、附件选择器是平台能
 - **导航栈**:`MobileNavigationViewModel` 持有当前标签和**每个标签各一个页面栈**(`ProjectRoute` / `SessionRoute` / `SettingsRoute` / `NotificationsRoute` / `QrPairRoute` / `ManualAddRoute`,
   只引用 id 的记录,是纯 UI 状态,不持久化)。`MobileShell` 把栈同步到 Arc 的 `NavigationStack`:ViewModel 里栈变长就 `Push` 按路由现建的页面,变短就 `Pop`;
   左缘右滑 / 返回按钮在 Arc 的栈上弹出后,再把深度回写给 ViewModel(`PopSilently`)。选中哪个项目 / 会话仍是 `Selection` Store 的事实,打开会话走 `SessionActions.Open`。
-  点已选中的标签回到该标签的根页;**会话页不显示底部标签栏**。
+  点已选中的标签回到该标签的根页(Arc 的 `Tabbar` 对已选中项不再发 `SelectionChanged`,所以外壳另外听「按下前就是选中的那一项被点按 / 连点」;以前这条只在 ViewModel 里有、真点不触发,「设备」标签尤其明显);**会话页不显示底部标签栏**。
 - **Arc.Mobile 封装**:`TKCode.Arc.Mobile`(锁定 `1.1.0`,`UseArcMobile()`)的 `NavigationStack` / `Page` / `Navbar` / `Tabbar` / `Sheet` / `PullToRefresh` / `ListGroup` / `ListItem` 经 `Ncw.UI/Controls/MobileControls.cs` 薄封装(`NcwNavigationStack` 等),
   业务视图只引用封装。Arc 文档注明「尚未在真机上验证」:这里验证了版式和状态,左缘右滑 / 弹层手势的真机手感待宿主项目(见 [11 §4](11-mobile-hosts.md))。
   Arc 的 `Tabbar` 没有角标,「收件箱」的待处理角标由壳自己叠在第一个标签上。
@@ -250,7 +250,7 @@ iOS / Android 宿主项目、相机、推送令牌、附件选择器是平台能
 
 - 设备页列出所有设备(本机 / 云端 / 配对过的电脑)的连接状态、角色、项目数、运行 / 待处理数(断开时是「状态未知」,不显示数字),配对过的远程设备可以移除。
 - **扫码配对**(`QrPairingViewModel`,状态机:`Idle → RequestingAccess → Scanning → Parsed → Pairing → Paired / Failed`):相机权限与解码是宿主的 `IQrScanner`(没有时扫码页画占位框);
-  解析用 `PairingQr.TryParse`,过期判断用注入的时钟;**解析成功后要用户确认才配对**(显示设备 ID 前 8 位和地址,让用户和电脑上的核对);配对走 `DeviceActions.PairWithQrAsync`(唯一入口,
+  解析用 `PairingQr.TryParse`,过期判断用注入的时钟;**解析成功后要用户确认才配对**(有效期按界面语言格式化:中文「15:30」、英文「3:30 PM」,不跟操作系统的区域走)(显示设备 ID 前 8 位和地址,让用户和电脑上的核对);配对走 `DeviceActions.PairWithQrAsync`(唯一入口,
   内容不合法 / 已过期在发网络请求前就返回)。相机被拒、系统限制、没有相机时,「粘贴二维码内容」走同一条解析和配对路径。
 - **IP:端口 + 配对码**:复用设置里的 `DevicesSettingsViewModel`(同一个 `PairAsync` 意图),手机只是另一个版式。
 - 局域网发现(mDNS)、「创建云端 Agent」(M6)还没有。
@@ -399,3 +399,132 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 - 手机端的快照是文字,不是图;SVG 的图片渲染未做。
 - WebView 在 `ScrollViewer` 里的合成 / 裁剪、透明背景、键盘焦点、Windows / Linux 真实行为未验证(§8.1);light 主题下 Arc 的三层背景 token 全是白色,规范里 `background-secondary` 的「面板」层在浅色下只剩描边区分。
 - 高度上限 1400 之后内容在 WebView 内部滚动,没有「展开 / 全屏」。
+
+## 9. 动效(统一的动效系统)
+
+范围:桌面和手机共用的一套动效规则,落在 `Ncw.UI/Controls/NcwMotion*.cs`、`NcwCollapsible.cs`、`NcwSection.cs`(业务视图只引用这些封装)。设计原则:**能用 Arc 的就用 Arc 的**,不平行造 token;
+没有的部分只做薄封装,封装里不出现魔法数字(每个数都指回 Arc 的 token 或在下面写清来源)。设置入口见 [07 §3「外观」](07-onboarding-settings.md)。
+
+### 9.1 Arc 提供了什么(对 `TKCode.Arc 1.1.0` 的程序集、XML 文档和文档站逐项核对的结论)
+
+> 文档站(docs.tkcode.si)现在写的是 1.1.1-preview.1;本分支锁定 1.1.0。下面的事实都用 1.1.0 的程序集核对过(反射 + XML 文档 + 实测),文档站上有而 1.1.0 里没有的不算。
+
+| 类别 | Arc 有的 | 说明 |
+|---|---|---|
+| **级别** | `ArcMotionLevel`:`Full` / `Reduced` / `Off`;继承附加属性 `ArcMotion.Level`;主题 token `MotionMode`(`ArcTheme.Apply(t => t.MotionLevel(..))`) | 控件实际级别 = `min(继承的 Level, 主题的 MotionMode)`(`ArcMotion.GetEffectiveLevel`)。`Reduced` = 只保留短淡入淡出和颜色变化,位置与尺寸直接跳到终态,装饰性循环停止;`Off` = 全部立即生效。**各级别的最终状态完全一致**(文档明确保证) |
+| **时长 token** | `DurationInstant` 120 ms、`DurationFast` 160、`DurationExit` 180、`DurationStandard` 240、`DurationConsidered` 480、`DurationSpring` 580;`Stagger*`(16 / 40 / 80 / 35 ms) | 主题资源里是 `TimeSpan`,XAML 写 `{arc:ArcDesignTokenResource DurationStandard}`;代码里是 `ArcMotionPresets.Instant / Fast / Exit / Standard / Considered` |
+| **缓动 token** | `EaseEnter`(进入,减速)、`EaseExit`(退出,加速)、`EaseStandard`、`EaseInOut`、`CssSpring` | XAML `{arc:ArcDesignTokenResource EaseEnter}`;代码 `ArcEasings.*` |
+| **弹簧** | `ArcSpring`:`Smooth`(无回弹)、`Snappy`、`Morph`、`Responsive`、`Gentle`(1.1.0 里还有 `Quick`、`Settle`) | 实测收敛到 0.1% 的时间:Smooth 0.70 s、Snappy 0.43 s、Quick 0.44 s、Settle 0.58 s、Morph 0.70 s(肉眼 0.4 s 内就到 99%)。被打断时从当前位置和速度接着走 |
+| **运动值** | `MotionValue<T>`(可打断)、`MotionSpec.Spring / Tween / Instant`、`MotionTimeline`、`LiveLoop`(挂在界面上 + 可见 + 在视口里 + 级别够才跑)、`ArcBusyPulse`(减弱级别下「忙」指示的明暗呼吸)、`ArcMotion.BeginSettle / EndSettle`(回收容器换数据时不动画) | `MotionValue` 遵守拥有者的级别:`Off` 全跳,`Reduced` 下弹簧跳、补间照走 |
+| **测试钩子** | `ManualFrameClock`(只在 `Advance` 时才走帧)、`MotionScheduler.ClockOverride` | 见 §9.6 |
+| **组件自带的动效** | `TreeView`(文件夹打开时空间弹簧增长 + 子行错峰进入,不整树重排)、`Accordion` / `ExpandableCard`、`ArcPopup` / 菜单 / 下拉 / `Dialog` / `Drawer`(`ModalPresence`)、`Button` 按下缩放、`SegmentedControl` 滑块、`NavigationStack`(推入:新页从右滑入、下面一页左移 30% 并变暗;**返回手势跟手**,松手按速度决定弹出还是回弹)、`Tabbar`(选中胶囊弹簧滑动)、`Sheet`、`Progress` 等 | 这些**不再另做**,只靠 `MotionMode` 一起降级 |
+| **读操作系统的「减少动态效果」** | **没有** | Arc 文档明确写:库不读系统偏好,由应用自己提供设置并写到主窗口 |
+| **通用的展开 / 收起容器** | **没有公开的**(`TimelineGrowHost`、`AiCollapsible`、`BlockCollapse` 都是内部类型;`Accordion` 是带固定模板的 FAQ 控件,装不下任意卡片) | 所以有 `NcwCollapsible`(下面),用 Arc 的 `MotionValue` + `Smooth` 弹簧做,效果与 Accordion 一致 |
+| **任意元素的出现 / 退出、列表新项到达** | 没有 | `NcwMotion` 的 `Arrive` / `Leave` / `IsPresent` / `ShowMotion` / `ArriveOnAttach`(下面) |
+
+**Avalonia 12.1.5 读不到系统的「减少动态效果」**(`IPlatformSettings` 只有主题和对比度),所以由桌面宿主自己探测(§9.3)。
+
+### 9.2 `NcwMotion`:薄封装与规则
+
+**档位**(`NcwMotionTier`,全部取自 Arc 的时长 token,测试核对数值与主题资源一致):
+
+| 档位 | 时长 | 来源 | 用在 |
+|---|---|---|---|
+| `Instant` | 120 ms | `DurationInstant` | 悬停 / 按下的底色(`PlainButton`) |
+| `Fast` | 160 ms | `DurationFast` | 箭头旋转;减弱级别下代替位移的短淡入 |
+| `Base` | 240 ms | `DurationStandard` | 出现(进入)、状态点 / 卡片描边的颜色渐变 |
+| `Slow` | 480 ms | `DurationConsidered` | 预留(目前没有用到) |
+| 退出 | 180 ms | `DurationExit` | 所有退出(比进入快) |
+
+- **缓动**:进入用 `EaseEnter`(减速),退出用 `EaseExit`(加速)(`NcwMotion.EnterEasing / ExitEasing`)。
+- **展开 / 收起**:高度走 Arc 的 `Smooth` 弹簧(`NcwMotion.ExpandSpec`);弹簧的好处是被打断(快速连点)时连续。
+- **幅度**:出现的上移 = **6 px**(`NcwMotion.RiseOffset`,与 Arc 的 Accordion「答案落进 6 px」同一个数);整幅面板(左侧区域、抽屉、检查器)滑动距离 = 面板自己的宽度;箭头 90° / 180°。没有缩放动画(Arc 的弹层 / 对话框自己带淡入 + 缩放)。
+- **性能规则**(每条都有对应的实现或测试):
+  1. **优先动 `Opacity` / `RenderTransform`**(合成层,不触发布局):出现、消失、滑入滑出、箭头旋转、忙指示、新行到达都只动这两个属性。位移只用 `RenderTransform`。
+  2. **虚拟化列表(对话转录、文件树、会话列表)里不动 Width / Height**:转录里**没有**为新行做高度动画;新行只做「淡入 + 6 px 上移」(`Arrive`),而且**只给真正新追加的行**:同一会话、快照已到、一轮里 ≤ 4 行(`ConversationView`,打开会话 / 快照到了 / 重连补齐都是加载历史,不播放);滚动时被实例化的旧行不动,所以**不影响滚动,也不影响「跟随最新」**(位移不触发布局,不产生额外的 Extent 变化)。回收容器时(`ContainerClearing` / 复用)`Rest` 掉没播完的动画。文件树是 Arc `TreeView` 自己的动画(不整树重排)。
+  3. **必须动高度的地方限定范围**:`NcwCollapsible` 只用在**有限数量、可见、一次只会被用户点开一两个**的容器上——工具卡片详情、思考块、待办、审批卡片的错误行、设置里的供应商 / 插件行、项目组、Git 分组、项目面板的分区、审查冲突提示。代价:动画期间每帧改变这一个控件的测量高度,布局代价 = 它自己 + 祖先链(兄弟的测量有缓存);内容按**完整高度**排布后被裁剪,所以动画里文字不会反复换行。真窗口实测见 §9.6。**不做**成逐帧改 Width 的有:左右栏(见下)、设置侧栏导航的 220 → 56 收窄(随窗口宽度走,一次到位)。
+  4. **左右栏的滑入滑出不逐帧改列宽**:列宽一次到位(工作区只重排一次),栏自己用 `RenderTransform` 滑动;滑出时栏临时以「覆盖层」形态(跨列、固定宽度)留在原处,滑完才真正隐藏。整幅面板只滑不淡(半透明压在内容上文字会叠在一起);减弱级别换成短淡入。窗口缩放跨过断点引起的显隐**不播放**动画(不是用户的操作)。
+  5. **流式输出的文字增量不做逐字动画**:`NcwMarkdown` 整段重排,没有任何包它的动效;只有末尾的「流式小圆点」在呼吸(`Busy`)。
+  6. **没有无限循环的样式动画**:以前加载图标是一条永远在跑的样式动画(不看级别、看不见也在跑);现在是 Arc 的 `LiveLoop`,离开界面 / 隐藏 / 滚出视口自动暂停。
+- **被打断、不留残余**:所有行为都用 Arc 的可打断运动值;中途反向从当前位置接着走;离开界面树时落到终态并释放订阅;元素原有的透明度 / `RenderTransform` 在动画结束时恢复(`MotionTests` 逐条核对:快速连点、动画途中内容变高 / 变矮、容器回收、离开界面树后不再请求帧)。
+
+### 9.3 级别与设置(本应用作用域)
+
+- **偏好**:`UiPrefs.Motion`(`UiMotionPreference`:`System` 跟随系统(默认)/ `Full` / `Reduced` / `Off`),存在 `ui.json` 的 `motion` 字段(追加的可空字段,旧文件缺失 = 跟随系统,版本号不动;手改成未知值回落成跟随系统)。设置页「本应用 · 外观」(桌面)和手机设置首页「外观」两处入口,**同一个** `AppearanceViewModel`(读写 `Prefs` Store,不缓存;显示「当前生效:完整 / 减弱 / 关闭」)。
+- **解析**:纯函数 `UiMotion.Resolve(偏好, 系统是否要求减少动态效果)`(`Ncw.Client`,有单测):明确的选择压过系统;`System` 时系统要求减少 → `Reduced`,否则 `Full`;读不到系统设置 → `Full`(外观页如实写「这个平台读不到系统设置,按完整处理」)。
+- **应用**:`NcwMotion.Bind(stores)`(`NcwApp` 启动时调一次)把解析结果写进 Arc 主题的 `MotionMode`;**这是整个应用唯一一处写 Arc 动效级别的地方**。此后 Arc 自带的控件(树、菜单、弹窗、导航栈、标签栏、按钮……)和 `Ncw.UI` 里的行为一起降级。改级别不会重置浅色 / 深色和强调色(有测试)。
+- **操作系统的「减少动态效果」**:Avalonia 12.1.5 没有这个 API,所以由宿主注入 `NcwMotion.SystemReducesMotionProbe`:桌面 `Ncw.Desktop/SystemMotionProbe`——macOS 读 `NSWorkspace.accessibilityDisplayShouldReduceMotion`(本机实测可调用),Windows 读 `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)`(**没有 Windows 机器可测**),Linux 读不到(返回 `null`,不猜)。只在启动和偏好变化时探测一次,不轮询:运行期间改了系统设置,要等下次启动或在外观页重选才跟上。**iOS / Android 宿主还没有接探测**(宿主项目没有真机验证,见 11),它们现在按「读不到」处理,用户可以在外观页直接选。
+- **降级的统一语义**(Arc 的约定,本分支所有动效遵守):`Reduced` = 位置 / 尺寸立即跳到终态,只留短淡入(展开时),收起 / 退出没有时长;装饰性循环停止,「忙」指示换成明暗呼吸(`ArcBusyPulse`);`Off` = 一切立即。
+
+### 9.4 已落地的动效清单
+
+**展开 / 收起**(统一用 `NcwCollapsible` + 旋转的箭头;分区用 `NcwSection`——标题行 + 展开状态,是控件自己的纯 UI 状态,不进 ViewModel / Store):
+
+| 位置 | 控件 | 备注 |
+|---|---|---|
+| 对话 · 工具卡片详情(diff 行 / 输出前几行) | `NcwCollapsible` | 展开状态在 `ToolRowViewModel.IsExpanded`(纯 UI 状态,按 key 对齐,数据更新不丢) |
+| 对话 · 思考块 | `NcwCollapsible` | 同上 |
+| 对话 · 待办面板的列表 | `NcwCollapsible` | 标题行现在有箭头 |
+| 对话 · 审批 / 交互卡片的「回答没成功」提示行 | `NcwCollapsible` | 出现 / 消失带高度 |
+| 对话 · 待办 / 目标条 / 「已在另一台设备上处理」 | `ShowMotion=Rise` / `ArriveOnAttach=Rise` | 出现(淡入 + 6 px 上移);它们的高度变化不做动画(底部区域变高会让转录视口逐帧变化) |
+| 检查器 · Git 变更分组(冲突 / 暂存 / 未暂存 / 未跟踪) | `NcwSection` | |
+| 检查器 · 审查的冲突提示 | `NcwCollapsible` | |
+| 检查器 · 文件树节点 | Arc `TreeView` 自带 | 弹簧增长 + 错峰 |
+| 项目栏 · 项目组折叠 / 展开 | `NcwCollapsible`(展开的胶囊)+ 收起的 2×2 网格淡入 | |
+| 项目面板 · 「会话」「终端和智能体」分区 | `NcwSection` | 设计 03 §1 写了「每个都可以折叠」,这次才真正实现 |
+| 左侧区域(⌘B / 标题栏侧栏按钮) | `RenderTransform` 滑动(§9.2.4) | 窄窗口的抽屉同样滑入滑出,遮罩淡入淡出 |
+| 右侧检查器(⌘⌥I) | 同上,向右滑动 | **新增**:< 1440 时是右侧抽屉(上面 §1 的「窄窗口」) |
+| 设置 · 供应商行 / 插件行 | `NcwCollapsible` + 旋转箭头 | |
+| 设置 · 导航收窄(220 → 56) | 不做动画 | 随窗口宽度,一次到位(见 §9.2.3) |
+| 手机 · 抽屉 / 设置分区 | Arc `NavigationStack` / `Sheet` 自带 | 手机壳没有自己的抽屉,设置分组是导航栈里的页面;**没有可折叠的设置分区**,所以没有对应项 |
+
+**出现 / 消失**:
+
+| 位置 | 做法 |
+|---|---|
+| 对话 · 新追加的消息 / 工具卡 / 审批卡片 | `Arrive`:淡入 + 6 px 上移(§9.2.2 的规则) |
+| 审批被处理后的「收起」 | 卡片从转录里消失(行已经不在集合里,虚拟化列表没法为已删除的行做退出动画);「回答没成功」的提示行是带高度的展开 / 收起。**没做**消失行的退出动画 |
+| 设置覆盖层 / 首次启动页 / 数据页 | `IsPresent` + `PresenceKind=Fade`:淡入,退出先淡出再隐藏(整窗覆盖层不做位移,否则会露出边) |
+| 账户状态条 | `IsPresent`(上移 + 淡入;退出淡出) |
+| 各页签内容(检查器的文件 / Git / 审查 / 终端 / 上下文 / 历史 / 子代理、设置各分页、工作区内容、定时任务页、加载中 / 空状态) | `ShowMotion=Fade`:每次从隐藏变可见淡入(首次挂载不播) |
+| 项目栏的待处理角标 | `ShowMotion=Fade` |
+| 弹层 / 菜单 / 下拉 / 对话框 / toast | Arc 自带(淡入 + 缩放 / 滑入) |
+| 加载 / 进度 | 加载文字与图标 `ShowMotion=Fade`;进度条是 Arc `Progress` 自带 |
+
+**状态过渡**:
+
+- **按钮**:`PlainButton` 悬停 / 按下底色渐变(`Instant`,关闭级别没有);Arc 的 `Button` 自带按下缩放与颜色过渡。
+- **运行中指示**:`NcwMotion.Busy`——加载图标旋转(0.9 s 一圈)、流式小圆点 / 会话行 / 标签页 / 项目栏的运行点呼吸(缩放 ≤ 1.25 + 明暗);减弱级别换成 Arc 的「忙」呼吸(只有明暗),关闭级别静止;离开界面 / 隐藏 / 滚出视口自动暂停。
+- **颜色**:状态点(`Border.dot`)和卡片状态描边(等待审批 / 失败)用 `Base` 档渐变。**未知(设备断开)不用颜色表达**:未知是旋转的加载图标(规则 7),和「已结束」(✓ / 灰点)是完全不同的视觉;颜色渐变只发生在 ok / warn / bad / mute 之间,所以不会出现「运行中 → 未知」时经过任何像「已结束」的中间色。
+- **「长按允许」填充**:**故意是线性的**——填充就是手势的时钟(`HoldGesture` 的进度),加缓动会让条满的时刻和动作触发的时刻对不上,所以不走统一缓动;只有**回退**(松手早了 / 移出 / 取消)走统一的退出缓动,条平滑退回而不是瞬间归零(减弱 / 关闭立即归零)。
+- **箭头**:展开 / 收起的箭头是同一个图标旋转(`Fast` 档),不再是两个图标互换;只有完整级别旋转。
+- **模型选择器 / 下拉菜单**:Arc `DropdownMenu` / `Select` 自带。
+
+**导航过渡**:
+
+- 手机 `MobileShell` 导航栈的页面推入 / 弹出、跟手的左缘返回手势、底部标签的胶囊滑动:**Arc `NavigationStack` / `Tabbar` 自带**(横向滑动 + 下面一页视差变暗,手势跟手,松手按速度决定);本分支只在**切换标签**时让新标签的栈淡入(`Arrive(Fade)`)。
+- 桌面端:页签切换、检查器页签切换、设置分组切换 = `ShowMotion=Fade`;设置覆盖层进出 = `IsPresent`(淡入淡出)。
+
+### 9.5 修掉的几处小缺陷
+
+- 手机端点已选中的标签不回根页:Arc `Tabbar` 对已选中项不再发 `SelectionChanged`,命令根本没被调用。现在外壳听「按下前就是选中的那一项被点按(连点时 Avalonia 报 `DoubleTapped`,同样算)」,调用同一个 `SelectTabCommand`(它在 ViewModel 里本来就会回根页)。测试覆盖「切换不误触」「再点一次回根页」「已在根页什么也不发生」。
+- 手机扫码确认页的有效期是英文 12 小时制:转换器用的是绑定传进来的区域(操作系统的 en-US);改成跟界面语言(`ArcLanguage.Culture`)走。测试把系统区域设成 en-US、界面是中文,断言不出现 AM / PM(用旧实现验证过这条会失败)。
+- 窄屏输入框权限图标换行:已随输入框重设计(§6「输入框版式」)消失,不是本次改的。
+- 桌面检查器在 1024–1440 没有抽屉:补上了(§1「窄窗口」)。
+- **浅色主题层级评估(只评估,没有改 token)**:实测 Arc 的 token——深色 `Background #141414` / `Surface #191919` / `SurfaceRaised #1F1F1F` / `SurfaceMuted #242424`(逐级有明度台阶);浅色 `Background`、`Surface`、`SurfaceRaised` 都是纯白,只有 `SurfaceMuted` 是 `#F8F8F8`(与白色的对比度约 1.04:1),`Border #E9E9E9`、`BorderSubtle #F3F3F3`(约 1.1:1)。影响:① 浅色下卡片 / 面板的层级几乎只能靠描边,而本应用的 `Border.card` 用的是最淡的 `BorderSubtle`;② `PlainButton` 悬停用 `SurfaceMuted`,浅色下悬停反馈很弱(过渡 120 ms 也看不出来);③ 浮起的层(抽屉、检查器覆盖层)已有 `DropShadow`,浅色下它是唯一的层级信号。建议(没做,需要设计取舍):浅色下卡片描边用 `Border` 而不是 `BorderSubtle`;悬停底色在浅色下改用强调色的低透明度叠加;给 `Border.card` 在浅色下加 1–2 px、很低不透明度的阴影——这三条都需要「按主题变体选样式」,Arc 没有现成的选择器,要么用 `RequestedThemeVariant` 的样式选择器,要么在封装层读 `ArcTheme` 的外观,所以放到有人拍板之后再做,不改 Arc token。
+
+### 9.6 测试与验证
+
+- **Headless 能推进动画时钟,也能抓动画中间帧**:Arc 的 `ManualFrameClock.Install()` 让动画只在 `Advance` 时走帧,所以单测可以停在「展开到一半」去断言高度 / 透明度 / 变换,并截图(`motion-*-half-*.png`),不靠 sleep。注意 Avalonia 自己的样式 `Transitions`(箭头旋转、按钮底色)走的是 Avalonia 的动画时钟,不受 `ManualFrameClock` 控制——那部分只断言「定义存在、只在完整 / 减弱级别启用」,截图里它们的中间状态不确定,所以**截图矩阵只在关闭 / 减弱级别下跑**,完整级别只截并断言 `NcwMotion` 驱动的中间帧。
+- **测试默认关闭动效**:`TestApp` 启动后 `NcwMotion.Apply(UiMotionLevel.Off)`,其它测试类收尾时也恢复到 Off(以前恢复到 Full);动效测试自己切到 Full + `ManualFrameClock`,结束恢复 Off。
+- 单测:`Ncw.Client.Tests/UiMotionTests`(级别解析、偏好相等 / 规范化 / JSON 往返 / 旧文件兼容 / 外观页读写 Store);`Ncw.UI.Tests/MotionTests`(档位 = Arc token、级别应用、`NcwCollapsible` 状态机、`Arrive` / `IsPresent` / `ShowMotion` / `Busy`、长按填充);`MotionScreenshotTests`(展开收起终态 × 四个断点 × 深浅 × 关闭 / 减弱,中间帧,新行到达只给新追加的行,左右栏滑动与反向,抽屉,设置覆盖层,外观页);`MotionMobileTests`(标签淡入、再点回根页、有效期格式);`Ncw.Desktop.Tests/SystemMotionProbeTests`。
+- **真窗口验证**(`tools/MotionSmoke`,开发用,不进 slnx;`dotnet run` 并指定项目 `tools/MotionSmoke`):在 macOS 上开真实窗口(真实 Skia / Metal 渲染和真实帧时钟),完整级别下记录动画期间每一帧的间隔,并用 `RenderTargetBitmap` 离屏截动画中间帧(不需要系统的屏幕录制权限)。本机(60 Hz)稳态结果:展开 / 收起一张工具卡、左侧区域滑出 / 滑入,帧间隔中位数 16.7 ms、p95 ≈ 17–18 ms、超过两帧(> 33 ms)的间隔为 0;机器负载高(其它项目在构建)时偶尔会有单次 50–150 ms 的卡顿,冒烟里只记录、不判失败。第一次展开(模板创建 / JIT)预热后不再卡。**目视流畅度只能由人来判断**——这里的结论是「没有掉帧」,不是「好看」;Windows / Linux 同一份代码,没有机器可测。
+
+### 9.7 没做的
+
+- 审批卡片被处理后、转录里被删掉的行的退出动画(虚拟化列表里对已不在集合里的行做退出,要保留它的容器,代价和风险都大于收益)。
+- 待办 / 目标条 / 提示的**高度**动画(底部区域变高会让转录视口逐帧变化;现在只有淡入 + 上移)。
+- 设置侧栏导航 220 → 56 的收窄动画(随窗口宽度走)。
+- 手机的「设置分区折叠」(手机设置是导航栈,没有可折叠分区)。
+- iOS / Android 的系统「减少动态效果」探测(宿主没有真机验证);Linux 桌面的探测。
+- 主题 / 强调色 / 字体 / 界面密度这些「外观」其余项(外观页现在只有动效)。

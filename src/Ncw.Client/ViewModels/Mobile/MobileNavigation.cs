@@ -241,8 +241,8 @@ public sealed partial class MobileNavigationViewModel : ObservableObject
 /// </summary>
 public static class MobileSettingsMenu
 {
-    /// <summary>本应用:设备;通知(<see cref="NotificationsRoute"/>)单独放,不是 <see cref="SettingsSection"/>。</summary>
-    public static readonly IReadOnlyList<SettingsSection> App = [SettingsSection.Devices];
+    /// <summary>本应用:设备、外观(动效级别);通知(<see cref="NotificationsRoute"/>)单独放,不是 <see cref="SettingsSection"/>。</summary>
+    public static readonly IReadOnlyList<SettingsSection> App = [SettingsSection.Devices, SettingsSection.Appearance];
 
     public static readonly IReadOnlyList<SettingsSection> Device =
     [

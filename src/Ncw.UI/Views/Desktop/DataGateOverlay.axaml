@@ -8,20 +8,15 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.DataGateOverlay"
              x:DataType="vm:DataGateViewModel"
-             IsVisible="{Binding IsVisible}">
+             ui:NcwMotion.IsPresent="{Binding IsVisible}" ui:NcwMotion.PresenceKind="Fade">
   <!--
     启动时的数据页(docs/design/04 §4、07 §1):本机数据没就绪时盖住整个窗口。
     接管中显示步骤,被挡住 / 失败时显示原因和「重试」,刚接管完显示迁移摘要和「继续」。
   -->
   <UserControl.Styles>
+    <!-- 加载图标的旋转由 NcwMotion.Busy 驱动(NcwStyles 的 .spin 样式);这个覆盖层没有合并 NcwStyles,所以这里单独声明同一个行为 -->
     <Style Selector="lucide|LucideIcon.spin">
-      <Setter Property="RenderTransform" Value="rotate(0deg)" />
-      <Style.Animations>
-        <Animation Duration="0:0:0.9" IterationCount="Infinite">
-          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
-          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
-        </Animation>
-      </Style.Animations>
+      <Setter Property="ui:NcwMotion.Busy" Value="Spin" />
     </Style>
     <Style Selector="TextBlock.detail">
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />

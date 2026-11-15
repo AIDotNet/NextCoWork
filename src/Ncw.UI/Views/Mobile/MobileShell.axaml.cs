@@ -1,4 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using TKCode.Arc;
@@ -33,6 +37,11 @@ public partial class MobileShell : UserControl
         DevicesTab.Icon = ArcIcons.Monitor;
         SettingsTab.Icon = ArcIcons.Settings;
         Tabs.SelectionChanged += OnTabSelected;
+        // 点已经选中的标签:Arc 的 Tabbar 不会再发 SelectionChanged,所以另外听按下 / 点按,回到该标签的根页(iOS 惯例,docs/design/03 §3)
+        Tabs.AddHandler(InputElement.PointerPressedEvent, OnTabPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        Tabs.AddHandler(InputElement.TappedEvent, OnTabTapped, RoutingStrategies.Bubble, handledEventsToo: true);
+        // 连点两下(间隔很短)Avalonia 报的是 DoubleTapped 而不是第二个 Tapped,同样算「再点一次」
+        Tabs.AddHandler(InputElement.DoubleTappedEvent, OnTabTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         DataContextChanged += (_, _) => Attach();
     }
 
@@ -81,10 +90,31 @@ public partial class MobileShell : UserControl
 
     private void ShowTab(MobileTab tab)
     {
+        var changed = !ReferenceEquals(StackHost.Content, _stacks[tab]);
         StackHost.Content = _stacks[tab];
+        if (changed && StackHost.Content is NcwNavigationStack shown && Tabs.IsLoaded)
+        {
+            // 底部标签切换:新标签的栈淡入(页面推入 / 弹出的横向滑动、跟手的返回手势是 Arc NavigationStack 自带的)
+            NcwMotion.Arrive(shown, NcwArrival.Fade);
+        }
+
         _syncing = true;
         Tabs.SelectedIndex = (int)tab;
         _syncing = false;
+    }
+
+    private int _selectedAtPress = -1;
+
+    private void OnTabPressed(object? sender, PointerPressedEventArgs e) => _selectedAtPress = Tabs.SelectedIndex;
+
+    private void OnTabTapped(object? sender, RoutedEventArgs e)
+    {
+        // 按下之前就已经选中的那个标签被点按 = 「再点一次」:回到根页。(这一下点按如果切换了标签,按下前选中的不是它,不会误触)
+        if (_vm is not null && e.Source is Visual source && source.FindAncestorOfType<NcwTabbarItem>(includeSelf: true) is { } item
+            && Tabs.IndexFromContainer(item) is >= 0 and var index && index == _selectedAtPress && index == Tabs.SelectedIndex)
+        {
+            _vm.Navigation.SelectTabCommand.Execute((MobileTab)index);
+        }
     }
 
     private void OnTabSelected(object? sender, SelectionChangedEventArgs e)

@@ -89,27 +89,27 @@
     </Grid>
 
     <!-- 文件管理器(默认) -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsFiles}">
+    <Panel Grid.Row="1" IsVisible="{Binding IsFiles}" ui:NcwMotion.ShowMotion="Fade">
       <insp:FilesPane DataContext="{Binding Files}" />
     </Panel>
 
     <!-- Git -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsGit}">
+    <Panel Grid.Row="1" IsVisible="{Binding IsGit}" ui:NcwMotion.ShowMotion="Fade">
       <insp:GitPane DataContext="{Binding Git}" />
     </Panel>
 
     <!-- 改动审查 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsReview}">
+    <Panel Grid.Row="1" IsVisible="{Binding IsReview}" ui:NcwMotion.ShowMotion="Fade">
       <insp:ReviewPane DataContext="{Binding Review}" />
     </Panel>
 
     <!-- 终端 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsTerminal}">
+    <Panel Grid.Row="1" IsVisible="{Binding IsTerminal}" ui:NcwMotion.ShowMotion="Fade">
       <insp:TerminalPane DataContext="{Binding Terminals}" />
     </Panel>
 
     <!-- 上下文 -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsContext}">
+    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsContext}" ui:NcwMotion.ShowMotion="Fade">
       <StackPanel Margin="14,6,14,14" Spacing="14">
         <StackPanel Spacing="8">
           <TextBlock Classes="section" Text="{l:NcwText TabContext}" />
@@ -136,13 +136,13 @@
     </ScrollViewer>
 
     <!-- 历史(M4 接入) -->
-    <StackPanel Grid.Row="1" Margin="14,16" Spacing="6" IsVisible="{Binding IsHistory}">
+    <StackPanel Grid.Row="1" Margin="14,16" Spacing="6" IsVisible="{Binding IsHistory}" ui:NcwMotion.ShowMotion="Fade">
       <TextBlock Text="{l:NcwText TabHistory}" FontWeight="SemiBold" />
       <TextBlock Classes="hint" Text="{l:NcwText HistoryPlaceholder}" TextWrapping="Wrap" />
     </StackPanel>
 
     <!-- 子代理:状态文案、计时、能否停止都来自 SubagentView.Of;点开看只读转录 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsSubagents}">
+    <Panel Grid.Row="1" IsVisible="{Binding IsSubagents}" ui:NcwMotion.ShowMotion="Fade">
       <insp:SubagentsPane />
     </Panel>
   </Grid>

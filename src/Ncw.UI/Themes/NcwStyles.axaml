@@ -22,11 +22,20 @@
 
   <!-- 对话区和设置页共用的几个小样式:卡片、说明文字、等宽字、小标签、旋转的加载图标。颜色全部来自 Arc token。 -->
   <Style Selector="Border.card">
+    <Setter Property="arc:ArcMotion.Tracks" Value="True" />
     <Setter Property="Padding" Value="12" />
     <Setter Property="CornerRadius" Value="12" />
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+  </Style>
+  <!-- 卡片的状态描边(等待审批 / 失败)渐变,不是闪一下 -->
+  <Style Selector="Border.card:motion-full, Border.card:motion-reduced">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="BorderBrush" Duration="{arc:ArcDesignTokenResource DurationStandard}" Easing="{arc:ArcDesignTokenResource EaseStandard}" />
+      </Transitions>
+    </Setter>
   </Style>
   <Style Selector="Border.card.attention">
     <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Warning}" />
@@ -53,14 +62,25 @@
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Margin" Value="0,18,0,6" />
   </Style>
+  <!-- 运行中图标:旋转由 NcwMotion.Busy 驱动(Arc 的 LiveLoop:离开界面 / 隐藏 / 滚出视口自动暂停;减弱级别换成明暗呼吸,关闭级别静止)。
+       以前是一条无限循环的样式动画,不看动效级别,而且对看不见的图标也在跑。 -->
   <Style Selector="lucide|LucideIcon.spin">
+    <Setter Property="ui:NcwMotion.Busy" Value="Spin" />
+  </Style>
+  <!-- 展开 / 收起的箭头:同一个图标旋转(右箭头 .chevron 展开时转 90° 朝下;下箭头 .chevronDown 展开时转 180° 朝上),
+       不再是两个图标按 IsVisible 互换。只有完整级别转动(减弱 / 关闭级别下位置直接跳到终态,Arc 的 :motion-full 伪类)。 -->
+  <Style Selector="lucide|LucideIcon.chevron, lucide|LucideIcon.chevronDown">
+    <Setter Property="arc:ArcMotion.Tracks" Value="True" />
     <Setter Property="RenderTransform" Value="rotate(0deg)" />
-    <Style.Animations>
-      <Animation Duration="0:0:0.9" IterationCount="Infinite">
-        <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
-        <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
-      </Animation>
-    </Style.Animations>
+  </Style>
+  <Style Selector="lucide|LucideIcon.chevron.open"><Setter Property="RenderTransform" Value="rotate(90deg)" /></Style>
+  <Style Selector="lucide|LucideIcon.chevronDown.open"><Setter Property="RenderTransform" Value="rotate(180deg)" /></Style>
+  <Style Selector="lucide|LucideIcon.chevron:motion-full, lucide|LucideIcon.chevronDown:motion-full">
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="{arc:ArcDesignTokenResource DurationFast}" Easing="{arc:ArcDesignTokenResource EaseStandard}" />
+      </Transitions>
+    </Setter>
   </Style>
   <!-- 右侧检查器各页签共用:分节标题、状态字母、diff 行、等宽小字。颜色全部来自 Arc token。 -->
   <Style Selector="TextBlock.section">
@@ -117,11 +137,21 @@
   </Style>
   <!-- 管理页的状态小圆点:ok / warn / bad / mute(NcwStatusDot) -->
   <Style Selector="Border.dot">
+    <Setter Property="arc:ArcMotion.Tracks" Value="True" />
     <Setter Property="Width" Value="8" />
     <Setter Property="Height" Value="8" />
     <Setter Property="CornerRadius" Value="4" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource TextMuted}" />
+  </Style>
+  <!-- 状态点的颜色渐变(ok / warn / bad / mute 之间)。「未知」不用这些点表达:设备断开时是旋转的加载图标(规则 7),
+       所以颜色渐变不会在「运行中 → 未知」之间经过任何像「已结束」的中间色。 -->
+  <Style Selector="Border.dot:motion-full, Border.dot:motion-reduced">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{arc:ArcDesignTokenResource DurationStandard}" Easing="{arc:ArcDesignTokenResource EaseStandard}" />
+      </Transitions>
+    </Setter>
   </Style>
   <Style Selector="Border.dot.ok"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Success}" /></Style>
   <Style Selector="Border.dot.warn"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Warning}" /></Style>

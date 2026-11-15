@@ -170,12 +170,13 @@
                     <ui:NcwSwitch Margin="0,0,6,0" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
                                   AutomationProperties.Name="{l:NcwText ProviderEnabled}" arc:Tooltip.Tip="{l:NcwText ProviderEnabled}" />
                     <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleExpandedCommand}" AutomationProperties.Name="{l:NcwText ProviderModels}" arc:Tooltip.Tip="{l:NcwText ProviderModels}">
-                      <lucide:LucideIcon Kind="ChevronDown" Size="15" />
+                      <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding IsExpanded}" Kind="ChevronDown" Size="15" />
                     </ui:NcwButton>
                   </StackPanel>
                 </Grid>
                 <!-- 展开:操作 + 模型别名 -->
-                <StackPanel IsVisible="{Binding IsExpanded}" Margin="14,0,14,12" Spacing="8">
+                <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+                <StackPanel Margin="14,0,14,12" Spacing="8">
                   <WrapPanel Orientation="Horizontal">
                     <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding TestCommand}" Content="{l:NcwText ProviderTest}" />
                     <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding EditCommand}" Content="{l:NcwText ProviderEdit}" />
@@ -210,7 +211,7 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                </StackPanel>
+                </StackPanel></ui:NcwCollapsible>
               </StackPanel>
             </Border>
           </DataTemplate>

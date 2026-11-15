@@ -181,8 +181,10 @@
       </StackPanel>
 
       <!-- 回答没成功 -->
-      <TextBlock IsVisible="{Binding HasProblem}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
-                 Text="{Binding Problem, Converter={x:Static cv:InteractionProblemConverter.Instance}}" />
+      <ui:NcwCollapsible IsOpen="{Binding HasProblem}">
+        <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                   Text="{Binding Problem, Converter={x:Static cv:InteractionProblemConverter.Instance}}" />
+      </ui:NcwCollapsible>
     </StackPanel>
   </Border>
 </UserControl>

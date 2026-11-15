@@ -84,7 +84,7 @@ public class ConversationScreenshotTests
 
     private static ClientStores EmptySession() => Base("s-ncw-3").Also(s => Session(s, "s-ncw-3", []));
 
-    private static ClientStores Streaming()
+    internal static ClientStores Streaming()
     {
         var stores = Base("s-ncw-1");
         Session(stores, "s-ncw-1",
@@ -101,7 +101,7 @@ public class ConversationScreenshotTests
         return stores;
     }
 
-    private static ClientStores Tools()
+    internal static ClientStores Tools()
     {
         var stores = Base("s-ncw-2");
         Session(stores, "s-ncw-2",
@@ -125,7 +125,7 @@ public class ConversationScreenshotTests
         return stores;
     }
 
-    private static ClientStores Approvals()
+    internal static ClientStores Approvals()
     {
         var stores = Base("s-ncw-1");
         Session(stores, "s-ncw-1",
@@ -146,7 +146,7 @@ public class ConversationScreenshotTests
         return stores;
     }
 
-    private static ClientStores SubagentsAndTodo()
+    internal static ClientStores SubagentsAndTodo()
     {
         var stores = Base("s-ncw-1");
         Session(stores, "s-ncw-1",
@@ -166,7 +166,7 @@ public class ConversationScreenshotTests
         return stores;
     }
 
-    private static ClientStores GoalBar()
+    internal static ClientStores GoalBar()
     {
         var stores = Base("s-ncw-2");
         Session(stores, "s-ncw-2",
@@ -179,7 +179,7 @@ public class ConversationScreenshotTests
         return stores;
     }
 
-    private static ClientStores Errors()
+    internal static ClientStores Errors()
     {
         var stores = Base("s-ncw-2");
         Session(stores, "s-ncw-2",

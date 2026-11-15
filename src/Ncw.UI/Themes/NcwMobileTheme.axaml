@@ -33,7 +33,7 @@
             <Border Name="PART_Fill" HorizontalAlignment="Left" ClipToBounds="True" IsHitTestVisible="False">
               <Border.Width>
                 <MultiBinding Converter="{x:Static cv:ProgressWidthConverter.Instance}">
-                  <Binding Path="Progress" RelativeSource="{RelativeSource TemplatedParent}" />
+                  <Binding Path="DisplayProgress" RelativeSource="{RelativeSource TemplatedParent}" />
                   <Binding Path="Bounds.Width" RelativeSource="{RelativeSource TemplatedParent}" />
                 </MultiBinding>
               </Border.Width>

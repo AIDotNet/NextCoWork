@@ -26,7 +26,7 @@ namespace Ncw.UI.Tests;
 public class MobileScreenshotTests : IDisposable
 {
     /// <summary>别的测试类默认深色、完整动效:每个用例结束后还原,不被这里的浅色 / 关动效带偏。</summary>
-    public void Dispose() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(ArcMotionLevel.Full));
+    public void Dispose() => ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(ArcMotionLevel.Off));
 
     public static IEnumerable<object[]> Matrix() =>
         from width in new[] { 360, 390, 430 }

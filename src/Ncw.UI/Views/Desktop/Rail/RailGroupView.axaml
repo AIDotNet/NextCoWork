@@ -15,7 +15,8 @@
           Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}, ConverterParameter=0.22}">
     <StackPanel>
       <!-- 展开状态 -->
-      <StackPanel IsVisible="{Binding !IsCollapsed}">
+      <ui:NcwCollapsible IsOpen="{Binding !IsCollapsed}">
+      <StackPanel>
         <ui:PlainButton Height="22"
                         Margin="6,0"
                         Command="{Binding ToggleCommand}"
@@ -32,9 +33,9 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-      </StackPanel>
+      </StackPanel></ui:NcwCollapsible>
       <!-- 收起状态 -->
-      <Grid Height="54" IsVisible="{Binding IsCollapsed}">
+      <Grid Height="54" IsVisible="{Binding IsCollapsed}" ui:NcwMotion.ShowMotion="Fade">
         <ui:PlainButton Classes="tile"
                         Width="40"
                         Height="40"

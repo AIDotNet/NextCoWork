@@ -95,26 +95,31 @@
       <ScrollViewer IsVisible="{Binding ShowsChanges}" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="6,0,6,10" Spacing="10">
           <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding IsClean}" Text="{l:NcwText GitClean}" />
-          <StackPanel Spacing="2" IsVisible="{Binding HasConflicted}">
-            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitConflicted}" />
+          <!-- 变更分组:各组可以折叠(纯 UI 状态,NcwSection) -->
+          <ui:NcwSection IsVisible="{Binding HasConflicted}">
+            <ui:NcwSection.Header><TextBlock Classes="section" Text="{l:NcwText GitConflicted}" /></ui:NcwSection.Header>
             <ItemsControl ItemsSource="{Binding Conflicted}" ItemTemplate="{StaticResource GitRow}" />
-          </StackPanel>
-          <StackPanel Spacing="2" IsVisible="{Binding HasStaged}">
-            <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0,2,0">
-              <TextBlock Classes="section" VerticalAlignment="Center" Text="{l:NcwText GitStaged}" />
-              <TextBlock Classes="hint" Grid.Column="1" Margin="6,0" VerticalAlignment="Center" Text="{Binding Summary.Staged}" />
-              <ui:NcwButton Grid.Column="2" Variant="Ghost" Height="24" Padding="6,0" Command="{Binding UnstageAllCommand}" IsEnabled="{Binding CanOperate}" Content="{l:NcwText GitUnstageAll}" />
-            </Grid>
+          </ui:NcwSection>
+          <ui:NcwSection IsVisible="{Binding HasStaged}">
+            <ui:NcwSection.Header>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Classes="section" VerticalAlignment="Center" Text="{l:NcwText GitStaged}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Summary.Staged}" />
+              </StackPanel>
+            </ui:NcwSection.Header>
+            <ui:NcwSection.Trailing>
+              <ui:NcwButton Variant="Ghost" Height="24" Padding="6,0" Margin="0,0,2,0" Command="{Binding UnstageAllCommand}" IsEnabled="{Binding CanOperate}" Content="{l:NcwText GitUnstageAll}" />
+            </ui:NcwSection.Trailing>
             <ItemsControl ItemsSource="{Binding Staged}" ItemTemplate="{StaticResource GitRow}" />
-          </StackPanel>
-          <StackPanel Spacing="2" IsVisible="{Binding HasUnstaged}">
-            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitUnstaged}" />
+          </ui:NcwSection>
+          <ui:NcwSection IsVisible="{Binding HasUnstaged}">
+            <ui:NcwSection.Header><TextBlock Classes="section" Text="{l:NcwText GitUnstaged}" /></ui:NcwSection.Header>
             <ItemsControl ItemsSource="{Binding Unstaged}" ItemTemplate="{StaticResource GitRow}" />
-          </StackPanel>
-          <StackPanel Spacing="2" IsVisible="{Binding HasUntracked}">
-            <TextBlock Classes="section" Margin="8,0" Text="{l:NcwText GitUntracked}" />
+          </ui:NcwSection>
+          <ui:NcwSection IsVisible="{Binding HasUntracked}">
+            <ui:NcwSection.Header><TextBlock Classes="section" Text="{l:NcwText GitUntracked}" /></ui:NcwSection.Header>
             <ItemsControl ItemsSource="{Binding Untracked}" ItemTemplate="{StaticResource GitRow}" />
-          </StackPanel>
+          </ui:NcwSection>
           <ui:NcwButton Variant="Ghost" HorizontalAlignment="Left" Command="{Binding StageAllCommand}" IsEnabled="{Binding CanOperate}" Content="{l:NcwText GitStageAll}">
             <ui:NcwButton.IsVisible>
               <MultiBinding Converter="{x:Static BoolConverters.Or}">

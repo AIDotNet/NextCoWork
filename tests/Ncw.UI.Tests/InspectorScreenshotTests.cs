@@ -99,7 +99,7 @@ public class InspectorScreenshotTests
         view.Window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-{scenario}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         if (last)
         {
-            ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Full));
+            ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
         }
     }
 
@@ -590,7 +590,7 @@ public class InspectorScreenshotTests
         Assert.Single(composer.FileRefs);
         Assert.Equal("看一下 ", composer.Draft);
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-composer-chip-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
-        ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Full));
+        ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
     }
 
     [AvaloniaTheory]
@@ -615,6 +615,6 @@ public class InspectorScreenshotTests
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(dir);
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-composer-slash-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
-        ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Full));
+        ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
     }
 }

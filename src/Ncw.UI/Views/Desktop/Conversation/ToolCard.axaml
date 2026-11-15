@@ -40,10 +40,8 @@
               <lucide:LucideIcon Kind="ShieldAlert" Size="14" IsVisible="{Binding IsWaiting}" Foreground="{arc:ArcDesignTokenResource Warning}" />
               <lucide:LucideIcon Kind="CircleSlash" Size="14" IsVisible="{Binding IsInterrupted}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             </Panel>
-            <lucide:LucideIcon Kind="ChevronRight" Size="12" VerticalAlignment="Center" IsVisible="{Binding !IsExpanded}"
+            <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center"
                                Foreground="{arc:ArcDesignTokenResource TextMuted}" Opacity="{Binding CanExpand, Converter={x:Static cv:BoolOpacityConverter.Instance}}" />
-            <lucide:LucideIcon Kind="ChevronDown" Size="12" VerticalAlignment="Center" IsVisible="{Binding IsExpanded}"
-                               Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           </StackPanel>
           <!-- 第二行:执行环境标识 + 状态说明 -->
           <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
@@ -61,8 +59,9 @@
           </StackPanel>
         </Grid>
       </ui:PlainButton>
-      <!-- 摘要 -->
-      <Border IsVisible="{Binding IsExpanded}" Padding="12,0,12,10" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+      <!-- 摘要:统一的展开 / 收起容器(高度弹簧 + 淡入淡出,docs/design/03 §9) -->
+      <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+      <Border Padding="12,0,12,10" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
         <StackPanel Margin="0,8,0,0" Spacing="1">
           <ItemsControl ItemsSource="{Binding PreviewLines}">
             <ItemsControl.ItemTemplate>
@@ -79,6 +78,7 @@
                      Text="{Binding MoreLines, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolMoreLines}" />
         </StackPanel>
       </Border>
+      </ui:NcwCollapsible>
     </StackPanel>
   </Border>
 </UserControl>

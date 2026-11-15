@@ -1502,5 +1502,15 @@
     <unit id="WidgetActionTitle"><segment><source>Run “{0}”?</source><target state="final">Run “{0}”?</target></segment></unit>
     <unit id="WidgetActionBody"><segment><source>This visualization asks to run the tool {0} on {1}: {2}</source><target state="final">This visualization asks to run the tool {0} on {1}: {2}</target></segment></unit>
     <unit id="WidgetActionConfirm"><segment><source>Run</source><target state="final">Run</target></segment></unit>
+    <unit id="SettingsAppearance"><segment><source>Appearance</source><target state="final">Appearance</target></segment></unit>
+    <unit id="SettingsAppearanceHint"><segment><source>How the app looks and moves. These settings apply to this app only.</source><target state="final">How the app looks and moves. These settings apply to this app only.</target></segment></unit>
+    <unit id="AppearanceMotionTitle"><segment><source>Motion</source><target state="final">Motion</target></segment></unit>
+    <unit id="AppearanceMotionHint"><segment><source>Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</source><target state="final">Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</target></segment></unit>
+    <unit id="MotionSystem"><segment><source>Follow system</source><target state="final">Follow system</target></segment></unit>
+    <unit id="MotionFull"><segment><source>Full</source><target state="final">Full</target></segment></unit>
+    <unit id="MotionReduced"><segment><source>Reduced</source><target state="final">Reduced</target></segment></unit>
+    <unit id="MotionOff"><segment><source>Off</source><target state="final">Off</target></segment></unit>
+    <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="final">In effect now: {0}</target></segment></unit>
+    <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="final">This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</target></segment></unit>
   </file>
 </xliff>

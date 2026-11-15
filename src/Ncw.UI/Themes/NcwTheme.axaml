@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+                    xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
                     xmlns:ui="using:Ncw.UI.Controls"
                     x:Class="Ncw.UI.Themes.NcwTheme">
   <!-- 颜色、圆角、间距全部来自 Arc token,不写死(AGENTS.md §2)。 -->
@@ -12,6 +13,9 @@
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Cursor" Value="Hand" />
+    <!-- 动效:悬停 / 按下的底色渐变。时长与缓动是 Arc 的 token(NcwMotion 的 Instant / Base 档),
+         完整与减弱级别都保留(只是颜色和透明度变化),关闭级别没有过渡(Arc 的 :motion-full / :motion-reduced 伪类,见 docs/design/03 §9)。 -->
+    <Setter Property="arc:ArcMotion.Tracks" Value="True" />
     <Setter Property="Template">
       <ControlTemplate>
         <ContentPresenter Name="PART_ContentPresenter"
@@ -24,8 +28,18 @@
                           VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
       </ControlTemplate>
     </Setter>
+    <Style Selector="^:motion-full, ^:motion-reduced">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="{arc:ArcDesignTokenResource DurationInstant}" Easing="{arc:ArcDesignTokenResource EaseStandard}" />
+        </Transitions>
+      </Setter>
+    </Style>
     <Style Selector="^:pointerover">
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
     </Style>
     <Style Selector="^.active">
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
@@ -38,6 +52,33 @@
     <Style Selector="^.tile:pointerover">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <Style Selector="^.tile:pressed">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </ControlTheme>
+
+  <!-- 可折叠分区(NcwSection):标题行 + NcwCollapsible。箭头是同一个图标旋转(.chevron / .open 见 NcwStyles) -->
+  <ControlTheme x:Key="{x:Type ui:NcwSection}" TargetType="ui:NcwSection">
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Spacing="2">
+          <Grid ColumnDefinitions="*,Auto">
+            <ui:PlainButton Name="PART_Toggle" HorizontalAlignment="Left" Padding="8,3" CornerRadius="6" HorizontalContentAlignment="Left">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Kind="ChevronRight" Size="11" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ui:PlainButton>
+            <ContentPresenter Grid.Column="1" Content="{TemplateBinding Trailing}" VerticalAlignment="Center" />
+          </Grid>
+          <ui:NcwCollapsible IsOpen="{TemplateBinding IsExpanded}">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+          </ui:NcwCollapsible>
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
   </ControlTheme>
 
   <!-- 分隔条:Arc 不提供 GridSplitter 的模板,没有模板就点不中。透明的拖动区,悬停时显示一条强调色的线。 -->

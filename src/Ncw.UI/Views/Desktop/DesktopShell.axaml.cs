@@ -89,10 +89,10 @@ public partial class DesktopShell : UserControl
     }
 
     /// <summary>左侧区域是否显示(测试和窗口拖动区计算用)。</summary>
-    public bool IsSidebarVisible => LeftArea.IsVisible;
+    public bool IsSidebarVisible => LeftArea.IsVisible && !_leftExiting;
 
-    /// <summary>检查器是否显示。</summary>
-    public bool IsInspectorVisible => InspectorColumn.IsVisible;
+    /// <summary>检查器是否显示(停靠或抽屉)。</summary>
+    public bool IsInspectorVisible => InspectorColumn.IsVisible && !_rightExiting;
 
     public static ShellBreakpoint BreakpointFor(double width) => width switch
     {
@@ -108,6 +108,18 @@ public partial class DesktopShell : UserControl
         Breakpoint = BreakpointFor(e.NewSize.Width);
         ApplyLayout();
     }
+
+    // 左右栏的滑入滑出(docs/design/03 §9.4):布局(列宽)一次到位,栏自己用 RenderTransform 滑动,所以工作区只重排一次、不会随动画逐帧重排;
+    // 滑出时栏临时以「覆盖层」的形态(跨列、固定宽度)留在原处,滑完才真正隐藏。
+    // 覆盖层形态的阴影(每次布局重建 Effect 会让它反复重绘,所以各留一份)
+    private readonly DropShadowEffect _leftShadow = new() { BlurRadius = 24, OffsetY = 0, Opacity = 0.35 };
+    private readonly DropShadowEffect _rightShadow = new() { BlurRadius = 24, OffsetY = 0, Opacity = 0.35 };
+    private bool _leftShown;
+    private bool _leftExiting;
+    private bool _rightShown;
+    private bool _rightExiting;
+    private bool _layoutKnown;
+    private ShellBreakpoint _lastBreakpoint;
 
     private void AttachViewModel()
     {
@@ -132,15 +144,22 @@ public partial class DesktopShell : UserControl
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ShellViewModel.IsSidebarOpen) or nameof(ShellViewModel.IsInspectorOpen)
-            or nameof(ShellViewModel.SidebarWidth) or nameof(ShellViewModel.InspectorWidth) or nameof(ShellViewModel.IsDrawerOpen))
+        if (e.PropertyName is nameof(ShellViewModel.IsSidebarOpen) or nameof(ShellViewModel.IsInspectorOpen) or nameof(ShellViewModel.IsDrawerOpen)
+            or nameof(ShellViewModel.IsInspectorDrawerOpen))
+        {
+            ApplyLayout(animate: true);   // 用户开关栏:带滑动
+        }
+        else if (e.PropertyName is nameof(ShellViewModel.SidebarWidth) or nameof(ShellViewModel.InspectorWidth))
         {
             ApplyLayout();
         }
     }
 
-    /// <summary>窄窗口下抽屉是否打开(测试用)。</summary>
+    /// <summary>窄窗口下左侧抽屉是否打开(测试用)。</summary>
     public bool IsDrawerVisible { get; private set; }
+
+    /// <summary>窄窗口(&lt; 1440)下检查器抽屉是否打开(测试用)。</summary>
+    public bool IsInspectorDrawerVisible { get; private set; }
 
     private void OnScrimPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -175,49 +194,158 @@ public partial class DesktopShell : UserControl
 
     /// <summary>
     /// 栏的显示 = 断点 × 用户开关。左侧区域收起时,它的头部(红绿灯留白、名称、展开按钮)并入标签栏最左边;
-    /// 检查器收起时,标签栏右端给右上角常驻按钮让出位置。
+    /// 检查器收起时,标签栏右端给右上角常驻按钮让出位置。<paramref name="animate"/>:这次变化来自用户开关栏(不是窗口缩放跨过断点),栏带滑动。
     /// </summary>
-    private void ApplyLayout()
+    private void ApplyLayout(bool animate = false)
     {
         var sidebarOpen = _vm?.IsSidebarOpen ?? true;
         var inspectorOpen = _vm?.IsInspectorOpen ?? true;
         var compact = Breakpoint < ShellBreakpoint.Medium;
+        animate &= _layoutKnown && Breakpoint == _lastBreakpoint;
+        _lastBreakpoint = Breakpoint;
+        _layoutKnown = true;
+        var inspectorNarrow = Breakpoint < ShellBreakpoint.Wide;
         if (_vm is not null)
         {
             _vm.IsCompact = compact;
+            _vm.IsInspectorNarrow = inspectorNarrow;
         }
 
         var drawer = compact && (_vm?.IsDrawerOpen ?? false);
+        var inspectorDrawer = inspectorNarrow && (_vm?.IsInspectorDrawerOpen ?? false);
         IsDrawerVisible = drawer;
-        DrawerScrim.IsVisible = drawer;
-        Grid.SetColumnSpan(LeftArea, drawer ? 3 : 1);
-        LeftArea.ZIndex = drawer ? 10 : 0;
-        LeftArea.HorizontalAlignment = drawer ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
-        LeftArea.Width = drawer ? _vm?.SidebarWidth ?? UiPrefs.SidebarDefaultWidth : double.NaN;
-        LeftArea.Effect = drawer ? new DropShadowEffect { BlurRadius = 24, OffsetY = 0, Opacity = 0.35 } : null;
+        IsInspectorDrawerVisible = inspectorDrawer;
+        NcwMotion.SetIsPresent(DrawerScrim, drawer || inspectorDrawer);
 
-        LeftArea.IsVisible = drawer || (sidebarOpen && !compact);
-        InspectorColumn.IsVisible = inspectorOpen && Breakpoint == ShellBreakpoint.Wide;
-        LeftSplitter.IsVisible = LeftArea.IsVisible && !drawer;
-        RightSplitter.IsVisible = InspectorColumn.IsVisible;
+        var showLeft = drawer || (sidebarOpen && !compact);
+        var leftWidth = _vm?.SidebarWidth ?? UiPrefs.SidebarDefaultWidth;
+        var leftLeaving = !showLeft && _leftShown && animate;
+        if (showLeft)
+        {
+            var wasExiting = _leftExiting;
+            _leftExiting = false;
+            LeftArea.IsVisible = true;
+            if (animate && (!_leftShown || wasExiting))
+            {
+                NcwMotion.Arrive(LeftArea, NcwArrival.SlideFromLeft, continueFromCurrent: wasExiting);
+            }
+            else if (!_leftShown)
+            {
+                NcwMotion.Rest(LeftArea);
+            }
+        }
+        else if (leftLeaving)
+        {
+            _leftExiting = true;
+            var width = LeftArea.Bounds.Width > 0 ? LeftArea.Bounds.Width : leftWidth;
+            leftWidth = width;
+            NcwMotion.Leave(LeftArea, NcwArrival.SlideFromLeft, () =>
+            {
+                _leftExiting = false;
+                LeftArea.IsVisible = false;
+                ApplyLayout();
+            });
+        }
+        else if (!_leftExiting)
+        {
+            NcwMotion.Rest(LeftArea);
+            LeftArea.IsVisible = false;
+        }
+        else
+        {
+            leftWidth = LeftArea.Width is var w and > 0 ? w : leftWidth;
+        }
+
+        _leftShown = showLeft;
+        var leftOverlay = drawer || _leftExiting;
+        Grid.SetColumnSpan(LeftArea, leftOverlay ? 3 : 1);
+        LeftArea.ZIndex = leftOverlay ? 10 : 0;
+        LeftArea.HorizontalAlignment = leftOverlay ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        LeftArea.Width = leftOverlay ? leftWidth : double.NaN;
+        LeftArea.Effect = leftOverlay ? _leftShadow : null;
+
+        var showRight = (inspectorOpen && Breakpoint == ShellBreakpoint.Wide) || inspectorDrawer;
+        var rightOverlay = inspectorDrawer;
+        var rightLeaving = !showRight && _rightShown && animate;
+        var rightWidth = _vm?.InspectorWidth ?? UiPrefs.InspectorDefaultWidth;
+        if (showRight)
+        {
+            var wasExiting = _rightExiting;
+            _rightExiting = false;
+            InspectorColumn.IsVisible = true;
+            if (animate && (!_rightShown || wasExiting))
+            {
+                NcwMotion.Arrive(InspectorColumn, NcwArrival.SlideFromRight, continueFromCurrent: wasExiting);
+            }
+            else if (!_rightShown)
+            {
+                NcwMotion.Rest(InspectorColumn);
+            }
+        }
+        else if (rightLeaving)
+        {
+            _rightExiting = true;
+            rightWidth = InspectorColumn.Bounds.Width > 0 ? InspectorColumn.Bounds.Width : rightWidth;
+            NcwMotion.Leave(InspectorColumn, NcwArrival.SlideFromRight, () =>
+            {
+                _rightExiting = false;
+                InspectorColumn.IsVisible = false;
+                ApplyLayout();
+            });
+        }
+        else if (!_rightExiting)
+        {
+            NcwMotion.Rest(InspectorColumn);
+            InspectorColumn.IsVisible = false;
+        }
+        else
+        {
+            rightWidth = InspectorColumn.Width is var rw and > 0 ? rw : rightWidth;
+        }
+
+        _rightShown = showRight;
+        InspectorColumn.Classes.Set("overlay", _rightExiting || rightOverlay);
+        if (_rightExiting || rightOverlay)
+        {
+            // 滑出期间检查器跨过(已经收成 0 宽的)右列和工作区,固定宽度、靠右
+            Grid.SetColumn(InspectorColumn, 2);
+            Grid.SetColumnSpan(InspectorColumn, 3);
+            InspectorColumn.HorizontalAlignment = HorizontalAlignment.Right;
+            InspectorColumn.Width = rightOverlay ? _vm?.InspectorWidth ?? UiPrefs.InspectorDefaultWidth : rightWidth;
+            InspectorColumn.ZIndex = 10;
+            InspectorColumn.Effect = _rightShadow;
+        }
+        else
+        {
+            Grid.SetColumn(InspectorColumn, 4);
+            Grid.SetColumnSpan(InspectorColumn, 1);
+            InspectorColumn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            InspectorColumn.Width = double.NaN;
+            InspectorColumn.ZIndex = 0;
+            InspectorColumn.Effect = null;
+        }
+
+        LeftSplitter.IsVisible = showLeft && !drawer;
+        var rightDocked = showRight && !rightOverlay;
+        RightSplitter.IsVisible = rightDocked;
 
         // 列宽:收起的列宽度为 0;展开时用用户拖出来的宽度,并限制在范围内。
         var columns = Main.ColumnDefinitions;
-        var docked = LeftArea.IsVisible && !drawer;
+        var docked = showLeft && !drawer;
         CollapsedLead.IsVisible = !docked;
         columns[0].MinWidth = docked ? UiPrefs.SidebarMinWidth : 0;
         columns[0].MaxWidth = docked ? UiPrefs.SidebarMaxWidth : double.PositiveInfinity;
         columns[0].Width = new GridLength(docked ? _vm?.SidebarWidth ?? UiPrefs.SidebarDefaultWidth : 0);
         columns[1].Width = new GridLength(docked ? 4 : 0);
-        columns[3].Width = new GridLength(InspectorColumn.IsVisible ? 4 : 0);
-        columns[4].MinWidth = InspectorColumn.IsVisible ? UiPrefs.InspectorMinWidth : 0;
-        columns[4].MaxWidth = InspectorColumn.IsVisible ? UiPrefs.InspectorMaxWidth : double.PositiveInfinity;
-        columns[4].Width = new GridLength(InspectorColumn.IsVisible ? _vm?.InspectorWidth ?? UiPrefs.InspectorDefaultWidth : 0);
+        columns[3].Width = new GridLength(rightDocked ? 4 : 0);
+        columns[4].MinWidth = rightDocked ? UiPrefs.InspectorMinWidth : 0;
+        columns[4].MaxWidth = rightDocked ? UiPrefs.InspectorMaxWidth : double.PositiveInfinity;
+        columns[4].Width = new GridLength(rightDocked ? _vm?.InspectorWidth ?? UiPrefs.InspectorDefaultWidth : 0);
 
         CollapsedLead.Measure(Size.Infinity);
         var lead = CollapsedLead.IsVisible ? CollapsedLead.DesiredSize.Width : 0;
         TopRight.Measure(Size.Infinity);
-        var trailing = InspectorColumn.IsVisible ? 0 : TopRight.DesiredSize.Width + TopRight.Margin.Right;
+        var trailing = rightDocked ? 0 : TopRight.DesiredSize.Width + TopRight.Margin.Right;
         Workspace.SetTopRowInsets(lead, trailing);
         Inspector.SetTopRowTrailing(TopRight.DesiredSize.Width + TopRight.Margin.Right, compact: _chrome.ShowsCaptionButtons);
     }

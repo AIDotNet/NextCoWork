@@ -340,3 +340,21 @@ public sealed class ArchivedOpacityConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>动效级别的文字:「当前生效:完整 / 减弱 / 关闭」(外观页)。</summary>
+public sealed class MotionLevelTextConverter : IValueConverter
+{
+    public static readonly MotionLevelTextConverter Effective = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is Ncw.Client.Stores.UiMotionLevel level
+        ? NcwTexts.Format(NcwTextKind.AppearanceMotionEffective, NcwTexts.Get(level switch
+        {
+            Ncw.Client.Stores.UiMotionLevel.Reduced => NcwTextKind.MotionReduced,
+            Ncw.Client.Stores.UiMotionLevel.Off => NcwTextKind.MotionOff,
+            _ => NcwTextKind.MotionFull,
+        }))
+        : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

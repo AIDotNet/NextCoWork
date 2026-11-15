@@ -13,7 +13,7 @@
     <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
       <Panel Width="10" Height="10" VerticalAlignment="Center" arc:Tooltip.Tip="{Binding Activity, Converter={x:Static cv:ActivityTextConverter.Instance}}">
         <!-- 运行中:实心点;未知(设备断开):旋转的加载图标,既不当成结束也不当成还在跑 -->
-        <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" />
+        <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="10" IsVisible="{Binding IsUnknown}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
         <Border CornerRadius="5" BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}">
           <Border.IsVisible>

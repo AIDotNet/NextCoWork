@@ -58,6 +58,7 @@ internal static class Program
         NcwApp.BackendFactory = () => backend = new LocalBackend();
         NcwApp.UpdateServiceFactory = context => CreateUpdateService(context, () => backend?.Sidecar);
         NcwApp.RefreshTokenVaultFactory = static () => new AccountVault(NcwApp.ClientDirectory);
+        Ncw.UI.Controls.NcwMotion.SystemReducesMotionProbe = SystemMotionProbe.ReducesMotion;   // 「动效 · 跟随系统」读系统的「减少动态效果」
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
     }

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    开发用的「真窗口」动效冒烟程序(不对用户发布,不进 NextCoWork.slnx;AGENTS.md §1 的「tools/ 只给开发和 CI 用」):
+    开一个真实的 Avalonia 窗口(macOS 上是真实的 Skia / Metal 渲染和真实的帧时钟,不是 Headless),装上真实的桌面外壳和一段带工具卡片的会话,
+    在 Full 级别下依次触发展开 / 收起、快速连点、左右栏滑动、设置覆盖层进出,用 TopLevel.RequestAnimationFrame 记录每一帧的时间,
+    把每一项打印成 `SMOKE <名字> PASS|FAIL <详情>`(帧数、帧间隔的 p50 / p95 / 最大值、终态是否精确);再切到减弱 / 关闭级别核对终态一致、没有动画。
+    动画中间帧用 RenderTargetBitmap 离屏截图存到 NCW_MOTION_SMOKE_OUT(默认 artifacts/motion-smoke/),所以不需要系统的「屏幕录制」权限。
+    用法:在仓库根目录运行 dotnet run 并指定项目 tools/MotionSmoke(需要图形会话;只在 macOS 上验证过,Windows / Linux 同一份代码但没有机器可测)。退出码 = 失败项数。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+    <ProjectReference Include="../../src/Ncw.UI/Ncw.UI.csproj" />
+    <!-- 和截图测试同一份会话数据(设备推来的形状) -->
+    <Compile Include="../../tests/Ncw.UI.Tests/ConversationFixtures.cs" Link="ConversationFixtures.cs" />
+  </ItemGroup>
+</Project>

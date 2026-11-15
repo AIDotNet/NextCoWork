@@ -10,7 +10,7 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.SettingsOverlay"
              x:DataType="vm:SettingsViewModel"
-             IsVisible="{Binding IsOpen}">
+             ui:NcwMotion.IsPresent="{Binding IsOpen}" ui:NcwMotion.PresenceKind="Fade">
   <!--
     设置页(docs/design/07):整窗覆盖,左侧导航 220px + 内容区(最大 760)。顶部 40px 留给拖动窗口和 macOS 红绿灯。
     分组:本应用(设备、关于)、设备(通用、模型、技能、命令、Hooks、MCP、用量、存储、连接与远程、网关)、项目(项目设置)。
@@ -33,6 +33,10 @@
     </Style>
     <Style Selector="ui|PlainButton.nav.active">
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+    </Style>
+    <!-- 内容区各页:切换分组时淡入(进入动效,NcwMotion.ShowMotion) -->
+    <Style Selector="Panel#Body > :is(UserControl)">
+      <Setter Property="ui:NcwMotion.ShowMotion" Value="Fade" />
     </Style>
     <!-- 窄屏:只留图标 -->
     <Style Selector="Grid.compact TextBlock.navText"><Setter Property="IsVisible" Value="False" /></Style>
@@ -62,6 +66,10 @@
           <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Devices}"
                           Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Devices}" arc:Tooltip.Tip="{l:NcwText SettingsDevices}">
             <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Monitor" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsDevices}" /></StackPanel>
+          </ui:PlainButton>
+          <ui:PlainButton Classes="nav" Classes.active="{Binding IsAppearanceSection}"
+                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Appearance}" arc:Tooltip.Tip="{l:NcwText SettingsAppearance}">
+            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Palette" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsAppearance}" /></StackPanel>
           </ui:PlainButton>
           <ui:PlainButton Classes="nav" Classes.active="{Binding IsAboutSection}"
                           Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.About}" arc:Tooltip.Tip="{l:NcwText SettingsAbout}" x:Name="AboutNav">
@@ -128,6 +136,7 @@
       <Panel x:Name="Body" MaxWidth="760" Margin="32,8,32,32" HorizontalAlignment="Stretch">
         <desktop:AccountSettingsPage DataContext="{Binding Account}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAccountSection}" />
         <desktop:DevicesSettingsPage DataContext="{Binding Devices}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsDevicesSection}" />
+        <desktop:AppearanceSettingsPage DataContext="{Binding Appearance}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAppearanceSection}" />
         <desktop:AboutSettingsPage DataContext="{Binding About}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAboutSection}" />
         <desktop:ModelsSettingsPage DataContext="{Binding Models}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsModelsSection}" />
         <desktop:RemoteSettingsPage DataContext="{Binding Remote}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsRemoteSection}" />

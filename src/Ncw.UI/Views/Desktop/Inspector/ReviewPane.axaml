@@ -47,7 +47,8 @@
         <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
       </StackPanel>
       <!-- 预检发现的冲突:确认后才强制撤销 -->
-      <Border Classes="notice" IsVisible="{Binding HasPendingConflicts}">
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingConflicts}">
+        <Border Classes="notice">
         <StackPanel Spacing="6">
           <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{l:NcwText ReviewConflicts}" />
           <ItemsControl ItemsSource="{Binding PendingConflicts}">
@@ -62,7 +63,7 @@
             <ui:NcwButton Variant="Secondary" Command="{Binding CancelUndoCommand}" Content="{l:NcwText Cancel}" />
           </StackPanel>
         </StackPanel>
-      </Border>
+      </Border></ui:NcwCollapsible>
       <TextBlock Classes="hint" IsVisible="{Binding LastOutcome, Converter={x:Static ObjectConverters.IsNotNull}}"
                  Text="{Binding LastOutcome, Converter={x:Static cv:ReviewOutcomeTextConverter.Instance}}" />
     </StackPanel>

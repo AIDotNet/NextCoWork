@@ -54,6 +54,7 @@
                 BorderThickness="2"
                 BorderBrush="{arc:ArcDesignTokenResource Background}"
                 Background="{arc:ArcDesignTokenResource Success}"
+                ui:NcwMotion.Busy="Breathe"
                 IsVisible="{Binding IsRunning}" />
         <!-- 待处理交互数:右上角 -->
         <Border MinWidth="16"
@@ -64,6 +65,7 @@
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
                 Background="{arc:ArcDesignTokenResource Danger}"
+                ui:NcwMotion.ShowMotion="Fade"
                 IsVisible="{Binding HasPending}">
           <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountConverter.Instance}}"
                      FontSize="10"

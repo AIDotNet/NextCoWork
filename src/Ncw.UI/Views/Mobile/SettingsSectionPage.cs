@@ -30,6 +30,7 @@ public static class SettingsSectionPage
     public static string TitleOf(SettingsSection section) => NcwTexts.Get(section switch
     {
         SettingsSection.Devices => NcwTextKind.SettingsDevices,
+        SettingsSection.Appearance => NcwTextKind.SettingsAppearance,
         SettingsSection.Models => NcwTextKind.SettingsModels,
         SettingsSection.Remote => NcwTextKind.SettingsRemote,
         SettingsSection.General => NcwTextKind.SettingsGeneral,
@@ -47,6 +48,7 @@ public static class SettingsSectionPage
     private static Control ContentOf(SettingsViewModel s, SettingsSection section) => section switch
     {
         SettingsSection.Devices => new DevicesSettingsPage { DataContext = s.Devices },
+        SettingsSection.Appearance => new AppearanceSettingsPage { DataContext = s.Appearance },
         SettingsSection.Models => new ModelsSettingsPage { DataContext = s.Models },
         SettingsSection.Remote => new RemoteSettingsPage { DataContext = s.Remote },
         SettingsSection.General => new GeneralSettingsPage { DataContext = s.Pages.General },

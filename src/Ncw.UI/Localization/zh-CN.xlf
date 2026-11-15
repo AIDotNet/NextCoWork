@@ -1502,5 +1502,15 @@
     <unit id="WidgetActionTitle"><segment><source>Run “{0}”?</source><target state="translated">运行「{0}」?</target></segment></unit>
     <unit id="WidgetActionBody"><segment><source>This visualization asks to run the tool {0} on {1}: {2}</source><target state="translated">这张可视化请求在 {1} 上运行工具 {0}: {2}</target></segment></unit>
     <unit id="WidgetActionConfirm"><segment><source>Run</source><target state="translated">运行</target></segment></unit>
+    <unit id="SettingsAppearance"><segment><source>Appearance</source><target state="translated">外观</target></segment></unit>
+    <unit id="SettingsAppearanceHint"><segment><source>How the app looks and moves. These settings apply to this app only.</source><target state="translated">界面的外观与动效。这些设置只影响本应用。</target></segment></unit>
+    <unit id="AppearanceMotionTitle"><segment><source>Motion</source><target state="translated">动效</target></segment></unit>
+    <unit id="AppearanceMotionHint"><segment><source>Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</source><target state="translated">展开收起、出现消失、页面切换等过渡。「减弱」只保留短淡入淡出,「关闭」让所有变化立即生效;各级别的最终状态完全一致。</target></segment></unit>
+    <unit id="MotionSystem"><segment><source>Follow system</source><target state="translated">跟随系统</target></segment></unit>
+    <unit id="MotionFull"><segment><source>Full</source><target state="translated">完整</target></segment></unit>
+    <unit id="MotionReduced"><segment><source>Reduced</source><target state="translated">减弱</target></segment></unit>
+    <unit id="MotionOff"><segment><source>Off</source><target state="translated">关闭</target></segment></unit>
+    <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="translated">当前生效:{0}</target></segment></unit>
+    <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="translated">这个平台读不到系统的「减少动态效果」设置,所以按「完整」处理;想减少动效请直接选「减弱」或「关闭」。</target></segment></unit>
   </file>
 </xliff>
