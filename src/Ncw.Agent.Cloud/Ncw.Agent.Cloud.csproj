@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    云端 Agent 模式的领域层(docs/design/02 A6):启动配置、编排控制通道(客户端 + 指令泵)、配额、用量上报、空闲检测、出网策略钩子、健康检查端点。
+    只引用协议层(编排通道的类型在 Ncw.Protocol/Orchestration)和 Core;不引用存储、Host 或任何 Ncw.Agent.* 领域项目——
+    持久化经 ICloudStore、用量来源经 IUsageSource 注入,由 Host 装配(和其它 Ncw.Agent.* 项目一样,只有 Host 把领域层和宿主接起来)。
+    零反射、NativeAOT 零警告。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ncw.Agent.Cloud.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Protocol/Ncw.Protocol.csproj" />
+  </ItemGroup>
+</Project>

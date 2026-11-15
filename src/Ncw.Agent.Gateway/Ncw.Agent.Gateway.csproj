@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    开放网关(docs/design/09 §11):同一张方法表的 HTTP 映射。`POST /api/<method>`、订阅用 SSE 的 `GET /api/topics/<topic>`、API 密钥绑定角色、OpenAPI 由方法表自动导出。
+    自带的最小 HTTP/1.1 服务器(`TcpListener`),不用 Kestrel:Kestrel 需要 ASP.NET Core 共享框架,NativeAOT 下要逐个确认裁剪注解、体积大,而这里要的只是
+    「带 Bearer 密钥的 JSON 请求 → 方法表」。零反射、零动态代码,NativeAOT 零警告。只引用协议层(AGENTS.md §4:协议定义只有一个来源)。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ncw.Agent.Gateway.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Protocol/Ncw.Protocol.csproj" />
+  </ItemGroup>
+</Project>

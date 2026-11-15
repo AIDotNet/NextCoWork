@@ -20,10 +20,14 @@
     <Project Path="src/Ncw.Agent.Skills/Ncw.Agent.Skills.csproj" />
     <Project Path="src/Ncw.Agent.Terminal/Ncw.Agent.Terminal.csproj" />
     <Project Path="src/Ncw.Agent.Workspace/Ncw.Agent.Workspace.csproj" />
+    <Project Path="src/Ncw.Agent.Services/Ncw.Agent.Services.csproj" />
+    <Project Path="src/Ncw.Agent.Gateway/Ncw.Agent.Gateway.csproj" />
     <Project Path="src/Ncw.Agent.WebTools/Ncw.Agent.WebTools.csproj" />
     <Project Path="src/Ncw.Agent.Browser/Ncw.Agent.Browser.csproj" />
+    <Project Path="src/Ncw.Agent.Cloud/Ncw.Agent.Cloud.csproj" />
     <Project Path="src/Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
     <Project Path="src/Ncw.Agent/Ncw.Agent.csproj" />
+    <Project Path="src/Ncw.Relay/Ncw.Relay.csproj" />
     <Project Path="src/Ncw.Client/Ncw.Client.csproj" />
     <Project Path="src/Ncw.UI/Ncw.UI.csproj" />
     <Project Path="src/Ncw.Desktop/Ncw.Desktop.csproj" />
@@ -49,10 +53,13 @@
     <Project Path="tests/Ncw.Agent.Skills.Tests/Ncw.Agent.Skills.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Terminal.Tests/Ncw.Agent.Terminal.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Workspace.Tests/Ncw.Agent.Workspace.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Services.Tests/Ncw.Agent.Services.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Gateway.Tests/Ncw.Agent.Gateway.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.WebTools.Tests/Ncw.Agent.WebTools.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Browser.Tests/Ncw.Agent.Browser.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Host.Tests/Ncw.Agent.Host.Tests.csproj" />
     <Project Path="tests/Ncw.Integration.Tests/Ncw.Integration.Tests.csproj" />
+    <Project Path="tests/Ncw.Relay.Tests/Ncw.Relay.Tests.csproj" />
     <Project Path="tests/Ncw.Client.Tests/Ncw.Client.Tests.csproj" />
     <Project Path="tests/Ncw.UI.Tests/Ncw.UI.Tests.csproj" />
   </Folder>

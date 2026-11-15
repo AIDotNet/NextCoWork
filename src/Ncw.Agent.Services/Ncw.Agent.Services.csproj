@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Agent 的杂项领域服务(M4):设置、定时任务、存储维护、搜索、附件、输入框、小组件。
+    只产出领域类型;协议 DTO 的映射和方法接线都在 Ncw.Agent.Host(Host 是唯一把领域层和 Ncw.Protocol 接起来的 Agent 层)。
+    不引用 Avalonia,也不引用任何客户端项目(AGENTS.md §5)。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ncw.Agent.Services.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+  </ItemGroup>
+</Project>

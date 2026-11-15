@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    服务器中继(docs/design/09 §9、05 B5):哑管道——把设备和控制端各自的 WebSocket 拼成一条字节流,只看到端到端 TLS 的密文和连接元数据。
+    这是服务端部署物,不是用户命令行,不对用户发布。
+    Kestrel + WebSocket 在 NativeAOT 下的评估见 docs/design/09 §9.3:`dotnet publish -r <rid> -p:PublishAot=true` 零警告、可启动;
+    但中继是服务端程序,不要求 AOT,默认按普通部署即可(这里不开 PublishAot)。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Ncw.Relay</RootNamespace>
+    <AssemblyName>ncw-relay</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Protocol/Ncw.Protocol.csproj" />
+    <InternalsVisibleTo Include="Ncw.Relay.Tests" />
+  </ItemGroup>
+</Project>

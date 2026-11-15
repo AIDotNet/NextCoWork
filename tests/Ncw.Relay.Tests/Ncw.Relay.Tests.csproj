@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 服务器中继(Ncw.Relay)的单元与集成测试:进程内 Kestrel + 真实的设备侧 / 控制端侧 Ncw.Protocol 实现。 -->
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Relay/Ncw.Relay.csproj" />
+    <ProjectReference Include="../../src/Ncw.Protocol/Ncw.Protocol.csproj" />
+  </ItemGroup>
+</Project>
