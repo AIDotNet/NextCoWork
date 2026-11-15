@@ -28,7 +28,7 @@ public sealed class DatabaseTests : IDisposable
     }
 
     /// <summary>1–37 是 2.x 原样的迁移,38 起是 3.0 的;版本号连续。</summary>
-    private const int Latest = 38;
+    private const int Latest = 39;
 
     [Fact]
     public void Migrations_are_the_37_from_2x_then_3x_and_contiguous()
@@ -37,6 +37,7 @@ public sealed class DatabaseTests : IDisposable
         Assert.Equal("core", AgentDatabase.Migrations[0].Name);
         Assert.Equal("message-fts-rowid", AgentDatabase.Migrations[36].Name);
         Assert.Equal("controller-trust", AgentDatabase.Migrations[37].Name);
+        Assert.Equal("message-meta", AgentDatabase.Migrations[38].Name);
     }
 
     [Fact]

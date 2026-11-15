@@ -38,6 +38,39 @@ public sealed class ControllerTrustRepository(AgentDatabase database)
         }
     }
 
+    /// <summary>
+    /// 当前所有有效的中继路由令牌哈希(每个已配对控制端一个;吊销 = 删行,哈希随之消失)。设备把它推给中继。
+    /// 库里只有哈希(SHA-256,小写十六进制),令牌本身只在配对那一刻给过控制端。
+    /// </summary>
+    public IReadOnlyList<string> RouteTokenHashes()
+    {
+        lock (database.Gate)
+        {
+            using var command = database.Connection.CreateCommand();
+            command.CommandText = "SELECT route_token_hash FROM controller_trust WHERE route_token_hash IS NOT NULL AND route_token_hash <> '' ORDER BY paired_at";
+            using var reader = command.ExecuteReader();
+            var list = new List<string>();
+            while (reader.Read())
+            {
+                list.Add(reader.GetString(0));
+            }
+
+            return list;
+        }
+    }
+
+    /// <summary>某个控制端的路由令牌哈希(经中继接入时核对「令牌属于 TLS 里的这个控制端」);没有为 null。</summary>
+    public string? RouteTokenHash(string fingerprint)
+    {
+        lock (database.Gate)
+        {
+            using var command = database.Connection.CreateCommand();
+            command.CommandText = "SELECT route_token_hash FROM controller_trust WHERE fingerprint = $f";
+            command.Parameters.AddWithValue("$f", fingerprint);
+            return command.ExecuteScalar() as string;
+        }
+    }
+
     /// <summary>登记(或重新配对时覆盖)一个控制端。</summary>
     public void Put(ControllerTrust trust, string routeTokenHash)
     {
@@ -57,6 +90,18 @@ public sealed class ControllerTrustRepository(AgentDatabase database)
             command.Parameters.AddWithValue("$l", (object?)trust.LastSeenAt ?? DBNull.Value);
             command.Parameters.AddWithValue("$h", routeTokenHash);
             command.ExecuteNonQuery();
+        }
+    }
+
+    public bool SetRole(string fingerprint, string role)
+    {
+        lock (database.Gate)
+        {
+            using var command = database.Connection.CreateCommand();
+            command.CommandText = "UPDATE controller_trust SET role = $r WHERE fingerprint = $f";
+            command.Parameters.AddWithValue("$f", fingerprint);
+            command.Parameters.AddWithValue("$r", role);
+            return command.ExecuteNonQuery() > 0;
         }
     }
 

@@ -28,35 +28,12 @@ public sealed record WorkspaceRecord(
 public sealed class WorkspaceRepository(AgentDatabase database, TimeProvider? clock = null)
 {
     /// <summary>2.x 的「未登录」作用域。</summary>
-    public const string LocalScope = "local";
-
-    private const string ScopeKey = "config-profile.scope";
+    public const string LocalScope = ConfigScope.Local;
 
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     /// <summary>当前作用域:kv 表里的 <c>config-profile.scope</c>,没有或坏了就是 local。每次现读,不缓存。</summary>
-    public string CurrentScope()
-    {
-        lock (database.Gate)
-        {
-            using var command = database.Connection.CreateCommand();
-            command.CommandText = "SELECT json FROM kv WHERE key = $k";
-            command.Parameters.AddWithValue("$k", ScopeKey);
-            if (command.ExecuteScalar() is not string json)
-            {
-                return LocalScope;
-            }
-
-            try
-            {
-                return JsonNode.Parse(json) is JsonValue value && value.TryGetValue<string>(out var scope) && scope.Length > 0 ? scope : LocalScope;
-            }
-            catch (JsonException)
-            {
-                return LocalScope;
-            }
-        }
-    }
+    public string CurrentScope() => ConfigScope.Current(database);
 
     public IReadOnlyList<WorkspaceRecord> List()
     {
@@ -117,6 +94,36 @@ public sealed class WorkspaceRepository(AgentDatabase database, TimeProvider? cl
         return Put(json, now)!;
     }
 
+    /// <summary>
+    /// 登记一个 SSH 环境里的目录(2.x 的 <c>createSshWorkspace</c>:<c>environment = { kind: 'connection', connectionId }</c>,名字默认 <c>&lt;连接名&gt;: &lt;目录名&gt;</c>)。
+    /// 同一个环境里同一个目录只登记一次:再添加时只更新最近打开时间,返回已有的。<paramref name="rootPath"/> 是远程主机上的规范路径(由调用方经环境 realpath 得到)。
+    /// </summary>
+    public WorkspaceRecord AddRemote(string connectionId, string rootPath, string? name, string connectionName)
+    {
+        var now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        if (List().FirstOrDefault(w => w.EnvironmentKind == "connection" && w.ConnectionId == connectionId && w.RootPath == rootPath) is { } existing)
+        {
+            var touched = (JsonObject)existing.Json.DeepClone();
+            touched["lastOpenedAt"] = now;
+            touched.Remove("unavailable");
+            return Put(touched, now)!;
+        }
+
+        var baseName = rootPath.TrimEnd('/', '\\');
+        var leaf = baseName[(Math.Max(baseName.LastIndexOf('/'), baseName.LastIndexOf('\\')) + 1)..];
+        var json = new JsonObject
+        {
+            ["id"] = Ulid.Prefixed("ws", _clock),
+            ["name"] = string.IsNullOrWhiteSpace(name) ? $"{connectionName}: {(leaf.Length > 0 ? leaf : rootPath)}" : name.Trim(),
+            ["rootPath"] = rootPath,
+            ["environment"] = new JsonObject { ["kind"] = "connection", ["connectionId"] = connectionId },
+            ["settings"] = DefaultSettings(),
+            ["createdAt"] = now,
+            ["lastOpenedAt"] = now,
+        };
+        return Put(json, now)!;
+    }
+
     /// <summary>删除当前作用域下的一个工作区;不存在或属于别的作用域时返回 false。</summary>
     public bool Remove(string id)
     {
@@ -129,6 +136,50 @@ public sealed class WorkspaceRepository(AgentDatabase database, TimeProvider? cl
             command.Parameters.AddWithValue("$o", scope);
             return command.ExecuteNonQuery() > 0;
         }
+    }
+
+    /// <summary>
+    /// 改一个工作区的 <c>settings</c> 段(项目设置页)。<paramref name="change"/> 直接改传进来的对象;段里 3.0 不认识的键(技能选装等)原样保留,
+    /// 工作区 JSON 的其它部分、最近打开时间也不动。不存在或属于别的作用域返回 null。
+    /// </summary>
+    public WorkspaceRecord? UpdateSettings(string id, Action<JsonObject> change)
+    {
+        if (Get(id) is not { } record)
+        {
+            return null;
+        }
+
+        var json = (JsonObject)record.Json.DeepClone();
+        if (json["settings"] is not JsonObject settings)
+        {
+            settings = DefaultSettings();
+            json["settings"] = settings;
+        }
+
+        change(settings);
+        return Put(json, record.LastOpenedAt);
+    }
+
+    /// <summary>
+    /// 导入一个工作区(数据导入):已经有同 id 的就不动(返回 null,工作区没有 <c>updatedAt</c>,2.x 的合并规则是「有就跳过」);否则按它的 JSON 原样登记。
+    /// 撞上别的账户作用域的同 id 时抛 <see cref="StorageException"/>(不顶替)。
+    /// </summary>
+    public WorkspaceRecord? ImportIfAbsent(JsonObject json)
+    {
+        if (json["id"]?.GetValue<string>() is not { Length: > 0 } id)
+        {
+            throw new StorageException("An imported workspace needs an id.");
+        }
+
+        if (Get(id) is not null)
+        {
+            return null;
+        }
+
+        var now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        var copy = (JsonObject)json.DeepClone();
+        copy["lastOpenedAt"] = json["lastOpenedAt"]?.GetValue<long>() ?? now;
+        return Put(copy, copy["lastOpenedAt"]!.GetValue<long>());
     }
 
     /// <summary>连接配置的显示名(SSH 项目在界面上显示主机名)。</summary>

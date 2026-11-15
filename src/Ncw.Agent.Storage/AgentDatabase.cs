@@ -37,6 +37,66 @@ public sealed partial class AgentDatabase : IDisposable
     /// <summary>串行化所有读写(Microsoft.Data.Sqlite 的连接不是线程安全的)。</summary>
     public object Gate { get; } = new();
 
+    /// <summary>当前正在进行的事务(只在持有 <see cref="Gate"/> 时有值)。仓库用 <see cref="Command"/> 建命令,命令会自动挂上它。</summary>
+    public SqliteTransaction? CurrentTransaction { get; private set; }
+
+    /// <summary>建一条挂着当前事务的命令。调用方负责持有 <see cref="Gate"/>、负责释放命令。</summary>
+    public SqliteCommand Command(string sql)
+    {
+        var command = Connection.CreateCommand();
+        command.CommandText = sql;
+        command.Transaction = CurrentTransaction;
+        return command;
+    }
+
+    /// <summary>
+    /// 在一个事务里执行(对应 2.x 的 <c>tx()</c>)。已经在事务里时直接并入外层,不开嵌套事务;
+    /// 异常使整个最外层事务回滚。其它仓库想和消息写入同一个事务,也走这里。
+    /// </summary>
+    public T InTransaction<T>(Func<T> body)
+    {
+        lock (Gate)
+        {
+            if (CurrentTransaction is not null)
+            {
+                return body();
+            }
+
+            var tx = Connection.BeginTransaction();
+            CurrentTransaction = tx;
+            try
+            {
+                var result = body();
+                tx.Commit();
+                return result;
+            }
+            catch
+            {
+                try
+                {
+                    tx.Rollback();
+                }
+                catch (Exception e) when (e is InvalidOperationException or SqliteException)
+                {
+                    // 提交失败时事务可能已经结束;原异常更有用。
+                }
+
+                throw;
+            }
+            finally
+            {
+                CurrentTransaction = null;
+                tx.Dispose();
+            }
+        }
+    }
+
+    public void InTransaction(Action body) => InTransaction(() =>
+    {
+        body();
+        return 0;
+    });
+
     /// <summary>本程序认识的全部迁移(按版本排序)。</summary>
     public static IReadOnlyList<Migration> Migrations { get; } = LoadMigrations();
 
@@ -77,6 +137,28 @@ public sealed partial class AgentDatabase : IDisposable
         lock (Gate)
         {
             return Convert.ToInt64(Scalar(Connection, "SELECT COUNT(*) FROM sessions"));
+        }
+    }
+
+    /// <summary>
+    /// 把 WAL 全部写回主库并截断(<c>wal_checkpoint(TRUNCATE)</c>):云端休眠前调用,这样卷快照里只有一个自洽的 <c>nextcowork.db</c>。
+    /// 返回是否真的做完(有读者占着或库忙时返回 false,调用方按「尽力而为」处理,WAL 文件本身仍然是一致的)。
+    /// </summary>
+    public bool Checkpoint()
+    {
+        lock (Gate)
+        {
+            try
+            {
+                using var command = Connection.CreateCommand();
+                command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
+                using var reader = command.ExecuteReader();
+                return reader.Read() && reader.GetInt64(0) == 0; // 第一列 busy:0 = 完成
+            }
+            catch (SqliteException)
+            {
+                return false;
+            }
         }
     }
 

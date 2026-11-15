@@ -109,6 +109,74 @@ public static class MessageFts
             ("$r", rowid), ("$m", messageId), ("$s", sessionId), ("$t", title), ("$c", content));
     }
 
+    /// <summary>删掉一个会话的全部索引行(FTS 行与 rowid 映射)。调用方负责事务。</summary>
+    public static void DeleteSession(SqliteConnection connection, SqliteTransaction? tx, string sessionId)
+    {
+        Run(connection, tx, "DELETE FROM messages_fts WHERE rowid IN (SELECT fts_rowid FROM messages_fts_rowid WHERE session_id = $s)", ("$s", sessionId));
+        Run(connection, tx, "DELETE FROM messages_fts_rowid WHERE session_id = $s", ("$s", sessionId));
+    }
+
+    /// <summary>删掉一个会话里、<c>messages</c> 表已经没有的那些消息的索引行。调用方负责事务。</summary>
+    public static void DeleteOrphans(SqliteConnection connection, SqliteTransaction? tx, string sessionId)
+    {
+        const string orphans = """
+            SELECT fts_rowid FROM messages_fts_rowid
+            WHERE session_id = $s AND message_id NOT IN (SELECT id FROM messages WHERE session_id = $s)
+            """;
+        Run(connection, tx, $"DELETE FROM messages_fts WHERE rowid IN ({orphans})", ("$s", sessionId));
+        Run(connection, tx, $"DELETE FROM messages_fts_rowid WHERE fts_rowid IN ({orphans})", ("$s", sessionId));
+    }
+
+    /// <summary>会话改名后同步索引里冗余的标题列。调用方负责事务。</summary>
+    public static void RenameSession(SqliteConnection connection, SqliteTransaction? tx, string sessionId, string title) =>
+        Run(connection, tx, "UPDATE messages_fts SET title = $t WHERE rowid IN (SELECT fts_rowid FROM messages_fts_rowid WHERE session_id = $s)",
+            ("$t", title), ("$s", sessionId));
+
+    /// <summary>清空整个索引(清空对话历史)。调用方负责事务。</summary>
+    public static void Clear(SqliteConnection connection, SqliteTransaction? tx)
+    {
+        Run(connection, tx, "DELETE FROM messages_fts");
+        Run(connection, tx, "DELETE FROM messages_fts_rowid");
+    }
+
+    /// <summary>
+    /// 按消息表重建一个会话的索引(2.x 的 <c>backfillSessionFts</c>:旧库行级合并、导入把行整条搬进来之后补索引)。
+    /// 返回索引的消息数。调用方负责事务。
+    /// </summary>
+    public static int ReindexSession(SqliteConnection connection, SqliteTransaction? tx, string sessionId)
+    {
+        DeleteSession(connection, tx, sessionId);
+        var rows = new List<(string Id, string Parts, string Title)>();
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText = "SELECT m.id, m.parts, s.title FROM messages m JOIN sessions s ON s.id = m.session_id WHERE m.session_id = $s ORDER BY m.id";
+            command.Parameters.AddWithValue("$s", sessionId);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? "" : reader.GetString(2)));
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            Write(connection, tx, row.Id, sessionId, row.Title, SearchableText(row.Parts));
+        }
+
+        return rows.Count;
+    }
+
+    /// <summary>删掉映射指向已不存在的消息的索引行(孤儿)。返回删掉的 FTS 行数。调用方负责事务。</summary>
+    public static long DeleteAllOrphans(SqliteConnection connection, SqliteTransaction? tx)
+    {
+        const string orphans = "SELECT fts_rowid FROM messages_fts_rowid WHERE message_id NOT IN (SELECT id FROM messages)";
+        var removed = Convert.ToInt64(Scalar(connection, tx, $"SELECT count(*) FROM messages_fts WHERE rowid IN ({orphans})"));
+        Run(connection, tx, $"DELETE FROM messages_fts WHERE rowid IN ({orphans})");
+        Run(connection, tx, $"DELETE FROM messages_fts_rowid WHERE fts_rowid IN ({orphans})");
+        return removed;
+    }
+
     /// <summary>清空并按消息表重建全部索引(2.x 第 29 条迁移)。</summary>
     internal static void Rebuild(SqliteConnection connection, SqliteTransaction tx)
     {

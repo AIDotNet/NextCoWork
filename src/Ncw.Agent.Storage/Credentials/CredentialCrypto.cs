@@ -66,9 +66,38 @@ public static class CredentialCrypto
         }
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IMasterKeySource> Sources = new(StringComparer.Ordinal);
+
+    private static string Normalize(string directory) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+
+    /// <summary>
+    /// 给一个数据根换一个主密钥来源(云端模式:KMS 包裹的密钥,见 <see cref="KmsMasterKeySource"/>);<c>null</c> = 恢复成默认的 <c>credential.key</c> 文件。
+    /// 来源只按数据根登记(同一进程里测试可以同时跑多个数据根)。登记必须在第一次读主密钥之前;本机模式从不调用它,行为不变。
+    /// </summary>
+    public static void UseSource(string directory, IMasterKeySource? source)
+    {
+        if (source is null)
+        {
+            Sources.TryRemove(Normalize(directory), out _);
+        }
+        else
+        {
+            Sources[Normalize(directory)] = source;
+        }
+    }
+
+    /// <summary>只有登记的还是 <paramref name="source"/> 自己时才撤销(同一个数据根被后来的实例重新登记之后,旧实例的释放不能把新的撤掉)。</summary>
+    public static void ReleaseSource(string directory, IMasterKeySource source) =>
+        ((System.Collections.Generic.ICollection<KeyValuePair<string, IMasterKeySource>>)Sources).Remove(new KeyValuePair<string, IMasterKeySource>(Normalize(directory), source));
+
     /// <summary>只读已有的主密钥。不存在抛 <see cref="FileNotFoundException"/>;不是普通文件或长度不对抛 <see cref="CryptographicException"/>。</summary>
     public static byte[] LoadMasterKey(string directory)
     {
+        if (Sources.TryGetValue(Normalize(directory), out var source))
+        {
+            return source.Load();
+        }
+
         var file = Path.Combine(directory, MasterKeyFileName);
         var info = new FileInfo(file);
         if (info.LinkTarget is not null)
@@ -95,6 +124,11 @@ public static class CredentialCrypto
     /// <summary>读主密钥;不存在时生成 32 字节随机密钥并以 0600 落盘(两个进程同时首次生成时,后到者读先到者的)。</summary>
     public static byte[] LoadOrCreateMasterKey(string directory)
     {
+        if (Sources.TryGetValue(Normalize(directory), out var source))
+        {
+            return source.LoadOrCreate();
+        }
+
         try
         {
             return LoadMasterKey(directory);

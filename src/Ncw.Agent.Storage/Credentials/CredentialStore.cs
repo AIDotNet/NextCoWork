@@ -75,6 +75,18 @@ public sealed class CredentialStore(AgentDatabase database, string dataRoot, ILe
         }
     }
 
+    /// <summary>删掉 ref 以 <paramref name="prefix"/> 开头的所有行(一个环境 / 一台服务器被删除时清掉它名下的全部凭据)。返回删掉的行数。</summary>
+    public int RemoveByPrefix(string prefix)
+    {
+        lock (database.Gate)
+        {
+            using var command = database.Connection.CreateCommand();
+            command.CommandText = "DELETE FROM credentials WHERE substr(ref, 1, length($p)) = $p";
+            command.Parameters.AddWithValue("$p", prefix);
+            return command.ExecuteNonQuery();
+        }
+    }
+
     /// <summary>还没转成 NCK1 的旧行数(决定接管时要不要提示钥匙串授权)。</summary>
     public int LegacyCount() => AllBlobs().Count(row => !CredentialCrypto.IsProgramEncrypted(row.Blob));
 
