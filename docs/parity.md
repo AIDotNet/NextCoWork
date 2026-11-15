@@ -384,7 +384,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 ### 回放对照的录制方法
 
 录制脚本是 Node / TypeScript,而 AGENTS.md §6 规定仓库里只用 C#,所以**录制脚本不进仓库**:它放在仓库之外,只有它的产出(JSON)和 C# 回放测试进仓库。
-持久副本在开发机上的仓库同级目录 `~/code/ncw-parity-recorder/`(八个 `.mts` 加一份 README:单会话回放的 `lib` / `sse` / `scenarios` / `record-all` / `smoke`,整机回放的 `lib-rt` / `scenarios-rt` / `record-rt`;用环境变量 `NCW_2X_ROOT` 指向 2.x 检出);它不是仓库的一部分,换机器要自己拷过去。
+持久副本在开发机上的仓库同级目录 `~/code/ncw-parity-recorder/`(九个 `.mts` 加一份 README:单会话回放的 `lib` / `sse` / `scenarios` / `record-all` / `smoke`,整机回放的 `lib-rt` / `scenarios-rt` / `scenarios-rt2` / `record-rt`;用环境变量 `NCW_2X_ROOT` 指向 2.x 检出;整机场景**一个场景一个进程**录——某个场景卡住时它的事件钩子会漏进后面的场景);它不是仓库的一部分,换机器要自己拷过去。
 每个录制文件的 `source` 里写着 2.x 的 commit、录制日期和 Node 版本。
 
 1. **2.x 检出**(仓库之外,不要在本仓库的工作树里改 `main`):`git worktree add <仓库外目录> main`(或 `git clone -b main <repo> <目录>`),
@@ -423,7 +423,9 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 
 ### 场景与结果
 
-95 个场景(`Recordings/*.json`:49 个单会话 + 46 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
+(`Recordings/pending/` 里放着 2.x 已录好、但 3.0 还没有对应功能所以不进回放集合的场景,目前一个:`hook-prompt-type-stop-blocks`,见下面「还没覆盖的部分」。)
+
+97 个场景(`Recordings/*.json`:49 个单会话 + 48 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
 
 | 场景 | 说明 |
 | --- | --- |
@@ -522,16 +524,22 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `subagent-unknown-type` | (整机)未知子代理名:拒绝并列出可用的,不回退到通用代理、不建子 Run。 |
 | `tool-parallel-openai-chat` | OpenAI Chat 一轮两个并行工具调用(带文字)+ 流末 usage;第二轮请求里助手消息带两个 tool_calls、紧跟两条 tool 消息。 |
 | `tool-parallel-openai-responses` | OpenAI Responses 一轮加密推理 + 文字 + 两个并行函数调用 + usage;第二轮请求回放推理条目、两个 function_call 与两个 function_call_output。 |
+| `mcp-tool-calls` | (整机)MCP 服务器(真 stdio 子进程,脚本答 JSON-RPC):工具名 `mcp__<服务器>__<工具>`;三个工具(含带 readOnlyHint 的)在 ask 档位都弹审批(2.x 把 MCP 工具一律当「非只读、有破坏性」);入参原样送到服务器、文字内容原样回来;isError 结果是工具错误。 |
+| `mcp-tool-name-sanitizing` | (整机)MCP 工具的外部名:工具名里的点换成下划线;超过 64 字符的截到 55 个再接 `_<fnv1a32(内部 id)>`;模型用外部名调用、服务器收到原名。 |
 
 ### 回放对照还没覆盖的部分
 
-- 子代理:前台转后台(`detachForegroundSubagent`)、多个并行 Task 同一回合派发(谁先拿到名额是 I/O 竞态,2.x 自己都不稳定,所以没有可重放的录制)、全局上限(`globalLimit`)与死锁判据、队列溢出、子代理里用 `allow` 规则免审批、`subagent_update` 遥测(时序相关,只比较 `subagent_start` / `subagent_end` 与排位)、手动「处理」后台报告(`reportManually`)与 blocked。
-- 计划模式:`approve_new_session`、计划文件被外部改写 / 删除时的 `ExitPlanMode` 错误分支(只录了空文件和未进入)、压缩之后计划路径的每轮重注入。
-- 目标:用户手动设 / 清目标、后台工作期间的推迟与 check-in(要时间)、`impossible` 判定、判定器失败(`skipped`)、重启恢复。
-- 权限:AI 审核器(`auto` 档位的 review)、`allow_edited`(单会话回放已有)、`allow_always` 的会话 / 全局作用域(2.x 只有项目作用域,3.0 多出的两个作用域没有对照物)、插件拦截器。
+- 子代理:**多个并行 Task 同一回合派发**(谁先拿到名额是 I/O 竞态,2.x 自己都不稳定,所以没有可重放的录制)、**队列溢出**(每父 Run 排满 16 个才触发,要十几个排队中的子代理,排位文字又是时序相关的)、`subagent_update` 遥测(时序相关,只比较 `subagent_start` / `subagent_end` 与排位)、手动「处理」后台报告(`reportManually`)与 blocked(界面操作,2.x 的主进程一侧没有对应的同步入口)。
+  已覆盖:前台 / 后台 / 前台转后台、排队排位、并发上限 0、死锁判据、嵌套上限、父中止级联、子代理上游失败、子代理里 allow 规则免审批。
+- 计划模式:**压缩之后计划路径的每轮重注入**(需要在整机回放里触发自动压缩,台架没有这条路)。已覆盖:approve_current / approve_new_session / 要求修改 / 拒绝、围栏、文件被删 / 清空 / 在审批时被改写。
+- 目标:后台工作期间的推迟与 check-in(靠 1 分钟起步的定时器,2.x 的定时器读真时钟、不可注入)、**重启恢复**(`restoreGoal` 之后续判:3.0 的 `GoalStore` 没有「进程重启」的重置入口,台架造不出来;`GoalRestore` 的纯逻辑有单测)。已覆盖:自提(直接 / 询问)、用户手动设 / 清 / 顶掉、达成、不可能、判定器两种失败(skipped)、空转刹车。
+- 权限:`allow_always` 的会话 / 全局作用域(2.x 只有项目作用域,3.0 多出的两个作用域没有对照物)、插件拦截器(见下面「插件」)。已覆盖:AI 审核器(JSON / 围栏块 / 中文 / 含糊 / 上游报错 / 没配模型)。
 - Hooks:六个事件都有场景(UserPromptSubmit、PreToolUse 各种结论、PostToolUse、Notification、Stop、SubagentStop)。**prompt 型钩子**:2.x 已录制(`Recordings/pending/hook-prompt-type-stop-blocks.json`,
   不在回放集合里),3.0 的 Host 还没有真实的判定器(`IHookEvaluator` 默认 `skipped`,上面 Hooks 一行的差异 ⑤),所以 3.0 一侧一次判定请求都不发、阻断不了收尾;等 Host 接上判定器就把它挪进 `Recordings/`(2.x 一侧的预期已经在文件里)。
-  Stop 钩子在中止 / 出错路径上发了就不管的那一次、PreToolUse 钩子对子代理的调用:没有场景(发了就不管的写文件时机不确定)。插件、MCP、定时任务:见下面各自的说明。
+  Stop 钩子在中止 / 出错路径上发了就不管的那一次、PreToolUse 钩子对子代理的调用:没有场景(发了就不管的写文件时机不确定)。
+- MCP:已覆盖 stdio 服务器的工具注册(外部名改写 / 超长哈希)、调用、审批、isError。**没覆盖**:streamable-http / sse 传输(要回环 HTTP 假服务器,两边的 HTTP 栈各自处理重定向 / 压缩,不是同一份输入)、重连退避与状态机(时间相关)、资源 / 提示词、密钥注入(NCK1 / safeStorage 与平台相关)、项目绑定的服务器。
+- 插件:**没有场景**。2.x 的插件宿主依赖 Electron(`host-window.ts` / `rpc.ts` / `protocol.ts`:隐藏窗口里的 JS 经 RPC 回主进程),不是无头 Node 里起得来的(录制器只能起内核和 `runtime.ts`);3.0 的插件宿主是 Jaunt 里的 `JsProfile.Hardened` 沙箱和另一套宿主 API,同一份插件代码在两边都跑不起来,没有「同一份输入」可言;插件宿主的行为由 `Ncw.Agent.Plugins.Tests` 里按 2.x 单测移植的用例覆盖。
+- 定时任务:**没有场景**。触发靠真时钟(2.x 的 `scheduler.ts` 直接读 `Date.now()` / `setTimeout`,不可注入),任务对象里的 `nextRunAt` 等字段随当前时间变;模型侧的 `scheduled` 工具结果带这些时间字段,规范化需要一套时间屏蔽规则,当前台架没有。「立即运行」一条路能确定性触发,但 3.0 的 `ScheduledTaskService` 需要另装一套任务表和会话创建桥,台架没有接。`Ncw.Agent.Services.Tests` 的移植用例覆盖规则计算与服务。
 - OpenAI Chat / Responses:多工具调用已录;token 用量(`usage`)的数值不进规范化(`tokens` 在两边都被丢弃),用量账本由各自的单测覆盖,回放对照没有比较它。
 - 整机回放不比较流增量与工具进度文字(只比较结构性事件);发给上游的请求里,工具表只比较名字(见上)。
 

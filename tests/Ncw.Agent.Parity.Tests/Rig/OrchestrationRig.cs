@@ -20,6 +20,7 @@ using Ncw.Agent.Kernel.Tools;
 using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Auth;
 using Ncw.Agent.Llm.Routing;
+using Ncw.Agent.Mcp;
 using Ncw.Agent.Parity.Tests.Trace;
 using Ncw.Agent.Storage;
 using Ncw.Agent.Storage.Sessions;
@@ -55,6 +56,8 @@ public sealed class OrchestrationRig : IDisposable
     private readonly HooksService _hooks;
     private readonly RunRegistry _registry;
     private readonly BackgroundShells _shells = new();
+    private readonly ToolRegistry _toolRegistry;
+    private readonly McpService? _mcp;
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _gates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<RunId, string> _modes = new();
     private readonly List<RunHandle> _handles = [];
@@ -167,6 +170,21 @@ public sealed class OrchestrationRig : IDisposable
 
         var behaviors = _input["toolBehaviors"]!.AsObject();
         var scripted = _input["tools"]!.AsArray().Select(t => (IAgentTool)new ScriptedTool(t!.AsObject(), behaviors, Fire, name => Gate(name).Task)).ToList();
+        // 工具表是统一注册表(内置 + 脚本工具 + MCP 服务器接入的工具),和 Host 一样每回合取快照。
+        _toolRegistry = new ToolRegistry([.. BuiltinTools.Create(), .. scripted]);
+        if (_input["mcpServers"] is JsonArray { Count: > 0 })
+        {
+            _mcp = new McpService(new McpServiceDeps
+            {
+                Configs = new MemoryMcpConfigs(),
+                Secrets = new MemoryMcpSecrets(),
+                Environments = new LocalMcpEnvironments(_env),
+                Tools = _toolRegistry,
+                Delayer = new NoDelay(),
+                Log = _log,
+            });
+        }
+
         var messageIds = new CountingIds();
         var sessions = new SessionDirectory((sessionId, workspaceId) => new AgentSession(sessionId, workspaceId, new AgentSessionDeps
         {
@@ -184,7 +202,7 @@ public sealed class OrchestrationRig : IDisposable
                 new SubagentExtension(_subagents, workspaceId),
                 .. _kit.Extensions,
             ],
-            Tools = new StaticToolSource([.. BuiltinTools.Create(), .. scripted]),
+            Tools = _toolRegistry,
             ResolveModel = model => _config.Bindings.FirstOrDefault(b => b.Alias == model.Alias && (model.ProviderId is null || b.ProviderId == model.ProviderId)),
             LoopOptions = new AgentLoopOptions { ResumeDelays = [] },
             Diagnostics = _log,
@@ -378,6 +396,21 @@ public sealed class OrchestrationRig : IDisposable
         using var responderStop = new CancellationTokenSource();
         var responder = Task.Run(() => AnswerAsync(responderStop.Token));
         PlanFileRef? lastPlan = null;
+        foreach (var server in _input["mcpServers"]?.AsArray() ?? [])
+        {
+            // 真起一台 stdio 服务器(`/bin/sh -c <script>`,和录制同一个脚本);没连上就是台架的问题,不是比较结果。
+            var status = await _mcp!.UpsertAsync(new McpServerConfig
+            {
+                Id = server!["id"]!.GetValue<string>(),
+                Name = server["name"]!.GetValue<string>(),
+                Description = server["description"]?.GetValue<string>(),
+                Transport = McpTransportKind.Stdio,
+                Command = "/bin/sh",
+                Args = ["-c", server["script"]!.GetValue<string>()],
+            }).ConfigureAwait(false);
+            Assert.Equal(McpState.Connected, status.State);
+        }
+
         foreach (var node in steps)
         {
             var step = node!.AsObject();
@@ -754,6 +787,7 @@ public sealed class OrchestrationRig : IDisposable
 
     public void Dispose()
     {
+        _mcp?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _kit.Goals.Dispose();
         _subagents.Dispose();
         _registry.Dispose();
@@ -884,6 +918,59 @@ public sealed class OrchestrationRig : IDisposable
         public void Settled(InteractionResolution resolution)
         {
         }
+    }
+
+    private sealed class MemoryMcpConfigs : IMcpConfigStore
+    {
+        private readonly Dictionary<string, McpServerConfig> _rows = new(StringComparer.Ordinal);
+
+        public IReadOnlyList<McpServerConfig> List()
+        {
+            lock (_rows)
+            {
+                return [.. _rows.OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => r.Value)];
+            }
+        }
+
+        public McpServerConfig? Get(string id)
+        {
+            lock (_rows)
+            {
+                return _rows.GetValueOrDefault(id);
+            }
+        }
+
+        public void Put(McpServerConfig config)
+        {
+            lock (_rows)
+            {
+                _rows[config.Id] = config;
+            }
+        }
+
+        public bool Remove(string id)
+        {
+            lock (_rows)
+            {
+                return _rows.Remove(id);
+            }
+        }
+    }
+
+    private sealed class MemoryMcpSecrets : IMcpSecretStore
+    {
+        public string? Get(string reference) => null;
+
+        public void Set(string reference, string value)
+        {
+        }
+
+        public bool Remove(string reference) => false;
+    }
+
+    private sealed class LocalMcpEnvironments(IExecutionEnvironment env) : IMcpEnvironments
+    {
+        public ValueTask<McpRuntimeTarget> ResolveAsync(McpServerConfig config, CancellationToken ct) => ValueTask.FromResult(new McpRuntimeTarget(env, null));
     }
 
     private sealed class NoDelay : IDelayer
