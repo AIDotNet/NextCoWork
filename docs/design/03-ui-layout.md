@@ -601,12 +601,32 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 
 背景全部是 Arc token(`Background`、`Border`、`Foreground`、`TextSecondary`、`TextMuted`、`Danger`),深浅两套主题都对,没有任何颜色值;文字全部走 `NcwTextKind`(43 条,中英文齐全),不依赖具体字体宽度(清单和说明都会换行)。
 
-- **标识**:和外壳左上角同一个图形(圆角方块 + Lucide `Sparkles`,不使用任何第三方素材)。外圈是 `NcwProgressArc`:弧长 = `Fraction`(已经走完了多少个阶段 / 接管步骤),走 Arc 的 `Smooth` 弹簧(无回弹,被打断时从当前位置接着走);减弱 / 关闭级别 Arc 让弹簧直接跳到终点。**还在等的整个期间**(`IsIndeterminate` = `Phase == Loading`)再叠一小段短弧,用 `NcwMotion.Busy=Spin` 旋转:弧长只表示「走完了几步」,一步本身要多久是不知道的(真实的 1.6 GB 库上接管的「备份」一步实测 37 秒,这期间弧长一动不动),所以短弧一直转,证明还在干活而不是进度条停住了(减弱级别是 Arc 的「忙」明暗呼吸,关闭级别不画——静止的一段弧会被误读成进度)。失败时外圈换成 `Danger` 色、中间换成 `TriangleAlert`。
+- **标识**:中间是 NextCoWork 的品牌图标(2.x 的应用图标,`src/Ncw.UI/Assets/nextcowork-mark.png`,256 px,圆角方块自带透明边距,方块本身约 55 px;作为 `AvaloniaResource` 随程序集发布);失败时换成 `Danger` 色的 `TriangleAlert`。外壳左上角目前仍是 Lucide `Sparkles` 的占位图形,和这里不一致,换标识时一起换。外圈是 `NcwProgressArc`:弧长 = `Fraction`(已经走完了多少个阶段 / 接管步骤),走 Arc 的 `Smooth` 弹簧(无回弹,被打断时从当前位置接着走);减弱 / 关闭级别 Arc 让弹簧直接跳到终点。**还在等的整个期间**(`IsIndeterminate` = `Phase == Loading`)再叠一小段短弧,用 `NcwMotion.Busy=Spin` 旋转:弧长只表示「走完了几步」,一步本身要多久是不知道的(真实的 1.6 GB 库上接管的「备份」一步实测 37 秒,这期间弧长一动不动),所以短弧一直转,证明还在干活而不是进度条停住了(减弱级别是 Arc 的「忙」明暗呼吸,关闭级别不画——静止的一段弧会被误读成进度)。失败时外圈换成 `Danger` 色、中间换成 `TriangleAlert`。
 - **清单**:每个阶段一行。已完成的打勾(勾的容器用 `NcwMotion.IsPresent` 淡入,遵守动效级别)并淡色;当前阶段最亮、加粗、前面是转圈图标;后续阶段暗淡。当前阶段下面是一行说明(接管时用和数据页同一套步骤文字)。**行的透明度变化是立刻的**,故意没有用 Avalonia 样式的 `Transitions`:淡出结束时覆盖层会被摘出界面树,而样式过渡在控件离开界面树时仍被时钟驱动(Headless 下复现过 `NullReferenceException`)。
 - **数据接管**:说明下面有四段小条,点亮的段数 = 真实的步骤序号(锁存,只增不减)。
 - **慢启动**:一行温和的提示(`NcwMotion.IsPresent` 上移 + 淡入),文字按当前阶段区分(Agent / 数据 / 内容 / 通用),不是错误。
 - **失败**:明确的错误面板——标题 + 原因说明 + 按钮「重试」(能重试才有)、「查看诊断」(展开 `NcwCollapsible`,里面是 `StartupProgress.Diagnostics` 的文本 + 守护日志尾部)、「复制诊断信息」、「退出」。不无限转圈。
 - **版式**:宽(≥ 720)画整张清单;窄窗口 / 手机壳(< 720)只留标识、当前阶段的名字和说明(清单收起)。内容整体可滚动(矮窗口)。
+
+#### 入场编排
+
+内容出现的那一刻(`ShowDelay` 过了,或失败要立即显示)按一份固定脚本进入(`StartupOverlay.BuildEntrance`,测试里读得到 `LastEntrance`);时长、缓动、错峰全部是 Arc 的 token,没有魔法数字。t = 内容出现的时刻:
+
+| t | 谁 | 怎么进 |
+|---|---|---|
+| 0 | 标识 | `Grow`(从 `GrowFrom` = 0.84 缩放到 1 + 淡入,`Slow` 480 ms) |
+| 0 | 外圈轨道 | `NcwProgressArc.PlayEntrance`:从十二点钟方向顺时针被画出来(480 ms),已有的进度弧一起画 |
+| `StaggerLine` 80 | 标题 | `Rise`(`Base` 240 ms) |
+| 2 × `StaggerLine` + i × `StaggerItem` | 清单第 i 行 | `Rise`,一行比一行晚 35 ms,往下错峰进来 |
+| 清单之后 | 当前说明 | `Fade`(`Fast` 160 ms) |
+| 480 | 短弧 | 轨道画完之后淡入,开始转 |
+
+- 内容根先变可见并布局、再在同一个 UI 线程回合里编排入场,所以不会有一帧「已经完整可见」的内容;每个部分在延迟期间就停在起点(透明)。
+- 减弱级别:没有延迟、缩放、轨道绘制,所有部分一个 `Fast` 档的短淡入;关闭级别立即就位。三档的最终状态一致。
+- 只播放一次:让位给数据页再回来不重播(`LastEntrance` 是同一份)。失败时只有标识和错误面板(标识之后一个 `StaggerLine`)。
+- `NcwMotion.Arrive` 为此新增 `delay` / `tier` 参数和 `NcwArrival.Grow`;完成后精确落回静止值(不透明度、变换都清掉,没有残留)。
+- 真实定时器偶尔比预定时刻早几毫秒触发,`NextWake` 不变时 `Arm` 不会重新武装、层会卡住;视图的 `RunWake` 因此在每次 `Tick` 之后重新武装(`StartupOverlayTests` 有专门用例,变异检查确认过)。
+- 真窗口里量过入场:约 400 ms 轮询期间帧间隔中位约 16.7 ms,5 次运行全部通过(`tools/StartupSmoke window`,`window.entrance`)。
 
 ### 10.5 无障碍与减少动效
 
@@ -655,7 +675,7 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 | Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(69 条) |
 | Client | ViewModel + Store + Recorder + 真实的 DataGate:延迟出现、最短停留、淡出触发、释放后零通知、失败面板与重试、复制诊断、退出、数据页让位与交回、接管步骤与数据页同源、手机形态、`DeviceLink.RetryNow`;变异检查 | `Ncw.Client.Tests/StartupViewModelTests`(33 条) |
 | Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(7 条) |
-| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(44 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
+| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(53 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
 | 真实启动(无界面) | 真实 `ncw-agent`(NativeAOT)+ 真实守护 + 真实 DeviceLink + 真实 Store:时间线(冷 / 热 / 接上)、故障注入、真实 2.x 库副本接管 | `dotnet run --project tools/StartupSmoke -- timeline|faults|takeover --agent <ncw-agent>`(结果见 §10.11) |
 | 真窗口(macOS) | 原生窗口底色读回、第一帧像素、帧间隔、淡出布局稳定、释放后空闲 CPU | `dotnet run --project tools/StartupSmoke -- window --agent <ncw-agent>`(结果见 §10.6) |
 

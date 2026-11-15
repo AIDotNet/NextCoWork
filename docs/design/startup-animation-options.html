@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-motion="full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NextCoWork 启动加载动画方案</title>
+<style>
+  :root {
+    --bg: #141414; --surface: #191919; --raised: #1f1f1f; --muted: #242424;
+    --fg: #f5f5f5; --text2: #a8a8a8; --text3: #707070; --border: #2c2c2c; --border-strong: #3a3a3a;
+    --danger: #f0616d; --success: #5fcf8c; --scrim: rgba(0,0,0,.5);
+    --ease-enter: cubic-bezier(.2,.8,.2,1); --ease-exit: cubic-bezier(.4,0,1,1); --ease-std: cubic-bezier(.4,0,.2,1);
+    --d-fast: 160ms; --d-std: 240ms; --d-slow: 480ms; --d-exit: 180ms;
+    --stagger-item: 35ms; --stagger-line: 80ms;
+    --page: #0d0d0d; --page-fg: #ededed;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --surface: #ffffff; --raised: #ffffff; --muted: #f6f6f6;
+    --fg: #0b0b0b; --text2: #666666; --text3: #9a9a9a; --border: #e6e6e6; --border-strong: #d2d2d2;
+    --danger: #d12c3c; --success: #1f9d55; --scrim: rgba(0,0,0,.25);
+    --page: #f1f1f1; --page-fg: #161616;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--page-fg); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+  body { padding: 0 0 80px; }
+  header.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--page) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid color-mix(in srgb, var(--page-fg) 12%, transparent); }
+  .top-in { max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+  .top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spacing: .01em; }
+  .ctl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: color-mix(in srgb, var(--page-fg) 62%, transparent); }
+  .seg { display: inline-flex; background: color-mix(in srgb, var(--page-fg) 8%, transparent); border-radius: 8px; padding: 2px; }
+  .seg button { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-size: 12px; color: color-mix(in srgb, var(--page-fg) 70%, transparent); }
+  .seg button[aria-pressed="true"] { background: var(--page-fg); color: var(--page); }
+  .seg button:focus-visible { outline: 2px solid #4c8dff; }
+  .btn { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; background: var(--page-fg); color: var(--page); }
+  .btn.ghost { background: color-mix(in srgb, var(--page-fg) 9%, transparent); color: var(--page-fg); }
+  .btn:focus-visible { outline: 2px solid #4c8dff; }
+  .intro { max-width: 1280px; margin: 0 auto; padding: 22px 24px 4px; color: color-mix(in srgb, var(--page-fg) 72%, transparent); }
+  .intro b { color: var(--page-fg); }
+  .intro ul { margin: 8px 0 0; padding-left: 18px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 18px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 22px; }
+  @media (max-width: 620px) { main { grid-template-columns: 1fr; padding: 14px 16px; } .top-in, .intro { padding-left: 16px; padding-right: 16px; } }
+  .card { background: color-mix(in srgb, var(--page-fg) 4%, transparent); border: 1px solid color-mix(in srgb, var(--page-fg) 11%, transparent); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .card.picked { border-color: #4c8dff; box-shadow: 0 0 0 2px color-mix(in srgb, #4c8dff 35%, transparent); }
+  .card h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .k { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--page-fg); color: var(--page); font-size: 12px; font-weight: 700; }
+  .card h2 .cur { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, #4c8dff 22%, transparent); color: #4c8dff; }
+  .card p.sub { margin: 0; color: color-mix(in srgb, var(--page-fg) 70%, transparent); }
+  .pc { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12.5px; }
+  .pc div { background: color-mix(in srgb, var(--page-fg) 5%, transparent); border-radius: 10px; padding: 8px 10px; }
+  .pc b { display: block; font-size: 11px; letter-spacing: .04em; margin-bottom: 2px; }
+  .pc .p b { color: var(--success); } .pc .c b { color: #e0a23b; }
+  .pc ul { margin: 0; padding-left: 16px; color: color-mix(in srgb, var(--page-fg) 78%, transparent); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: color-mix(in srgb, var(--page-fg) 62%, transparent); }
+  .meta .cx { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--page-fg) 9%, transparent); }
+  .meta .spacer { flex: 1; }
+
+  /* ───────── 模拟窗口 ───────── */
+  .win { position: relative; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--bg); border: 1px solid var(--border-strong); color: var(--fg); isolation: isolate; font-size: 13px; }
+  .shell { position: absolute; inset: 0; display: grid; grid-template-columns: 7% 27% 1fr; grid-template-rows: 28px 1fr; background: var(--muted); }
+  .shell .tb { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .shell .tb i { width: 9px; height: 9px; border-radius: 50%; background: color-mix(in srgb, var(--fg) 22%, transparent); }
+  .shell .rail { background: var(--muted); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; align-items: center; padding: 10px 0; }
+  .shell .rail i { width: 60%; aspect-ratio: 1; border-radius: 8px; background: color-mix(in srgb, var(--fg) 14%, transparent); }
+  .shell .panel { background: var(--muted); border-right: 1px solid var(--border); padding: 10px 8px; display: flex; flex-direction: column; gap: 7px; }
+  .shell .panel i { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--fg) 12%, transparent); }
+  .shell .panel i:first-child { height: 14px; width: 70%; background: color-mix(in srgb, var(--fg) 20%, transparent); }
+  .shell .work { background: var(--bg); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .shell .work i { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  .shell .work .cmp { margin-top: auto; height: 22px; border-radius: 8px; border: 1px solid var(--border-strong); background: transparent; }
+  .ov { position: absolute; inset: 0; background: var(--bg); display: grid; place-items: center; transition: opacity var(--d-exit) var(--ease-exit); }
+  .ov.hide { opacity: 0; pointer-events: none; }
+  .ov.gone { display: none; }
+  .ct { opacity: 0; visibility: hidden; width: 100%; padding: 0 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .ct.on { opacity: 1; visibility: visible; }
+  .cap { position: absolute; left: 10px; bottom: 8px; font-size: 10.5px; color: var(--text3); font-variant-numeric: tabular-nums; z-index: 5; }
+  .cap-r { position: absolute; right: 10px; bottom: 8px; display: flex; gap: 6px; z-index: 5; }
+  .cap-r button { all: unset; cursor: pointer; font-size: 11px; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--text2); }
+  .cap-r button:focus-visible { outline: 2px solid #4c8dff; }
+  .hint { font-size: 11.5px; color: var(--text3); text-align: center; min-height: 1.4em; }
+  .detail { font-size: 12px; color: var(--text3); text-align: center; min-height: 1.5em; transition: opacity var(--d-fast) var(--ease-std); }
+  .fail { display: none; flex-direction: column; align-items: center; gap: 8px; text-align: center; max-width: 340px; }
+  .fail.on { display: flex; }
+  .fail h3 { margin: 0; font-size: 14px; }
+  .fail p { margin: 0; font-size: 11.5px; color: var(--text3); }
+  .fail .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+  .fail .row span { font-size: 11px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-strong); color: var(--fg); }
+  .fail .row span.pri { background: var(--fg); color: var(--bg); border-color: transparent; font-weight: 600; }
+  svg { display: block; }
+  .ic { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* 动效级别:减弱 = 只有短淡入,没有位移 / 缩放 / 循环;关闭 = 全部立即 */
+  [data-motion="reduced"] .win *, [data-motion="reduced"] .win *::before { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
+  [data-motion="off"] .win *, [data-motion="off"] .win *::before { animation: none !important; transition: none !important; }
+  [data-motion="off"] .loop { display: none !important; }
+  [data-motion="off"] .F .ln { opacity: 1; }
+
+  /* ═══════════ A · 环 ═══════════ */
+  .A .mark { width: 84px; height: 84px; animation: aGrow var(--d-slow) var(--ease-enter) both; }
+  .A .mark .track { fill: none; stroke: var(--border-strong); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 308; animation: aDraw var(--d-slow) var(--ease-enter) both; }
+  .A .mark .arc { fill: none; stroke: var(--fg); stroke-width: 3; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 52px 52px; transition: stroke-dasharray .6s var(--ease-std); }
+  .A .comet { transform-origin: 52px 52px; animation: spin .9s linear infinite, fadeIn var(--d-fast) 480ms both; }
+  .A .comet circle { fill: none; stroke: var(--text2); stroke-width: 3; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 52px 52px; }
+  .A .tile rect { fill: var(--fg); } .A .tile path { fill: none; stroke: var(--bg); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .A .title { font-weight: 650; font-size: 16px; animation: rise var(--d-std) var(--stagger-line) var(--ease-enter) both; }
+  .A ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .A.ct { gap: 8px; }
+  .A li { display: flex; align-items: center; gap: 8px; opacity: .45; animation: rise var(--d-std) calc(160ms + var(--i) * var(--stagger-item)) var(--ease-enter) both; }
+  .A li[data-s="active"] { opacity: 1; font-weight: 650; } .A li[data-s="done"] { opacity: .7; }
+  .A li .g { width: 16px; height: 16px; position: relative; }
+  .A li .g svg { position: absolute; inset: 0; width: 16px; height: 16px; }
+  .A li .g .ck, .A li .g .sp { opacity: 0; } .A li[data-s="done"] .g .ck { opacity: 1; animation: pop var(--d-std) var(--ease-enter) both; }
+  .A li[data-s="active"] .g .sp { opacity: 1; animation: spin .9s linear infinite; } .A li[data-s="pending"] .g .ci { opacity: 1; } .A li:not([data-s="pending"]) .g .ci { opacity: 0; }
+  .A .detail { animation: fadeIn var(--d-fast) 360ms both; }
+
+  /* ═══════════ B · 描边 ═══════════ */
+  .B .glyph { width: 116px; height: 116px; animation: aGrow var(--d-slow) var(--ease-enter) both; }
+  .B .ghost { fill: none; stroke: var(--border-strong); stroke-width: 2.4; }
+  .B .draw { fill: none; stroke: var(--fg); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1000; transition: stroke-dashoffset .7s var(--ease-std); }
+  .B .fillbg { fill: var(--fg); opacity: 0; transition: opacity .45s var(--ease-std); } .B .done .fillbg { opacity: 1; }
+  .B .star-draw.solid { fill: var(--bg); } .B .starfill { fill: var(--bg); opacity: 0; transition: opacity .45s var(--ease-std) .1s; } .B .done .starfill { opacity: 1; }
+  .B .done .draw { stroke: var(--bg); transition: stroke .3s .2s; } .B .done .tile-outline { stroke: var(--fg); }
+  .B .glyph.wait { animation: aGrow var(--d-slow) var(--ease-enter) both, breathe 2.4s ease-in-out 700ms infinite; }
+  .B .stage { font-weight: 650; font-size: 15px; height: 1.5em; position: relative; text-align: center; animation: rise var(--d-std) var(--stagger-line) var(--ease-enter) both; }
+  .B .stage span { display: inline-block; transition: opacity var(--d-fast) var(--ease-std), transform var(--d-std) var(--ease-enter); }
+  .B .stage span.out { opacity: 0; transform: translateY(-4px); } .B .stage span.in { opacity: 0; transform: translateY(4px); }
+  .B .count { display: flex; gap: 5px; animation: fadeIn var(--d-fast) 240ms both; } .B .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: background .3s, transform .3s var(--ease-enter); }
+  .B .count i.on { background: var(--fg); transform: scale(1.15); }
+
+  /* ═══════════ C · 线轴 ═══════════ */
+  .C .rail { position: relative; width: min(100%, 360px); height: 64px; animation: fadeIn var(--d-fast) both; }
+  .C .rail .line { position: absolute; left: 14px; right: 14px; top: 14px; height: 2px; background: var(--border-strong); border-radius: 1px; transform-origin: left; animation: lineIn var(--d-slow) var(--ease-enter) both; }
+  .C .rail .fill { position: absolute; left: 14px; top: 14px; height: 2px; background: var(--fg); border-radius: 1px; width: 0; transition: width .6s var(--ease-std); }
+  .C .nodes { position: absolute; inset: 0; display: flex; justify-content: space-between; padding: 0; }
+  .C .node { width: 28px; display: flex; flex-direction: column; align-items: center; gap: 8px; animation: pop var(--d-std) calc(var(--i) * var(--stagger-item)) var(--ease-enter) both; }
+  .C .dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--bg); display: grid; place-items: center; color: var(--bg); transition: background .3s, border-color .3s; position: relative; }
+  .C .node[data-s="done"] .dot { background: var(--fg); border-color: var(--fg); }
+  .C .node[data-s="active"] .dot { border-color: var(--fg); }
+  .C .node[data-s="active"] .dot::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--fg); animation: ripple 1.6s ease-out infinite; }
+  .C .dot svg { width: 14px; height: 14px; opacity: 0; transform: scale(.6); transition: opacity .2s, transform .3s var(--ease-enter); } .C .node[data-s="done"] .dot svg { opacity: 1; transform: scale(1); }
+  .C .lbl { position: absolute; top: 40px; font-size: 11.5px; white-space: nowrap; color: var(--text3); transition: opacity var(--d-fast); opacity: 0; transform: translateX(-50%); left: 14px; }
+  .C .node[data-s="active"] .lbl { opacity: 1; color: var(--fg); font-weight: 650; }
+  .C .big { font-size: 15px; font-weight: 650; animation: rise var(--d-std) var(--stagger-line) var(--ease-enter) both; display: flex; align-items: center; gap: 8px; }
+  .C .big svg { width: 20px; height: 20px; }
+
+  /* ═══════════ D · 骨架拼装 ═══════════ */
+  .D .sk { width: min(66%, 330px); aspect-ratio: 16 / 10; position: relative; border: 1px solid var(--border-strong); border-radius: 10px; overflow: hidden; background: var(--muted); animation: aGrow var(--d-slow) var(--ease-enter) both; transform-origin: center; }
+  .D .part { position: absolute; transition: opacity .5s var(--ease-enter), transform .6s var(--ease-enter); opacity: .14; }
+  .D .part.lit { opacity: 1; transform: none !important; }
+  .D .tbar { left: 0; right: 0; top: 0; height: 12%; border-bottom: 1px solid var(--border); display: flex; gap: 4px; align-items: center; padding: 0 3%; } .D .tbar i { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); }
+  .D .rail { left: 0; top: 12%; bottom: 0; width: 9%; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; align-items: center; padding-top: 6%; transform: translateX(-10px); } .D .rail i { width: 56%; aspect-ratio: 1; border-radius: 4px; background: var(--text3); }
+  .D .phead { left: 9%; width: 26%; top: 12%; height: 11%; border-bottom: 1px solid var(--border); padding: 3% 4%; transform: translateY(-6px); } .D .phead i { display: block; height: 6px; width: 60%; border-radius: 3px; background: var(--text2); }
+  .D .plist { left: 9%; width: 26%; top: 23%; bottom: 0; border-right: 1px solid var(--border); padding: 4%; display: flex; flex-direction: column; gap: 7px; transform: translateX(-8px); } .D .plist i { height: 6px; border-radius: 3px; background: var(--text3); } .D .plist i:nth-child(2n) { width: 70%; }
+  .D .work { left: 35%; right: 0; top: 12%; bottom: 0; padding: 4% 5%; display: flex; flex-direction: column; gap: 7px; transform: translateY(8px); background: var(--bg); } .D .work i { height: 6px; border-radius: 3px; background: var(--text3); } .D .work i:nth-child(3n) { width: 65%; } .D .work .cmp { margin-top: auto; height: 16px; border-radius: 6px; border: 1px solid var(--text3); background: transparent; }
+  .D .name { font-weight: 650; font-size: 14px; animation: rise var(--d-std) var(--stagger-line) var(--ease-enter) both; }
+  .D.reveal-grow .sk { transition: transform .3s var(--ease-enter), opacity .3s; transform: scale(1.04); opacity: 0; }
+
+  /* ═══════════ E · 静线 ═══════════ */
+  .E .topline { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: color-mix(in srgb, var(--fg) 8%, transparent); z-index: 4; }
+  .E .topline .f { height: 100%; width: 0; background: var(--fg); transition: width .7s var(--ease-std); position: relative; }
+  .E .topline .f::after { content: ""; position: absolute; right: 0; top: -1px; width: 56px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--fg)); opacity: .0; }
+  .E .topline.wait .f::after { opacity: .55; animation: shimmerPulse 1.6s ease-in-out infinite; }
+  .E .tile { width: 56px; height: 56px; border-radius: 15px; background: var(--fg); display: grid; place-items: center; animation: gentle var(--d-std) var(--ease-enter) both; }
+  .E .tile.breathe { animation: gentle var(--d-std) var(--ease-enter) both, breatheS 2.6s ease-in-out 400ms infinite; }
+  .E .tile svg { width: 28px; height: 28px; } .E .tile path { fill: none; stroke: var(--bg); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .E .status { font-size: 12.5px; color: var(--text2); height: 1.6em; animation: rise var(--d-std) 120ms var(--ease-enter) both; position: relative; }
+  .E .status span { display: inline-block; transition: opacity var(--d-fast), transform var(--d-std) var(--ease-enter); }
+  .E .status span.out { opacity: 0; transform: translateY(-3px); } .E .status span.in { opacity: 0; transform: translateY(3px); }
+
+  /* ═══════════ F · 启动日志 ═══════════ */
+  .F .term { width: min(100%, 400px); font: 12px/1.7 ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; animation: fadeIn var(--d-fast) both; }
+  .F .hd { color: var(--text3); margin-bottom: 4px; }
+  .F .ln { display: flex; gap: 8px; align-items: baseline; opacity: 0; animation: lineType var(--d-std) calc(var(--i) * var(--stagger-item)) var(--ease-enter) both; }
+  .F .ln .m { width: 14px; color: var(--text3); } .F .ln.done .m { color: var(--success); } .F .ln .t { margin-left: auto; color: var(--text3); font-variant-numeric: tabular-nums; }
+  .F .ln.pending { color: var(--text3); } .F .ln.active { color: var(--fg); } .F .ln.done { color: var(--text2); }
+  .F .sub { padding-left: 22px; color: var(--text3); font-size: 11.5px; }
+  .F .caret { display: inline-block; width: 7px; height: 13px; background: var(--fg); vertical-align: -2px; margin-left: 4px; animation: blink 1s steps(2, start) infinite; }
+  .F .bar { margin-top: 8px; color: var(--text2); } .F .bar b { color: var(--fg); font-weight: 600; }
+  .F .warn { color: #e0a23b; margin-top: 6px; } .F .err { color: var(--danger); }
+  .F .actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; } .F .actions span { border: 1px solid var(--border-strong); border-radius: 6px; padding: 0 8px; color: var(--fg); }
+
+  @keyframes aGrow { from { opacity: 0; transform: scale(.84); } to { opacity: 1; transform: none; } }
+  @keyframes aDraw { from { stroke-dashoffset: 308; } to { stroke-dashoffset: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes gentle { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+  @keyframes pop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes ripple { from { transform: scale(1); opacity: .7; } to { transform: scale(1.55); opacity: 0; } }
+  @keyframes lineIn { from { transform: scaleX(0); } to { transform: none; } }
+  @keyframes breathe { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
+  @keyframes breatheS { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+  @keyframes shimmerPulse { 0%,100% { opacity: .15; } 50% { opacity: .6; } }
+  @keyframes blink { to { visibility: hidden; } }
+  @keyframes lineType { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  footer.pick { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: color-mix(in srgb, var(--page) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid color-mix(in srgb, var(--page-fg) 14%, transparent); }
+  footer.pick .in { max-width: 1280px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+  footer.pick code { background: color-mix(in srgb, var(--page-fg) 10%, transparent); padding: 2px 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <h1 id="h1"></h1>
+  <div class="ctl"><span data-t="scen"></span><div class="seg" id="scen"></div></div>
+  <div class="ctl"><span data-t="theme"></span><div class="seg" id="theme"></div></div>
+  <div class="ctl"><span data-t="motion"></span><div class="seg" id="motion"></div></div>
+  <div class="ctl"><span data-t="speed"></span><div class="seg" id="speed"></div></div>
+  <div class="ctl"><div class="seg" id="lang"></div></div>
+  <button class="btn" id="replayAll"></button>
+</div></header>
+<section class="intro" id="intro"></section>
+<main id="grid"></main>
+<footer class="pick"><div class="in"><span id="pickText"></span><button class="btn ghost" id="copyPick" hidden></button></div></footer>
+
+<script>
+(() => {
+'use strict';
+/* ───────── 文案 ───────── */
+const L = {
+  zh: {
+    title: 'NextCoWork 启动加载动画方案', scen: '场景', theme: '主题', motion: '动效', speed: '速度', replay: '全部重播', replayOne: '重播',
+    dark: '深色', light: '浅色', full: '完整', reduced: '减弱', off: '关闭',
+    introHtml: '<p><b>6 个方案,选一个。</b>每个预览都由同一份<b>真实的阶段事实</b>驱动(和代码里的 <code>StartupProgress</code> 一致:5 个阶段、数据接管的真实步骤、慢启动、失败),不是固定时长的假动画。上面可以切换场景、深浅主题、动效级别(完整 / 减弱 / 关闭)和速度。</p><ul><li>所有方案共用同一套规则:第一帧只有底色,<b>250 ms</b> 后内容才出现(更快就绪就不出现,不闪屏);出现后至少停留 <b>600 ms</b>;淡出 <b>180 ms</b>,淡出时下面的外壳已经布局完成。</li><li>时长 / 缓动 / 错峰都取自 Arc 的 token(160 / 240 / 480 ms、错峰 35 / 80 ms);动画只动 Opacity / 变换 / 描边长度。减弱 = 只留一个短淡入;关闭 = 全部立即,<b>仍显示真实的阶段文字和进度</b>。</li><li>方案 A 就是现在已经实现并跑在真窗口里的那一版(截图在 <code>tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/startup-entrance-*.png</code>);其余是备选。</li></ul>',
+    stages: { app: '准备应用', agent: '启动本机 Agent', connect: '连接设备', data: '准备数据', content: '加载项目与会话' },
+    detail: { app: '正在准备窗口和偏好设置…', agent: '正在等待 Agent 响应…', connect: '正在建立本机连接…', data: '正在检查数据…', content: '正在读取项目和会话…', settle: '马上就好…',
+              s1: '正在备份数据,历史较多时可能需要一分钟。', s2: '正在升级数据库…', s3: '即将完成…', s4: '正在转换保存的密钥…' },
+    slow: '这次启动比平时久一点,请稍候。', slowData: '升级数据可能需要几分钟,请不要关闭应用。',
+    failT: '找不到本机 Agent', failP: 'NextCoWork 找不到自带的 Agent 程序,安装似乎不完整,重新安装通常可以解决。', retry: '重试', diag: '查看诊断', copy: '复制诊断信息', quit: '退出',
+    pros: '优点', cons: '代价', pick: '选这个', picked: '已选择', cx: '实现难度', low: '低', mid: '中', high: '较高', current: '当前已实现',
+    pickNone: '还没有选择。点卡片上的「选这个」,然后把方案字母发给我即可。', pickDone: (k, n) => `你选了方案 ${k} · ${n}。回复「${k}」即可开工。`, copyBtn: '复制「选 X」',
+    scenarios: { adopt: '接上已运行的 Agent(约 6 ms)', warm: '热启动(约 0.9 s)', cold: '冷启动(约 1.3 s)', slow: '慢启动(Agent 9 s 才就绪)', takeover: '首次接管 2.x 数据(预览压缩,真实约 40 s)', fail: '失败(找不到 Agent)' },
+    capAdopt: '内容从不出现:底色直接淡出', t: '时间', sc: '步', bootHd: 'NextCoWork 3.0 — starting', bootBar: '进度', bootWarn: '! 启动比平时久一点', bootStart: '… ', bootDone: '✓ ', bootErr: '✗ ', bootDataSteps: ['备份', '升级数据库', '提交', '转换凭据'],
+  },
+  en: {
+    title: 'NextCoWork startup loading animation options', scen: 'Scenario', theme: 'Theme', motion: 'Motion', speed: 'Speed', replay: 'Replay all', replayOne: 'Replay',
+    dark: 'Dark', light: 'Light', full: 'Full', reduced: 'Reduced', off: 'Off',
+    introHtml: '<p><b>Six options — pick one.</b> Every preview is driven by the same <b>real stage facts</b> as the code (<code>StartupProgress</code>: five stages, the real takeover steps, slow start, failure) — not a fixed-length fake animation. Switch scenario, theme, motion level (full / reduced / off) and speed above.</p><ul><li>Shared rules: the first frame is just the backdrop, content appears after <b>250 ms</b> (never, if everything is ready sooner — no flash); once shown it stays at least <b>600 ms</b>; the fade-out is <b>180 ms</b> over an already laid-out shell.</li><li>Durations / easings / staggers come from Arc tokens (160 / 240 / 480 ms, stagger 35 / 80 ms); animation only touches opacity / transforms / stroke length. Reduced = one short fade; Off = everything instant, <b>still showing the real stage text and progress</b>.</li><li>Option A is the one already implemented and running in the real window; the rest are alternatives.</li></ul>',
+    stages: { app: 'Preparing the app', agent: 'Starting the local agent', connect: 'Connecting to the device', data: 'Preparing your data', content: 'Loading projects and sessions' },
+    detail: { app: 'Setting up the window and your preferences…', agent: 'Waiting for the agent to answer…', connect: 'Opening a secure local connection…', data: 'Checking your data…', content: 'Loading your projects and sessions…', settle: 'Getting everything ready…',
+              s1: 'Backing up your data. A long history can take a minute.', s2: 'Upgrading the database…', s3: 'Finishing up…', s4: 'Converting your saved keys…' },
+    slow: 'This is taking a little longer than usual. Hang tight.', slowData: 'Upgrading your data can take a few minutes. Please keep the app open.',
+    failT: 'The local agent is missing', failP: 'NextCoWork could not find its agent program. The installation looks incomplete; reinstalling usually fixes it.', retry: 'Try again', diag: 'View diagnostics', copy: 'Copy diagnostics', quit: 'Quit',
+    pros: 'Strengths', cons: 'Costs', pick: 'Pick this', picked: 'Picked', cx: 'Effort', low: 'Low', mid: 'Medium', high: 'Higher', current: 'Implemented now',
+    pickNone: 'Nothing picked yet. Press “Pick this” on a card and send me the letter.', pickDone: (k, n) => `You picked option ${k} · ${n}. Reply “${k}” and I will build it.`, copyBtn: 'Copy “Pick X”',
+    scenarios: { adopt: 'Attach to a running agent (~6 ms)', warm: 'Warm start (~0.9 s)', cold: 'Cold start (~1.3 s)', slow: 'Slow start (agent ready after 9 s)', takeover: 'First 2.x takeover (compressed, ~40 s for real)', fail: 'Failure (agent missing)' },
+    capAdopt: 'Content never appears: the backdrop fades straight out', t: 'time', sc: 'step', bootHd: 'NextCoWork 3.0 — starting', bootBar: 'progress', bootWarn: '! taking longer than usual', bootStart: '… ', bootDone: '✓ ', bootErr: '✗ ', bootDataSteps: ['backup', 'upgrading database', 'commit', 'converting credentials'],
+  },
+};
+const OPTIONS = [
+  { k: 'A', cx: 'mid', cur: true,
+    n: { zh: '环 · 标识 + 清单', en: 'Ring · mark + checklist' },
+    d: { zh: '品牌标识长出来,外圈轨道被画出来,弧长 = 已走完的真实阶段;下面是五行阶段清单,逐行错峰进入,完成的打勾;等待时一小段带拖尾的彗星一直转。', en: 'The brand mark grows in, the ring track is drawn, arc length = completed real stages; a five-row checklist enters staggered with checks; a short comet with a tail orbits while waiting.' },
+    pros: { zh: ['信息最完整:每个阶段看得见、勾得到', '失败 / 慢 / 接管步骤都有位置', '已经在真窗口里验证过(帧间隔中位 16.7 ms)'], en: ['Most informative: every stage visible and ticked', 'Room for failure / slow / takeover steps', 'Already verified in a real window (median frame gap 16.7 ms)'] },
+    cons: { zh: ['元素最多,入场编排最复杂', '窄窗口 / 手机要收起清单'], en: ['Most elements; most complex choreography', 'Checklist collapses on narrow windows / phone'] } },
+  { k: 'B', cx: 'high',
+    n: { zh: '描边 · 标识自己画出来', en: 'Outline · the logo draws itself' },
+    d: { zh: '没有清单:标识的轮廓随真实阶段一笔一笔被画出来,画满的那一刻填上实心——标识「完成」就是启动完成。下面只有一行当前阶段名。', en: 'No checklist: the logo outline is drawn stroke by stroke as real stages complete; at 100% it fills solid — the logo being finished means startup is finished. Just one line of stage text below.' },
+    pros: { zh: ['最有品牌感,最安静', '进度和「完成」是同一个视觉隐喻', '窄窗口 / 手机天然适配'], en: ['Most branded, most quiet', 'Progress and “done” are one visual metaphor', 'Fits narrow windows / phone as-is'] },
+    cons: { zh: ['需要自绘「按长度裁剪的路径」控件(Avalonia 没有路径裁剪 API)', '看不到每个阶段的明细,出错时要靠面板补'], en: ['Needs a custom path-trimming control (Avalonia has no path trim API)', 'Per-stage detail is hidden; failures rely on the panel'] } },
+  { k: 'C', cx: 'low',
+    n: { zh: '线轴 · 五个节点', en: 'Thread · five nodes' },
+    d: { zh: '五个节点连成一条线,线随阶段完成向右填满;完成的节点打勾,当前节点有一圈涟漪,只有当前节点下面显示名字。', en: 'Five nodes on a thread that fills as stages complete; done nodes are ticked, the current node ripples, only the current node shows its name.' },
+    pros: { zh: ['实现最轻(几个圆 + 一条线)', '一眼看到「第几步 / 共几步」', '窄窗口也能横着放下'], en: ['Lightest to build (circles + a line)', 'Instantly shows step N of M', 'Fits horizontally even in narrow windows'] },
+    cons: { zh: ['品牌标识不突出', '数据接管的子步骤没有天然位置(只能放在说明里)'], en: ['Brand mark is not prominent', 'No natural place for takeover sub-steps (only in the detail line)'] } },
+  { k: 'D', cx: 'high',
+    n: { zh: '骨架拼装 · 变成真界面', en: 'Skeleton assembly · becomes the real UI' },
+    d: { zh: '一个迷你外壳的骨架:每完成一个阶段点亮一块(窗口框 → 项目栏 → 面板头 → 列表 → 工作区),全部点亮后「长大」并淡出,露出同样位置的真实外壳。', en: 'A mini shell skeleton: each completed stage lights up one part (frame → rail → panel header → list → workspace); when all are lit it grows and fades, revealing the real shell at the same positions.' },
+    pros: { zh: ['最直观:用户看到「正在装的是什么」', '和真界面的交接最自然,没有跳动感', '延续了 2.x 骨架屏的思路,但由真实阶段驱动'], en: ['Most literal: you see what is being assembled', 'Smoothest hand-off to the real UI', 'Keeps the 2.x skeleton idea, but driven by real stages'] },
+    cons: { zh: ['要和真实外壳的版式(栏宽 / 断点)保持一致,维护成本最高', '手机壳要另做一套骨架'], en: ['Must match the real shell layout (column widths / breakpoints): highest upkeep', 'The phone shell needs its own skeleton'] } },
+  { k: 'E', cx: 'low',
+    n: { zh: '静线 · 极简', en: 'Quiet line · minimal' },
+    d: { zh: '只有标识、一行状态文字和窗口顶边一条细线:线的长度 = 真实进度,等待时标识轻轻呼吸。几乎没有「动画」,但每一处变化都是真的。', en: 'Just the mark, one status line and a hairline on the top edge: its length = real progress; the mark breathes softly while waiting. Barely any “animation”, but every change is real.' },
+    pros: { zh: ['最轻、最克制,几乎不抢眼', '快启动时最不打扰', '实现最简单,性能最好'], en: ['Lightest and most restrained', 'Least intrusive on fast starts', 'Simplest to build, best performance'] },
+    cons: { zh: ['信息量最少,慢启动 / 接管时显得单薄', '「设计感」最弱'], en: ['Least information; feels thin on slow starts / takeover', 'Weakest “designed” feel'] } },
+  { k: 'F', cx: 'mid',
+    n: { zh: '启动日志 · 终端风', en: 'Boot log · terminal style' },
+    d: { zh: '像启动一个开发工具:逐行打出每个阶段,完成时在行尾写上<b>真实耗时</b>(ms),下面一条 [###···] 进度;失败直接打出错误行和可点的动作。', en: 'Like booting a dev tool: each stage prints a line, completion stamps the <b>real elapsed ms</b>, a [###···] bar below; failures print error lines with actions.' },
+    pros: { zh: ['最诚实:直接展示真实时间线', '很契合「编码 Agent」的受众', '诊断信息天然就在界面上'], en: ['Most honest: shows the real timeline', 'Fits a coding-agent audience', 'Diagnostics are on screen by nature'] },
+    cons: { zh: ['风格和应用其余部分差别最大', '对非开发用户偏冷'], en: ['Furthest from the rest of the app’s look', 'Cold for non-developer users'] } },
+];
+const STAGES = ['app', 'agent', 'connect', 'data', 'content'];
+const SCEN = {
+  adopt: [[0, 'done', 'app'], [2, 'done', 'agent'], [2, 'done', 'connect'], [3, 'done', 'data'], [6, 'done', 'content']],
+  warm: [[0, 'done', 'app'], [704, 'done', 'agent'], [724, 'done', 'connect'], [736, 'done', 'data'], [921, 'done', 'content']],
+  cold: [[0, 'done', 'app'], [1130, 'done', 'agent'], [1154, 'done', 'connect'], [1163, 'done', 'data'], [1316, 'done', 'content']],
+  slow: [[0, 'done', 'app'], [9000, 'done', 'agent'], [9024, 'done', 'connect'], [9036, 'done', 'data'], [9221, 'done', 'content']],
+  takeover: [[0, 'done', 'app'], [700, 'done', 'agent'], [724, 'done', 'connect'], [740, 'step', 1], [6500, 'step', 2], [6510, 'step', 3], [7000, 'done', 'data'], [7200, 'done', 'content']],
+  fail: [[0, 'done', 'app'], [640, 'fail', 'agent-not-found']],
+};
+const SHOW_DELAY = 250, MIN_DWELL = 600, SLOW_AFTER = 8000, SETTLE = 30, FADE = 180;
+
+/* ───────── 状态 ───────── */
+const S = { lang: 'zh', theme: 'dark', motion: 'full', speed: 1, scen: 'warm', picked: null };
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const T = () => L[S.lang];
+
+/* 把事件流在时刻 t 折叠成「事实」(和 StartupProgress.Derive 同一套语义:阶段完成是锁存的,进度只增不减) */
+function facts(t) {
+  const f = { t, ds: new Set(), step: 0, fail: null, doneAt: {} };
+  for (const [at, kind, arg] of SCEN[S.scen]) {
+    if (at > t) break;
+    if (kind === 'done') { f.ds.add(arg); f.doneAt[arg] = at; }
+    else if (kind === 'step') f.step = Math.max(f.step, arg);
+    else if (kind === 'fail') f.fail = arg;
+  }
+  f.count = f.ds.size;
+  const sub = (!f.ds.has('data') && f.step > 0) ? (f.step - 1) / 4 : 0;
+  f.fraction = Math.min(1, (f.count + sub) / 5);
+  const open = STAGES.findIndex(s => !f.ds.has(s));
+  f.cur = open < 0 ? 4 : open; f.ready = open < 0;
+  f.readyAt = f.ready ? Math.max(...Object.values(f.doneAt)) : null;
+  return f;
+}
+function derive(t, run) {
+  const f = facts(t);
+  f.contentAt = run.contentAt; f.revealAt = run.revealAt;
+  if (f.fail) f.contentVisible = true;
+  else f.contentVisible = run.contentAt != null;
+  if (run.contentAt == null && (f.fail || t >= SHOW_DELAY) && !(f.ready && t >= f.readyAt + SETTLE && !f.fail)) run.contentAt = t, f.contentVisible = true;
+  f.settled = f.ready && !f.fail && t >= f.readyAt + SETTLE;
+  if (run.revealAt == null && f.settled) {
+    const earliest = run.contentAt != null ? run.contentAt + MIN_DWELL : t;
+    if (t >= earliest) run.revealAt = t;
+  }
+  f.revealing = run.revealAt != null; f.done = run.revealAt != null && t >= run.revealAt + FADE;
+  f.slow = !f.ready && !f.fail && t >= SLOW_AFTER;
+  f.detailKey = f.fail ? null : f.ready ? 'settle' : (STAGES[f.cur] === 'data' && f.step > 0 ? 's' + f.step : STAGES[f.cur]);
+  run.contentAt = run.contentAt; f.contentAt = run.contentAt; f.revealAt = run.revealAt;
+  return f;
+}
+
+/* ───────── 图标 ───────── */
+const SPARK = '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>';
+const CHECK = '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>';
+const SPIN = '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>';
+const RING = '<circle cx="12" cy="12" r="10"/>';
+const ALERT = '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>';
+const TICK = '<path d="M20 6 9 17l-5-5"/>';
+const svg = (inner, cls = 'ic', vb = '0 0 24 24') => `<svg class="${cls}" viewBox="${vb}" aria-hidden="true">${inner}</svg>`;
+
+function failBlock() {
+  const t = T();
+  return `<div class="fail"><div style="color:var(--danger)">${svg(ALERT, 'ic').replace('<svg', '<svg width="28" height="28"')}</div><h3>${t.failT}</h3><p>${t.failP}</p><div class="row"><span class="pri">${t.retry}</span><span>${t.diag}</span><span>${t.copy}</span><span>${t.quit}</span></div></div>`;
+}
+function swapText(node, text) {
+  const cur = node.querySelector('span:not(.out)');
+  if (cur && cur.textContent === text) return;
+  if (S.motion === 'off' || !cur) { node.innerHTML = ''; const s = el('span'); s.textContent = text; node.appendChild(s); return; }
+  cur.classList.add('out');
+  const n = el('span', 'in'); n.textContent = text; node.appendChild(n);
+  requestAnimationFrame(() => requestAnimationFrame(() => n.classList.remove('in')));
+  setTimeout(() => cur.remove(), 220);
+}
+function setDetail(node, s) {
+  const t = T();
+  const text = s.fail ? '' : (t.detail[s.detailKey] || '');
+  if (node.dataset.k !== (s.detailKey || '')) { node.dataset.k = s.detailKey || ''; node.textContent = text; }
+}
+function setHint(node, s) {
+  const t = T();
+  node.textContent = s.slow ? (STAGES[s.cur] === 'data' && s.step > 0 ? t.slowData : t.slow) : '';
+}
+
+/* ═════════ 各方案 ═════════ */
+const DESIGNS = {
+  A(root) {
+    const t = T();
+    root.className = 'ct A';
+    root.innerHTML = `
+      <svg class="mark" viewBox="0 0 104 104"><circle class="track" cx="52" cy="52" r="49"/><circle class="arc" cx="52" cy="52" r="49" stroke-dasharray="0 308"/>
+        <g class="comet loop"><circle cx="52" cy="52" r="49" stroke-dasharray="25 283" style="opacity:.32;transform:rotate(-162deg);transform-origin:52px 52px"/><circle cx="52" cy="52" r="49" stroke-dasharray="14 294" style="transform:rotate(-90deg);transform-origin:52px 52px"/></g>
+        <g class="tile"><rect x="26" y="26" width="52" height="52" rx="14"/><g transform="translate(39 39) scale(1.08)">${SPARK.replace(/<path /g, '<path ')}</g></g></svg>
+      <div class="title">NextCoWork</div>
+      <ul class="steps">${STAGES.map((s, i) => `<li data-s="pending" style="--i:${i}"><span class="g">${svg(RING, 'ic ci')}${svg(SPIN, 'ic sp')}${svg(CHECK, 'ic ck')}</span><span>${t.stages[s]}</span></li>`).join('')}</ul>
+      <div class="detail"></div><div class="hint"></div>${failBlock()}`;
+    const arc = $('.arc', root), lis = [...root.querySelectorAll('li')], det = $('.detail', root), hint = $('.hint', root), comet = $('.comet', root), steps = $('.steps', root), title = $('.title', root);
+    return s => {
+      arc.setAttribute('stroke-dasharray', `${(s.fraction * 308).toFixed(1)} 308`);
+      lis.forEach((li, i) => li.dataset.s = s.ds.has(STAGES[i]) ? 'done' : i === s.cur && !s.fail ? 'active' : 'pending');
+      comet.style.display = s.fail || s.ready ? 'none' : '';
+      setDetail(det, s); setHint(hint, s);
+      $('.fail', root).classList.toggle('on', !!s.fail);
+      [steps, det, hint, title].forEach(n => n.style.display = s.fail ? 'none' : '');
+    };
+  },
+  B(root) {
+    const t = T();
+    root.className = 'ct B';
+    const star = `<g transform="translate(34 34) scale(2.2)">${SPARK}</g>`;
+    root.innerHTML = `
+      <svg class="glyph wait" viewBox="0 0 116 116"><g class="gl">
+        <rect class="fillbg" x="14" y="14" width="88" height="88" rx="26"/>
+        <rect class="ghost tile-outline" x="14" y="14" width="88" height="88" rx="26" pathLength="1000" style="opacity:.0"/>
+        <rect class="ghost" x="14" y="14" width="88" height="88" rx="26"/>
+        <rect class="draw tile-outline" x="14" y="14" width="88" height="88" rx="26" pathLength="1000" stroke-dashoffset="1000" transform="rotate(-90 58 58)"/>
+        <g class="starfill" style="color:var(--bg)"><g fill="var(--bg)" stroke="none" transform="translate(34 34) scale(2.2)">${SPARK.replace(/<path /g, '<path fill="var(--bg)" stroke="none" ')}</g></g>
+        <g style="stroke:var(--text3);opacity:.25;fill:none;stroke-width:1.1" transform="translate(34 34) scale(2.2)">${SPARK}</g>
+        <g class="draw-star" transform="translate(34 34) scale(2.2)" style="fill:none;stroke:var(--fg);stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round">${SPARK.replace(/<path /g, '<path class="draw" pathLength="1000" stroke-dashoffset="1000" style="stroke-width:1.2" ')}</g>
+      </g></svg>
+      <div class="stage"><span></span></div>
+      <div class="count">${STAGES.map(() => '<i></i>').join('')}</div>
+      <div class="detail"></div><div class="hint"></div>${failBlock()}`;
+    const gl = $('.glyph', root), g = $('.gl', root), outline = $('.draw.tile-outline', root), strokes = [...root.querySelectorAll('.draw-star .draw')], stage = $('.stage', root), dots = [...root.querySelectorAll('.count i')], det = $('.detail', root), hint = $('.hint', root);
+    return s => {
+      const f = s.fraction;
+      outline.setAttribute('stroke-dashoffset', (1000 * (1 - Math.min(1, f * 1.15))).toFixed(0));
+      strokes.forEach(p => p.setAttribute('stroke-dashoffset', (1000 * (1 - Math.max(0, Math.min(1, (f - .1) / .9)))).toFixed(0)));
+      g.classList.toggle('done', s.ready && !s.fail);
+      gl.classList.toggle('wait', !s.ready && !s.fail);
+      dots.forEach((d, i) => d.classList.toggle('on', s.ds.has(STAGES[i])));
+      swapText(stage, s.fail ? '' : s.ready ? t.detail.settle.replace('…', '') : t.stages[STAGES[s.cur]]);
+      setDetail(det, { ...s, detailKey: s.fail || s.ready ? null : (STAGES[s.cur] === 'data' && s.step > 0 ? 's' + s.step : null) }); setHint(hint, s);
+      $('.fail', root).classList.toggle('on', !!s.fail);
+      [gl, stage, $('.count', root), det, hint].forEach(n => n.style.display = s.fail ? 'none' : '');
+    };
+  },
+  C(root) {
+    const t = T();
+    root.className = 'ct C';
+    root.innerHTML = `
+      <div class="big">${svg(SPARK).replace('<svg', '<svg')}<span>NextCoWork</span></div>
+      <div class="rail"><div class="line"></div><div class="fill"></div><div class="nodes">${STAGES.map((s, i) => `<div class="node" data-s="pending" style="--i:${i}"><div class="dot">${svg(TICK)}</div><div class="lbl">${t.stages[s]}</div></div>`).join('')}</div></div>
+      <div class="detail"></div><div class="hint"></div>${failBlock()}`;
+    const rail = $('.rail', root), fill = $('.fill', root), nodes = [...root.querySelectorAll('.node')], det = $('.detail', root), hint = $('.hint', root), big = $('.big', root);
+    // 节点按 flex 均分:第 i 个节点中心 = 14 + i * (宽 - 28) / 4 (线的两端对齐节点中心)
+    const place = () => {
+      const w = rail.clientWidth; if (!w) return;
+      nodes.forEach((n, i) => { const x = 14 + i * (w - 28) / 4; n.style.position = 'absolute'; n.style.left = (x - 14) + 'px'; n.querySelector('.lbl').style.left = '14px'; });
+      rail.dataset.w = w;
+    };
+    return s => {
+      place();
+      const w = rail.clientWidth; const total = Math.max(0, w - 28);
+      // 线填到「最后一个已完成节点」的位置,再加当前阶段里真实的子进度
+      const lastDone = STAGES.reduce((a, st, i) => s.ds.has(st) ? i : a, -1);
+      const sub = (!s.ds.has('data') && s.step > 0) ? ((s.step - 1) / 4) * (total / 4) : 0;
+      fill.style.width = (lastDone < 0 ? 0 : (lastDone / 4) * total + sub) + 'px';
+      nodes.forEach((n, i) => n.dataset.s = s.ds.has(STAGES[i]) ? 'done' : i === s.cur && !s.fail ? 'active' : 'pending');
+      setDetail(det, s); setHint(hint, s);
+      $('.fail', root).classList.toggle('on', !!s.fail);
+      [rail, det, hint, big].forEach(n => n.style.display = s.fail ? 'none' : '');
+    };
+  },
+  D(root, run) {
+    const t = T();
+    root.className = 'ct D';
+    root.innerHTML = `
+      <div class="sk">
+        <div class="part tbar" data-st="app"><i></i><i></i><i></i></div>
+        <div class="part rail" data-st="agent"><i></i><i></i><i></i><i></i></div>
+        <div class="part phead" data-st="connect"><i></i></div>
+        <div class="part plist" data-st="data"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="part work" data-st="content"><i></i><i></i><i></i><i></i><i></i><div class="cmp"></div></div>
+      </div>
+      <div class="name">NextCoWork</div><div class="detail"></div><div class="hint"></div>${failBlock()}`;
+    const parts = [...root.querySelectorAll('.part')], det = $('.detail', root), hint = $('.hint', root), nm = $('.name', root), sk = $('.sk', root);
+    return s => {
+      parts.forEach(p => p.classList.toggle('lit', s.ds.has(p.dataset.st)));
+      root.classList.toggle('reveal-grow', s.revealing && !s.fail);
+      setDetail(det, s); setHint(hint, s);
+      $('.fail', root).classList.toggle('on', !!s.fail);
+      [sk, det, hint, nm].forEach(n => n.style.display = s.fail ? 'none' : '');
+    };
+  },
+  E(root) {
+    const t = T();
+    root.className = 'ct E';
+    root.innerHTML = `
+      <div class="tile breathe">${svg(SPARK).replace('<svg', '<svg')}</div>
+      <div class="status"><span></span></div><div class="hint"></div>${failBlock()}`;
+    const tile = $('.tile', root), status = $('.status', root), hint = $('.hint', root);
+    return (s, host) => {
+      const line = host.querySelector('.topline'), f = host.querySelector('.topline .f');
+      f.style.width = (s.fraction * 100).toFixed(1) + '%';
+      line.classList.toggle('wait', !s.ready && !s.fail);
+      tile.classList.toggle('breathe', !s.ready && !s.fail);
+      swapText(status, s.fail ? '' : s.ready ? t.detail.settle : (STAGES[s.cur] === 'data' && s.step > 0 ? t.detail['s' + s.step] : t.detail[STAGES[s.cur]]));
+      setHint(hint, s);
+      $('.fail', root).classList.toggle('on', !!s.fail);
+      [tile, status, hint].forEach(n => n.style.display = s.fail ? 'none' : '');
+      line.style.background = s.fail ? 'color-mix(in srgb, var(--danger) 55%, transparent)' : '';
+    };
+  },
+  F(root) {
+    const t = T();
+    root.className = 'ct F';
+    root.innerHTML = `<div class="term"><div class="hd">${t.bootHd}</div><div class="lines"></div><div class="bar"></div><div class="warn"></div></div>`;
+    const lines = $('.lines', root), bar = $('.bar', root), warn = $('.warn', root);
+    const made = new Set(); const els = {};
+    return s => {
+      if (s.fail) {
+        lines.innerHTML = `<div class="ln done" style="--i:0"><span class="m">✓</span><span>${t.stages.app}</span></div><div class="ln err" style="--i:1"><span class="m err">✗</span><span class="err">${t.stages.agent} — ${t.failT}</span></div><div class="sub">${t.failP}</div><div class="actions"><span>[r] ${t.retry}</span><span>[d] ${t.diag}</span><span>[c] ${t.copy}</span><span>[q] ${t.quit}</span></div>`;
+        bar.textContent = ''; warn.textContent = ''; return;
+      }
+      STAGES.forEach((st, i) => {
+        const state = s.ds.has(st) ? 'done' : i === s.cur ? 'active' : 'pending';
+        let ln = els[st];
+        if (!ln) { ln = els[st] = el('div', 'ln'); ln.style.setProperty('--i', i); ln.innerHTML = '<span class="m"></span><span class="x"></span><span class="t"></span>'; lines.appendChild(ln); }
+        ln.className = 'ln ' + state;
+        $('.m', ln).textContent = state === 'done' ? '✓' : state === 'active' ? '…' : '·';
+        $('.x', ln).textContent = t.stages[st] + (state === 'active' ? '' : '');
+        $('.t', ln).textContent = state === 'done' ? (s.doneAt[st] || 0) + ' ms' : '';
+        let sub = ln.nextSibling && ln.nextSibling.classList && ln.nextSibling.classList.contains('sub') ? ln.nextSibling : null;
+        if (st === 'data' && !s.ds.has('data') && s.step > 0) {
+          if (!sub) { sub = el('div', 'sub'); ln.after(sub); }
+          sub.textContent = '└ ' + t.bootDataSteps[s.step - 1] + ' (' + s.step + '/4)';
+        } else if (sub) sub.remove();
+      });
+      const n = s.ds.size, hashes = '#'.repeat(n * 4 + (!s.ds.has('data') && s.step > 0 ? s.step - 1 : 0)).padEnd(20, '·').slice(0, 20);
+      bar.innerHTML = `[${hashes}] <b>${n}/5</b>${s.ready ? '' : '<span class="caret"></span>'}`;
+      warn.textContent = s.slow ? (t.bootWarn + ' — ' + (STAGES[s.cur] === 'data' && s.step > 0 ? t.slowData : t.slow)) : '';
+    };
+  },
+};
+
+/* ───────── 卡片与引擎 ───────── */
+const cards = [];
+const PIN = (() => { const m = location.hash.match(/t=(\d+)/); return m ? +m[1] : null; })();   // #t=1500:固定在某一时刻(截图 / 逐帧检查用)
+function buildCard(opt) {
+  const t = T();
+  const card = el('article', 'card');
+  card.innerHTML = `
+    <div class="win"><div class="shell"><div class="tb"><i></i><i></i><i></i></div><div class="rail"><i></i><i></i><i></i></div><div class="panel"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="work"><i style="width:55%"></i><i></i><i style="width:80%"></i><i style="width:35%"></i><div class="cmp"></div></div></div>
+      <div class="ov"><div class="topline" ${opt.k === 'E' ? '' : 'hidden'}><div class="f"></div></div><div class="ct"></div></div>
+      <div class="cap"></div><div class="cap-r"><button type="button">${t.replayOne}</button></div></div>
+    <h2><span class="k">${opt.k}</span><span>${opt.n[S.lang]}</span>${opt.cur ? `<span class="cur">${t.current}</span>` : ''}</h2>
+    <p class="sub">${opt.d[S.lang]}</p>
+    <div class="pc"><div class="p"><b>${t.pros}</b><ul>${opt.pros[S.lang].map(x => `<li>${x}</li>`).join('')}</ul></div><div class="c"><b>${t.cons}</b><ul>${opt.cons[S.lang].map(x => `<li>${x}</li>`).join('')}</ul></div></div>
+    <div class="meta"><span class="cx">${t.cx}:${t[opt.cx]}</span><span class="spacer"></span><button class="btn" type="button" data-pick="${opt.k}">${t.pick}</button></div>`;
+  const c = { opt, card, win: $('.win', card), ov: $('.ov', card), ct: $('.ct', card), cap: $('.cap', card), run: null, update: null, t0: 0 };
+  $('.cap-r button', card).addEventListener('click', () => reset(c));
+  $('[data-pick]', card).addEventListener('click', () => pick(opt.k));
+  return c;
+}
+function reset(c) {
+  c.run = { contentAt: null, revealAt: null, shown: false };
+  c.ov.className = 'ov'; c.ct.className = 'ct'; c.ct.innerHTML = '';
+  c.t0 = performance.now(); c.update = null; c.mounted = false; c.frozen = false;
+  if (c.opt.k === 'E') { const f = $('.topline .f', c.ov); if (f) f.style.width = '0'; }
+}
+function frame(now) {
+  for (const c of cards) {
+    if (!c.run) continue;
+    if (c.frozen) continue;
+    const t = PIN != null ? PIN : (now - c.t0) * S.speed;
+    if (PIN != null && !c.pinned) { c.pinned = true; c.run = { contentAt: null, revealAt: null }; for (let x = 0; x < PIN; x += 16) derive(x, c.run); }
+    const s = derive(t, c.run);
+    if (s.contentVisible && !c.mounted) {   // 内容出现的那一刻:挂载并开始入场动画
+      c.mounted = true; c.update = DESIGNS[c.opt.k](c.ct, c.run); c.ct.classList.add('on');
+    }
+    if (c.update) c.update(s, c.ov);
+    c.ov.classList.toggle('hide', s.revealing);
+    if (s.done) { c.ov.classList.add('gone'); c.frozen = true; }
+    const note = s.contentVisible ? '' : (s.settled ? T().capAdopt : '');
+    c.cap.textContent = `${T().t} ${Math.min(t, 99999).toFixed(0)} ms · ${s.fail ? '✗ ' + s.fail : s.done ? '✓' : s.revealing ? 'fade-out' : `${s.count}/5`}${note ? ' · ' + note : ''}`;
+  }
+  requestAnimationFrame(frame);
+}
+function replayAll() { cards.forEach(reset); }
+
+/* ───────── 控件 ───────── */
+function segment(id, items, get, set) {
+  const box = $('#' + id); box.innerHTML = '';
+  items.forEach(([v, label]) => {
+    const b = el('button'); b.type = 'button'; b.textContent = label; b.setAttribute('aria-pressed', String(get() === v));
+    b.addEventListener('click', () => { set(v); [...box.children].forEach((x, i) => x.setAttribute('aria-pressed', String(items[i][0] === get()))); });
+    box.appendChild(b);
+  });
+}
+function applyChrome() {
+  document.documentElement.dataset.theme = S.theme; document.documentElement.dataset.motion = S.motion; document.documentElement.lang = S.lang === 'zh' ? 'zh-CN' : 'en';
+}
+function renderControls() {
+  const t = T();
+  $('#h1').textContent = t.title;
+  document.querySelectorAll('[data-t]').forEach(n => n.textContent = t[n.dataset.t]);
+  segment('scen', Object.keys(SCEN).map(k => [k, t.scenarios[k]]), () => S.scen, v => { S.scen = v; replayAll(); });
+  segment('theme', [['dark', t.dark], ['light', t.light]], () => S.theme, v => { S.theme = v; applyChrome(); });
+  segment('motion', [['full', t.full], ['reduced', t.reduced], ['off', t.off]], () => S.motion, v => { S.motion = v; applyChrome(); replayAll(); });
+  segment('speed', [[1, '1×'], [0.5, '0.5×'], [0.25, '0.25×']], () => S.speed, v => { S.speed = v; replayAll(); });
+  segment('lang', [['zh', '中文'], ['en', 'EN']], () => S.lang, v => { S.lang = v; applyChrome(); build(); });
+  $('#replayAll').textContent = t.replay;
+  $('#intro').innerHTML = t.introHtml;
+  renderPick();
+}
+function pick(k) { S.picked = k; renderPick(); cards.forEach(c => { c.card.classList.toggle('picked', c.opt.k === k); $('[data-pick]', c.card).textContent = c.opt.k === k ? T().picked : T().pick; }); }
+function renderPick() {
+  const t = T(), opt = OPTIONS.find(o => o.k === S.picked);
+  $('#pickText').textContent = opt ? t.pickDone(opt.k, opt.n[S.lang]) : t.pickNone;
+  const b = $('#copyPick'); b.hidden = !opt; if (opt) { b.textContent = t.copyBtn.replace('X', opt.k); b.onclick = () => { navigator.clipboard && navigator.clipboard.writeText('选 ' + opt.k).catch(() => {}); }; }
+}
+function build() {
+  const grid = $('#grid'); grid.innerHTML = ''; cards.length = 0;
+  OPTIONS.forEach(o => { const c = buildCard(o); cards.push(c); grid.appendChild(c.card); reset(c); });
+  renderControls(); pick(S.picked);
+}
+$('#replayAll').addEventListener('click', replayAll);
+applyChrome(); build(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
