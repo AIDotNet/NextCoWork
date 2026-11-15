@@ -1,0 +1,12 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_2","object":"response","model":"gpt-5-2026","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_2","type":"message","role":"assistant","status":"in_progress","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_2","output_index":0,"content_index":0,"delta":"被截断的回答"}
+
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"id":"resp_2","object":"response","model":"gpt-5-2026","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"msg_2","type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"被截断的回答","annotations":[]}]}],"usage":{"input_tokens":10,"output_tokens":4096}}}
+

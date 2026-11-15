@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 录制好的 SSE 样本(原始字节,按各家官方文档的线格式整理),回放测试按任意字节切分喂给解码器。 -->
+    <None Include="Samples/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    模型层(docs/design/08-agent-runtime/01-llm.md):统一消息模型、流式事件、三种线协议的编解码、路由与重试、认证、计价。
+    只依赖 BCL(System.Text.Json 源生成 / JsonNode,不用反射)和 Ncw.Core;不引用 Avalonia、客户端项目、Ncw.Protocol(下层不引用上层)。
+    本层不产出界面文字:本地生成的错误只带英文诊断串 + MessageKey/MessageParams,由控制端翻译。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Llm</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+  </ItemGroup>
+</Project>

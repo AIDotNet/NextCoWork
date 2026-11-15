@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","created":1,"model":"gpt-5-2026","choices":[{"index":0,"delta":{"role":"assistant","content":"这是一个很长的回答,"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","created":1,"model":"gpt-5-2026","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_w","type":"function","function":{"name":"Write","arguments":"{\"path\":\"a.txt\",\"content\":\"hel"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","created":1,"model":"gpt-5-2026","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","created":1,"model":"gpt-5-2026","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":4096,"total_tokens":4106}}
+
+data: [DONE]
+

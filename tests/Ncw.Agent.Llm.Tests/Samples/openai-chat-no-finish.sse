@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-3","object":"chat.completion.chunk","created":1,"model":"gpt-5-2026","choices":[{"index":0,"delta":{"role":"assistant","content":"回答到一半"},"finish_reason":null}]}
+
+data: [DONE]
+
