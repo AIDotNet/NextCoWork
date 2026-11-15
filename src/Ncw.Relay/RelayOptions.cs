@@ -32,6 +32,16 @@ public sealed class RelayOptions
     /// <summary>通知设备后,等它接上数据连接的时限;超时控制端得到 <c>timeout</c>。</summary>
     public TimeSpan DeviceAcceptTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// 中继服务端 WebSocket 的保活:每 <see cref="KeepAliveInterval"/> 发一次 ping,<see cref="KeepAliveTimeout"/> 内没有收到任何回应就中止这条连接
+    /// (.NET 的超时默认无限:对端静默消失——NAT 超时、掉电、断网——时,只设间隔则这条连接永远不会被发现,要等 <see cref="IdleTimeout"/> 才被拼接的空闲判定掐掉)。
+    /// 中止之后拼接按「一边没走关闭握手就断了」处理:另一边收到关闭帧(<see cref="Pipe"/>),不会被连带重置。纯 WebSocket 层的 ping / pong,不是协议帧。
+    /// </summary>
+    public TimeSpan KeepAliveTimeout { get; init; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>中继服务端 WebSocket 的 ping 间隔。</summary>
+    public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(20);
+
     /// <summary>一条会话双向都没有数据的最长时间(L3 每 20 秒心跳,所以正常连接不会触发)。</summary>
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromMinutes(2);
 

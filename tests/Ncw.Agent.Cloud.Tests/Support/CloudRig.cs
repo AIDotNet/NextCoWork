@@ -515,6 +515,18 @@ public sealed class CloudRig : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// 一条信任下发(<c>Orch.Grant</c>)的回执,并且中继已经登记了路由令牌。「已回执」只说明设备本地的信任记录生效、令牌哈希已经发给中继;
+    /// 中继的 <c>tokens</c> 控制消息没有回执,它处理完之前控制端拿着新令牌来连会得到 <c>unauthorized</c>(整套并行 / 机器忙时见过:
+    /// <c>code=unauthorized, tokensAtRelay=0, deviceOnline=True</c>)。等中继那一侧可观察的结果,而不是赌两条连接上的消息谁先到。
+    /// </summary>
+    public async Task<CommandAck> GrantAppliedAsync(long seq, int routeTokens = 1)
+    {
+        var ack = await AckedAsync(seq);
+        await WaitUntil(() => Relay.TokenCount(Agent.DeviceId) >= routeTokens, "the relay to know the granted route token");
+        return ack;
+    }
+
     /// <summary>等编排服务收到这条指令的回执,并返回它。</summary>
     public async Task<CommandAck> AckedAsync(long seq)
     {

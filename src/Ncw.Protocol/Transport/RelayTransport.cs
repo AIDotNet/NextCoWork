@@ -157,8 +157,10 @@ public static class RelayTransport
                 }
             }
         }
-        catch (WebSocketException)
+        catch (Exception e) when (e is WebSocketException or ObjectDisposedException)
         {
+            // ObjectDisposedException:连接在读之前被本端的收尾中止并释放了(<c>ClientWebSocket.Abort</c> 会连带 Dispose,
+            // 此后再发起 ReceiveAsync 抛的是它,而不是 WebSocketException)。对读的一方来说,和连接断开是同一件事。
             return null;
         }
     }
@@ -239,14 +241,21 @@ public sealed class RelayRegistration : IAsyncDisposable
     /// 整体替换当前有效的路由令牌哈希并立即推给中继(配对、吊销时调用)。没连上时只记下,注册时一并发送。
     /// 被移除的哈希对应的会话由中继立即掐断。
     /// </summary>
-    public void SetTokens(IReadOnlyCollection<string> tokenHashes)
+    public void SetTokens(IReadOnlyCollection<string> tokenHashes) => _ = SetTokensAsync(tokenHashes);
+
+    /// <summary>
+    /// <see cref="SetTokens"/> 的可等待版本:在这一批令牌哈希<b>已经发给中继</b>(写进了控制连接)时完成;没连上时立即完成(注册时会一并发送)。
+    /// 「已发出」不等于「中继已处理」——中继的 <c>tokens</c> 消息没有回执(加回执要改中继控制协议的线上格式)——但先发出、再通知别人去连,
+    /// 已经把「别人拿着新令牌来,中继却还不认」的窗口压到一次中继读的时间。永不抛(失败 = 连接断了,重连注册时带着最新的令牌)。
+    /// </summary>
+    public Task SetTokensAsync(IReadOnlyCollection<string> tokenHashes)
     {
         lock (_gate)
         {
             _tokens = [.. tokenHashes];
         }
 
-        _ = PushTokensAsync();
+        return PushTokensAsync();
     }
 
     private async Task PushTokensAsync()
@@ -313,8 +322,9 @@ public sealed class RelayRegistration : IAsyncDisposable
             {
                 Set(new RelayStatus(RelayConnectionState.Failed, e.Code));
             }
-            catch (Exception e) when (e is WebSocketException or HttpRequestException or IOException or OperationCanceledException)
+            catch (Exception e) when (e is WebSocketException or HttpRequestException or IOException or OperationCanceledException or ObjectDisposedException)
             {
+                // ObjectDisposedException:收尾(DisposeAsync)中止了控制连接,而这一轮正在它上面发送(注册期间的推送等)
                 Set(new RelayStatus(RelayConnectionState.Failed, RelayErrors.Unavailable));
             }
             finally

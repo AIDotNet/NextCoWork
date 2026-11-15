@@ -210,8 +210,10 @@ internal sealed class DeviceEntry(string deviceId)
         }
     }
 
-    /// <summary>关闭中继时掐断全部会话。</summary>
-    public void CancelAll(string reason)
+    /// <summary>
+    /// 关闭中继时掐断会话。<paramref name="includePiped"/> 为假时跳过已经拼接的(设备数据连接已到):它们走优雅排空,不能被硬取消。
+    /// </summary>
+    public void CancelAll(string reason, bool includePiped = true)
     {
         RelaySession[] sessions;
         lock (_gate)
@@ -221,6 +223,11 @@ internal sealed class DeviceEntry(string deviceId)
 
         foreach (var session in sessions)
         {
+            if (!includePiped && Volatile.Read(ref session.Piping) == 1)
+            {
+                continue;
+            }
+
             session.CancelReason = reason;
             session.Cancel.Cancel();
         }
@@ -293,11 +300,11 @@ internal sealed class DeviceRegistry(RelayMetrics metrics)
         }
     }
 
-    public void CancelAll(string reason)
+    public void CancelAll(string reason, bool includePiped = true)
     {
         foreach (var entry in _devices.Values)
         {
-            entry.CancelAll(reason);
+            entry.CancelAll(reason, includePiped);
         }
     }
 }

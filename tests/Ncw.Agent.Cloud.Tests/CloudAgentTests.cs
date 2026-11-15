@@ -29,8 +29,17 @@ public sealed class CloudAgentTests : IAsyncLifetime
     {
         await _rig.StartAgentAsync(config);
         var (token, seq) = Orch.Grant(_phone);
-        Assert.Equal(AckStatuses.Applied, (await _rig.AckedAsync(seq)).Status);
-        return (await _rig.ConnectAsync(_phone, token), token);
+        Assert.Equal(AckStatuses.Applied, (await _rig.GrantAppliedAsync(seq)).Status);
+        try
+        {
+            return (await _rig.ConnectAsync(_phone, token), token);
+        }
+        catch (RelayException e)
+        {
+            // 失败消息里带上中继给的错误码和它当时的状态:「中继拒绝了连接」本身分不出是路由令牌还没同步到中继,还是别的原因
+            throw new InvalidOperationException(
+                $"The relay refused the controller right after the trust was acknowledged: code={e.Code}, tokensAtRelay={_rig.Relay.TokenCount(_rig.Agent.DeviceId)}, deviceOnline={_rig.Relay.IsOnline(_rig.Agent.DeviceId)}", e);
+        }
     }
 
     private async Task<string> WaitForAssistantAsync(DeviceClient client, string session, string contains, int count = 1)
@@ -76,7 +85,7 @@ public sealed class CloudAgentTests : IAsyncLifetime
         Assert.True(Relay_IsOnline(host));
 
         var (token, seq) = Orch.Grant(_phone);
-        Assert.Equal(AckStatuses.Applied, (await _rig.AckedAsync(seq)).Status);
+        Assert.Equal(AckStatuses.Applied, (await _rig.GrantAppliedAsync(seq)).Status);
         var client = await _rig.ConnectAsync(_phone, token);
 
         Assert.Equal("owner", client.Welcome.Role);
@@ -477,7 +486,7 @@ public sealed class CloudAgentTests : IAsyncLifetime
     {
         await _rig.StartAgentAsync();
         var (token, grantSeq) = Orch.Grant(_phone);
-        await _rig.AckedAsync(grantSeq);
+        await _rig.GrantAppliedAsync(grantSeq);
         var original = Orch.Issued[^1];
         var client = await _rig.ConnectAsync(_phone, token);
         await _rig.AckedAsync(Orch.Revoke(_phone));
@@ -514,7 +523,7 @@ public sealed class CloudAgentTests : IAsyncLifetime
 
         // 被拒绝的伪造指令(含高序号)没有消耗序号:紧接着的合法指令(序号比伪造的低)仍然被接受。它和上面四条在同一批里处理。
         var (token, grantSeq) = Orch.Grant(_phone);
-        Assert.Equal(AckStatuses.Applied, (await _rig.AckedAsync(grantSeq)).Status);
+        Assert.Equal(AckStatuses.Applied, (await _rig.GrantAppliedAsync(grantSeq)).Status);
 
         // 验签通过但内容不被接受的(发给别人的、过期的)有带原因的回执;签名都不对的(伪造的、篡改的)不回执——没有可信的东西可以回
         Assert.Equal(RejectCodes.WrongDevice, Orch.AckFor(seq + 1)!.Code);

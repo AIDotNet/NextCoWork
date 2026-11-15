@@ -412,6 +412,12 @@ internal sealed class CloudRuntime : ICommandHandler, IRunGate, IDisposable
 
     // ───────────────────────── 指令 ─────────────────────────
 
+    private static async Task<CommandOutcome> AppliedAfterAsync(Task done)
+    {
+        await done.ConfigureAwait(false);
+        return CommandOutcome.Applied;
+    }
+
     public Task<CommandOutcome> ApplyAsync(CommandBody command, CancellationToken ct)
     {
         switch (command.Type)
@@ -422,8 +428,7 @@ internal sealed class CloudRuntime : ICommandHandler, IRunGate, IDisposable
                     return Task.FromResult(CommandOutcome.Invalid(RejectCodes.Invalid));
                 }
 
-                _remote.PutTrust(command.Trust!);
-                return Task.FromResult(CommandOutcome.Applied);
+                return AppliedAfterAsync(_remote.PutTrustAsync(command.Trust!)); // 路由令牌哈希已发给中继才回执(见 RemoteService.SyncRelayTokensAsync)
 
             case CommandTypes.TrustRevoke:
                 if (command.Fingerprint is not { Length: 64 })
@@ -431,8 +436,7 @@ internal sealed class CloudRuntime : ICommandHandler, IRunGate, IDisposable
                     return Task.FromResult(CommandOutcome.Invalid(RejectCodes.Invalid));
                 }
 
-                _remote.RevokeTrust(command.Fingerprint); // 立即断开连接并同步中继令牌
-                return Task.FromResult(CommandOutcome.Applied);
+                return AppliedAfterAsync(_remote.RevokeTrustAsync(command.Fingerprint)); // 立即断开连接,令牌撤销已发给中继才回执
 
             case CommandTypes.TrustReplace:
                 if (command.Trusts is not { } trusts || !trusts.All(RemoteService.IsValidTrust))
@@ -440,8 +444,7 @@ internal sealed class CloudRuntime : ICommandHandler, IRunGate, IDisposable
                     return Task.FromResult(CommandOutcome.Invalid(RejectCodes.Invalid));
                 }
 
-                _remote.ReplaceTrust(trusts);
-                return Task.FromResult(CommandOutcome.Applied);
+                return AppliedAfterAsync(_remote.ReplaceTrustAsync(trusts));
 
             case CommandTypes.QuotaSet:
                 if (command.Quota is not { } limits || !ValidQuota(limits))

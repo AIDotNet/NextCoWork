@@ -87,4 +87,54 @@ public sealed class RelayCloseDeliveryTests
         await Wait.UntilAsync(() => log.All.Contains("session ended"), "session end logged");
         Assert.Contains("reason=aborted", log.All); // 记下的原因仍是「设备没走关闭握手」
     }
+
+    /// <summary>
+    /// 中继停机(SIGTERM / 滚动升级)时,两边都要收到关闭帧、读到干净的 EOF:控制端和设备由此**立刻**发现连接没了并重连,
+    /// 而不是各自守着一条被中止的 TCP(在 RST 丢失时控制端只能靠 60 秒的心跳兜底发现,见 docs/parity.md「中继停机后控制端没发现断开」)。
+    /// 以前 <c>Stop()</c> 取消了拼接的读(.NET 的 WebSocket 在读被取消时会中止整条连接),两边看到的是连接被中止。
+    /// </summary>
+    [Fact]
+    public async Task Stopping_the_relay_closes_both_sides_of_a_live_session_with_a_close_frame_and_both_read_a_clean_end_of_stream()
+    {
+        var log = new LogCapture();
+        var relay = await TestRelay.StartAsync(log: log);
+        try
+        {
+            var token = Tokens.New();
+            var deviceGotByte = new TaskCompletionSource();
+            var deviceEnded = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var device = new FakeDevice(relay.WebSocketUrl, tokenHashes: [Tokens.Hash(token)], onSession: async s =>
+            {
+                await using var stream = s.Stream;
+                try
+                {
+                    await stream.ReadExactlyAsync(new byte[1]);
+                    deviceGotByte.SetResult();
+                    deviceEnded.TrySetResult(await stream.ReadAsync(new byte[1]) == 0 ? "eof" : "data");
+                }
+                catch (Exception e)
+                {
+                    deviceEnded.TrySetResult(e.GetType().Name);
+                }
+            });
+            device.Start();
+            await Wait.UntilAsync(() => relay.IsOnline(device.DeviceId), "device online");
+
+            await using var controller = await ConnectAsync(relay, device.DeviceId, token);
+            await controller.WriteAsync(new byte[] { 1 });
+            await deviceGotByte.Task.WaitAsync(Limit); // 拼接已经通了,两边都有活的连接
+
+            var controllerRead = controller.ReadAsync(new byte[1]).AsTask(); // 活的控制端总有一个读在等(收到关闭帧要靠它回自己的关闭帧)
+            await relay.StopAsync().WaitAsync(Limit);
+
+            Assert.Equal(0, await controllerRead.WaitAsync(Limit)); // 控制端:关闭帧 → 干净的 EOF,不是 IOException
+            Assert.Equal("eof", await deviceEnded.Task.WaitAsync(Limit));                        // 设备那一边同样
+            Assert.Contains("reason=unavailable", log.All);
+            Assert.DoesNotContain("reason=aborted", log.All);
+        }
+        finally
+        {
+            await relay.DisposeAsync();
+        }
+    }
 }

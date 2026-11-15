@@ -451,8 +451,18 @@ public sealed class RemoteService : IDisposable
         }
     }
 
-    /// <summary>把当前有效的路由令牌哈希推给中继(配对、吊销之后)。</summary>
-    private void SyncRelayTokens()
+    /// <summary>把当前有效的路由令牌哈希推给中继(配对、吊销之后)。不等。</summary>
+    private void SyncRelayTokens() => _ = SyncRelayTokensAsync();
+
+    /// <summary>上限:推送卡在一条写不动的连接上时,不能让调用方(编排指令的回执)无限等。</summary>
+    private static readonly TimeSpan RelaySyncWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// 把当前有效的路由令牌哈希推给中继,在「已发出」时完成(见 <see cref="RelayRegistration.SetTokensAsync"/>)。云端的信任指令要等它再回执:
+    /// 回执之后编排服务才会把路由令牌交给控制端,控制端马上经中继来连——令牌还没推出去的话中继回 <c>unauthorized</c>,
+    /// 控制端(仅中继可达的云端设备)会把设备判成已吊销、不再重试。最多等 <see cref="RelaySyncWait"/>。
+    /// </summary>
+    private async Task SyncRelayTokensAsync()
     {
         RelayRegistration? relay;
         lock (_gate)
@@ -460,9 +470,18 @@ public sealed class RemoteService : IDisposable
             relay = _relay;
         }
 
-        if (relay is not null && _trust is not null)
+        if (relay is null || _trust is null)
         {
-            relay.SetTokens(_trust.RouteTokenHashes());
+            return;
+        }
+
+        try
+        {
+            await relay.SetTokensAsync(_trust.RouteTokenHashes()).WaitAsync(RelaySyncWait).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // 推送还在路上:回执不再等它(令牌最终会到;重连注册时也会带上)
         }
     }
 
@@ -713,13 +732,16 @@ public sealed class RemoteService : IDisposable
         }
     }
 
-    private void Revoke(string fingerprint)
+    private void Revoke(string fingerprint) => _ = RevokeAsync(fingerprint);
+
+    private Task RevokeAsync(string fingerprint)
     {
         _trust?.Remove(fingerprint);
         // 先断开这个控制端的所有连接(局域网和中继),再作废它在中继上的路由令牌(中继也会掐断用这个令牌的会话)。
         Disconnect(fingerprint);
-        SyncRelayTokens();
+        var synced = SyncRelayTokensAsync();
         Publish();
+        return synced;
     }
 
     // ---- 云端:编排服务下发的信任记录(09 §4「云端设备」)-------------------------------------------------------------
@@ -734,7 +756,7 @@ public sealed class RemoteService : IDisposable
     /// <summary>
     /// 下发(或覆盖)一个控制端的信任记录,并把它的路由令牌哈希推给中继。角色变了就断开它现有的连接(会话的角色在握手时定下,重连后按新角色)。幂等。
     /// </summary>
-    internal void PutTrust(Ncw.Protocol.Orchestration.TrustEntry entry)
+    internal Task PutTrustAsync(Ncw.Protocol.Orchestration.TrustEntry entry)
     {
         var trust = _trust ?? throw new ProtocolException(ErrorCodes.Unavailable, "Device data is not ready", retryable: true);
         var existing = trust.Get(entry.Fingerprint);
@@ -745,19 +767,21 @@ public sealed class RemoteService : IDisposable
             Disconnect(entry.Fingerprint);
         }
 
-        SyncRelayTokens();
+        var synced = SyncRelayTokensAsync();
         Publish();
+        return synced;
     }
 
-    /// <summary>吊销:立即断开这个控制端的所有连接并作废它的路由令牌(<see cref="Revoke"/> 同一条路径)。不存在也不是错误(幂等)。</summary>
-    internal void RevokeTrust(string fingerprint) => Revoke(fingerprint);
+    /// <summary>吊销:立即断开这个控制端的所有连接并作废它的路由令牌(<see cref="Revoke"/> 同一条路径)。不存在也不是错误(幂等)。在令牌撤销已发给中继时完成。</summary>
+    internal Task RevokeTrustAsync(string fingerprint) => RevokeAsync(fingerprint);
 
-    /// <summary>整体替换:列表里的写入(覆盖),不在列表里的吊销。唤醒后对账用。</summary>
-    internal void ReplaceTrust(IReadOnlyCollection<Ncw.Protocol.Orchestration.TrustEntry> entries)
+    /// <summary>整体替换:列表里的写入(覆盖),不在列表里的吊销。唤醒后对账用。在全部令牌推送都已发给中继时完成。</summary>
+    internal Task ReplaceTrustAsync(IReadOnlyCollection<Ncw.Protocol.Orchestration.TrustEntry> entries)
     {
+        var synced = new List<Task>();
         foreach (var entry in entries)
         {
-            PutTrust(entry);
+            synced.Add(PutTrustAsync(entry));
         }
 
         var keep = entries.Select(static e => e.Fingerprint).ToHashSet(StringComparer.Ordinal);
@@ -765,9 +789,11 @@ public sealed class RemoteService : IDisposable
         {
             if (!keep.Contains(existing.Fingerprint))
             {
-                Revoke(existing.Fingerprint);
+                synced.Add(RevokeAsync(existing.Fingerprint));
             }
         }
+
+        return Task.WhenAll(synced);
     }
 
     /// <summary>断开所有远程会话(休眠前)。</summary>

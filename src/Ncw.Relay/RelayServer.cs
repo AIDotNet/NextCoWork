@@ -90,7 +90,7 @@ public sealed class RelayServer : IAsyncDisposable
 
         var app = builder.Build();
         var relay = new RelayApp(options, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Ncw.Relay"));
-        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
+        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = options.KeepAliveInterval, KeepAliveTimeout = options.KeepAliveTimeout });
         app.Run(relay.HandleAsync);
         app.Lifetime.ApplicationStopping.Register(relay.Stop);
 
@@ -121,6 +121,8 @@ internal sealed class RelayApp : IDisposable
 {
     private readonly RelayOptions _options;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationTokenSource _draining = new();
+    private readonly CancellationTokenSource _drainBackstop = new();
     private readonly RateLimiter _connectsPerIp;
     private readonly RateLimiter _registersPerIp;
     private readonly RateLimiter _failuresPerIp;
@@ -171,6 +173,13 @@ internal sealed class RelayApp : IDisposable
         }
     });
 
+    /// <summary>已拼接的会话从停机信号到被兜底掐断的最长时间:正常的关闭握手(<c>Pipe</c> 的宽限 3 秒 + 关闭的 2 秒上限)在此之内一定结束。</summary>
+    private static readonly TimeSpan DrainBackstop = TimeSpan.FromSeconds(8);
+
+    /// <summary>
+    /// 停机。<b>已拼接的会话优雅排空</b>(<see cref="Pipe"/> 给两边发关闭帧、等它们的关闭帧,两边读到干净的 EOF 立刻重连);
+    /// 还没拼接的(等设备接入、注册连接、握手中)立即掐断;排空超过 <see cref="DrainBackstop"/> 的兜底掐断。
+    /// </summary>
     public void Stop()
     {
         if (_stopping.IsCancellationRequested)
@@ -178,11 +187,20 @@ internal sealed class RelayApp : IDisposable
             return;
         }
 
-        Registry.CancelAll(RelayErrors.Unavailable);
+        _draining.Cancel();
+        Registry.CancelAll(RelayErrors.Unavailable, includePiped: false);
         _stopping.Cancel();
+        _ = Task.Delay(DrainBackstop, _options.Clock, _drainBackstop.Token).ContinueWith(
+            _ => Registry.CancelAll(RelayErrors.Unavailable, includePiped: true), CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
     }
 
-    public void Dispose() => _stopping.Dispose();
+    public void Dispose()
+    {
+        _drainBackstop.Cancel();
+        _drainBackstop.Dispose();
+        _draining.Dispose();
+        _stopping.Dispose();
+    }
 
     public Task HandleAsync(HttpContext context)
     {
@@ -534,8 +552,10 @@ internal sealed class RelayApp : IDisposable
             piped = true;
             Metrics.SessionStarted();
             Log.SessionStarted(deviceId, session.Id, remote);
-            await SendTextAsync(socket, new RelayMessage("ready"), ct).ConfigureAwait(false);
-            result = await Pipe.RunAsync(socket, device, deviceId, _options, Metrics, sessionLifetime.Token).ConfigureAwait(false);
+            // 拼接阶段不跟着停机信号一起被取消(那会中止两边的连接):停机走 _draining 的优雅排空,硬取消只来自吊销 / 请求中止 / 排空兜底
+            using var pipeLifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, session.Cancel.Token);
+            await SendTextAsync(socket, new RelayMessage("ready"), pipeLifetime.Token).ConfigureAwait(false);
+            result = await Pipe.RunAsync(socket, device, deviceId, _options, Metrics, pipeLifetime.Token, _draining.Token).ConfigureAwait(false);
             reason = result.Reason == RelayErrors.Unavailable && session.CancelReason is not null ? session.CancelReason : result.Reason;
         }
         finally
@@ -622,10 +642,10 @@ internal sealed class RelayApp : IDisposable
         }
 
         // 拼接由控制端那边的处理器运行;这里等它结束(返回后 ASP.NET 会关掉这条连接)。
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, _stopping.Token);
+        // 不跟着停机信号返回:停机时拼接要先走完优雅排空(关闭握手),这条连接此刻被关掉就等于中止它。
         try
         {
-            await session.Finished.Task.WaitAsync(lifetime.Token).ConfigureAwait(false);
+            await session.Finished.Task.WaitAsync(context.RequestAborted).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

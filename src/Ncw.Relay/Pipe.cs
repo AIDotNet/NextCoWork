@@ -20,7 +20,13 @@ internal static class Pipe
 {
     public sealed record Result(string Reason, long BytesToDevice, long BytesToController);
 
-    public static async Task<Result> RunAsync(WebSocket controller, WebSocket device, string deviceId, RelayOptions options, RelayMetrics metrics, CancellationToken ct)
+    /// <param name="ct">硬取消(吊销、宽限期之后的兜底、请求中止):立刻结束拼接、中止两边的读。</param>
+    /// <param name="drain">
+    /// 优雅排空(中继停机):不取消任何读(.NET 的 WebSocket 在读被取消时会中止整条连接,两边就看到被重置的 TCP),
+    /// 而是给<b>两边</b>各发一个关闭帧(<c>EndpointUnavailable</c>)、让已转发的数据照常送完,再等两边自己的关闭帧(宽限同正常关闭)。
+    /// 两边读到干净的 EOF 就立刻发现连接没了并重连,不必靠心跳超时。原因记 <c>unavailable</c>。
+    /// </param>
+    public static async Task<Result> RunAsync(WebSocket controller, WebSocket device, string deviceId, RelayOptions options, RelayMetrics metrics, CancellationToken ct, CancellationToken drain = default)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var activity = new Activity(options.Clock);
@@ -59,6 +65,24 @@ internal static class Pipe
         }
 
         var graceStarted = 0;
+
+        async Task DrainAsync()
+        {
+            if (lifetime.IsCancellationRequested)
+            {
+                return;
+            }
+
+            lock (reasonGate)
+            {
+                reason ??= RelayErrors.Unavailable;
+            }
+
+            await Task.WhenAll(
+                ForwardCloseAsync(controller, lifetime.Token, WebSocketCloseStatus.EndpointUnavailable),
+                ForwardCloseAsync(device, lifetime.Token, WebSocketCloseStatus.EndpointUnavailable)).ConfigureAwait(false);
+            StartGrace();
+        }
 
         void StartGrace()
         {
@@ -179,6 +203,7 @@ internal static class Pipe
         var watchdog = WatchdogAsync();
         // 外部取消(吊销、中继关闭)也要结束拼接;原因由调用方(会话上记的)给出。
         await using var external = ct.Register(() => lifetime.Cancel()).ConfigureAwait(false);
+        await using var draining = drain.Register(() => _ = Task.Run(DrainAsync, CancellationToken.None)).ConfigureAwait(false);
         await Task.WhenAll(PumpAsync(controller, device, towardDevice: true), PumpAsync(device, controller, towardDevice: false)).ConfigureAwait(false);
         lifetime.Cancel(); // 两个方向都结束了:停掉看门狗
         await watchdog.ConfigureAwait(false);

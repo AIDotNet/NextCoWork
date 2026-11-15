@@ -247,7 +247,12 @@ internal sealed partial class EnvironmentService
         Touch(id);
         try
         {
-            await environment.EnsureReadyAsync(ct).ConfigureAwait(false);
+            // 连接期间持有租约(理由见 EnsureReadyAsync):用户可能过了几分钟才回答主机指纹确认,「刚连上、最后使用时间还是连接开始前的旧值」
+            // 的那一刻,空闲回收器不能把这个环境又断掉,否则返回给用户的是一个已经 Idle 的「连接成功」。
+            using (Hold(id))
+            {
+                await environment.EnsureReadyAsync(ct).ConfigureAwait(false);
+            }
         }
         catch (EnvironmentException)
         {

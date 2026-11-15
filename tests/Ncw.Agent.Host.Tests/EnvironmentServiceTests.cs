@@ -209,8 +209,11 @@ public sealed class EnvironmentServiceTests(SshdFixture fixture) : IClassFixture
         private readonly Dir _dir = new();
         private readonly AgentDatabase _db;
 
-        public ServiceRig(SshdInstance sshd, TimeSpan? idle = null)
+        private readonly TimeProvider _clock;
+
+        public ServiceRig(SshdInstance sshd, TimeSpan? idle = null, TimeProvider? clock = null)
         {
+            _clock = clock ?? TimeProvider.System;
             _db = AgentDatabase.Open(_dir.Path);
             Sshd = sshd;
             Idle = idle;
@@ -232,7 +235,7 @@ public sealed class EnvironmentServiceTests(SshdFixture fixture) : IClassFixture
         public EnvironmentService Service { get; private set; } = null!;
 
         public EnvironmentService Create() => new(
-            _db, "dev-1", _dir.Path, TimeProvider.System,
+            _db, "dev-1", _dir.Path, _clock,
             new AgentServices
             {
                 SshEnvironments = new EnvironmentHostOptions
@@ -360,27 +363,143 @@ public sealed class EnvironmentServiceTests(SshdFixture fixture) : IClassFixture
     public async Task A_lease_keeps_an_idle_connection_alive_and_releasing_it_lets_the_environment_be_recycled()
     {
         var sshd = fixture.Require();
-        using var rig = new ServiceRig(sshd, idle: TimeSpan.FromMilliseconds(400));
+        var clock = new IdleClock();
+        using var rig = new ServiceRig(sshd, idle: TimeSpan.FromMinutes(1), clock);
         var id = await rig.CreateEnvironmentAsync();
         await rig.TrustHostAsync(id);
 
+        // 时钟由测试驱动:空闲回收器的每一次扫描都是一次明确的 Tick,不睡真的时间
         var lease = rig.Service.Hold(id);
-        await Task.Delay(1500);
+        clock.Advance(TimeSpan.FromHours(1));
+        clock.Tick();
         Assert.Equal(EnvironmentStateNames.Ready, rig.Service.Dto(id).State); // 租约在手:不回收
         lease.Dispose();
         lease.Dispose(); // 幂等
-        var deadline = Environment.TickCount64 + 10_000;
-        while (rig.Service.Dto(id).State != EnvironmentStateNames.Idle)
-        {
-            Assert.True(Environment.TickCount64 < deadline, "the released environment was never recycled");
-            await Task.Delay(50);
-        }
+
+        // 释放租约就是一次访问:空闲计时从释放那一刻重新开始,不是从一小时前
+        clock.Tick();
+        Assert.Equal(EnvironmentStateNames.Ready, rig.Service.Dto(id).State);
+        clock.Advance(TimeSpan.FromSeconds(59));
+        clock.Tick();
+        Assert.Equal(EnvironmentStateNames.Ready, rig.Service.Dto(id).State);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        clock.Tick();
+        Assert.Equal(EnvironmentStateNames.Idle, rig.Service.Dto(id).State);
 
         // 配置还在,下次使用惰性重连(已钉扎)
         Assert.Equal(EnvironmentState.Ready, (await rig.Service.EnsureReadyAsync(id, ConnectMode.Interactive, CancellationToken.None)).State);
         // 本机和不认识的 id 没有租约这回事
         rig.Service.Hold("local").Dispose();
         rig.Service.Hold(null).Dispose();
+    }
+
+    /// <summary>
+    /// 慢连接(典型:用户过了几分钟才回答主机指纹确认)刚变成 Ready 的那一刻,空闲回收器不能把它又断掉。
+    /// 回收器在连接「完成」的那一刻被确定性地触发一次(订阅环境主题,看到 Ready 就在状态事件里同步 Tick),此时最后使用时间还是几分钟前连接开始时记的,
+    /// 没有租约保护的实现会在这里把环境回收,调用方要么拿到 <c>The environment is not available</c>,要么拿到一个已经 Idle 的「连接成功」。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_connection_that_takes_longer_than_the_idle_limit_is_not_recycled_the_moment_it_becomes_ready(bool userInitiatedConnect)
+    {
+        var sshd = fixture.Require();
+        var clock = new IdleClock();
+        using var rig = new ServiceRig(sshd, idle: TimeSpan.FromMinutes(1), clock);
+        var id = await rig.CreateEnvironmentAsync();
+        var sweepsAtReady = 0;
+        rig.Topics.Subscribe(EnvironmentsMethods.Topic.Name, null, _ =>
+        {
+            if (rig.Service.Dto(id).State == EnvironmentStateNames.Ready && Interlocked.Exchange(ref sweepsAtReady, 1) == 0)
+            {
+                clock.Tick();
+            }
+
+            return ValueTask.CompletedTask;
+        });
+
+        async Task<string> ConnectAsync() => userInitiatedConnect
+            ? (await rig.Service.ConnectAsync(id, CancellationToken.None)).State
+            : (await rig.Service.EnsureReadyAsync(id, ConnectMode.Interactive, CancellationToken.None)).State.ToString();
+        var connect = ConnectAsync();
+        var prompt = await rig.WaitForPromptAsync<SshHostKey>();
+        clock.Advance(TimeSpan.FromMinutes(5)); // 用户想了五分钟
+        clock.Tick();                            // 还在 Connecting:回收器不动它
+        Assert.Equal(EnvironmentStateNames.Connecting, rig.Service.Dto(id).State);
+        Assert.True(rig.Gate.Respond(prompt.Id, prompt.Version, new SshHostKeyResponse(true), "test").IsAccepted);
+
+        var state = await connect;
+        Assert.Equal(1, Volatile.Read(ref sweepsAtReady)); // 回收器真的在「刚变成 Ready」那一刻扫过
+        Assert.Equal(userInitiatedConnect ? EnvironmentStateNames.Ready : EnvironmentState.Ready.ToString(), state);
+        Assert.Equal(EnvironmentStateNames.Ready, rig.Service.Dto(id).State);
+
+        // 连接完成才开始计空闲:一分钟之内不回收,过了就回收
+        clock.Advance(TimeSpan.FromSeconds(59));
+        clock.Tick();
+        Assert.Equal(EnvironmentStateNames.Ready, rig.Service.Dto(id).State);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        clock.Tick();
+        Assert.Equal(EnvironmentStateNames.Idle, rig.Service.Dto(id).State);
+    }
+
+    /// <summary>时间和空闲回收器的定时器都由测试驱动的时钟:<see cref="Advance"/> 只移动时间,<see cref="Tick"/> 把所有定时器各触发一次。</summary>
+    private sealed class IdleClock : TimeProvider
+    {
+        private readonly object _gate = new();
+        private readonly List<TickTimer> _timers = [];
+        private long _milliseconds;
+
+        public override long TimestampFrequency => 1000;
+
+        public override long GetTimestamp() => Interlocked.Read(ref _milliseconds);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new TickTimer(this, callback, state);
+            lock (_gate)
+            {
+                _timers.Add(timer);
+            }
+
+            return timer;
+        }
+
+        public void Advance(TimeSpan by) => Interlocked.Add(ref _milliseconds, (long)by.TotalMilliseconds);
+
+        public void Tick()
+        {
+            TickTimer[] due;
+            lock (_gate)
+            {
+                due = [.. _timers];
+            }
+
+            foreach (var timer in due)
+            {
+                timer.Fire();
+            }
+        }
+
+        private sealed class TickTimer(IdleClock owner, TimerCallback callback, object? state) : ITimer
+        {
+            public void Fire() => callback(state);
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Dispose()
+            {
+                lock (owner._gate)
+                {
+                    owner._timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     [Fact]

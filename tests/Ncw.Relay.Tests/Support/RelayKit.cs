@@ -124,6 +124,8 @@ internal static class TestRelay
             ConnectsPerDevice = o.ConnectsPerDevice,
             ControlMessagesPerDevice = o.ControlMessagesPerDevice,
             MaxBytesPerSecondPerSession = o.MaxBytesPerSecondPerSession,
+            KeepAliveInterval = o.KeepAliveInterval,
+            KeepAliveTimeout = o.KeepAliveTimeout,
             Placement = o.Placement,
             Clock = o.Clock,
             Tap = o.Tap,
