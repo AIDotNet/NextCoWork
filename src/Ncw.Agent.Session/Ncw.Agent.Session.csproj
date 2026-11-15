@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    会话层(docs/design/08-agent-runtime/04):AgentSession 装配扩展、组装每回合的请求、压缩、落库、修复孤儿调用,把这些作为 LoopHooks 交给循环层。
+    命名空间是 Ncw.Agent.Kernel.Session(设计里它属于 Kernel 的一层),但单独成一个项目:
+    循环层(Ncw.Agent.Kernel)按设计「只依赖模型层」,不引用 Storage / Environments;会话层要同时碰存储(SessionRepository)和执行环境(读项目指令、重读文件),
+    所以放在 Kernel 之上。依赖规则不变:下层不引用上层。会话层不知道协议(Ncw.Protocol),不引用 Avalonia、客户端项目,不产出界面文字
+    (错误只带英文诊断 + MessageKey + 结构化参数;发给模型的文字是英文常量)。
+    JSON 全部用 Utf8JsonWriter / JsonDocument 手写读写,不走反射序列化,可裁剪、可 NativeAOT。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Kernel.Session</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+  </ItemGroup>
+</Project>

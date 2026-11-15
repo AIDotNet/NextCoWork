@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Agent 内核(docs/design/08-agent-runtime):目前只有循环层(Loop)、工具协议(Tools)和扩展点的组合语义(Extensions)。
+    依赖规则:下层不引用上层。循环层只依赖模型层 Ncw.Agent.Llm(它再依赖 Ncw.Core);不引用 Avalonia、客户端项目、Ncw.Protocol、Ncw.Agent.Storage。
+    时钟(TimeProvider)、ID(IIdGenerator)、退避睡眠(IDelayer)、上游(ILlmClient)全部由调用方注入。
+    本层不产出界面文字:发给模型的文字(「已中止」「参数可能被截断」等)是英文常量,错误只带英文诊断 + MessageKey。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Kernel</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+  </ItemGroup>
+</Project>

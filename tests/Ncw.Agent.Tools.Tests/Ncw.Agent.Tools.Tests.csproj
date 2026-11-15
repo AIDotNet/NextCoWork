@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+  </ItemGroup>
+</Project>

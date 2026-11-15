@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    内置工具(docs/design/08-agent-runtime/03-tools-permissions.md §2):Read / Write / Edit / LS / Glob / Grep / Bash / BashOutput / KillShell。
+    依赖规则:只引用 Ncw.Agent.Kernel(工具协议)和 Ncw.Agent.Environments(IExecutionEnvironment);不引用 Ncw.Protocol、Ncw.Agent.Storage、Avalonia、客户端项目。
+    工具只通过项目的 IExecutionEnvironment 访问文件和进程,本项目里没有 System.IO 的文件 API、没有 System.Diagnostics.Process(AGENTS.md §5)。
+    不用反射序列化:参数 schema 手写,校验器在 Schema/ 里,结果的 Details 用 Utf8JsonWriter 手写,NativeAOT 零裁剪警告。
+    本层不产出界面文字:发给模型的文字是英文常量;Details 只给结构化数据。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Tools</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Tools.Tests" />
+  </ItemGroup>
+</Project>

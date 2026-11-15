@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    一方扩展(docs/design/08-agent-runtime/06):目前只有「权限与交互」(03 §3–4)——权限扩展(不可关闭,挂在 before_tool 的第一位)和交互闸门。
+    依赖规则:只引用 Ncw.Agent.Kernel(扩展点、工具协议)、Ncw.Agent.Tools(只用 ToolRuntime 的写入围栏与根目录)和 Ncw.Agent.Environments(执行环境标识、路径守卫、规则文件的读写);
+    不引用 Ncw.Protocol、Ncw.Agent.Storage、Avalonia、客户端项目。持久化(永久规则、待处理交互的日志)一律是注入的接口,不依赖 Storage 的具体实现。
+    本层不产出界面文字:发给模型的文字是英文常量,交互请求只带结构化数据(控制端按类型翻译)。
+    JSON 全部用 Utf8JsonWriter / JsonDocument 手写读写,不走反射序列化,可裁剪、可 NativeAOT。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Extensions</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Extensions.Tests" />
+  </ItemGroup>
+</Project>

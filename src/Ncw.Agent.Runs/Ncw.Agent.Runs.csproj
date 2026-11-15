@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    编排层(docs/design/08-agent-runtime/05):RunRegistry、Run 生命周期、会话互斥、事件日志与订阅(游标 / 重放 / 积压溢出)、
+    activeRuns 全量权威广播、排队消息(与 Storage 的 SessionInputStore 对接)、后台 Shell 的清理。命名空间是 Ncw.Agent.Kernel.Runs(设计里它属于 Kernel 的一层)。
+    依赖规则:下层不引用上层。本层在会话层(Ncw.Agent.Session)之上:引用 Kernel、Session、Storage、Environments、Tools(只用后台 Shell 注册表做清理)、Ncw.Core(派生纯函数);
+    <b>不</b>引用 Ncw.Protocol、Avalonia、客户端项目、Ncw.Agent.Extensions(权限 / 交互 / 子代理等一方扩展经 IRunExtension 和 IInteractionView 这两个接缝接进来;
+    Host 才是唯一知道协议的层)。时钟(TimeProvider)、ID(IIdGenerator)注入;JSON 手写(Utf8JsonWriter / JsonObject 原语),不走反射,可裁剪、可 NativeAOT。
+    本层不产出界面文字:错误只带英文诊断 + MessageKey,控制端按 key 翻译。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Kernel.Runs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Runs.Tests" />
+  </ItemGroup>
+</Project>
