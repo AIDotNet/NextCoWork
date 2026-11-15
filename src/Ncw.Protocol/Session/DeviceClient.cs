@@ -24,17 +24,27 @@ public sealed class DeviceClient : IAsyncDisposable
     private readonly ConcurrentDictionary<ulong, TaskCompletionSource<ResponseFrame>> _pending = new();
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly TimeSpan _pingInterval;
+    private readonly HeartbeatOptions _heartbeat;
+    private readonly TimeProvider _clock;
     private long _nextId;
+    private long _lastInbound;
+    private int _transportClosed;
     private Task _reader = Task.CompletedTask;
     private Task _pinger = Task.CompletedTask;
+    private Task _watchdog = Task.CompletedTask;
+    private Task _transportClose = Task.CompletedTask;
 
-    private DeviceClient(FrameStream frames, WelcomeFrame welcome, TimeSpan pingInterval)
+    private DeviceClient(FrameStream frames, WelcomeFrame welcome, HeartbeatOptions heartbeat)
     {
         _frames = frames;
         Welcome = welcome;
-        _pingInterval = pingInterval;
+        _heartbeat = heartbeat;
+        _clock = heartbeat.EffectiveClock;
+        _lastInbound = _clock.GetTimestamp();
     }
+
+    /// <summary>距离上一次收到设备的任何一帧过去了多久(按心跳的时钟)。心跳据此判断连接是否已死;测试和诊断也读它。</summary>
+    public TimeSpan IdleFor => _clock.GetElapsedTime(Volatile.Read(ref _lastInbound));
 
     public WelcomeFrame Welcome { get; }
 
@@ -44,7 +54,7 @@ public sealed class DeviceClient : IAsyncDisposable
     private readonly TaskCompletionSource<Exception?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>在一条已经连通的字节流上握手。被拒绝时抛 <see cref="ProtocolException"/>。</summary>
-    public static async Task<DeviceClient> ConnectAsync(Stream stream, ClientHello hello, CancellationToken ct = default, TimeSpan? pingInterval = null)
+    public static async Task<DeviceClient> ConnectAsync(Stream stream, ClientHello hello, CancellationToken ct = default, HeartbeatOptions? heartbeat = null)
     {
         var frames = new FrameStream(stream);
         try
@@ -59,7 +69,7 @@ public sealed class DeviceClient : IAsyncDisposable
             switch (reply)
             {
                 case WelcomeFrame welcome:
-                    var client = new DeviceClient(frames, welcome, pingInterval ?? TimeSpan.FromSeconds(20));
+                    var client = new DeviceClient(frames, welcome, heartbeat ?? HeartbeatOptions.Default);
                     client.Start();
                     return client;
                 case RejectFrame reject:
@@ -87,9 +97,16 @@ public sealed class DeviceClient : IAsyncDisposable
             await _frames.WriteAsync(new RequestFrame(id, method.Name, FrameCodec.EncodePayload(parameters, method.ParamsShape), key), ct).ConfigureAwait(false);
 
             ResponseFrame response;
-            await using (ct.Register(() => _ = _frames.WriteAsync(new CancelFrame(id)).AsTask()).ConfigureAwait(false))
+            try
             {
                 response = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested && !tcs.Task.IsCompleted)
+            {
+                // ★ 取消要真的送到设备上(设备上还在等的处理器据此收尾,例如 SSH 连接里等用户回答的提问)。
+                // 不能用 ct.Register 回调去发:取消时 WaitAsync 的续体可能在同一个线程上内联运行、先释放掉登记,回调就永远不会执行。
+                _ = SendCancelAsync(id);
+                throw;
             }
 
             if (!response.Ok)
@@ -105,15 +122,40 @@ public sealed class DeviceClient : IAsyncDisposable
         }
     }
 
+    private async Task SendCancelAsync(ulong id)
+    {
+        try
+        {
+            await _frames.WriteAsync(new CancelFrame(id)).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // 连接已经断了:设备那边会随连接结束一并取消
+        }
+    }
+
     /// <summary>
     /// 订阅一个主题。<paramref name="onSnapshot"/> 收到权威快照(首次、游标续不上、或设备要求重同步后自动重订);
     /// <paramref name="onEvent"/> 收到之后的增量。返回的对象释放即退订。
     /// </summary>
-    public async Task<IAsyncDisposable> SubscribeAsync<TState>(TopicDef<TState> topic, Action<TState, long> onSnapshot, Action<EventFrame> onEvent, CancellationToken ct = default)
+    /// <param name="cursor">
+    /// 续传游标(上次收到的最后一个 seq,docs/design/09 §8.2):设备游标还在日志里就只补发之后的增量(没有快照),否则给权威快照。
+    /// 重连(换了一个 <see cref="DeviceClient"/>)后按它续上;不带游标就是首次订阅,拿快照。
+    /// </param>
+    public async Task<IAsyncDisposable> SubscribeAsync<TState>(TopicDef<TState> topic, Action<TState, long> onSnapshot, Action<EventFrame> onEvent, CancellationToken ct = default, long? cursor = null)
     {
-        var subscription = new Subscription(this, topic.Name, bytes => onSnapshot(FrameCodec.DecodePayload(bytes.State, topic.StateShape), bytes.Seq), onEvent);
+        var subscription = new Subscription(this, topic.Name, bytes => onSnapshot(FrameCodec.DecodePayload(bytes.State, topic.StateShape), bytes.Seq), onEvent, cursor);
         _subscriptions[topic.Name] = subscription;
-        await subscription.SendAsync(cursor: null, ct).ConfigureAwait(false);
+        try
+        {
+            await subscription.SendAsync(cursor, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _subscriptions.TryRemove(topic.Name, out _);
+            throw;
+        }
+
         return subscription;
     }
 
@@ -121,6 +163,7 @@ public sealed class DeviceClient : IAsyncDisposable
     {
         _reader = Task.Run(ReadLoopAsync);
         _pinger = Task.Run(PingLoopAsync);
+        _watchdog = Task.CompletedTask; // TEMP-REVERT
     }
 
     private async Task ReadLoopAsync()
@@ -134,6 +177,9 @@ public sealed class DeviceClient : IAsyncDisposable
                 {
                     break;
                 }
+
+                // 收到设备的任何一帧都说明连接还活着(pong 只是设备空闲时保证有帧可收)。
+                Volatile.Write(ref _lastInbound, _clock.GetTimestamp());
 
                 switch (frame)
                 {
@@ -179,8 +225,8 @@ public sealed class DeviceClient : IAsyncDisposable
         {
             while (!_lifetime.IsCancellationRequested)
             {
-                await Task.Delay(_pingInterval, _lifetime.Token).ConfigureAwait(false);
-                await _frames.WriteAsync(new PingFrame(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), _lifetime.Token).ConfigureAwait(false);
+                await Task.Delay(_heartbeat.EffectiveInterval, _clock, _lifetime.Token).ConfigureAwait(false);
+                await _frames.WriteAsync(new PingFrame(_clock.GetUtcNow().ToUnixTimeMilliseconds()), _lifetime.Token).ConfigureAwait(false);
             }
         }
         catch (Exception e) when (e is OperationCanceledException or IOException or ObjectDisposedException)
@@ -188,13 +234,84 @@ public sealed class DeviceClient : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 看门狗:连续 <see cref="HeartbeatOptions.IdleTimeout"/> 没有收到任何帧,就判定连接已死、主动断开。
+    /// 它和 ping 是两条独立的循环:对端静默消失时 ping 的写可能一直挂着(发送缓冲写满、写不可取消),看门狗不能被它拖住。
+    /// </summary>
+    private async Task WatchdogAsync()
+    {
+        try
+        {
+            while (!_lifetime.IsCancellationRequested)
+            {
+                var remaining = _heartbeat.IdleTimeout - IdleFor;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    Fail(new HeartbeatTimeoutException(_heartbeat.IdleTimeout));
+                    return;
+                }
+
+                await Task.Delay(remaining, _clock, _lifetime.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException)
+        {
+        }
+    }
+
+    /// <summary>连接被判定为死亡:先把原因交给 <see cref="Completion"/>,再取消读循环、让未完成的请求失败、关掉传输(后台关,不挂住调用方)。</summary>
+    private void Fail(Exception reason)
+    {
+        _completion.TrySetResult(reason);
+        var closed = new ProtocolException(ErrorCodes.Unavailable, "Connection closed", retryable: true);
+        foreach (var tcs in _pending.Values)
+        {
+            tcs.TrySetException(closed);
+        }
+
+        try
+        {
+            _lifetime.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _ = CloseTransportAsync();
+    }
+
+    /// <summary>
+    /// 关掉传输(幂等,只做一次)。TLS 的收尾会写 close_notify:对端静默消失、发送缓冲又写满时这个写会一直挂着,
+    /// 所以等待有上限(系统时钟,不走注入的时钟),超过就放手,让调用方继续重连。
+    /// </summary>
+    private Task CloseTransportAsync()
+    {
+        if (Interlocked.Exchange(ref _transportClosed, 1) == 0)
+        {
+            _transportClose = Task.Run(async () =>
+            {
+                try
+                {
+                    await _frames.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
+                {
+                }
+            });
+        }
+
+        return _transportClose;
+    }
+
+    private static readonly TimeSpan TransportCloseBound = TimeSpan.FromSeconds(5);
+
     public async ValueTask DisposeAsync()
     {
         await _lifetime.CancelAsync().ConfigureAwait(false);
-        await _frames.DisposeAsync().ConfigureAwait(false);
         try
         {
-            await Task.WhenAll(_reader, _pinger).ConfigureAwait(false);
+            await CloseTransportAsync().WaitAsync(TransportCloseBound).ConfigureAwait(false);
+            await Task.WhenAll(_reader, _pinger, _watchdog).WaitAsync(TransportCloseBound).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -204,9 +321,9 @@ public sealed class DeviceClient : IAsyncDisposable
         _lifetime.Dispose();
     }
 
-    private sealed class Subscription(DeviceClient client, string topic, Action<SnapshotFrame> snapshot, Action<EventFrame> onEvent) : IAsyncDisposable
+    private sealed class Subscription(DeviceClient client, string topic, Action<SnapshotFrame> snapshot, Action<EventFrame> onEvent, long? cursor = null) : IAsyncDisposable
     {
-        private long _seq = -1;
+        private long _seq = cursor ?? -1;
 
         public async Task SendAsync(long? cursor, CancellationToken ct)
         {

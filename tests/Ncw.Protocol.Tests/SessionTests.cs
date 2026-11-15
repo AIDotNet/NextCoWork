@@ -17,6 +17,7 @@ public sealed class SessionTests : IAsyncLifetime
     private string _endpoint = "";
     private Task _server = Task.CompletedTask;
     private int _addCalls;
+    private readonly TaskCompletionSource _removeCancelled = new();
     private readonly List<ProjectDto> _projects = [];
 
     public ValueTask InitializeAsync()
@@ -33,6 +34,7 @@ public sealed class SessionTests : IAsyncLifetime
         });
         _router.Handle(DeviceMethods.ProjectsRemove, async (_, _, ct) =>
         {
+            ct.Register(() => _removeCancelled.TrySetResult());
             await Task.Delay(Timeout.Infinite, ct); // 永不结束,用来测取消
             return Unit.Value;
         });
@@ -148,6 +150,20 @@ public sealed class SessionTests : IAsyncLifetime
 
         // 连接仍然可用
         Assert.NotNull(await client.CallAsync(DeviceMethods.ProjectsList, Unit.Value));
+    }
+
+    [Fact]
+    public async Task A_cancel_frame_reaches_the_running_handler_promptly_not_only_when_the_connection_closes()
+    {
+        await using var client = await Connect();
+        using var cts = new CancellationTokenSource();
+        var call = client.CallAsync(DeviceMethods.ProjectsRemove, new ProjectsRemoveParams("ws1"), cts.Token);
+        await Task.Delay(200);
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
+
+        // 连接还开着:设备上的处理器必须马上看到取消(环境连接里等用户回答的交互靠它清理)
+        await _removeCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

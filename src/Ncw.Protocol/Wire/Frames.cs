@@ -13,6 +13,9 @@ public static class ProtocolInfo
 
     /// <summary>单帧上限,超过的走流式方法分块。</summary>
     public const int MaxFrameBytes = 4 * 1024 * 1024;
+
+    /// <summary>每条连接排队等待发送的字节上限(docs/design/09 §8.2:8 MiB)。超过时 <c>run/*</c> 先丢增量,结构性事件改发 <c>resync</c>。</summary>
+    public const int MaxPendingBytes = 8 * 1024 * 1024;
 }
 
 /// <summary>
@@ -81,8 +84,11 @@ public sealed record PingFrame(long Time) : Frame;
 
 public sealed record PongFrame(long Time) : Frame;
 
-/// <summary>错误(docs/design/09 §8.1)。</summary>
-public sealed record ProtocolError(string Code, string Message, bool Retryable, long? RetryAfterMs = null);
+/// <summary>
+/// 错误(docs/design/09 §8.1)。<see cref="Details"/> 是方法自己约定的结构化补充(MessagePack 编码的 DTO,例如 <c>interactions.respond</c> 的
+/// <c>conflict</c> 带「谁在什么时候处理」);没有补充为 null。
+/// </summary>
+public sealed record ProtocolError(string Code, string Message, bool Retryable, long? RetryAfterMs = null, byte[]? Details = null);
 
 /// <summary>错误码。</summary>
 public static class ErrorCodes
@@ -102,11 +108,14 @@ public static class ErrorCodes
 }
 
 /// <summary>协议层的失败:握手被拒、方法返回错误、连接断开。</summary>
-public sealed class ProtocolException(string code, string message, bool retryable = false) : Exception(message)
+public sealed class ProtocolException(string code, string message, bool retryable = false, byte[]? details = null) : Exception(message)
 {
     public string Code { get; } = code;
 
     public bool Retryable { get; } = retryable;
 
-    public static ProtocolException From(ProtocolError error) => new(error.Code, error.Message, error.Retryable);
+    /// <summary>方法约定的结构化补充(见 <see cref="ProtocolError.Details"/>);用 <see cref="FrameCodec.DecodePayload{T}"/> 解码。</summary>
+    public byte[]? Details { get; } = details;
+
+    public static ProtocolException From(ProtocolError error) => new(error.Code, error.Message, error.Retryable, error.Details);
 }

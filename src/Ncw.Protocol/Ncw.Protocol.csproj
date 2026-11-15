@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <InternalsVisibleTo Include="Ncw.Protocol.Tests" />
   </ItemGroup>
 </Project>

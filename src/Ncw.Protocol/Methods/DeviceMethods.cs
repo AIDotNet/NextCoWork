@@ -9,14 +9,29 @@ public sealed record Unit
 }
 
 /// <summary><c>device.info</c> 的结果。</summary>
-public sealed record DeviceInfoResult(string DeviceId, string Name, string Kind, string AgentVersion, string Os, string DataRoot);
+/// <param name="Relay">设备配置的中继地址(<c>wss://…</c>),没配置为 null。已配对的控制端据此在设备后来才配置中继时「学到」它(带默认值的末尾字段)。</param>
+public sealed record DeviceInfoResult(string DeviceId, string Name, string Kind, string AgentVersion, string Os, string DataRoot, string? Relay = null);
 
-/// <summary>设备上的一个项目(执行环境 + 根目录)。</summary>
-public sealed record ProjectDto(string WorkspaceId, string Name, string Path, string Environment, string? EnvironmentName, long CreatedAt);
+/// <summary>
+/// 设备上的一个项目(执行环境 + 根目录)。<see cref="Environment"/> 是 <c>local</c> / <c>ssh</c>;SSH 项目的 <see cref="Path"/> 是<b>远程主机上的路径</b>,
+/// <see cref="EnvironmentId"/> 是它绑定的环境(设备 + 这个 id = 执行环境标识),<see cref="EnvironmentName"/> 是环境的显示名。本机项目的 <see cref="EnvironmentId"/> 为 null。
+/// </summary>
+public sealed record ProjectDto(string WorkspaceId, string Name, string Path, string Environment, string? EnvironmentName, long CreatedAt, string? EnvironmentId = null);
 
 public sealed record ProjectsListResult(ProjectDto[] Projects, long Revision);
 
-public sealed record ProjectsAddParams(string Path, string? Name);
+/// <summary>
+/// 添加项目。<see cref="EnvironmentId"/> 缺省(或 <c>local</c>)= 本机目录;给了 SSH 环境的 id = 这个环境里的目录(<see cref="Path"/> 是远程路径,必须是已存在的目录)。
+/// 添加 SSH 项目会先连接环境(首次需要确认主机指纹、提供凭据,以交互出现),所以可能等一段时间。
+/// </summary>
+/// <remarks>
+/// <b>克隆(02 A6「工作区来源」)</b>:给了 <see cref="CloneUrl"/> 时,<see cref="Path"/> 是<b>要创建的目标目录</b>(不存在,或是空目录),设备经项目环境的 git 把仓库克隆到那里,再把它登记成项目。
+/// 只接受 <c>https://</c> 地址(不接受 <c>file:</c> / <c>ext::</c> / <c>ssh:</c> 等,SSH 部署密钥是后续项);私有仓库先用 <c>git.credentials.set</c> 给这个主机存一个令牌。
+/// 云端 Agent 上相对路径从工作区根(启动配置的 <c>workspacesRoot</c>)解析,目标必须在它里面。<see cref="CloneBranch"/> 空 = 默认分支。
+/// 克隆失败返回 <c>conflict</c>(<c>git.failed</c>,<c>error.details</c> 带 git 的 stderr,令牌已被抹掉)、地址不合法 <c>invalid_request</c>(<c>projects.clone.url</c>)、
+/// 被出网策略拒绝 <c>forbidden</c>(<c>cloud.egress.denied</c>);失败时不留下半成品目录。克隆和 <c>Path</c> 的其他语义(SSH 环境)不能同时用。
+/// </remarks>
+public sealed record ProjectsAddParams(string Path, string? Name, string? EnvironmentId = null, string? CloneUrl = null, string? CloneBranch = null);
 
 public sealed record ProjectsRemoveParams(string WorkspaceId);
 
@@ -24,9 +39,15 @@ public sealed record ProjectsRemoveParams(string WorkspaceId);
 public sealed record ActiveRunDto(string RunId, string SessionId, string WorkspaceId, int PendingInteractions);
 
 /// <summary>
-/// <c>device</c> 主题的状态 = 权威广播(docs/design/09 §8.2)。首帧和后续都由设备上同一个函数生成。
+/// <c>device</c> 主题的状态 = 权威广播(docs/design/09 §8.2)。首帧和后续都由设备上同一个函数生成(Core 的 <c>ActiveRunIndexBuilder</c>)。
+/// <see cref="Runs"/> 只含顶层 Run,子 Run 在 <see cref="Subagents"/>;<see cref="Rev"/> 单调递增(0 = 没有 Run 在运行过的设备),控制端只收更新的那份。
 /// </summary>
-public sealed record DeviceTopicState(ActiveRunDto[] Runs, long ProjectsRevision);
+public sealed record DeviceTopicState(ActiveRunDto[] Runs, long ProjectsRevision)
+{
+    public ActiveSubagentDto[] Subagents { get; init; } = [];
+
+    public long Rev { get; init; }
+}
 
 /// <summary><c>device</c> 主题的事件类型。</summary>
 public static class DeviceEvents
@@ -103,14 +124,27 @@ public sealed record PairBeginResult(byte[] Salt, byte[] B);
 public sealed record PairFinishParams(byte[] A, byte[] M1, byte[] Proof);
 
 /// <summary>配对成功:设备的 SRP 证据 M2、绑定证明、给这个控制端的角色、中继路由令牌(中继上线后用)。</summary>
-public sealed record PairFinishResult(byte[] M2, byte[] Proof, string Role, string RouteToken);
+/// <param name="Relay">设备当前配置的中继地址(<c>wss://…</c>),控制端记下来,离开局域网后经它连接;没配置为 null。带默认值的末尾字段:旧载荷照常解码。</param>
+public sealed record PairFinishResult(byte[] M2, byte[] Proof, string Role, string RouteToken, string? Relay = null);
+
+/// <summary><c>pair.claim</c>:扫码配对。出示二维码里的一次性密钥,不需要 SRP(二维码本身是可信的带外通道)。</summary>
+public sealed record PairClaimParams(string ClientName, byte[] Token);
+
+public sealed record PairClaimResult(string Role, string RouteToken, string? Relay = null);
+
+/// <summary><c>pair.createQr</c> 的结果:二维码内容(<c>nextcowork://pair?…</c>)和过期时间(Unix 毫秒)。</summary>
+public sealed record PairQrResult(string Uri, long ExpiresAt);
 
 /// <summary>远程开关的状态(<c>remote</c> 主题的快照,只给本机通道)。</summary>
 /// <param name="Port">实际监听的端口;没打开时为 null。</param>
 /// <param name="Addresses">本机的局域网地址。</param>
 /// <param name="PairingCode">当前配对码(6 位);没打开时为 null。</param>
 /// <param name="Error">打开失败的原因代码(例如端口全被占用);正常为 null。</param>
-public sealed record RemoteStatus(bool Enabled, int? Port, int PreferredPort, bool LanOnly, string[] Addresses, string? PairingCode, string? Error);
+/// <param name="RelayUrl">配置的中继地址;没配置(默认,中继关闭)为 null。带默认值的末尾字段(09 §9)。</param>
+/// <param name="RelayState">到中继的注册状态:<c>off</c>(没配置或远程开关关着)/ <c>connecting</c> / <c>registered</c> / <c>failed</c>;没有中继地址为 null。</param>
+/// <param name="RelayError">状态是 <c>failed</c> 时的原因(<c>RelayErrors</c> 里的错误码);否则为 null。</param>
+public sealed record RemoteStatus(bool Enabled, int? Port, int PreferredPort, bool LanOnly, string[] Addresses, string? PairingCode, string? Error,
+    string? RelayUrl = null, string? RelayState = null, string? RelayError = null);
 
 public sealed record RemoteSetEnabledParams(bool Enabled);
 
@@ -121,6 +155,16 @@ public sealed record TrustedControllerDto(string Fingerprint, string Name, strin
 public sealed record RemoteState(RemoteStatus Status, TrustedControllerDto[] Controllers);
 
 public sealed record TrustRevokeParams(string Fingerprint);
+
+/// <summary>
+/// <c>remote.configure</c>:改端口或「仅允许局域网地址」(null 表示不改)。正在监听时会重新监听,远程连接随之断开重连。
+/// <paramref name="RelayUrl"/>:中继地址(<c>wss://…</c>;<c>ws://</c> 只限本机 / 局域网);null = 不改,空串 = 关闭中继。
+/// 远程开关打开且配了地址时,设备向中继注册并接收会话;格式不对是 <c>invalid_request</c>。带默认值的末尾字段(09 §9)。
+/// </summary>
+public sealed record RemoteConfigureParams(int? Port, bool? LanOnly, string? RelayUrl = null);
+
+/// <summary><c>trust.setRole</c>:改一个已配对控制端的角色(owner / member / viewer)。它当前的连接会断开,重连后按新角色。</summary>
+public sealed record TrustSetRoleParams(string Fingerprint, string Role);
 
 /// <summary><c>remote</c> 主题的事件类型。</summary>
 public static class RemoteEvents
@@ -153,6 +197,13 @@ public static class DeviceMethods
     public static readonly MethodDef<PairFinishParams, PairFinishResult> PairFinish =
         new("pair.finish", MethodKind.Command, Role.Unpaired, Transports.Remote, PayloadShapes.GetShape<PairFinishParams>(), PayloadShapes.GetShape<PairFinishResult>());
 
+    /// <summary>扫码配对。只有远程连接、未配对也能调用;密钥一次性、10 分钟过期。</summary>
+    public static readonly MethodDef<PairClaimParams, PairClaimResult> PairClaim =
+        new("pair.claim", MethodKind.Command, Role.Unpaired, Transports.Remote, PayloadShapes.GetShape<PairClaimParams>(), PayloadShapes.GetShape<PairClaimResult>());
+
+    /// <summary>生成配对二维码(含一次性密钥)。只在本机给 owner。</summary>
+    public static readonly MethodDef<Unit, PairQrResult> PairCreateQr = LocalOwner<Unit, PairQrResult>("pair.createQr", MethodKind.Command);
+
     /// <summary>远程开关和配对码只能在设备本机上看和改(09 §8.4)。</summary>
     public static readonly MethodDef<Unit, RemoteStatus> RemoteGetStatus = LocalOwner<Unit, RemoteStatus>("remote.getStatus", MethodKind.Query);
 
@@ -161,6 +212,10 @@ public static class DeviceMethods
     public static readonly MethodDef<Unit, RemoteStatus> RemoteRotateCode = LocalOwner<Unit, RemoteStatus>("remote.rotateCode", MethodKind.Command);
 
     public static readonly MethodDef<TrustRevokeParams, Unit> TrustRevoke = LocalOwner<TrustRevokeParams, Unit>("trust.revoke", MethodKind.Command);
+
+    public static readonly MethodDef<RemoteConfigureParams, RemoteStatus> RemoteConfigure = LocalOwner<RemoteConfigureParams, RemoteStatus>("remote.configure", MethodKind.Command);
+
+    public static readonly MethodDef<TrustSetRoleParams, Unit> TrustSetRole = LocalOwner<TrustSetRoleParams, Unit>("trust.setRole", MethodKind.Command);
 
     /// <summary>远程开关和已配对的控制端;含配对码,只给本机 owner。</summary>
     public static readonly TopicDef<RemoteState> RemoteTopic = new("remote", PayloadShapes.GetShape<RemoteState>(), Role.Owner, Transports.Local);
@@ -173,7 +228,7 @@ public static class DeviceMethods
     public static readonly IReadOnlyList<MethodDef> All =
     [
         Info, ProjectsList, ProjectsAdd, ProjectsRemove, DataStatus, DataRetry,
-        PairBegin, PairFinish, RemoteGetStatus, RemoteSetEnabled, RemoteRotateCode, TrustRevoke,
+        PairBegin, PairFinish, PairClaim, PairCreateQr, RemoteGetStatus, RemoteSetEnabled, RemoteRotateCode, RemoteConfigure, TrustRevoke, TrustSetRole,
     ];
 
     private static MethodDef<TP, TR> LocalOwner<TP, TR>(string name, MethodKind kind) =>
@@ -203,6 +258,11 @@ public static class DeviceMethods
 [GenerateShapeFor<RemoteSetEnabledParams>]
 [GenerateShapeFor<RemoteState>]
 [GenerateShapeFor<TrustRevokeParams>]
+[GenerateShapeFor<PairClaimParams>]
+[GenerateShapeFor<PairClaimResult>]
+[GenerateShapeFor<PairQrResult>]
+[GenerateShapeFor<RemoteConfigureParams>]
+[GenerateShapeFor<TrustSetRoleParams>]
 public sealed partial class PayloadShapes
 {
     public static ITypeShape<T> GetShape<T>() =>
