@@ -163,6 +163,7 @@
 - 图标:Lucide。运行时才确定的图标要在 csproj 里显式声明(否则报 ARCL002)。
 - 窗口:Arc 的 `Window`,自定义标题栏。macOS 上保留红绿灯按钮,和项目栏顶部对齐。
 - 动效:统一的动效系统见 [§9](#9-动效统一的动效系统)——时长 / 缓动 / 级别全部是 Arc 的,「设置 · 外观」里提供「跟随系统 / 完整 / 减弱 / 关闭」。
+- 启动与加载:桌面启动时由真实的加载状态驱动的整窗加载界面、数据页与首次启动页的交接规则、窗口第一帧的底色,见 [§10](#10-启动与加载)。
 - 语言:简体中文、英文(Arc 自带的控件文字另有繁体中文)。界面文字用 Arc 的语言目录生成器:`NcwTextKind` 枚举 +
   `en-US.xlf` / `zh-CN.xlf`,XAML 写 `{l:NcwText Key}`,切换语言时界面跟着变。Core、Client 不产出界面文字,
   只给结构化数据(例如子代理状态是枚举,由 UI 按语言写成「运行中 / Running」)。启动语言暂由环境变量 `NCW_LANG` 决定,
@@ -528,3 +529,183 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 - 手机的「设置分区折叠」(手机设置是导航栈,没有可折叠分区)。
 - iOS / Android 的系统「减少动态效果」探测(宿主没有真机验证);Linux 桌面的探测。
 - 主题 / 强调色 / 字体 / 界面密度这些「外观」其余项(外观页现在只有动效)。
+
+## 10. 启动与加载
+
+范围:桌面启动时盖住整个窗口的加载界面,以及手机壳里同一个 ViewModel 的简化版式。**「全屏」是覆盖窗口里的全部内容(含项目栏和主工作区),不是操作系统全屏**;窗口按钮(Windows / Linux)和顶部 40px 的拖动区域始终可用(§10.7)。
+**它由真实的加载状态驱动,不是固定时长的假动画**:每一个阶段的完成都对应一个真实发生过的事实(下表),进度只由这些事实算出,时间只用在两件事上——表现时序(延迟出现 / 最短停留,§10.3)和「慢了 / 卡住了」的判断(§10.2)。
+
+| 层 | 位置 |
+|---|---|
+| Core(纯函数,Agent 和客户端共用) | `Ncw.Core/Domain/StartupProgress.cs`:`StartupFacts`(事实)、`StartupProgress.Derive`(阶段 / 进度 / 失败 / 慢启动 / 谁拥有整窗)、`StartupPresentation.Decide`(出现 / 停留 / 淡出) |
+| Client | `ClientStores.Startup`(`StartupStore`,启动事实的**唯一**汇集点)、`StartupRecorder`(Workspace / Account Store 的订阅者,把已经发生的事锁存成里程碑)、`StartupSignals`(任意线程的写入口)、`StartupActions`(重试 / 复制诊断 / 退出 + 向 Store 报告外壳布局与可交互)、`StartupViewModel`(只读 Store) |
+| UI | `StartupOverlay`(整窗覆盖层)、`NcwProgressArc`(标识外圈的弧)、`StartupConverters`;`DesktopShell` / `MobileShell` 里各放一个 |
+| Desktop | `Sidecar/StartupBridge`(守护的状态机 → 启动事实)、`SidecarStartupHost`(重试 / 诊断)、`NativeWindowBackground`(原生窗口底色)、`Program`(进程创建时间 / 进入 Main / 单实例锁) |
+| 开发验证 | `tools/StartupSmoke`(不进 slnx):无界面时间线、故障注入、真实 2.x 接管、真窗口 |
+
+### 10.1 真实的加载阶段与信号
+
+清单上用户看到 5 个阶段(桌面;手机壳只有 应用 → 连接 → 内容)。每个阶段由若干**里程碑**组合而成;里程碑是只增不减的锁存(第一次到达的时间,重放的旧事件覆盖不了它)。
+
+| 清单阶段 | 完成条件(里程碑) | 信号来源 | 怎么得知完成 |
+|---|---|---|---|
+| ① 准备应用 | `InstanceReady` ∧ `WindowShown` ∧ `PlatformReady` ∧ `AccountDecided` | `Program`(单实例锁拿到的时刻)/ `MainWindow.Opened` / `NcwApp`(偏好读完、动效级别写进主题之后)/ `Account` Store 的 `Mode` 不再是 `Loading`(`AccountService.InitializeAsync` 读完 `account.json`;没有账户服务的宿主开始时直接记) | 事件 / Store 变化,不是计时 |
+| ② 启动本机 Agent(桌面) | `AgentReady`(`AgentSpawned` 只进时间线) | `LocalAgentSidecar.Spawned`(进程已拉起,接上上次留下的 Agent 不触发)、守护状态 `Running`(= 本机通道 + 本机令牌握手成功,**不是**「进程起来了」或「打印了 ready」) | `StartupBridge` 订阅守护的事件 |
+| ③ 连接设备 | `Connected` | `Workspace.Devices[本机].Connection` 第一次变成 `Connected`(`DeviceLink`:连接 → 握手 → 设备信息写进 Store 之后) | `StartupRecorder` 订阅 Workspace Store |
+| ④ 准备数据 | `DataReady`;接管时每一步 `backing-up → migrating → committing → credentials` | `data` 主题(`DeviceLink.ApplyData` → `Workspace.Devices[..].Data`,**和数据页读的是同一份**);接管步骤序号锁存只增不减 | Recorder;`StartupViewModel` 从 `DataGateViewModel` 取当前步骤 |
+| ⑤ 加载项目与会话 | `TopicsSynced` ∧ `ProjectsLoaded` ∧ `SessionsLoaded` | `DeviceLink.SyncAsync` 末尾(各主题的首帧都到了)/ `ApplyProjects` 把项目列表(哪怕是空的)写进镜像之后 / 每个项目的 `sessions.list` 都回来(失败的不拖住启动) | `StartupSignals`(任意线程取时间戳,切到 UI 线程写 Store) |
+| (交接) | `ShellLaidOut` → `Interactive` | 视图:所有阶段完成后,下面的外壳拿到数据后的第一次布局完成;淡出结束 | `StartupActions.ReportShellLaidOut / ReportInteractive` |
+| 只在时间线 | `ProcessStarted`、`MainEntered` | 操作系统记的进程创建时间、进入 `Main` | `Program` → `NcwApp.EarlyMilestones` |
+
+**失败与异常**(每一项都有稳定 key,界面按 key 翻译,认不出来的 key 用通用文字):
+
+| 情形 | 信号 | 表现 |
+|---|---|---|
+| 找不到 `ncw-agent` | 守护 `Failed` + `AgentNotFound` | 错误面板 `agent-not-found`(重试:立刻再找,不用等 5 秒的间隔) |
+| 进程拉不起来(权限 / 被安全软件拦截) | 守护 `Restarting` 或 `Failed` + `LaunchFailed` | 错误面板 `launch-failed`,**在第一次失败就显示**(守护要等 8 次连续失败才放弃,中间一百多秒;这类问题不先处理不会好) |
+| 数据目录被另一个本应用无法通信的 Agent 占着 | 守护 `Restarting` / `Failed` + `AlreadyRunningElsewhere`(退出码 75) | 错误面板 `already-running-elsewhere`;对方退出后守护拿到锁,面板自己消失 |
+| Agent 反复崩溃 | 一次都没就绪过,却已经连续退出 ≥ 2 次(`Restarting`),或守护 `Failed` + `CrashLoop` | 错误面板 `crash-loop` |
+| 版本不一致 | `ClientOutdated`(Agent 比桌面新 / 拒绝了过旧的客户端)、`AgentOutdated`(包里的 Agent 比桌面旧) | 错误面板,**没有「重试」**(重试不会好) |
+| Agent 在运行但连不上 | 连接层退避三次后 `Offline` | 错误面板 `connection-failed` |
+| 「连接」或「内容」阶段卡住 | 阶段开始(上一阶段完成的时刻)起 ≥ 30 秒 | 错误面板 `timeout`;阶段完成后自己消失。Agent 阶段由守护自己的就绪超时和退避管,数据接管本来就可能很久,都不套用 |
+| 2.x 还在运行(被挡住)/ 接管失败 / 接管完成要点「继续」 | `data` 主题 `blocked` / `failed` / `ready` + 摘要 | **不是启动失败**:加载层整个让位给数据页(§10.7) |
+| 启动期间 Agent 崩溃重启 | 守护 `Restarting`(没到 2 次) | 不退回「正在启动」:已完成的阶段保持完成,当前一行改成「正在重新连接 / Agent 正在重新启动」 |
+| 运行中断线 / Agent 崩溃(进入过可交互之后) | — | **不再出现全屏加载**,只用已有的断线提示(规则 7) |
+| 账户 / 首次启动页 | `AccountMode.Undecided` | 不挡加载层(Onboarding 本来就盖在外壳上):加载层淡出后露出的就是首次启动页(§10.7) |
+
+失败是**派生的,不是锁存的**:守护恢复、阶段完成,错误面板自己消失;「重试」只是让守护 / 连接层立刻再来一次,没有「重试之后的状态」另存。
+
+### 10.2 纯函数 `StartupProgress.Derive(facts, now, timings) → StartupView`
+
+输入是已经发生的事实(各里程碑的时间戳、数据接管步骤序号、此刻的守护状态 / 连接状态 / 数据状态),时间由调用方注入。输出:
+
+- `Phase`:`Loading`(在等)/ `Failed`(错误面板)/ `NeedsUser`(数据页接管)/ `Settling`(阶段都完成了,等外壳布局)/ `Revealing`(可以淡出)/ `Done`;`Owner`:谁拥有整窗(启动层 / 数据页 / 无)。
+- `Steps`(每阶段 `Pending / Active / Done`)、`Current`、`Detail`(当前一行下面的说明,枚举)、`DataStep`。
+- **确定进度**:`Fraction = (已完成阶段数 + 当前阶段内真实步骤) / 阶段数`,只由锁存算出。**只有数据接管有真实步骤**(`DataStepCount = 4`:备份、升级数据库、提交、转换凭据;最后一步只有 2.x 库里有旧凭据时才出现,所以总数固定为 4,进度条在没有凭据步骤时走到 3/4 再因为「完成」一次到位);其他阶段只有阶段数,`IsDeterminateInStage = false`,标识上转一小段「正在进行」的弧。协议里的 `DataStatus` 只有步骤、没有字节数 / 条数,所以**没有假百分比**(要显示字节级进度需要扩展协议,没做)。
+- `IsSlow` + `SlowHint`(从进程创建算起超过阈值,按当前阶段给提示种类;失败 / 数据页接管时不说「慢」);`Failure`(原因 key、能否重试、诊断细节;「查看诊断」「复制诊断信息」「退出」总是可用);`IsReconnecting`;`NextTimeAt`(不依赖新事实、仅因时间流逝输出会变的下一个时刻:慢启动、阶段超时——调用方在那一刻再算一次,没有轮询)。
+
+**单调(规则 6)**:阶段完成是锁存;重放的旧事件、接管失败后重试从头来、Agent 重启、设备断开重连,都不能让进度倒退(`StartupProgressTests`:一串抖动里 `Fraction` 非递减)。**区分「首次加载」和「运行中断线重连」(规则 7)**:一旦 `Interactive` 到达,`Derive` 永远返回 `Done`(`Owner = None`,没有失败、没有慢),运行中的断线只用已有的断线条;启动期间的断线只让当前一行显示「正在重新连接」,已完成的阶段不退回。
+
+### 10.3 时序规则 `StartupPresentation.Decide`(纯函数,时钟注入)
+
+1. **第一帧就是底色**:覆盖层的底色(`Background` token)从窗口的第一帧起就在;**内容**(标识、清单)等 `ShowDelay` 才出现。更快就绪时内容根本不出现,底色直接淡出——没有一闪而过的加载界面。**延迟和最短停留都从「窗口真正显示出来」(`WindowShown`)算起**,不是从 ViewModel 创建算起:窗口显示之前 UI 线程要花几秒创建整个外壳(真窗口实测,§10.6),那段时间用户什么也看不到,若也算进去,用户第一次看到加载界面时「最短停留」早已用完,几百毫秒就淡出(这是第一次真窗口冒烟发现并修掉的缺陷)。
+2. **失败立刻显示**:错误面板不等延迟。
+3. **最短停留**:内容一旦出现,至少停留 `MinDwell` 才淡出;内容没出现过则没有停留要求。
+4. **让位**:数据需要用户处理时,整个加载层(含底色)让位给数据页;回来时内容不用再等延迟。
+5. **淡出只开始一次**:开始之后状态不再变化,重放的旧事件拉不回来;淡出结束由视图报告,之后是 `Done`。
+6. **交接不跳**:所有阶段完成后,视图等外壳在**拿到数据后**的第一次布局完成(布局完成事件 + 一轮低优先级调度;不用 `RequestAnimationFrame`,Headless 和被遮挡的窗口里它不可靠),才报告 `ShellLaidOut`,淡出才会开始。所以淡出时下面的外壳已经完整渲染,淡出过程中没有任何布局变化(真窗口实测见 §10.6)。
+
+`StartupViewModel` 自己没有定时器:它只给出 `NextWake`(延迟出现、最短停留结束、慢启动、阶段超时中最近的一个),视图用一个一次性的 UI 定时器到点调 `Tick`(和对话区的计时一样,计时在视图里)。
+
+### 10.4 视觉与动效
+
+背景全部是 Arc token(`Background`、`Border`、`Foreground`、`TextSecondary`、`TextMuted`、`Danger`),深浅两套主题都对,没有任何颜色值;文字全部走 `NcwTextKind`(43 条,中英文齐全),不依赖具体字体宽度(清单和说明都会换行)。
+
+- **标识**:和外壳左上角同一个图形(圆角方块 + Lucide `Sparkles`,不使用任何第三方素材)。外圈是 `NcwProgressArc`:弧长 = `Fraction`(已经走完了多少个阶段 / 接管步骤),走 Arc 的 `Smooth` 弹簧(无回弹,被打断时从当前位置接着走);减弱 / 关闭级别 Arc 让弹簧直接跳到终点。**还在等的整个期间**(`IsIndeterminate` = `Phase == Loading`)再叠一小段短弧,用 `NcwMotion.Busy=Spin` 旋转:弧长只表示「走完了几步」,一步本身要多久是不知道的(真实的 1.6 GB 库上接管的「备份」一步实测 37 秒,这期间弧长一动不动),所以短弧一直转,证明还在干活而不是进度条停住了(减弱级别是 Arc 的「忙」明暗呼吸,关闭级别不画——静止的一段弧会被误读成进度)。失败时外圈换成 `Danger` 色、中间换成 `TriangleAlert`。
+- **清单**:每个阶段一行。已完成的打勾(勾的容器用 `NcwMotion.IsPresent` 淡入,遵守动效级别)并淡色;当前阶段最亮、加粗、前面是转圈图标;后续阶段暗淡。当前阶段下面是一行说明(接管时用和数据页同一套步骤文字)。**行的透明度变化是立刻的**,故意没有用 Avalonia 样式的 `Transitions`:淡出结束时覆盖层会被摘出界面树,而样式过渡在控件离开界面树时仍被时钟驱动(Headless 下复现过 `NullReferenceException`)。
+- **数据接管**:说明下面有四段小条,点亮的段数 = 真实的步骤序号(锁存,只增不减)。
+- **慢启动**:一行温和的提示(`NcwMotion.IsPresent` 上移 + 淡入),文字按当前阶段区分(Agent / 数据 / 内容 / 通用),不是错误。
+- **失败**:明确的错误面板——标题 + 原因说明 + 按钮「重试」(能重试才有)、「查看诊断」(展开 `NcwCollapsible`,里面是 `StartupProgress.Diagnostics` 的文本 + 守护日志尾部)、「复制诊断信息」、「退出」。不无限转圈。
+- **版式**:宽(≥ 720)画整张清单;窄窗口 / 手机壳(< 720)只留标识、当前阶段的名字和说明(清单收起)。内容整体可滚动(矮窗口)。
+
+### 10.5 无障碍与减少动效
+
+- **播报**:「当前在做什么」那一行(`StartupOverlay` 的 `DetailText`,说明文字)是 `AutomationProperties.LiveSetting = Polite`,它只在阶段 / 子步骤变化时才变,不是每一帧;慢启动提示 `Polite`;失败标题 `Assertive`;整个覆盖层有名字(「正在启动 NextCoWork」),清单有名字(「启动进度」)。
+- **动效级别**(用 `NcwMotion` 的 `IsPresent` / `Busy` / Arc 弹簧,不另造开关;「外观」设置里已有的四档):**完整**——内容淡入、弧长弹簧、短弧旋转、勾淡入、整层淡出;**减弱**——保留短淡入(`Fast` 档)、弧长直接到位、短弧换成 Arc 的明暗呼吸、淡出没有时长(立即);**关闭**——全部静止、立即,**仍显示真实的阶段文字、清单和进度弧**。三档的最终状态一致(`StartupOverlayTests` 三档逐项核对)。
+
+### 10.6 第一帧、窗口底色与真窗口验证
+
+窗口出现的第一帧必须是加载界面的底色,绝不能先白屏再变深色。Avalonia 里分两层:
+1. **Avalonia 自己画的内容**:`MainWindow` 的 `Background` 显式写成 `Background` token(和覆盖层底色是同一个 token),覆盖层的底色从 `IsPresented` 的初值起就在(`NcwMotion.IsPresent` 对尚未挂上界面树的控件直接就位,没有淡入)。
+2. **原生窗口在 Avalonia 画出第一帧之前显示的底**:macOS 的 NSWindow 默认随系统外观(浅色系统是浅灰 / 白)。`NativeWindowBackground` 在窗口显示之前把 `NSWindow.backgroundColor` 设成 Arc 的 `Background` token 解析出来的 RGB(`NcwApp` 创建窗口后、显示前调用;RGB 由 token 现解析,代码里没有颜色值),并可读回核对。**Windows / Linux 没有做,也没有机器可验证**。
+
+**真窗口实测**(`tools/StartupSmoke window`;macOS arm64,真实 Skia / Metal 渲染,Release 构建 + NativeAOT 的 `ncw-agent`)。**机器负载很高**(10 核,系统负载 16–22,别的会话在构建),数字只作数量级参考,不是干净机器上的基准:
+
+- **原生底色**:`NSWindow.backgroundColor` 读回 `#141414`,和 Arc 的 `Background` token(深色)一致 ✓。不设置时系统默认是 `windowBackgroundColor`(随系统外观的动态色,转不成固定 RGB,读不出来),所以浅色系统上第一帧会是浅色——这正是要修的。
+- **第一帧**:窗口打开时对窗口做离屏渲染,中心和底部像素都是 `#141414`、内容还没出现 ✓。这验证的是 Avalonia 自己画的那一层;原生窗口「最早的一帧」在这台机器上没法截屏,只能靠上面的原生底色读回做逻辑验证。
+- **进程到窗口的时间线**(Release,4 次,中位数 / 范围,ms,从进程创建算起):`FrameworkReady`(Avalonia + Arc 初始化完)870(860–997)→ `ShellCreated`(窗口和外壳创建完)2228(2207–2418)→ `WindowShown` 2512(2475–2710)→ `AgentReady` 2757(2410–3510)→ `Interactive` 4648(3850–5450)。
+  **窗口显示之前要 2.5 秒**(框架 0.9 + 创建窗口与外壳 1.4 + 显示与首次布局 0.3),这段时间用户什么也看不到,加载层帮不上;窗口显示之后加载层可见 1.3–2.8 秒(中位 2.1),这段才是真实的在等 Agent / 数据 / 内容。刚构建完的第一次冷启动更慢(框架初始化 3.8 秒,窗口 6.5 秒才出现)。
+- **淡出**:约 180 ms(`NcwMotion` 的退出时长),11–15 帧,帧间隔中位 16.5–17.4 ms,p95 45–76 ms,1–2 个间隔超过 33 ms(淡出开始的头几帧正好和外壳最后的布局 / JIT 撞在一起)。外壳几个关键区域(工作区、左侧区域、主网格)的位置和尺寸在淡出开始时和释放之后**完全一致**,没有布局跳动 ✓。加载期间的帧:中位 16.6–16.7 ms,p95 21–47 ms(冷启动那次 max 400 ms,是 JIT)。
+- **释放**:覆盖层和 `NcwProgressArc` 都不在界面树里,ViewModel 的 `OwnsScreen` / `NextWake` 清空 ✓;外壳稳定之后 2 秒内空闲 CPU 0.1–0.7%(释放后立刻的 2 秒是外壳自己在收尾:会话、Git 状态等,4–26%,不是加载层)。
+- **「提前启动 sidecar」评估后没有采用**:想让 Agent 的拉起和握手(冷启动约 0.9–1.1 秒)和框架初始化、窗口创建并行——在 `Main` 里单实例之后就启动守护,界面起来后用守护记下的拉起 / 就绪时刻回放里程碑。4 组交叉的 A/B(Release,负载 16–22):`Interactive` 中位 4967 ms(提前)对 4648 ms(现状);提前启动反而让 `FrameworkReady` 变慢(1408 对 870 ms,和 AOT Agent 进程抢 CPU),`AgentReady` 只早了约 100 ms。**没有收益**,还多出回放和幂等启动的代码,已还原。在更空闲的机器上结论可能不同;没有证据之前不做。
+- **没有做「先显示一个只有底色的轻量窗口、延后创建外壳」**:创建窗口与外壳的 1.4 秒确实在第一帧之前、是最大的单项,但要改 `MainWindow` 内容的延迟装配(焦点、快捷键、测试里大量直接创建 `DesktopShell` 的地方),这次没动,记入 §10.13。
+
+### 10.7 层级与交接
+
+同一时刻只有一个全屏层。顺序:**启动加载 →(数据被挡住 / 失败 / 接管完成等「继续」)数据页 →(首次启动)首次启动页 → 外壳**。
+
+- `DesktopShell` 里的叠放(后写的在上):`AccountStatusBar` < `OnboardingOverlay` < `SettingsOverlay` < `DataGateOverlay` < **`StartupOverlay`** < 右上角常驻(检查器开关 + Windows / Linux 窗口按钮)。窗口按钮在加载层之上,顶部 40px 里没被控件处理的按下不被拦截,`MainWindow` 照旧用它拖动窗口 / 双击最大化;加载层盖着时检查器开关隐藏(它会悬在空白上)。
+- 职责分开:启动加载是「在等」,数据页是「需要用户处理」。加载层里数据接管的步骤和数据页读**同一个事实**(`Workspace` Store 里本机设备的 `Data`,经 `DataGateViewModel`),不各读各的;`DataGateViewModel.IsPresented`(数据页的覆盖层绑它)= 有内容要显示 **且** 加载层没有拥有整窗。接管中(`preparing` / `taking-over`)由加载层显示步骤,数据页不同时出现;被挡住 / 失败 / 接管完成等「继续」时 `StartupView.Owner = DataGate`,加载层让位(整层含底色),数据页接管;用户点「重试」回到接管中,加载层接回来(内容不再等延迟)。进入可交互之后加载层不再存在,数据页的行为和以前一样(`IsPresented == IsVisible`)。
+- 首次启动:`AccountMode.Undecided` 时 `OnboardingOverlay` 早就开着(盖在外壳上),加载层在它之上;加载层淡出后露出的就是首次启动页,不会先闪一下外壳。
+- 手机壳:`MobileShell` 里同一个控件、同一个 `StartupViewModel`(`AdaptiveShell` 可能同时持有两个外壳,各有一个覆盖层绑同一个 ViewModel;第一个淡出完毕的报告可交互,另一个随 ViewModel 释放而不再有任何动作)。
+
+### 10.8 手机壳
+
+阶段 应用 → 连接 → 内容(`StartupProfile.Remote`):`Connection` 取所有已配对设备里最好的一个(任一已连接 → 已连接;否则任一在连接 → 连接中);**设备连不上不是启动失败**——所有设备离线 / 休眠 / 被吊销就算「连接」阶段「已落定」,「内容」阶段跳过,外壳照常进入(设备页显示离线);没有配对设备时没有什么要等的。版式是简化版(标识 + 当前阶段名 + 说明,没有整张清单)。Headless 验证(390 宽、深浅主题);iOS / Android 宿主不在范围内,**没有真机验证**。已知限制:手机宿主若在外壳创建之后才异步把已配对设备装进 Store,「没有设备」会让启动层在设备出现之前就放行(外壳里设备页随后显示连接中)。
+
+### 10.9 资源与性能
+
+加载层本身很轻:一个整窗 `Border` + 一个居中的小控件树(两个弧、一个图标、五行清单);不在自己里面做任何重活;动画只动 `Opacity` / `RenderTransform` 和一段圆弧的弧长(`NcwProgressArc` 只在 `Progress` 变化时重画,弧长是 Arc 的弹簧)。覆盖层在没有跟踪启动(测试、模拟数据)时隐藏,零成本。
+**释放**:淡出结束(减弱 / 关闭级别立即)→ 视图报告 `Interactive` → `StartupViewModel` 退订所有 Store / ViewModel 事件、`StartupRecorder` 自退订 → 视图停掉一次性定时器、退订 ViewModel、把自己从界面树里摘掉(标识的弧、短弧的旋转循环、淡入淡出的运动值随之离开界面树,Arc 的 `LiveLoop` / 运动值在离开界面树时自行释放)。`StartupOverlayTests` 逐项核对(摘掉、定时器不在等、没有 `NcwProgressArc` 留在树里、之后 Store 怎么变都不再有通知),真窗口里还量了释放之后的空闲 CPU(§10.6)。
+
+### 10.10 测试与验证
+
+| 层次 | 内容 | 位置 / 命令 |
+|---|---|---|
+| Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(69 条) |
+| Client | ViewModel + Store + Recorder + 真实的 DataGate:延迟出现、最短停留、淡出触发、释放后零通知、失败面板与重试、复制诊断、退出、数据页让位与交回、接管步骤与数据页同源、手机形态、`DeviceLink.RetryNow`;变异检查 | `Ncw.Client.Tests/StartupViewModelTests`(33 条) |
+| Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(7 条) |
+| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(44 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
+| 真实启动(无界面) | 真实 `ncw-agent`(NativeAOT)+ 真实守护 + 真实 DeviceLink + 真实 Store:时间线(冷 / 热 / 接上)、故障注入、真实 2.x 库副本接管 | `dotnet run --project tools/StartupSmoke -- timeline|faults|takeover --agent <ncw-agent>`(结果见 §10.11) |
+| 真窗口(macOS) | 原生窗口底色读回、第一帧像素、帧间隔、淡出布局稳定、释放后空闲 CPU | `dotnet run --project tools/StartupSmoke -- window --agent <ncw-agent>`(结果见 §10.6) |
+
+### 10.11 实测时间线与阈值校准
+
+全部是真实的 `ncw-agent`(NativeAOT 发布产物)+ 真实守护 + 真实 `DeviceLink` + 真实 Store + `StartupViewModel`,无界面(`tools/StartupSmoke timeline`;Release 构建的 harness;macOS arm64;**机器负载 15–17,10 核**,别的会话在跑,数字是数量级参考)。ms,从启动流程开始算,每格是 **中位数(最小–最大)**,每种场景 10 次:
+
+| 场景 | AgentSpawned | AgentReady | Connected | DataReady | TopicsSynced | ProjectsLoaded | SessionsLoaded | 全部阶段完成 | 淡出开始 |
+|---|---|---|---|---|---|---|---|---|---|
+| **冷**:全新数据根(Agent 要建库、迁移 schema),没有 Agent 在运行 | 55(40–707) | 1130(903–2347) | 1154(917–2503) | 1163(925–2850) | 1302(1040–3436) | 1312(1040–3500) | 1312(1040–3501) | **1316**(1044–3568) | 1344(1045–3573) |
+| **热**:已有数据根 + 3 个项目,没有 Agent 在运行(最常见的一次启动) | 50(36–76) | 704(489–736) | 724(506–755) | 736(518–767) | 873(637–908) | 874(642–909) | 912(684–956) | **921**(685–959) | 948(852–1313) |
+| **接上**:上次「关窗后继续运行」留下的 Agent,不拉起进程 | — | 2(1–13) | 2(1–13) | 2(2–13) | 3(2–15) | 3(2–15) | 3(2–15) | **6**(6–18) | 6(6–18) |
+
+读数说明:① 「淡出开始」= max(全部阶段完成, 内容出现时刻 + 最短停留),这里的内容出现时刻是 `ShowDelay` 到点后 UI 线程第一次空下来的时刻(启动期间 UI 线程在装配后端,有时会晚一些);② 「冷」里第一次(707 / 2347 / 3568)是刚发布的 AOT 产物第一次运行(文件缓存是冷的),之后 9 次稳定在 0.9–1.5 秒;更早一次在系统负载 72 时测过冷启动 8.1 秒;③ 阶段之间:Agent 就绪 → 连接 ≈ 15–55 ms(最慢一次 156 ms),连接 → 内容就绪(全部阶段完成)≈ 0.13–0.4 秒(冷启动第一次 1.1 秒)。
+
+**阈值取值与依据**(`StartupTimings`,都是数据,可调):
+
+| 阈值 | 取值 | 依据 |
+|---|---|---|
+| `ShowDelay`(内容延迟出现) | 250 ms | 「接上」的 10 次全部阶段完成 ≤ 18 ms,「热 / 冷」的 20 次最快 685 ms:任何 25–600 ms 之间的值都能把「根本不该出现」(接上)和「一定要出现」(要拉起进程)分开;取 250 ms(≈ 人对延迟的感知门槛,也是 Arc `DurationStandard` 的量级)。接上上次留下的 Agent 时内容根本不出现,底色直接淡出 |
+| `MinDwell`(最短停留) | 600 ms | 热启动最快的一次全部完成在 685 ms,内容 250 ms 出现,所以最快的几次(10 次里 4 次 < 850 ms)会被多留 100–165 ms(淡出开始在 850 ms),其余不受影响;600 ms 够让勾的淡入(240 ms)和阶段文字被读到,不会一闪而过 |
+| `SlowAfter`(慢启动提示) | 8 秒(从进程创建算起) | 热启动 p95 0.96 秒、冷启动中位 1.3 秒,8 秒是它们的 6–8 倍,正常启动不会误报;更早一次在系统负载 72 时冷启动 8.1 秒,说明机器极忙时会碰到;真实的 2.x 接管 43 秒,提示「升级数据可能需要几分钟」在 8 秒时出现正合适 |
+| `StageTimeout`(连接 / 内容阶段超时) | 30 秒 | 「连接」阶段实测 15–55 ms(最慢一次 156 ms),「内容」阶段 0.13–0.4 秒(最慢一次 1.1 秒),30 秒是最慢一次的 27 倍以上;Agent 阶段(实测 0.5–2.3 秒)由守护自己的 30 秒就绪超时和退避管,数据接管(1.6 GB 库上 38 秒)不套用 |
+
+**真实 2.x 库接管**(`takeover --legacy-db`,1.6 GB 的 2.x 库的**只读副本**,原库没有碰;23 个项目、631 个会话,凭据主密钥是随机造的,旧凭据解不开会计入「需要重新输入」,这次没有旧凭据行):加载层显示的是 Agent 的真实步骤 备份(`backing-up`)→ 升级(`migrating`)→ 提交(`committing`),进度值 0.200 → 0.600 → 0.650 → 0.700 → 0.800,单调不降;`备份并校验` 这一步用了 **37 秒**(系统负载 20–30;`docs/parity.md` 在空闲机器上量过约 16 秒),升级 10 ms,提交 410 ms;期间加载层一直拥有整窗,数据页没有同时出现 ✓。**这 37 秒里弧长一动不动**(弧长只数走完了几步),所以短弧在整个等待期间一直转,证明还在干活——这是看了这份数据之后才改的(以前只在没有真实步骤的阶段转)。数据被挡住(2.x 还在运行,`SingletonLock` 指向活进程)时:1.8–2.0 秒内加载层整个让位给数据页(数据页在场、加载层不在场,同一时刻只有一个全屏层),放开锁后点数据页的「重试」→ 加载层接回来显示接管步骤 → 摘要页(「继续」)→ 继续后加载层接回来完成内容阶段 ✓。
+
+**故障注入**(`faults`;真实的 NativeAOT `ncw-agent` 或能被它替身的可执行文件;每一项都落到明确的面板 / 不转圈,且「重试」真的恢复):
+
+| 故障 | 怎么注入 | 失败面板出现 | 面板 key | 重试 |
+|---|---|---|---|---|
+| 找不到 Agent | `NCW_AGENT_PATH` 指向不存在的文件 | 640 ms | `agent-not-found` | 指向真文件后重试:立刻再找(以前要等满 5 秒),4.4 秒后全部阶段完成(含 Agent 冷启动) |
+| 起不来 | 存在但没有执行权限的文件 | **8 ms** | `launch-failed` | 恢复 1.7 秒后全部阶段完成。守护要连续失败 8 次(一百多秒)才放弃,所以这一条是「Restarting 也立即显示」才做到的 |
+| 反复崩溃 | 立刻 `exit 3` 的脚本 | 4.1 秒(连续退出第 2 次;守护自己要 8 次才放弃) | `crash-loop` | 恢复 2.0 秒 |
+| 版本不匹配(Agent 比桌面新) | 把桌面版本注入成 `0.0.1` | 1.7 秒 | `client-outdated`,**没有「重试」** | —(重试不会好) |
+| 版本不匹配(包里的 Agent 比桌面旧) | 注入 `99.0.0` | 2.1 秒 | `agent-outdated`,**没有「重试」** | — |
+| 数据根被别的 Agent 占着 | 先起一个用别的令牌的 Agent | 90 ms(握手被拒 → 守护 `Failed / AlreadyRunningElsewhere`) | `already-running-elsewhere` | 对方退出后点重试,约 1.9 秒后全部阶段完成 |
+| 所有阶段完成、还没淡出时 Agent 被杀 | 杀进程 | 没有面板:已完成的阶段不退回(5 → 5,进度 1.00 → 1.00),照常淡出,Agent 被拉起、设备重连 | — | — |
+| 进入可交互之后 Agent 被杀 | 杀进程 | **加载层没有回来**(设备断开,2.4 秒后重连;只用已有的断线条) | — | — |
+| **真实发现**:数据根里有 2.x 的库、却没有 `credential.key` | 只放库 | 5.3 秒崩溃面板(Agent 退出码 134:`AgentHost` 构造时 `DeviceIdentity.LoadOrCreate` → `CredentialCrypto.LoadMasterKey` 抛未处理的 `FileNotFoundException`) | `crash-loop` | 补上密钥、点「重试」,继续走接管。**这是 Agent 侧的缺陷**(应该给数据页一个明确的 `failed` 原因,而不是崩溃),不在这次范围内,没有改 |
+
+### 10.12 与 2.x 的对应与差异
+
+对应(`docs/parity.md`「启动与加载」登记):2.x 的启动闸门决策 `decideMigrationGate`(`waiting` / `app` / `gate` / `startup-failed`)和它的时序测试(`migration-release.test.ts`)、骨架屏 `AppSkeleton`、15 秒启动超时诊断页、`WindowControls` 在闸门期间仍可用,在这里分别对应 `StartupProgress.Derive`、加载层、阶段超时与错误面板、窗口按钮排在加载层之上。
+差异:① 2.x 是**骨架屏**(轮廓与外壳重合,静止,不做动画;理由:纯色像程序坏了),3.0 是**品牌标识 + 真实阶段清单**,第一帧只有底色、内容等 `ShowDelay` 才出现——因为 3.0 的启动链更长(要拉起 sidecar 并握手),用户需要知道在等什么,而且更快就绪时不该闪一下;② 2.x 的「15 秒」是整体超时,3.0 按阶段:Agent 阶段看守护自己的就绪超时与退避,连接 / 内容阶段 30 秒,接管不设上限;③ 2.x 的诊断页有「打开数据目录」,3.0 没有(诊断页的入口还没做),只有诊断文本(展开 / 复制)。
+
+### 10.13 没做的与已知限制
+
+- 数据接管的字节级 / 条数级进度:协议 `DataStatus` 只有步骤,没有分子分母,需要扩展协议(升协议版本或加能力开关,同步黄金向量),这次没有动协议。
+- Windows / Linux 的原生窗口底色、真机验证;iOS / Android 宿主里的加载界面(Headless 验证了共享部分)。
+- 「先显示一个只有底色的轻量窗口、延后创建外壳」:创建窗口与外壳的约 1.4 秒在第一帧之前,是窗口显示前最大的一项(§10.6);要改 `MainWindow` 内容的延迟装配,没有做。
+- 「提前启动 sidecar」评估后没有采用(§10.6 的 A/B)。
+- Agent 侧缺陷(这次发现,没有改):数据根里有 2.x 的库却没有 `credential.key` 时,Agent 在构造阶段抛未处理异常退出(退出码 134),用户看到的是启动失败的崩溃面板,而不是数据页上的明确原因(§10.11 最后一行)。
+- 加载层之后的 Onboarding 首屏也是整窗层,两者之间是「先淡出加载层再露出首次启动页」,没有做两层之间的合并动画。

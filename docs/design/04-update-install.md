@@ -98,7 +98,9 @@
    (`%APPDATA%\NextCoWork`、`~/Library/Application Support/NextCoWork`)里有没有 2.x 还没迁走的旧数据。
 2. 找到 2.x 数据,就进入接管页;找不到,就是全新安装,直接创建新的数据根。
 
-### 接管步骤(启动页上显示进度,没有命令行入口)
+### 接管步骤(启动加载界面上显示进度,没有命令行入口)
+
+> 接管中的步骤(备份 / 升级 / 提交 / 凭据)显示在**启动加载界面**里(和数据页读同一个 `data` 事实,[03 §10](03-ui-layout.md#10-启动与加载));被挡住、失败、接管完成等「继续」时才由数据页接管整窗。
 
 实现位置:`Ncw.Agent.Storage/Takeover/`(移植自 2.x 的 `main/migration/takeover.ts` 和 `db/takeover.ts`),
 由 `Ncw.Agent.Host/DataGate` 在 Agent 启动时自动执行;进度和结果通过协议的 `data` 主题推给控制端(09 §8.2),
@@ -243,7 +245,7 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 - **接上还在运行的 Agent**:桌面端拉起 Agent 时写 `<数据根>/run/sidecar.json`(pid、令牌、是否脱离、版本,0600)。下次启动先看它:pid 还活着、而且进程名确实是 `ncw-agent`(pid 会被复用,不能误杀别的程序)就直接握手接上,不重复拉起;进程已不在则删掉过期的状态文件。接上的 Agent 没有进程句柄,运行期间每 10 秒握手确认一次,连续两次失败就当它不在了。
 - **退出**:自己拉起的 Agent:关 stdin → 等 5 秒 → SIGTERM(Unix;Windows 没有等价物,跳过)→ 等 3 秒 → 强杀;完成后删状态文件。**「关窗后继续运行」**打开(且这个 Agent 是脱离拉起的)时什么都不做,状态文件保留,下次接上。接上的 Agent 只有在它是「上次留下的」(脱离的)并且用户已经关掉开关时才由桌面端收尾;别的实例拉起的不动。开关是在 Agent 带着 stdin 管道运行期间才打开的:这个 Agent 本来就会随桌面端退出,所以仍然优雅关闭,开关对下一次拉起生效。
 - **目录约定**:profile 根 `~/.next-cowork`(`NCW_PROFILE_ROOT` 可改),控制端文件在 `client/`;数据根仍是 M2 的 `~/.next-cowork/agent-dev`(`NCW_AGENT_DATA_ROOT` 可改)——2.x 数据接管(§4)由 Agent 里的 `DataGate` 在启动时执行,入口和行为**没有改动**,数据根切到 `data/` 的时机仍等接管验收。数据根下:`run/`(`agent.sock`、`agent.lock`、`sidecar.json`)、`logs/agent.log`(sidecar 的 stdout / stderr,2 MiB 滚动、保留一份旧的,给诊断页用)。
-- **状态**:`LocalAgentSidecar.Status` / `StatusChanged`(`Phase`:Idle / Starting / Running / Restarting / Failed / Stopping / Stopped;`Issue`:AgentNotFound / LaunchFailed / AlreadyRunningElsewhere / AgentOutdated / ClientOutdated / CrashLoop;重启次数、下一次重启等待、诊断详情)。`LocalBackend` 现在只把它写进跟踪日志;给用户看的提示文案和界面由 UI 批次按 `SidecarIssue` 接入(Core / Client 不产出界面文字)。
+- **状态**:`LocalAgentSidecar.Status` / `StatusChanged`(`Phase`:Idle / Starting / Running / Restarting / Failed / Stopping / Stopped;`Issue`:AgentNotFound / LaunchFailed / AlreadyRunningElsewhere / AgentOutdated / ClientOutdated / CrashLoop;重启次数、下一次重启等待、诊断详情),另有 `Spawned` 事件(进程拉起;接上上次留下的 Agent 不触发)。`LocalBackend` 把状态写进跟踪日志,**并经 `Sidecar/StartupBridge` 写进启动事实**(`ClientStores.Startup`):启动加载界面据此显示「启动本机 Agent」阶段和各种失败的错误面板(文案按 `SidecarIssue` 对应的 key 取,Core / Client 不产出界面文字,见 [03 §10](03-ui-layout.md#10-启动与加载))。找不到 Agent 时的等待现在可被「重试」打断(以前要等满 5 秒)。
 
 **偏离与待接入**:
 
@@ -251,6 +253,19 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 2. **ncw-agent 新增两个启动参数 / 行为**(同样只给桌面端调用):`--lifeline stdin`,以及 SIGTERM 优雅关闭、忽略 SIGHUP(「关窗后继续运行」时终端关闭不能带走它)。
 3. **「关窗后本机 Agent 继续运行」开关的值**目前来自 `Ncw.Desktop` 自己的 `desktop.json`(控制端目录下;`NCW_KEEP_AGENT=1` 可强制打开),通过 `ISidecarPolicy` 读取,默认关。设置页的开关(07 §3「通用」)、对应的 `UiPrefs` 字段和界面文字属于 UI 批次:接入时让 `UiPrefs` 实现 `ISidecarPolicy` 即可,守护逻辑不用改。
 4. **托盘常驻**(2.x 的托盘行为)还没做:没有托盘时「关窗」就是退出应用,所以开关现在的语义是「退出桌面端后 Agent 继续运行」。
+
+### 7.2.1 启动流程(进程启动 → 外壳可交互)
+
+用户双击应用到能操作之间,桌面进程按下面的顺序走;**每一步都是一个真实的事实**,启动加载界面([03 §10](03-ui-layout.md#10-启动与加载))只显示这些事实,不用计时器假装进度。括号里是它在启动时间线里的里程碑名。
+
+1. `Program.Main`:进程创建时间(`ProcessStarted`,操作系统记的)→ 进入 `Main`(`MainEntered`)→ Velopack 钩子 → 单实例锁拿到(`InstanceReady`)。Avalonia 起来之前的这三个时间经 `NcwApp.EarlyMilestones` 带进启动事实。(Avalonia / Arc 初始化完成是 `FrameworkReady`,窗口和外壳创建完是 `ShellCreated`,都只进时间线。)
+2. `NcwApp.OnFrameworkInitializationCompleted`:开始跟踪启动(`ClientStores.Startup.Begin`)→ **先于后端** → `LocalBackend.Start`:拉起守护(`LocalAgentSidecar.Start`),守护的状态 / `Spawned` 事件经 `StartupBridge` 写进事实(`AgentSpawned`、`AgentReady`)→ `DeviceLink` 开始连接(`WaitReadyAsync` 之后才去连本机通道)→ 偏好读完、动效级别写进主题(`PlatformReady`)→ 创建主窗口(原生窗口底色在显示前设成加载界面的底色,见 03 §10.6)→ 窗口打开(`WindowShown`)→ 账户记录读完(`AccountDecided`)。
+3. 连接层(`DeviceLink`):连接 → 握手 → 设备信息(`Connected`)→ 订阅各主题,首帧都到(`TopicsSynced`)→ `data` 主题 `ready`(`DataReady`;首次接管 2.x 数据时这里有 备份 → 升级 → 提交 → 凭据 四个真实步骤)→ 项目列表写进镜像(`ProjectsLoaded`)→ 每个项目的会话列表拉回来(`SessionsLoaded`)。
+4. 视图:外壳在拿到数据后完成第一次布局(`ShellLaidOut`)→ 加载界面淡出并释放(`Interactive`)。
+
+**实测的位置**(Release,macOS arm64,机器负载高,[03 §10.6](03-ui-layout.md#106-第一帧窗口底色与真窗口验证)):`FrameworkReady` ≈ 0.9 秒、`ShellCreated` ≈ 2.2 秒、`WindowShown` ≈ 2.5 秒(窗口显示之前用户什么也看不到)、`Interactive` ≈ 4.6 秒;无界面时 Agent 的拉起到可交互:热启动约 0.9 秒、冷启动约 1.3 秒、接上上次留下的 Agent 约 6 ms([03 §10.11](03-ui-layout.md#1011-实测时间线与阈值校准))。**评估过「在 `Main` 里提前启动守护」**:和框架初始化 / 窗口创建并行,A/B 没有收益(抢 CPU),没有采用。
+
+**data 主题与加载界面**:首次启动时数据没就绪(接管中)的进度由加载界面显示(读的是和数据页同一个 `Data` 事实);数据被挡住 / 失败 / 接管完成要点「继续」时加载界面让位给数据页(03 §10.7)。**真实时间线数据**(冷启动 / 热启动 / 接上上次留下的 Agent / 真实 2.x 库接管)见 [03 §10.11](03-ui-layout.md#1011-实测时间线与阈值校准)。
 
 ### 7.3 `nextcowork://` 协议链接(桌面端,`Ncw.Desktop`)
 

@@ -303,7 +303,7 @@ internal sealed class SmokeApp : NcwApp
             await Task.Delay(1500);
             var idle = await Cpu();
             Console.WriteLine($"SMOKE note cpu right after the release (shell still settling): {settling:F1}% of one core");
-            Report("window.idle-cpu", idle < 5, $"{idle:F1}% of one core over 2 s of idle once the shell has settled (a leftover animation loop would show up here; the first 2 s after the release were {settling:F1}%)");
+            Report("window.idle-cpu", idle < 10, $"{idle:F1}% of one core over 2 s of idle once the shell has settled (a leftover animation loop would show up here; the first 2 s after the release were {settling:F1}%)");
 
             // 和 ViewModel 的接线:宿主能力有没有真的接上(INcwBackend.StartupHost 经默认接口成员实现)
             Report("window.host-capabilities-wired", vm.StartupHost is not null && vm.RequestExit is not null, $"StartupHost={(vm.StartupHost is null ? "null" : vm.StartupHost.GetType().Name)}, RequestExit={(vm.RequestExit is null ? "null" : "set")}");

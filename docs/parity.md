@@ -320,6 +320,25 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | 手机标签淡入、再点已选中的标签回根页、扫码有效期按界面语言 | UI `MobileShell`、`ClockTimeConverter` | `MotionMobileTests` | 新增 / 缺陷修复 | 页面推入 / 弹出、手势返回是 Arc `NavigationStack` 自带,真机手感待验证 |
 | 真窗口动效冒烟 | `tools/MotionSmoke`(开发用) | 手动运行;不进 CI | 新增 | 只在 macOS 上验证过 |
 
+## 启动与加载(2.x `shared/domain/bootstrap.ts`、`renderer/views/MigrationGate.tsx` + `migration-release.ts`、`shell/AppSkeleton.tsx` → 3.0 `Ncw.Core/Domain/StartupProgress.cs` + `Ncw.Client` 启动事实 + `Ncw.UI` 启动加载界面)
+
+2.x 的启动是 `window:ready` → `app:getBootstrap` → 首屏;闸门 `MigrationGateHost` 在 `<App/>` **外面**,按纯函数 `decideMigrationGate(state, resolved, startupStalled)` 在 `waiting`(画骨架屏)/ `app`(放行)/ `gate`(迁移页)/ `startup-failed`(诊断页)之间决定;
+15 秒内主进程没能应答就进诊断页(带复制诊断、打开数据目录);`WindowControls`(Windows / Linux 自绘的窗口按钮)在闸门的每个分支里都在。3.0 的启动链更长(拉起 sidecar、握手、连接、数据接管、首批快照),所以决策升级成「阶段 + 进度 + 失败 + 谁拥有整窗」的纯函数,
+并有真实驱动的加载界面。设计见 [03 §10](design/03-ui-layout.md#10-启动与加载)、[04 §7.2.1](design/04-update-install.md)。
+
+| 2.x | 3.0 | 测试 | 状态 | 差异 / 说明 |
+| --- | --- | --- | --- | --- |
+| `decideMigrationGate`(四种决策)与 `migration-release.test.ts` 的时序 | Core `StartupProgress.Derive`(`Phase`:Loading / Failed / NeedsUser / Settling / Revealing / Done;`Owner`)+ `StartupPresentation.Decide` | `Ncw.Core.Tests.StartupProgressTests`(逐条对应见下) | 移植(重新设计) | 2.x 只有「主进程能不能应答」一个维度;3.0 有五个阶段。**对应的 2.x 场景**:「IPC 没就绪时 idle 显示骨架但不放行」→ 阶段没完成不放行(`Nothing_reached…`、`The_content_stage_needs…`);「首份快照未到显示骨架、超时后显示诊断」→ 连接 / 内容阶段 30 秒超时(`Only_connect_and_content_time_out`);「就绪前主进程报告启动异常立即显示诊断」→ 守护的每种 issue 立即变成错误面板(`Every_sidecar_issue_becomes_a_failure…`);「能应答之后直接放行,忽略之前的超时或陈旧错误」→ 失败 / 超时是派生的、不是锁存的,恢复后自己消失(`A_failure_is_derived_not_latched…`、`A_timeout_clears_itself…`);「迁移进行中照常画那一屏」→ 接管步骤显示在加载界面(`Takeover_progress…`);「失败页照常画 / 已跳过要用户确认」→ 数据需要用户处理时让位给数据页(`Data_that_needs_the_user…`、`The_completed_takeover_summary…`) |
+| `skipped` 状态与「跳过并继续」 | **没有** | — | 不移植 | 3.0 的接管失败会自动回退(`DataGate`),只有「重试」,没有「跳过」;被挡住的原因由数据页显示 |
+| 骨架屏 `AppSkeleton`(轮廓与外壳重合,静止,不做动画,换成真界面时硬切) | `StartupOverlay`:底色 + 品牌标识 + 真实阶段清单,内容等 `ShowDelay` 才出现,淡出交接 | `Ncw.UI.Tests.StartupOverlayTests`(44)、`tools/StartupSmoke window` | 重新设计 | 2.x:「一块纯色看着像程序坏了」,所以画外壳的轮廓;3.0:启动链长、用户需要知道在等什么,所以画标识 + 清单;且更快就绪时(接上上次留下的 Agent)内容根本不出现,不闪一下。没有做 2.x 那种「轮廓重合的骨架屏」 |
+| 15 秒启动超时 → 诊断页 | 阶段超时(连接 / 内容 30 秒)+ 守护自己的就绪超时与退避;失败面板 | `StartupProgressTests`(`Only_connect_and_content_time_out`)、`StartupViewModelTests`、`tools/StartupSmoke faults` | 重新设计 | 2.x 是整体 15 秒;3.0 按阶段,Agent 阶段看守护的 30 秒就绪超时和退避(并且「需要用户处理」的问题第一次失败就显示,不等守护放弃),接管不设上限 |
+| 诊断页:复制诊断、打开数据目录 | 错误面板:「重试」「查看诊断」(展开)「复制诊断信息」「退出」 | `StartupOverlayTests`、`StartupViewModelTests` | 部分移植 | **没有「打开数据目录」**(3.0 的诊断页入口还没做);诊断文本是结构化事实 + 守护日志尾部,不含令牌 |
+| 握手分支里窗口按钮仍可用(`WindowControls` 在每个分支里) | 加载层在 `DesktopShell` 里排在窗口按钮之下;顶部 40px 的按下不被拦截(拖动窗口) | `StartupOverlayTests.The_window_buttons_stay_above_the_layer…` | 移植 | — |
+| 「渲染层比主进程启动快」之类的时序错误(只有特定时序才复现) | 事实锁存 + 单调的纯函数,时钟注入 | `StartupProgressTests`(抖动 / 重放 / 重试从头)、`StartupViewModelTests` | 移植思路 | 2.x 把「错的唯一形态几乎没法手测」的判据抽成纯函数、把时序摆出来验;3.0 同样 |
+| (2.x 没有)窗口第一帧的底色 | `MainWindow.Background` = `Background` token;macOS `NativeWindowBackground` 设 NSWindow 底色 | `StartupOverlayTests.The_main_window_background_is_the_same_token…`、`tools/StartupSmoke window`(读回) | 新增 | Windows / Linux 的原生窗口底色没有做 |
+| (2.x 没有)手机壳的加载界面 | 同一个控件(`compact` 版式)、同一个 ViewModel;阶段 应用 → 连接 → 内容,设备离线不算失败 | `StartupOverlayTests`(手机壳 2 条)、`StartupViewModelTests`(手机形态) | 新增,**真机未验证** | iOS / Android 宿主只验证了共享部分 |
+| (2.x 没有)启动时间线与真实启动冒烟 | 里程碑锁存 + `StartupProgress.Timeline / Diagnostics`;`tools/StartupSmoke`(开发用,不进 slnx):无界面时间线、故障注入、真实 2.x 库接管、真窗口 | 手动运行,结果见 [03 §10.11](design/03-ui-layout.md#1011-实测时间线与阈值校准) | 新增 | 只在 macOS 上验证过;机器负载很高时的数字只作为数量级参考 |
+
 ## 中继(M6:2.x `src/relay`(TS)→ 3.0 `Ncw.Relay` + `Ncw.Protocol/Transport/Relay*`;全新设计,不兼容 2.x)
 
 2.x 的中继是 TypeScript 服务,协议(设备协议、配对、路由)整个换了,所以**没有逐条移植**的用例;下面登记 3.0 的对应物、测试和与设计(09 §9)的差异。
