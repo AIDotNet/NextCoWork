@@ -262,6 +262,9 @@ public class RelayBuildTests
         return Directory.Exists(bin)
             ? Directory.EnumerateFiles(bin, name, SearchOption.AllDirectories)
                 .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}publish{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+                // NativeAOT 编译留在 bin/<配置>/<rid>/native/ 下的是中间产物:旁边没有 e_sqlite3 之类的原生库,启动就 DllNotFoundException。
+                // 刚做完一次 AOT 发布,它就是「最新修改」的那个——必须排除,否则本机上 publish 之后再跑测试就会挑中它。
+                .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}native{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault()
             : null;

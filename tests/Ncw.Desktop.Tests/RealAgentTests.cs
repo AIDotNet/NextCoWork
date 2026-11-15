@@ -36,7 +36,13 @@ public class RealAgentTests
         var name = AgentLocator.ExecutableName(OperatingSystem.IsWindows());
         var bin = Path.Combine(RepoRoot(), "src", "Ncw.Agent", "bin");
         var found = Directory.Exists(bin)
-            ? Directory.EnumerateFiles(bin, name, SearchOption.AllDirectories).OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+            ? Directory.EnumerateFiles(bin, name, SearchOption.AllDirectories)
+                // 只要「能直接跑」的产物:publish 目录是发布产物,bin/<配置>/<rid>/native/ 是 NativeAOT 的中间产物(旁边没有 e_sqlite3,启动就 DllNotFoundException)。
+                // 之前这里什么都没排除:本机做完一次 AOT 发布,中间产物成了「最新」的,真实 Agent 的用例就全部起不来。
+                .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}native{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                    && !f.Contains($"{Path.DirectorySeparatorChar}publish{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
             : null;
         if (found is null)
         {
