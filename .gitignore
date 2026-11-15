@@ -15,3 +15,6 @@ artifacts/
 
 # 系统
 .DS_Store
+
+# Claude Code 的子代理临时工作区(每个都是一份完整检出,几个 GB,绝不入库)
+.claude/
