@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    一方扩展:计划模式、待办、目标(docs/design/08-agent-runtime/05 §6–§7、06 §3)。
+    依赖规则:在会话层(扩展点 before_run / compact_attachments / session_start 与 RunDraft 在那里)、编排层(IRunExtension、RunRegistry.DeliverInternal 的 InternalInput)和
+    权限与交互扩展(PlanApproval / GoalProposal、PermissionRuns)之上:引用 Kernel、Session、Runs、Tools、Extensions、Environments、Storage(只为把目标标记写回转录、读历史,经注入的接口)、Ncw.Core(待办 / 目标的共用纯函数)。
+    <b>不</b>引用 Ncw.Protocol、Ncw.Agent.Host、Avalonia、客户端项目;Host 才是唯一知道协议的层。
+    工具只经项目的 IExecutionEnvironment 访问文件(计划文件),本项目里没有 System.IO 的文件 API、没有 Process。
+    JSON 全部用 Utf8JsonWriter / JsonDocument / JsonObject 原语手写,不走反射序列化,可裁剪、可 NativeAOT。
+    本层不产出界面文字:发给模型的文字是英文常量;交互请求、目标变更、标记都只带结构化数据,控制端按类型翻译。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Extensions.Planning</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Runs/Ncw.Agent.Runs.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Planning.Tests" />
+  </ItemGroup>
+</Project>

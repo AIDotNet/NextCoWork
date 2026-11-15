@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    工作区工具的领域服务(docs/design/10 的 workspace 文件部分 / resource / git / review 模块,M4):
+    Files(目录列表、读、范围读、写、变更、文件名建议、内容搜索、markdown 资源)、Git(概览、分支、提交、diff、暂存、提交、拉取 / 推送、生成提交信息)、
+    Review(变更集、文件 diff、撤销 / 重做的预检与执行)。
+    依赖规则:只引用 Ncw.Core(纯函数:git status 解析、路径排序)和 Ncw.Agent.Environments(IExecutionEnvironment);不引用 Ncw.Protocol、Ncw.Agent.Host、
+    Ncw.Agent.Storage、Avalonia、客户端项目:协议 DTO 的映射都在 Host,存储经本项目定义的接口(Host 实现)。
+    所有文件和进程访问只经项目的 IExecutionEnvironment(AGENTS.md §5):本项目里没有 System.IO 的文件 API、没有 System.Diagnostics.Process(由 ArchitectureTests 守)。
+    不用反射序列化,NativeAOT 零裁剪警告。本层不产出界面文字:错误只有错误码 / 稳定 key 和英文诊断。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Workspace</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Workspace.Tests" />
+  </ItemGroup>
+</Project>

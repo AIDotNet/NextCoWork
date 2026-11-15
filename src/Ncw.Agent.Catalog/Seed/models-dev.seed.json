@@ -1,0 +1,196 @@
+{
+  "anthropic": {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "env": ["ANTHROPIC_API_KEY"],
+    "doc": "https://docs.anthropic.com/en/docs/about-claude/models",
+    "models": {
+      "claude-opus-4-1": {
+        "id": "claude-opus-4-1", "name": "Claude Opus 4.1", "family": "claude-opus",
+        "attachment": true, "reasoning": true, "tool_call": true,
+        "release_date": "2025-08-05",
+        "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+        "cost": { "input": 15, "output": 75, "cache_read": 1.5, "cache_write": 18.75 },
+        "limit": { "context": 200000, "output": 32000 }
+      },
+      "claude-sonnet-4-5": {
+        "id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "family": "claude-sonnet",
+        "attachment": true, "reasoning": true, "tool_call": true,
+        "release_date": "2025-09-29",
+        "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+        "cost": { "input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75 },
+        "limit": { "context": 200000, "output": 64000 }
+      },
+      "claude-haiku-4-5": {
+        "id": "claude-haiku-4-5", "name": "Claude Haiku 4.5", "family": "claude-haiku",
+        "attachment": true, "reasoning": true, "tool_call": true,
+        "release_date": "2025-10-15",
+        "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+        "cost": { "input": 1, "output": 5, "cache_read": 0.1, "cache_write": 1.25 },
+        "limit": { "context": 200000, "output": 64000 }
+      },
+      "claude-sonnet-4-0": {
+        "id": "claude-sonnet-4-0", "name": "Claude Sonnet 4", "family": "claude-sonnet",
+        "attachment": true, "reasoning": true, "tool_call": true,
+        "release_date": "2025-05-22",
+        "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+        "cost": { "input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75 },
+        "limit": { "context": 200000, "output": 64000 }
+      }
+    }
+  },
+  "openai": {
+    "id": "openai",
+    "name": "OpenAI",
+    "env": ["OPENAI_API_KEY"],
+    "doc": "https://platform.openai.com/docs/models",
+    "models": {
+      "gpt-5": {
+        "id": "gpt-5", "name": "GPT-5", "family": "gpt",
+        "attachment": true, "reasoning": true, "tool_call": true, "structured_output": true,
+        "release_date": "2025-08-07",
+        "modalities": { "input": ["text", "image"], "output": ["text"] },
+        "cost": { "input": 1.25, "output": 10, "cache_read": 0.125 },
+        "limit": { "context": 400000, "output": 128000 }
+      },
+      "gpt-5-mini": {
+        "id": "gpt-5-mini", "name": "GPT-5 Mini", "family": "gpt-mini",
+        "attachment": true, "reasoning": true, "tool_call": true, "structured_output": true,
+        "release_date": "2025-08-07",
+        "modalities": { "input": ["text", "image"], "output": ["text"] },
+        "cost": { "input": 0.25, "output": 2, "cache_read": 0.025 },
+        "limit": { "context": 400000, "output": 128000 }
+      },
+      "gpt-4.1": {
+        "id": "gpt-4.1", "name": "GPT-4.1", "family": "gpt",
+        "attachment": true, "reasoning": false, "tool_call": true, "structured_output": true,
+        "release_date": "2025-04-14",
+        "modalities": { "input": ["text", "image"], "output": ["text"] },
+        "cost": { "input": 2, "output": 8, "cache_read": 0.5 },
+        "limit": { "context": 1047576, "output": 32768 }
+      },
+      "gpt-4o": {
+        "id": "gpt-4o", "name": "GPT-4o", "family": "gpt",
+        "attachment": true, "reasoning": false, "tool_call": true, "structured_output": true,
+        "release_date": "2024-05-13",
+        "modalities": { "input": ["text", "image"], "output": ["text"] },
+        "cost": { "input": 2.5, "output": 10, "cache_read": 1.25 },
+        "limit": { "context": 128000, "output": 16384 }
+      }
+    }
+  },
+  "google": {
+    "id": "google",
+    "name": "Google",
+    "env": ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
+    "doc": "https://ai.google.dev/gemini-api/docs/models",
+    "models": {
+      "gemini-2.5-pro": {
+        "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "family": "gemini-pro",
+        "attachment": true, "reasoning": true, "tool_call": true, "structured_output": true,
+        "release_date": "2025-03-20",
+        "modalities": { "input": ["text", "image", "audio", "video", "pdf"], "output": ["text"] },
+        "cost": { "input": 1.25, "output": 10, "cache_read": 0.31, "context_over_200k": { "input": 2.5, "output": 15, "cache_read": 0.625 } },
+        "limit": { "context": 1048576, "output": 65536 }
+      },
+      "gemini-2.5-flash": {
+        "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "family": "gemini-flash",
+        "attachment": true, "reasoning": true, "tool_call": true, "structured_output": true,
+        "release_date": "2025-03-20",
+        "modalities": { "input": ["text", "image", "audio", "video", "pdf"], "output": ["text"] },
+        "cost": { "input": 0.3, "output": 2.5, "cache_read": 0.075 },
+        "limit": { "context": 1048576, "output": 65536 }
+      }
+    }
+  },
+  "xai": {
+    "id": "xai",
+    "name": "xAI",
+    "env": ["XAI_API_KEY"],
+    "doc": "https://docs.x.ai/docs/models",
+    "models": {
+      "grok-4": {
+        "id": "grok-4", "name": "Grok 4", "family": "grok",
+        "attachment": true, "reasoning": true, "tool_call": true, "structured_output": true,
+        "release_date": "2025-07-09",
+        "modalities": { "input": ["text", "image"], "output": ["text"] },
+        "cost": { "input": 3, "output": 15, "cache_read": 0.75 },
+        "limit": { "context": 256000, "output": 64000 }
+      }
+    }
+  },
+  "deepseek": {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "api": "https://api.deepseek.com",
+    "env": ["DEEPSEEK_API_KEY"],
+    "doc": "https://api-docs.deepseek.com/quick_start/pricing",
+    "models": {
+      "deepseek-chat": {
+        "id": "deepseek-chat", "name": "DeepSeek Chat", "family": "deepseek",
+        "attachment": false, "reasoning": false, "tool_call": true,
+        "release_date": "2024-12-26",
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "cost": { "input": 0.28, "output": 0.42, "cache_read": 0.028 },
+        "limit": { "context": 128000, "output": 8192 }
+      },
+      "deepseek-reasoner": {
+        "id": "deepseek-reasoner", "name": "DeepSeek Reasoner", "family": "deepseek-thinking",
+        "attachment": false, "reasoning": true, "tool_call": true,
+        "release_date": "2025-01-20",
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "cost": { "input": 0.28, "output": 0.42, "cache_read": 0.028 },
+        "limit": { "context": 128000, "output": 65536 }
+      }
+    }
+  },
+  "moonshotai": {
+    "id": "moonshotai",
+    "name": "Moonshot AI",
+    "api": "https://api.moonshot.ai/v1",
+    "env": ["MOONSHOT_API_KEY"],
+    "doc": "https://platform.moonshot.ai/docs",
+    "models": {
+      "kimi-k2-0905-preview": {
+        "id": "kimi-k2-0905-preview", "name": "Kimi K2 0905", "family": "kimi",
+        "attachment": false, "reasoning": false, "tool_call": true,
+        "release_date": "2025-09-05",
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "cost": { "input": 0.6, "output": 2.5, "cache_read": 0.15 },
+        "limit": { "context": 262144, "output": 16384 }
+      }
+    }
+  },
+  "zhipuai": {
+    "id": "zhipuai",
+    "name": "Zhipu AI",
+    "api": "https://open.bigmodel.cn/api/paas/v4",
+    "env": ["ZHIPU_API_KEY"],
+    "doc": "https://docs.bigmodel.cn/cn/guide/start/model-overview",
+    "models": {
+      "glm-4.6": {
+        "id": "glm-4.6", "name": "GLM-4.6", "family": "glm",
+        "attachment": false, "reasoning": true, "tool_call": true,
+        "release_date": "2025-09-30",
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "limit": { "context": 204800, "output": 131072 }
+      }
+    }
+  },
+  "alibaba": {
+    "id": "alibaba",
+    "name": "Alibaba",
+    "api": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "env": ["DASHSCOPE_API_KEY"],
+    "doc": "https://www.alibabacloud.com/help/en/model-studio/models",
+    "models": {
+      "qwen3-coder-plus": {
+        "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "family": "qwen",
+        "attachment": false, "reasoning": false, "tool_call": true,
+        "release_date": "2025-07-23",
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "limit": { "context": 1048576, "output": 65536 }
+      }
+    }
+  }
+}

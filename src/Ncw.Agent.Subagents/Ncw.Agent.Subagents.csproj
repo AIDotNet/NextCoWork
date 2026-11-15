@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    子代理(docs/design/08-agent-runtime/05 §5、06 §3):`Task` 工具、子代理定义(内置 + 用户 / 项目目录里的 markdown,只经 IExecutionEnvironment 读文件)、
+    子 Run 的创建(ParentRunId、深度、权限取最小值、不能提问、工具快照过滤)、并发队列(每父 Run / 全局上限、排队、取消级联、死锁检测)、
+    子代理转录(parent_session_id)、后台子代理完成后的报告(经 RunRegistry.DeliverInternal 回到父会话)与报告状态的持久化。命名空间是 Ncw.Agent.Kernel.Subagents。
+    依赖规则:下层不引用上层。本层在编排层(Ncw.Agent.Runs)和一方扩展(Ncw.Agent.Extensions:权限状态、交互闸门)之上,并引用目录层(只用 ModelSelection 这个纯函数);
+    <b>不</b>引用 Ncw.Protocol、Avalonia、客户端项目、Ncw.Agent.Host(Host 是唯一知道协议的层,经本层公开的接口接进来)。时钟(TimeProvider)、ID 注入;
+    JSON 全部用 Utf8JsonWriter / JsonDocument 手写,不走反射,可裁剪、可 NativeAOT。本层不产出界面文字:错误只带英文诊断 + MessageKey,发给模型的文字是英文常量。
+    不直接用 System.IO / Process:定义文件只经 IExecutionEnvironment.Fs 读取。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Kernel.Subagents</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Session/Ncw.Agent.Session.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Runs/Ncw.Agent.Runs.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Catalog/Ncw.Agent.Catalog.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Subagents.Tests" />
+  </ItemGroup>
+</Project>

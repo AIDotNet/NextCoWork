@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    模型目录与供应商服务(docs/design/02-agent.md A8、08-agent-runtime/01-llm.md §8):
+    ModelCatalogService(models.dev 定时同步、内置种子、本地覆盖、IPriceBook)与 ProviderService
+    (providers.json、provider:<id> 凭据 ref、账号池、模型列表拉取、OAuth 编排、IModelResolver)。
+    只依赖模型层(Ncw.Agent.Llm)和存储层(Ncw.Agent.Storage);不引用 Ncw.Protocol、Avalonia、客户端项目、Ncw.Agent.Host。
+    本层不产出界面文字:错误只带英文诊断 + MessageKey + 结构化参数。
+    JSON 一律 System.Text.Json 源生成或 JsonDocument / Utf8JsonWriter 手写,不用反射,可裁剪、可 NativeAOT。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Catalog</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 内置种子:发版时的 models.dev 精简快照(同一份线格式,同一个解析器),首次启动离线也能用。 -->
+    <EmbeddedResource Include="Seed/models-dev.seed.json" LogicalName="Ncw.Catalog/models-dev.seed.json" />
+  </ItemGroup>
+</Project>
