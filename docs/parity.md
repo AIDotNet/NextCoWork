@@ -351,7 +351,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 ### 回放对照的录制方法
 
 录制脚本是 Node / TypeScript,而 AGENTS.md §6 规定仓库里只用 C#,所以**录制脚本不进仓库**:它放在仓库之外,只有它的产出(JSON)和 C# 回放测试进仓库。
-持久副本在开发机上的仓库同级目录 `~/code/ncw-parity-recorder/`(五个 `.mts` 加一份 README,用环境变量 `NCW_2X_ROOT` 指向 2.x 检出);它不是仓库的一部分,换机器要自己拷过去。
+持久副本在开发机上的仓库同级目录 `~/code/ncw-parity-recorder/`(八个 `.mts` 加一份 README:单会话回放的 `lib` / `sse` / `scenarios` / `record-all` / `smoke`,整机回放的 `lib-rt` / `scenarios-rt` / `record-rt`;用环境变量 `NCW_2X_ROOT` 指向 2.x 检出);它不是仓库的一部分,换机器要自己拷过去。
 每个录制文件的 `source` 里写着 2.x 的 commit、录制日期和 Node 版本。
 
 1. **2.x 检出**(仓库之外,不要在本仓库的工作树里改 `main`):`git worktree add <仓库外目录> main`(或 `git clone -b main <repo> <目录>`),
@@ -376,13 +376,21 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 4. **命令**:`NCW_2X_ROOT=<2.x 检出目录> npx tsx record-all.mts <仓库>/tests/Ncw.Agent.Parity.Tests/Recordings [场景 id…]`;不带场景 id 就全部重录。
    重录之后跑 `dotnet test tests/Ncw.Agent.Parity.Tests`,逐个看失败:C# 的缺陷就修(最小改动 + 回归测试),2.x 录制环境的假象改录制脚本,
    真正的新偏离**先**写进上面的行或下面的「回放对照发现的新偏离」、再在 `Compare/Rules.cs` 里加规则放行。
+   **整机回放**(`kind: orchestration` 的录制;录制脚本 `lib-rt.mts` + `scenarios-rt.mts` + `record-rt.mts`,仍在仓库之外):单会话回放只搭 `AgentSession`,子代理 / 计划 / 目标 / 审批落盘的胶水在 2.x 的 `runtime.ts`(`runAgent`)和 `services/agent.ts`(`startAgentRun` / `sessionRuntime` / `startChildRun`)里,
+   所以这一类用 2.x **真正的生产入口**:真 `store`(临时目录里的 SQLite)、真 `runAgent`、真子代理队列、真目标运行时、真审批策略、真 Hooks,只有 `fetch` 是假的。依赖要比最小安装多装一批(`@modelcontextprotocol/sdk`、`ssh2`、`undici`、`sucrase`、`ws`、`smol-toml`、`unzipper`、`playwright-core`、`node-pty`、`@peculiar/x509`、`qrcode-generator`、`reflect-metadata`、`electron-updater`,版本取自 2.x 的 lock,`--ignore-scripts`;内核本身不 import electron,`import runtime.ts` 在 Node 24 + tsx 上能直接过);
+   C# 一侧是 `Rig/OrchestrationRig.cs`(真 `RunRegistry` + `SubagentService` + `PlanningKit` + 权限扩展 / 交互闸门 + Hooks + 真 `LlmRouter` 解码 SSE 原文;装配方那一半照 Host 的 `ConversationRunExtension` 写,和 Subagents / Planning 的端到端测试同一份替身)。
+   上游按**路由键**分派(多个会话并发调用同一个上游,按「谁先到」消费不可靠):每个键一个脚本队列,路由规则是「首条用户消息以……开头 / 系统提示词含…… / 最后一条用户消息含……」(两边同一份);脚本项可带 `gate`(响应等一道闸门),闸门由跨 Run 的触发点放行
+   (某个 Run 发了某个事件、某个交互被回答、会话变空闲 `whenIdle`、目标已设立 `whenGoal`),用来排定「子代理在父 Run 结束之后才完成」这类先后。计划文件路径(`.plan/<ULID>.md`)每次都不同,脚本里写 `{{PLAN_PATH}}`,回放时两边都换成「请求历史里最近一次 `EnterPlanMode` 结果给出的路径」,
+   ULID 在所有输出里按首次出现编号 `PLAN1`…。产出按 Run / 会话 / 路由键分段:事件(每个 Run 一段,顶层 Run 在前、子 Run 在后,只比 Run 日志里的结构性事件——C# 的 Run 日志不留流增量,增量由单会话回放逐块比较)、每个会话的落库行、按路由键的上游请求
+   (请求里的**工具表只比较名字**,且只比较场景点名的 `focusTools` + 脚本工具,排序后比;两边内置工具的集合 / 描述本来就不同,Task / 计划工具 / ProposeGoal 是否出现才是这些场景的不变量)、Run 结局、交互、工作区文件。2.x 一侧的事件取自自己留的实时日志(`RunHandle` 的日志会在 `tool_end` 时裁掉工具进度,包括子代理排位)。
+   **不要在同一回合里并行派发多个后台子代理**:谁先拿到名额是 I/O 竞态(2.x 的实录里三个并行 Task 的启动顺序是 c3、c2、c1),场景一律「每回合一个」。
 5. **规范化**(两边同一份约定,`Trace/` 对应录制脚本的 `projectEvents`):去掉时间戳 / 耗时 / `schemaVersion` / `tokens`;流增量按「同一条消息内、同一种、同一个下标」合并成一个 `stream` 条目;
    消息 id 里场景显式给出的(历史、输入、插话)保持原样,其余按首次出现的顺序编号 `m1`、`m2`…;错误只比 `code` 与 `messageKey`;
    错误码用 2.x 的 snake_case 写法。调试时设置环境变量 `NCW_PARITY_DUMP=<目录>`,测试会把 C# 回放的规范化结果写出来,方便和录制里的 `expected` 对着看。
 
 ### 场景与结果
 
-49 个场景(`Recordings/*.json`),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件。
+71 个场景(`Recordings/*.json`:49 个单会话 + 22 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
 
 | 场景 | 说明 |
 | --- | --- |
@@ -435,6 +443,38 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `tool-throws` | 工具抛异常:收敛成工具错误,进转录,循环继续。 |
 | `tool-unknown-name` | 模型调用了不存在的工具:当作工具错误回给模型,不崩溃。 |
 | `write-outside-plan-mode-is-unrestricted` | 没有围栏时(普通模式)同一个 Write 正常创建文件。 |
+| `goal-idle-streak-brake` | (整机)目标一直判「没达成」、模型连续纯文字:第 8 个无工具回合之后以 `goal.warn.idleStreak` 警告结束。 |
+| `goal-propose-ask-approved` | (整机)`ProposeGoal`(ask_user)工具立刻返回「待批准」,用户批准后设立 + kickoff 注入,判定器确认达成后收口。 |
+| `goal-propose-ask-declined` | (整机)用户拒绝自提的目标:没有目标、没有 kickoff、模型不被告知、判定器一次不调。 |
+| `goal-propose-direct-until-met` | (整机)自提目标(auto 策略、ask_user=false)直接设立;判定器先说「没达成」→ 续跑反馈 → 再判「达成」→ 收口。 |
+| `goal-propose-disabled` | (整机)设置禁用模型自提目标:工具表里没有 `ProposeGoal`。 |
+| `hook-pretooluse-blocks-despite-allow-rule` | (整机)PreToolUse 钩子(退出码 2)压过项目 allow 规则和档位,阻断写入;`Read` 不被钩子匹配、照常放行。 |
+| `permission-allow-always-persists` | (整机)「以后都允许」(项目作用域)放行这一次并写 `.next-cowork/settings.local.json`,下一个 Run 同样的写入不再弹窗。 |
+| `permission-ask-and-allow-rules` | (整机)ask 规则在 full 档位也强制弹窗、allow 规则在 ask 档位免弹窗、都不匹配的弹窗(用户拒绝并给理由)。 |
+| `permission-deny-rule-beats-the-mode` | (整机)deny 规则压过「完全访问」档位:不弹窗、文件不动。 |
+| `plan-approve-current` | (整机)计划模式完整流程:EnterPlanMode → 围栏外 Write 被拦 → 写计划 → ExitPlanMode 审批通过(Run 随之结束、围栏撤掉)→ 以 code 模式带计划引用执行。 |
+| `plan-exit-without-plan` | (整机)没进入计划就 ExitPlanMode、计划文件为空就 ExitPlanMode:清楚的工具错误,不弹审批。 |
+| `plan-reject` | (整机)计划被拒绝:Run 结束、计划放掉、下一轮 code 模式写入不受围栏。 |
+| `plan-request-changes` | (整机)「要求修改」(带中英文混合、含 `'` `<` 的反馈):Run 继续,计划与围栏保留,改后再次 ExitPlanMode 批准;反馈原样进回执。 |
+| `subagent-background-report` | (整机)后台子代理:Task 立即返回;父 Run 先结束,子代理随后完成,全文报告作为内部消息交回父会话(起内部 Run),回执变为 reported。 |
+| `subagent-child-upstream-error` | (整机)子代理上游 401:子 Run 以错误结束,父代理收到「子代理失败」的工具错误和回执,父 Run 照常完成。 |
+| `subagent-foreground` | (整机)同步子代理:子会话里跑一次工具,最后一条消息成为父会话的工具结果(带回执);父会话里没有子代理的内部对话。 |
+| `subagent-nesting-limit` | (整机)嵌套两层:父 → 子 → 孙都派得出,孙再派被拒;结果一层层交回。 |
+| `subagent-parent-abort-cascades` | (整机)父 Run 中止时前台子代理卡在工具上:子 Run 一并中止,父会话无孤儿 tool_call。 |
+| `subagent-queue-positions` | (整机)每父 Run 并发上限 1、三个后台派发:第一个启动、后两个排队(排位 0、1)并按序启动,各交一份报告。 |
+| `subagent-unknown-type` | (整机)未知子代理名:拒绝并列出可用的,不回退到通用代理、不建子 Run。 |
+| `tool-parallel-openai-chat` | OpenAI Chat 一轮两个并行工具调用(带文字)+ 流末 usage;第二轮请求里助手消息带两个 tool_calls、紧跟两条 tool 消息。 |
+| `tool-parallel-openai-responses` | OpenAI Responses 一轮加密推理 + 文字 + 两个并行函数调用 + usage;第二轮请求回放推理条目、两个 function_call 与两个 function_call_output。 |
+
+### 回放对照还没覆盖的部分
+
+- 子代理:前台转后台(`detachForegroundSubagent`)、多个并行 Task 同一回合派发(谁先拿到名额是 I/O 竞态,2.x 自己都不稳定,所以没有可重放的录制)、全局上限(`globalLimit`)与死锁判据、队列溢出、子代理里用 `allow` 规则免审批、`subagent_update` 遥测(时序相关,只比较 `subagent_start` / `subagent_end` 与排位)、手动「处理」后台报告(`reportManually`)与 blocked。
+- 计划模式:`approve_new_session`、计划文件被外部改写 / 删除时的 `ExitPlanMode` 错误分支(只录了空文件和未进入)、压缩之后计划路径的每轮重注入。
+- 目标:用户手动设 / 清目标、后台工作期间的推迟与 check-in(要时间)、`impossible` 判定、判定器失败(`skipped`)、重启恢复。
+- 权限:AI 审核器(`auto` 档位的 review)、`allow_edited`(单会话回放已有)、`allow_always` 的会话 / 全局作用域(2.x 只有项目作用域,3.0 多出的两个作用域没有对照物)、插件拦截器。
+- Hooks:PreToolUse 的 `ask` / `allow` 决定、PostToolUse、Stop、UserPromptSubmit、SubagentStop、prompt 型钩子;插件、MCP、定时任务整块没有场景。
+- OpenAI Chat / Responses:多工具调用已录;token 用量(`usage`)的数值不进规范化(`tokens` 在两边都被丢弃),用量账本由各自的单测覆盖,回放对照没有比较它。
+- 整机回放不比较流增量与工具进度文字(只比较结构性事件);发给上游的请求里,工具表只比较名字(见上)。
 
 ### 预期差异规则(`Compare/Rules.cs`)
 
@@ -460,12 +500,24 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `REQ-SYSTEM-TEXT` | 系统提示词正文重写 | 本表「上下文装配」行 ① |
 | `REQ-TOOL-SCHEMA-ZOD-EXTRAS` / `REQ-BUILTIN-TOOL-DESCRIPTIONS` | 工具 schema 的 zod 附带项、Read / Write 描述文字 | 下面的新偏离 |
 | `REQ-TODO-STATE-BLOCK` | 待办状态块每 Run 算一次 | 本表「待办」行 ⑤ |
+| `EV-TOOL-START-AT-PREFLIGHT` | 3.0 在预检时按调用顺序一起发一批的 `tool_start`;2.x 的顺序执行批次是「开始 → 结束 → 开始 → 结束」 | 设计 02 §3 |
+| `INTERRUPTED-TASK-RECEIPT` | 父 Run 被中止时在途 Task 的占位结果带 aborted 回执 | 下面的新偏离 |
+| `PLAN-FENCE-ASKS-FIRST` | 计划模式 ask 档位下围栏外的 Write / Edit 先弹审批 | 下面的新偏离、03 §计划模式的写入围栏 |
+| `STATE-BLOCK-SECTION-TRIM` | 状态块每一段两端去空白(`</system-reminder>` 前少一个空行) | 下面的新偏离 |
+| `GOAL-STATUS-OUT-OF-BAND` | 目标标记带外写库,不再发一次 `message_commit` | 下面的新偏离、05 §7 |
+| `REQ-GOAL-JUDGE-THINKING` | 目标判定请求显式关闭思考时发 `thinking: disabled` | 下面的新偏离 |
+| `TEXT-DENY-RULE-WHERE` | deny 规则命中话术里的规则存放处 | 下面的新偏离、`permission-decision.ts` 行 |
+| `TEXT-READ-TRAILING-LINE` | `Read` 输出文件以换行结尾时 2.x 多一个空编号行 | 下面的新偏离、03 §Read |
 
 ### 回放对照发现的缺陷
 
 - **压缩边界消息悄悄进库、事件流里没有它**(已修,`AgentSession.Compaction.cs`):会话层直接 `CommitAsync` 边界消息,没有 `message_start` / `message_end`;
   控制端的镜像只靠事件更新,界面上没有压缩分隔线,下一次重载又突然出现(2.x 是 `message_commit`)。现在顺序同 2.x:`compacting` → 边界消息 → `compacted`。
   回归测试:`SessionCompactionTests.The_boundary_message_is_announced_in_the_event_stream_between_compacting_and_compacted`。
+
+- **模型读到的结果 JSON 把非 ASCII 和 `' < > & +` 写成 `\uXXXX`**(已修,`Ncw.Agent.Planning/Support/PlanningSupport.cs` 的 `DetailsJson.Compact`):`ProposeGoal` 的结果、`EnterPlanMode` / `ExitPlanMode` 的回执是手写 JSON,用了 `Utf8JsonWriter` 的默认编码器,
+  于是中文的目标条件 / 计划反馈、结果里的破折号都被模型逐字读成转义序列(token 成倍增加、可读性下降)。2.x 的 `JSON.stringify` 只转义引号、反斜杠和控制字符;`MessageCodec` 等别处早已用 `UnsafeRelaxedJsonEscaping`,只有这一处漏了。
+  整机回放的 `goal-*` 与 `plan-request-changes`(反馈含中文)抓到。回归:`ProposeGoalToolTests.The_result_the_model_reads_keeps_non_ascii_and_html_characters_as_they_are`、`PlanModeTests.The_receipt_the_model_reads_keeps_non_ascii_feedback_as_it_is`(回退修复后稳定失败)。
 
 ### 回放对照发现的新偏离
 
@@ -483,6 +535,13 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 - `Write` 结果里的行数:文件以换行结尾时 2.x 多数一行(`split('\n').length`),3.0 数真实的行数(`(1 lines, …)`,不是 `(2 lines, …)`)。2.x 的计数是个差一的小错,不沿用。
 - 被动压缩(上游 `context_length` 拒绝)的边界上,`preTokens` 是装配后请求的本地估算,含系统提示词和工具段;3.0 的提示词更短,数字相应更小(自动压缩读上游真值时两边相同)。
 - 压缩的摘要请求在显式关闭思考(`off`)时发 `thinking: disabled`(设计 01 §6:显式关闭必须发出关闭参数、不能省略);2.x 的摘要请求省略该字段,正文请求(2.x 也发 disabled)与此不一致,是 2.x 的疏漏。
+- 目标判定器的请求同样在显式关闭思考(`off`)时发 `thinking: disabled`,2.x 的判定请求省略该字段(与压缩摘要请求同一类:2.x 的旁路请求显式关闭思考时不发关闭参数、正文请求才发;判定器传的是 `thinkingLevel: 'off'`,录制用的别名声明了思考能力,所以不是录制环境的假象,是 2.x 的疏漏)。判定请求的其余部分(模型、输出额度、无工具、转录 / 问题文案)逐项比较。
+- 目标的 `goal_status` 标记(「已设立」「第 N 次判定未达成 / 已达成」)在 3.0 上是**带外**写进最后一条助手消息的(不新增消息、**不再发一次 `message_commit`**,界面经 `goal` 主题的变更拿到它,见 05 §7);2.x 把标记并进那条助手消息后重新发一次 `message_commit`(同 id、parts 末尾多一个 `goal_status`)。落库的消息行两边逐项相同。
+- `Read` 的输出文件以换行结尾时:2.x 按 `split('\n')` 切行,末尾多出一个空的编号行(`     2\t`);3.0 不多出这个空行(03 §`Read` 已登记:「文件以换行结尾时不多出一个空行」),与上面 `Write` 行数的差一同一个原因。
+- 项目 `deny` 规则命中时给模型的话:2.x 写死「in the workspace's .next-cowork/settings.local.json」,3.0 写「in the project's permission settings」(规则存放处不写死,同上面「deny 的话术不再写死」那一条);其余文字(规则原文、「不要换个工具达到同样的结果」)逐字相同。
+- 计划模式、`ask` 档位下,模型对**围栏之外**的文件调 `Write` / `Edit`:2.x 的审批只按工具名信任(`trustedPlanFileTool`),不弹窗,由写工具的围栏拒绝;3.0 的权限层自己再核对一遍(03 §计划模式的写入围栏:只有改的**正是**围栏文件才当作只读),围栏外的写入走普通审批,用户允许之后写工具的围栏照样拒绝(结果文字两边逐字相同,文件一个字节没动)。多一次弹窗是登记过的收紧(围栏没设上时写入不会被悄悄放行)的可见后果,不是缺陷。
+- 状态块(`<system-reminder>` 里的 Workspace state)的每一段在 3.0 两端去空白(`ContextAssembler.StateBlock` 的 `Trim`);2.x 原样保留。可见的后果:批准的计划文件以换行结尾时(几乎总是),2.x 的块在 `</system-reminder>` 之前多一个空行。只是一个空行,不影响模型读到的内容。
+- 父 Run 被中止时,正在前台等着的子代理那次 `Task` 调用:占位结果(`[interrupted: …]`)在 3.0 上**带 aborted 回执**(`subagent: {childRunId, status: aborted}`,子 Run 结束后由 `ReceiptStore` 按 callId 补写);2.x 的占位结果没有回执(`persistSubagentCompletion` 只改「已带同 childRunId 回执」的结果),父会话里就此没有任何东西指回那个子 Run。3.0 的写法让控制端重载之后仍能把那张卡片标成「已中止」并点开子会话,和规则 7(派生视图跟随真源、不丢状态)一致,所以登记为偏离、不当缺陷;模型看到的结果文字两边逐字相同。
 
 ## 并发不稳定测试的根因与修复
 
@@ -517,7 +576,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 |---|---|---|---|
 | Skills `SkillsServiceTests.A_market_install_asks_for_a_grant_…`(整套并行里失败过两次,单独连跑 25 次没有) | **(c) 测试自身缺陷,已修** | `new Progress<T>(list.Add)` 在没有同步上下文时把回调投到线程池:先后顺序不保证,`List.Add` 不是线程安全的,再用 `Task.Delay(50)` 赌回调已经跑完。换成同步、按序、线程安全的 `SyncProgress<T>`(`tests/Ncw.Agent.Skills.Tests/Support/`),去掉 Delay。生产代码用的是同步回调,没有问题 | 同一批用例 |
 | Host `GatewayHostTests.Keys_are_per_role_…`(`EnableAsync` 里 `status.Port` 为 null) | **(a) 产品缺陷,已修** | `GatewayRuntime.ReconcileAsync` 带「版本号被后来的调用超过就提前返回」的优化。设置变更事件会 `Task.Run` 一次对账(A),`setEnabled` 处理器自己又 `await` 一次(B);版本号较旧的那次拿到闸门后发现被取代就返回,监听还没起来,调用方读到 `Port == null`。去掉该优化:对账本来就是幂等的,每次拿到闸门都读当前设置去对账,最后一份设置获胜,任何一次返回时监听状态都已和设置一致 | `GatewayHostTests.A_reconcile_returns_only_after_the_listener_is_up_even_when_a_later_one_queues_behind_it`:占住对账闸门(`GatewayRuntime.ReconcileGate`,`internal` 测试缝),让旧、新两次对账排队,放行后在旧的那次**完成的那一刻**同步读状态。临时还原旧逻辑 6 次全失败、修复后 6 次全过(两次都确认过构建成功) |
-| Host `EnvironmentServiceTests.A_lease_keeps_an_idle_connection_alive_…`(整套并行里失败过一次:重连时 `The environment is not available`) | **未证实**(推测 (a)) | 推测:`EnsureReadyAsync` 先连接、后 `Touch`;连接耗时可能超过空闲阈值(测试里是 400 ms),环境刚变成 `Ready` 而最后使用时间还是连接开始前的旧值,空闲回收器在这个窗口里把它又断掉。已加:连接期间持有一个租约(`using (Hold(environmentId))`,释放时 `Touch`)。**没能复现**:24 个 CPU 占用进程下改前改后各跑 20 次都是 0 次失败,所以这个修复只是逻辑上正确、没有数据证明它就是根因 | 无(没有确定性复现手段) |
+| Host `EnvironmentServiceTests.A_lease_keeps_an_idle_connection_alive_…`(整套并行里失败过一次:重连时 `The environment is not available`) | **(a) 产品缺陷,已证实**(见「第三批」第 1 条;下面是当时的推测,现已由确定性复现证实,并补上了 `ConnectAsync` 同样缺的租约) | 推测:`EnsureReadyAsync` 先连接、后 `Touch`;连接耗时可能超过空闲阈值(测试里是 400 ms),环境刚变成 `Ready` 而最后使用时间还是连接开始前的旧值,空闲回收器在这个窗口里把它又断掉。已加:连接期间持有一个租约(`using (Hold(environmentId))`,释放时 `Touch`)。**没能复现**:24 个 CPU 占用进程下改前改后各跑 20 次都是 0 次失败,所以这个修复只是逻辑上正确、没有数据证明它就是根因 | 无(没有确定性复现手段) |
 
 注意:判断「修复前后」必须先确认**构建成功**。`dotnet test --no-build` 在构建失败时会静默跑上一次的旧测试程序集,「改前 0 / 改后 0」会因此毫无意义;本节的回归测试都是在确认两次构建都成功之后测的。
 
@@ -533,4 +592,25 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | 原用例 | 改成给 `RemoteDeviceManager` 注入快心跳(1 s × 4):在「RST 丢失」这种只能靠心跳发现的情形下,出厂的 60 s 超过用例 15 s 的等待,这是用例对出厂参数的假设,不是产品缺陷 |
 | 回归测试(确定性:手动时钟,无 sleep、不靠负载) | `Ncw.Protocol.Tests.HeartbeatTests`(7 条,假设备 + `TcpLikePipe`):静默设备在恰好第 3 个间隔被判死且死连接被关闭、59.9 s 不提前判死;等待中的请求失败为可重试 `unavailable`;会回 pong 的设备 200 s 不被误杀且每个间隔恰好一次 ping;任何一帧都算活着;MissLimit 缩放期限;释放后不挂住且之后推进时钟不再有失败;出厂值 20 s × 3。`Ncw.Integration.Tests.RelayLinkTests.Silent_peer_over_the_lan_…` / `…_over_the_relay_…`:真实 Agent + 真实局域网 TCP+TLS / 真实进程内中继,字节流外包 `BlackHoleStream`(开启后读永远挂着、写被吞、连接保持打开),手动时钟推进 59.9 s 仍 Connected、再 0.1 s 后:状态历史里「已连接」之后是「连接中」(不是离线 / 吊销)且数据状态为空(未知),随后在新连接上自动重连并重新同步、旧连接被关闭。临时把看门狗禁用后这些用例稳定失败(协议层 5 条、集成 2 条),恢复后全绿 |
 | 稳定性(24 个 `yes`,目标用例单独循环) | 修复前 6 / 40 失败,**修复后 0 / 40**。Protocol 335 条 ×5、Relay 67 条 ×5、Client ×5、Integration ×5 整体连跑结果见下 |
-| 仍未解决 | ① 默认参数下「中继停机且 RST 丢失」的发现时间上限是 60 s(设计值;要更快需要中继停机时对两边发关闭帧——`Pipe` 取消读会中止 WebSocket,优雅关闭需要改造收尾,未做)。② 中继服务端 Kestrel 只设了 `KeepAliveInterval`,没设超时(僵尸连接靠 `Pipe` 的 2 分钟空闲兜底)。③ 看门狗用单调时钟,进程挂起(合盖)期间不计时,醒来后最多再过一个时限才判死 |
+| 仍未解决 | ~~① 中继停机的发现时间 60 s~~ 已做,见「第三批」第 9 条(中继停机时已拼接的会话优雅排空,两边读到干净 EOF)。~~② 中继 Kestrel 只设间隔没设超时~~ 已做,见第 10 条。③ 看门狗用单调时钟,进程挂起(合盖)期间不计时,醒来后最多再过一个时限才判死。④ 剩下靠心跳(60 s)发现的只有「中继进程被直接杀掉(SIGKILL / 掉电)且 RST 丢失」 |
+
+### 第三批:整套并行 / 高负载下仍偶发的失败(定因、修复、遗留)
+
+**环境事实(先读)**:复现期间本机被同一台机器上其它项目的测试进程长期压到 load average 数百(`/private/tmp/arc-impl/*` 等十几个测试套件同时跑)、swap 用到 18~34 GB、`syspolicyd` 常年 100% CPU。整套 `dotnet test NextCoWork.slnx` 一次 58 分钟(UI 一个项目 55 分钟);单个 Runs 测试进程「测试用时 13 s、进程墙钟 16 分 37 秒」(进程启动 / 退出被系统服务拖住)。下面的数字都是在这种环境里取的,**不是安静机器上的数据**。
+
+**macOS 上的一条关键根因证据(分类 (d) 环境)**:Runs 的 10 s / 30 s 等待超时(`AbandonedWriteTests` 三条看门狗用例、`QueueTests.In_the_window_…`、`InternalInputTests.A_session_that_is_settling_…`、`LifecycleTests` 等)用 `dotnet-stack` + `sample` 抓到现场:6/6 个存活超过 14 秒的测试进程,仅有的活动线程都停在 `Interop.Sys.IsMemberOfGroup` ← `File.GetAttributes` ← `LocalFs.RealPath` ← `ProjectInstructions.DiscoverAsync`(跑第一回合之前);`sample` 的原生栈是 `getgroups$DARWIN_EXTSN → getgrouplist_internal → _xpc_pipe_routine → _xpc_pipe_mach_msg`,采样里 730 / 880 ms 阻塞在这次 XPC。即 .NET 的 `File.GetAttributes` 对不属于当前用户的路径(`/`、`/private`、`/var`……)每级调一次 `getgroups`,macOS 上它是到目录服务的 XPC;本机实测中位数 0.3 ms、p95 3.4 ms、最大 188 ms(load ≈ 130),饱和时是秒级。这不是 Runs / Session 的缺陷,**没有改产品代码**(把 `RealPath` 改成不用 `File.GetAttributes` 能减少调用次数但不能消除,且会改变权限错误的映射,没做)。同类的还有 Host `ReviewTests.Undo_is_idempotent…`(`run_settled` 33 s 超时)和 Cloud 冒烟的 10.6 s 冷启动。这些等待超时是**挂死探测器**,没有放宽它们。
+
+| # | 失败 | 分类 | 根因 / 证据 | 修法与回归 |
+|---|---|---|---|---|
+| 1 | Host `EnvironmentServiceTests.A_lease_keeps_an_idle_connection_alive_…`(重连 `The environment is not available`) | **(a) 产品缺陷,已证实** | 确定性复现:可注入的 `IdleClock` + 订阅环境主题,在状态事件里看到 Ready 就同步 Tick 一次回收器,配合「用户过了 5 分钟才回答主机指纹」。没有租约时 `EnsureReadyAsync` 抛 `The environment is not available.`(与现场消息一字不差),`ConnectAsync` 返回一个已 Idle 的「连接成功」。**`ConnectAsync` 此前根本没有租约** | `ConnectAsync` 连接期间也 `Hold`。回归 `A_connection_that_takes_longer_than_the_idle_limit_…`(×2)+ 改写成手动时钟的租约用例。确认构建成功后临时去掉两处租约:2/2 稳定失败,已恢复 |
+| 2 | Relay `Removing_a_token_…`(`ObjectDisposedException` 出自 `RelayRegistration.DisposeAsync`) | **(a)** | `DisposeAsync` 先 `Abort()` 控制连接(会连带 Dispose),读循环此后再发起的 `ReceiveAsync` 抛 `ObjectDisposedException`,没被接住,`await _loop` 把它抛给调用方 | `ReceiveControlAsync` 把它当作连接关闭(返回 null),`RunAsync` 也接住。回归 `RelayControlReadTests`(还原后失败,已恢复) |
+| 3 | Cloud `CloudAgentTests`(随机一条:`The relay refused the connection`) | **(a)+(c)** | 给 `StartAndConnectAsync` 加诊断后抓到 `code=unauthorized, tokensAtRelay=0, deviceOnline=True`:信任指令的 `applied` 回执早于路由令牌推给中继(`SetTokens` 是 fire-and-forget,中继的 `tokens` 消息没有回执)。真实后果:仅中继可达的云端设备会被控制端判成已吊销 | 产品:信任类指令回执前等令牌推送「已发出」(`SetTokensAsync` / `PutTrustAsync` 等,最多 5 s)。测试:`GrantAppliedAsync` 等中继可观察的 `TokenCount`。**遗留**:没有中继回执,窗口只是压到一次中继读;根治要改中继控制协议(未做),没有为这条产品改动写确定性回归(没有可注入的缝) |
+| 4 | Cloud `ProcessSmokeTests`(冷启动 10.056 s) | **(c)** | 断言墙钟;换页 / 系统服务拥堵时同一进程墙钟可超 10 s | 改量进程到 ready 用掉的 CPU 时间(02 §A6 已同步) |
+| 5 | Llm `AuthTests.Refresh_does_not_use_the_callers_cancellation_token…`(`A2` 实际 `A1`) | **(c)** | `Task.Delay(100)` 赌后台刷新写完 | 等存储的 `FirstWrite` 信号 |
+| 6 | Subagents `With_a_limit_of_one_per_parent…` / `Invariant_an_aborted_background_subagent…` | **(c)** | 前者:`QueuedCount` 在锁内先变,排位进度在锁外、且要等父 Run 的 `tool_start` 之后才送到订阅者;后者:回执先于 `ReportChanged` 可见 | 前者等两条排位进度真的到;后者等 `Stopped`(收尾最后一步)。未能在测试进程里复现 |
+| 7 | Terminal `A_real_shell_streams_sequenced_output…` | **(c),窗口已确定性演示** | 管理器在会话锁里先把 `Info` 改成 Exited、再发退出事件,`Get()` 不取锁;测试等 `!Alive` 后读 `events[^1]`。探针(订阅者在退出事件里阻塞)确定性地看到 `Alive == false` 而事件还在投递中。压力下 80 次没有复现过原失败 | 测试改等「退出事件已送到」。产品没改(窗口对使用者无害) |
+| 8 | Runs `Activity_classifies_…`(`stopping` 为空,用例耗时 7 s) | **(c)** | 真时钟的 5 s 看门狗在整套并行时把 stopping 的 Run 放弃了 | 改手动时钟 |
+| 9 | 中继停机时控制端 60 s 才发现(已定位未修项 1) | **(a),已修** | `Stop()` 取消拼接的读,.NET 的 WebSocket 读被取消即中止整条连接 | `Pipe` 优雅排空:给两边各发关闭帧(`EndpointUnavailable`)、不取消读、等对端关闭帧;`Stop()` 先排空、未拼接的立即掐断、8 s 兜底。不改线上格式。回归 `RelayCloseDeliveryTests.Stopping_the_relay_closes_both_sides_…`(修复前控制端读到 `Connection reset by peer`,临时关掉排空后复现,已恢复) |
+| 10 | 中继 Kestrel 只设间隔(已定位未修项 2) | **(a),已修** | 僵尸连接要等 2 分钟空闲 | `RelayOptions.KeepAliveInterval / KeepAliveTimeout`(各 20 s)。回归 `RelayKeepAliveTests`(去掉超时后稳定失败,已恢复)。取舍见 09 §9.4 |
+
+**未解决 / 如实说明**:① Runs 等的 10 s / 30 s 超时在上述环境里仍会失败(根因 (d),未改产品、未放宽超时);在安静机器上应重新取稳定性数据。② Terminal 原失败的确切断言未抓到。③ Subagents 两条没有在测试进程里复现,只按代码路径定因。④ Cloud 令牌同步没有确定性回归测试。⑤ 中继对设备注册连接的停机仍是立即掐断(设备重连)。
