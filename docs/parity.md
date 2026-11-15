@@ -423,7 +423,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 
 ### 场景与结果
 
-89 个场景(`Recordings/*.json`:49 个单会话 + 40 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
+95 个场景(`Recordings/*.json`:49 个单会话 + 46 个整机回放),全部通过。每个场景比较六件事:事件序列、落库的消息行、发给上游的请求体(逐个 JSON 路径比)、每个 Run 的结局、审批弹窗(问了谁、问了什么)、工作区里的文件;整机回放按 Run / 会话 / 路由键分段比较(见上面「整机回放」)。
 
 | 场景 | 说明 |
 | --- | --- |
@@ -454,6 +454,9 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `permission-read-only-needs-no-prompt` | 只读工具在「询问」档位下直接放行,不弹窗。 |
 | `permission-subagent-denied` | 子代理(depth 1)调用需要审批的工具:它没有人可问,策略当场拒绝并给出说明,而不是挂起。 |
 | `plan-approve-new-session` | (整机)计划审批「在新会话里执行」:Run 在 ExitPlanMode 之后结束、回执 action 为 `approve_new_session`、围栏撤掉;另一条全新会话里以 code 模式带计划引用执行(计划文件在工作区里、不在新会话历史里),Write 不受围栏。 |
+| `plan-file-deleted-before-exit` | (整机)计划文件在 ExitPlanMode 之前被删:报「计划文件没了」、不弹审批、把这份计划放掉;模型重新 EnterPlanMode 得到新计划(新 id)、写好、批准。 |
+| `plan-file-edited-during-review` | (整机)审批弹窗开着时用户改了计划文本再批准:批准绑定改过之后的文件;随后执行 Run 的状态块带的是用户改过的那份原文。 |
+| `plan-file-emptied-during-review` | (整机)审批弹窗开着时计划文件被清空:批准不成立(「计划文件在审批完成前变无效」)、Run 继续、计划保留;模型重写后再次 ExitPlanMode 才批准。 |
 | `plan-mode-write-fence` | 计划模式的写入围栏只允许改一个计划文件:Write 一个围栏外的文件被拒(带提示、没有任何文件被改),Write 围栏里的计划文件成功。 |
 | `retry-before-first-byte` | 首字节之前 503:路由器退避重试(provider_retry),重试成功后正常完成。 |
 | `retry-network-error-before-first-byte` | 连接建立前就网络错误(fetch 抛异常):路由器重试。 |
@@ -506,13 +509,16 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 | `plan-exit-without-plan` | (整机)没进入计划就 ExitPlanMode、计划文件为空就 ExitPlanMode:清楚的工具错误,不弹审批。 |
 | `plan-reject` | (整机)计划被拒绝:Run 结束、计划放掉、下一轮 code 模式写入不受围栏。 |
 | `plan-request-changes` | (整机)「要求修改」(带中英文混合、含 `'` `<` 的反馈):Run 继续,计划与围栏保留,改后再次 ExitPlanMode 批准;反馈原样进回执。 |
+| `subagent-allow-rule-lets-child-write` | (整机)子代理没有人可问:ask 档位下无规则的写入当场拒绝(说清的一句话),有项目 allow 规则的那次放行并真写文件;父收到子代理的最终回复。 |
 | `subagent-background-report` | (整机)后台子代理:Task 立即返回;父 Run 先结束,子代理随后完成,全文报告作为内部消息交回父会话(起内部 Run),回执变为 reported。 |
 | `subagent-child-upstream-error` | (整机)子代理上游 401:子 Run 以错误结束,父代理收到「子代理失败」的工具错误和回执,父 Run 照常完成。 |
 | `subagent-detach-foreground` | (整机)前台子代理被用户转去后台:父代理的 Task 当场以「已转后台」收场并继续、结束 Run;子代理随后完成,报告作为内部消息交回父会话,回执变为 reported。 |
+| `subagent-disabled-by-global-limit-zero` | (整机)全局并发上限 0(子代理被关掉):Task 被拒、理由说清「不是你的错、自己做」,没建子 Run;父 Run 照常完成。 |
 | `subagent-foreground` | (整机)同步子代理:子会话里跑一次工具,最后一条消息成为父会话的工具结果(带回执);父会话里没有子代理的内部对话。 |
 | `subagent-nesting-limit` | (整机)嵌套两层:父 → 子 → 孙都派得出,孙再派被拒;结果一层层交回。 |
 | `subagent-parent-abort-cascades` | (整机)父 Run 中止时前台子代理卡在工具上:子 Run 一并中止,父会话无孤儿 tool_call。 |
 | `subagent-queue-positions` | (整机)每父 Run 并发上限 1、三个后台派发:第一个启动、后两个排队(排位 0、1)并按序启动,各交一份报告。 |
+| `subagent-slot-deadlock` | (整机)死锁判据:全局上限 1、子代理占着唯一名额又前台派发孙代理——孙被拒(deadlock,不挂起),子、父照常完成。 |
 | `subagent-unknown-type` | (整机)未知子代理名:拒绝并列出可用的,不回退到通用代理、不建子 Run。 |
 | `tool-parallel-openai-chat` | OpenAI Chat 一轮两个并行工具调用(带文字)+ 流末 usage;第二轮请求里助手消息带两个 tool_calls、紧跟两条 tool 消息。 |
 | `tool-parallel-openai-responses` | OpenAI Responses 一轮加密推理 + 文字 + 两个并行函数调用 + usage;第二轮请求回放推理条目、两个 function_call 与两个 function_call_output。 |

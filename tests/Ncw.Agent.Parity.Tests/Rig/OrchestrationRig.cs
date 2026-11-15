@@ -249,6 +249,9 @@ public sealed class OrchestrationRig : IDisposable
                             await Task.Delay(1).ConfigureAwait(false);
                         }
 
+                        // 目标一生效、kickoff 紧接着投进引导队列:2.x 里这两步是同步的,C# 里中间隔着第一次调用的 JIT / 投递(单独跑这个场景时能到几十毫秒),
+                        // 所以放行前留一小段让投递先完成(否则下一回合会先于 kickoff 起来,偶发地把消息顺序换掉)。
+                        await Task.Delay(150).ConfigureAwait(false);
                         Gate(name).TrySetResult();
                     });
                 }
@@ -277,6 +280,11 @@ public sealed class OrchestrationRig : IDisposable
                 {
                     _registry.Abort(handle.RunId, cascade: true);
                 }
+            }
+            else if (what["planFile"] is JsonObject planFile)
+            {
+                // 用户在编辑器里改写 / 清空 / 删掉计划文件。
+                PlanFileOp(planFile);
             }
             else if (what["detach"] is { } detach)
             {
@@ -442,6 +450,27 @@ public sealed class OrchestrationRig : IDisposable
         }
     }
 
+    /// <summary>对工作区里唯一的计划文件(<c>.plan/&lt;ULID&gt;.md</c>)做手脚:<c>delete</c> / <c>truncate</c> / <c>replace</c>(录制脚本同一份语义)。</summary>
+    private void PlanFileOp(JsonObject what)
+    {
+        var files = Directory.GetFiles(Path.Combine(_workspace, ".plan"), "*.md");
+        Assert.Single(files);
+        switch (what["op"]!.GetValue<string>())
+        {
+            case "delete":
+                File.Delete(files[0]);
+                break;
+            case "truncate":
+                File.WriteAllText(files[0], string.Empty);
+                break;
+            case "replace":
+                File.WriteAllText(files[0], what["content"]!.GetValue<string>());
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown plan file op '{what["op"]}'.");
+        }
+    }
+
     /// <summary>这条会话里最近一次 <c>EnterPlanMode</c> 的结果带着的计划引用(下一步「执行计划」用;2.x 一侧同一份做法)。</summary>
     private PlanFileRef? FindPlan(string sessionId)
     {
@@ -481,6 +510,30 @@ public sealed class OrchestrationRig : IDisposable
 
     private Replayed Collect()
     {
+        // 计划 id 按首次出现编号:录制脚本是「交互先(它们在 Run 里就规范化了),再事件、落库行、请求、文件」,这里同一个顺序。
+        var seen = new JsonArray();
+        foreach (var request in _journal.Requests)
+        {
+            switch (request)
+            {
+                case ToolPermission t:
+                    var permission = new JsonObject { ["kind"] = "tool_permission", ["callId"] = t.CallId, ["toolName"] = t.ToolName, ["readOnly"] = t.Traits.ReadOnly, ["destructive"] = t.Traits.Destructive };
+                    if (t.SuggestedRule is { } rule)
+                    {
+                        permission["suggestedRule"] = rule;
+                    }
+
+                    seen.Add(PlanIds(permission));
+                    break;
+                case PlanApproval p:
+                    seen.Add(PlanIds(new JsonObject { ["kind"] = "plan_approval", ["path"] = p.Path, ["plan"] = p.Plan }));
+                    break;
+                case GoalProposal g:
+                    seen.Add(new JsonObject { ["kind"] = "goal_proposal", ["condition"] = g.Condition });
+                    break;
+            }
+        }
+
         var ids = new IdMap(new HashSet<string>(_stepRuns.Select(r => $"u-{r}"), StringComparer.Ordinal));
         var events = new JsonArray();
         var runs = new JsonArray();
@@ -540,29 +593,6 @@ public sealed class OrchestrationRig : IDisposable
                 }
 
                 requests.Add(PlanIds(new JsonObject { ["key"] = key, ["url"] = url.ToString(), ["body"] = copy }));
-            }
-        }
-
-        var seen = new JsonArray();
-        foreach (var request in _journal.Requests)
-        {
-            switch (request)
-            {
-                case ToolPermission t:
-                    var permission = new JsonObject { ["kind"] = "tool_permission", ["callId"] = t.CallId, ["toolName"] = t.ToolName, ["readOnly"] = t.Traits.ReadOnly, ["destructive"] = t.Traits.Destructive };
-                    if (t.SuggestedRule is { } rule)
-                    {
-                        permission["suggestedRule"] = rule;
-                    }
-
-                    seen.Add(PlanIds(permission));
-                    break;
-                case PlanApproval p:
-                    seen.Add(PlanIds(new JsonObject { ["kind"] = "plan_approval", ["path"] = p.Path, ["plan"] = p.Plan }));
-                    break;
-                case GoalProposal g:
-                    seen.Add(new JsonObject { ["kind"] = "goal_proposal", ["condition"] = g.Condition });
-                    break;
             }
         }
 
@@ -645,6 +675,7 @@ public sealed class OrchestrationRig : IDisposable
                 }
 
                 InteractionResponse? response = null;
+                JsonObject? before = null;
                 lock (_gate2)
                 {
                     var kind = pending switch { ToolPermission => "tool_permission", PlanApproval => "plan_approval", GoalProposal => "goal_proposal", _ => "other" };
@@ -658,6 +689,7 @@ public sealed class OrchestrationRig : IDisposable
                     else if (index >= 0)
                     {
                         var answer = _answers[index];
+                        before = answer["beforeAnswer"]?["planFile"] as JsonObject;
                         if (kind != "tool_permission" || answer["callId"] is not null)
                         {
                             _answers.RemoveAt(index);
@@ -687,6 +719,11 @@ public sealed class OrchestrationRig : IDisposable
 
                 if (response is not null)
                 {
+                    if (before is not null)
+                    {
+                        PlanFileOp(before);
+                    }
+
                     _gate.Respond(pending.Id, pending.Version, response, "parity");
                     Fire(new JsonObject
                     {
