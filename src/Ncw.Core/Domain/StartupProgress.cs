@@ -41,7 +41,7 @@ public enum StartupStage
 
 /// <summary>
 /// 时间线上的里程碑(每个只记「第一次到达」的时间,单调)。<see cref="StartupStage"/> 的完成条件由它们组合而成;
-/// <see cref="ProcessStarted"/> / <see cref="MainEntered"/> / <see cref="AgentSpawned"/> 只用于时间线(校准阈值、诊断),不是任何阶段的完成条件。
+/// <see cref="ProcessStarted"/> / <see cref="MainEntered"/> / <see cref="FrameworkReady"/> / <see cref="ShellCreated"/> / <see cref="AgentSpawned"/> 只用于时间线(校准阈值、诊断),不是任何阶段的完成条件。
 /// </summary>
 public enum StartupMilestone
 {
@@ -53,6 +53,12 @@ public enum StartupMilestone
 
     /// <summary>单实例锁拿到(此后才创建窗口)。</summary>
     InstanceReady,
+
+    /// <summary>Avalonia / Arc 初始化完成,进入 <c>NcwApp.OnFrameworkInitializationCompleted</c>(只用于时间线:InstanceReady → FrameworkReady 是框架自己的启动耗时)。</summary>
+    FrameworkReady,
+
+    /// <summary>主窗口和外壳的 ViewModel / 视图树创建完毕、窗口还没显示(只用于时间线:FrameworkReady → ShellCreated 是创建外壳的耗时,ShellCreated → WindowShown 是显示与首次布局)。</summary>
+    ShellCreated,
 
     /// <summary>主窗口已打开。</summary>
     WindowShown,
@@ -585,8 +591,11 @@ public static class StartupProgress
 public static class StartupPresentation
 {
     /// <summary>表现层自己的状态(纯 UI 状态,放在 ViewModel 里,不进 Store)。</summary>
-    /// <param name="OriginAt">覆盖层出现的时刻(第一帧)。</param>
-    public sealed record State(DateTimeOffset OriginAt, DateTimeOffset? ContentShownAt = null, DateTimeOffset? RevealStartedAt = null);
+    /// <param name="OriginAt">
+    /// 覆盖层<b>真正显示出来</b>的时刻(窗口打开,即 <see cref="StartupMilestone.WindowShown"/>);还没显示出来时为 null。延迟出现和最短停留都从这一刻算——
+    /// 不能从 ViewModel 创建的时刻算:窗口显示之前 UI 线程要花几秒创建整个外壳(真窗口实测),那段时间用户什么也看不到,不能算作「内容已经停留过了」。
+    /// </param>
+    public sealed record State(DateTimeOffset? OriginAt = null, DateTimeOffset? ContentShownAt = null, DateTimeOffset? RevealStartedAt = null);
 
     /// <param name="IsOpen">覆盖层(含底色)是否盖在窗口上。</param>
     /// <param name="ContentVisible">内容(标识、清单、提示)是否显示。</param>
@@ -614,7 +623,8 @@ public static class StartupPresentation
         }
 
         var next = state;
-        var delayAt = state.OriginAt + timings.ShowDelay;
+        var displayed = state.OriginAt is not null;
+        var delayAt = (state.OriginAt ?? now) + timings.ShowDelay;
         var wake = view.NextTimeAt;
         if (view.Phase == StartupPhase.Revealing)
         {
@@ -631,12 +641,13 @@ public static class StartupPresentation
         var contentVisible = state.ContentShownAt is not null;
         if (!contentVisible && view.Phase != StartupPhase.Revealing)
         {
-            if (view.Failure is not null || now >= delayAt)
+            // 失败立刻显示(哪怕窗口还没出来:出来的那一刻就是错误面板);其余的等「显示出来之后再过 ShowDelay」
+            if (view.Failure is not null || (displayed && now >= delayAt))
             {
                 next = state with { ContentShownAt = now };
                 contentVisible = true;
             }
-            else
+            else if (displayed)
             {
                 wake = Earliest(wake, delayAt);
             }

@@ -80,6 +80,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 - 中继(开发用,部署物):`NCW_RELAY_URLS=http://127.0.0.1:8080 dotnet run --project src/Ncw.Relay`(配置见 `docs/design/09-protocol.md` §9.3)
 - 插件宿主的 NativeAOT 探针(开发 / CI,零警告 + 原生二进制里实跑一个插件):`dotnet publish tools/PluginAotProbe -c Release -r <rid> -o <dir>`,运行 `<dir>/PluginAotProbe`(退出码 0 = 通过)
 - 动效的真窗口冒烟(开发用,不进 slnx,需要图形会话,只在 macOS 上验证过):`dotnet run --project tools/MotionSmoke`——真实窗口里在完整级别下触发展开 / 收起、左右栏滑动、设置覆盖层,记录每一帧的间隔、断言终态精确,再切到减弱 / 关闭核对终态一致,中间帧离屏截图到 `NCW_MOTION_SMOKE_OUT`(设计见 `docs/design/03-ui-layout.md` §9)。
+- 启动加载的真实启动冒烟(开发用,不进 slnx,需要真实的 `ncw-agent` NativeAOT 产物;数据根 / 客户端目录都在临时目录,不碰 `~/.next-cowork`):`dotnet run --project tools/StartupSmoke -- timeline|faults|takeover|window --agent <ncw-agent> [--legacy-db <2.x 库的只读副本>]`——无界面的启动时间线(冷 / 热 / 接上)、故障注入(Agent 不存在 / 起不来 / 反复崩溃 / 版本不匹配 / 数据根被占用 / 运行中被杀)、真实 2.x 库接管、真窗口(原生底色读回、第一帧、帧间隔、淡出布局稳定、释放后空闲 CPU);只在 macOS 上验证过(设计与数据见 `docs/design/03-ui-layout.md` §10)。
 - 构建与发布工具链(`tools/Ncw.Build`,只给开发和 CI 用;每个子命令 `--help` 看选项,产物都在被忽略的 `artifacts/` 下)。下面是 macOS arm64 上完整走一遍的命令(耗时和产物大小见 `docs/design/04-update-install.md` §7):
   - `dotnet run --project tools/Ncw.Build -- publish-agent --rid osx-arm64`:`ncw-agent` NativeAOT 发布,输出里有任何 IL / 裁剪警告就失败(clang 模块缓存 `.pcm` 的环境警告在白名单里);发布产物里出现开发用 KMS 提供者(`NCW_DEV_KMS_KEY`)也失败,云端模式的真进程冒烟要加 `--dev-kms` 发布一份不可分发的冒烟二进制,用 `NCW_AGENT_BINARY` 指给 `Ncw.Agent.Cloud.Tests`;
   - `dotnet run --project tools/Ncw.Build -- publish-desktop --rid osx-arm64`:Avalonia 桌面自包含发布;

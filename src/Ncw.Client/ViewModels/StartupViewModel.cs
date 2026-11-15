@@ -99,7 +99,11 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
     /// <summary>当前阶段有真实的步骤进度(否则是不确定的:只有阶段数,标识上转一段「正在进行」的弧)。</summary>
     [ObservableProperty] public partial bool IsDeterminate { get; private set; }
 
-    /// <summary>在等、而且当前阶段没有真实的步骤进度:标识上转一小段「正在进行」的弧(不确定)。失败、数据需要用户处理、等外壳布局时不转。</summary>
+    /// <summary>
+    /// 还在等(<see cref="StartupPhase.Loading"/>):标识上转一小段「正在进行」的弧。弧长(<see cref="Fraction"/>)只表示已经走完了多少个阶段 / 步骤,
+    /// 一个步骤本身要多久并不知道(接管里的「备份」在真实的 1.6 GB 库上实测 37 秒),所以这段短弧在整个等待期间都转,证明还在干活,而不是进度条停住。
+    /// 失败、数据需要用户处理、等外壳布局时不转。
+    /// </summary>
     [ObservableProperty] public partial bool IsIndeterminate { get; private set; }
 
     [ObservableProperty] public partial bool IsSlow { get; private set; }
@@ -225,7 +229,13 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         }
 
         var now = _stores.Startup.Clock.GetUtcNow();
-        _presentation ??= new StartupPresentation.State(now);   // 第一次看到事实就是覆盖层的第一帧
+        _presentation ??= new StartupPresentation.State();
+        if (_presentation.OriginAt is null && facts.Reached.TryGetValue(StartupMilestone.WindowShown, out var shownAt))
+        {
+            // 窗口真正显示出来了:延迟出现 / 最短停留从这一刻算(窗口显示之前 UI 线程在创建外壳,用户什么也看不到)
+            _presentation = _presentation with { OriginAt = shownAt };
+        }
+
         var view = StartupProgress.Derive(facts, now, _timings);
         var decision = StartupPresentation.Decide(view, _presentation, now, _timings);
         _presentation = decision.Next;
@@ -271,7 +281,7 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         SubStep = view.Progress.SubStep;
         SubTotal = view.Progress.SubTotal;
         IsDeterminate = view.Progress.IsDeterminateInStage;
-        IsIndeterminate = view.Phase == StartupPhase.Loading && !view.Progress.IsDeterminateInStage;
+        IsIndeterminate = view.Phase == StartupPhase.Loading;
         IsSlow = view.IsSlow;
         SlowHint = view.SlowHint;
         IsReconnecting = view.IsReconnecting;

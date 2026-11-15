@@ -111,6 +111,7 @@ public class StartupOverlayTests : IDisposable
                 Local = new DeviceLink(Stores, InlineDispatcher.Instance, "local", DeviceKind.Local, "local", _ => throw new InvalidOperationException(), new ClientHello("tests", "3.0.0")),
             };
             Stores.Startup.Begin(profile);
+            Stores.Startup.Reach(StartupMilestone.WindowShown);   // 窗口在起点就显示出来了(真实的应用里是 MainWindow.Opened);延迟出现从这一刻算
             Vm = new ShellViewModel(Stores, Clock, devices: devices) { StartupHost = Host, RequestExit = () => Exits++ };
             Root = mobile
                 ? new AdaptiveShell { DataContext = Vm }
@@ -546,6 +547,33 @@ public class StartupOverlayTests : IDisposable
         Assert.False(rig.Startup.IsFailed);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Matrix))]
+    public void The_fade_out_shows_the_finished_shell_underneath_at_every_breakpoint_and_theme(int width, bool dark)
+    {
+        var rig = new Rig(width, dark, UiMotionLevel.Full);
+        Frames(64);
+        rig.Wait(300);                                    // 内容出现
+        Frames(300);
+        rig.LoadEverything();
+        PumpUntil(() => rig.Stores.Startup.State.Facts!.Has(StartupMilestone.ShellLaidOut));
+        rig.Wait(700);                                    // 最短停留已满:开始淡出
+        Assert.True(rig.Startup.IsRevealing);
+        var overlay = rig.Overlay!;
+        var shell = rig.Window.GetVisualDescendants().OfType<DesktopShell>().Single();
+        var before = shell.Bounds;
+
+        Frames(80);
+        Assert.InRange(overlay.Opacity, 0.01, 0.99);      // 淡出中间帧:加载层半透明,下面是已经布局好的外壳
+        Assert.Equal(before, shell.Bounds);               // 淡出期间外壳没有任何布局变化
+        Snapshot(rig.Window, "reveal-mid", width, dark, "-matrix");
+
+        Frames(600);
+        Assert.Null(rig.Overlay);
+        Assert.Equal(before, shell.Bounds);               // 释放之后也没有跳动
+        Snapshot(rig.Window, "revealed", width, dark, "-matrix");
+    }
+
     [AvaloniaFact]
     public void A_start_that_finishes_inside_the_delay_never_shows_content_and_the_backdrop_fades_straight_out()
     {
@@ -584,7 +612,7 @@ public class StartupOverlayTests : IDisposable
         Assert.False(ring.IsMoving);
         Assert.Equal(3 / 5.0 + 1 / 20.0, rig.Startup.Fraction, 6);
         var comet = rig.Overlay!.FindControl<NcwProgressArc>("Comet")!;
-        Assert.False(comet.IsEffectivelyVisible);                           // 接管有真实步骤:不画「不确定」的短弧
+        Assert.Equal(level != UiMotionLevel.Off, comet.IsEffectivelyVisible);   // 一步要多久并不知道:短弧在等待期间一直转(完整)/ 呼吸(减弱);关闭级别不画
         Snapshot(rig.Window, $"level-{level.ToString().ToLowerInvariant()}", 900, false);
 
         rig.Device(DeviceConnection.Connected, Ready);
@@ -611,7 +639,7 @@ public class StartupOverlayTests : IDisposable
 
         var comet = rig.Overlay!.FindControl<NcwProgressArc>("Comet")!;
 
-        Assert.True(rig.Startup.IsIndeterminate);                           // 当前阶段没有真实步骤:不确定
+        Assert.True(rig.Startup.IsIndeterminate);                           // 还在等:短弧在转
         Assert.Equal(visible, comet.IsEffectivelyVisible);
     }
 

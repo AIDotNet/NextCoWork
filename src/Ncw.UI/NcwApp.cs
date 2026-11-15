@@ -79,6 +79,8 @@ public class NcwApp : Application
                     stores.Startup.Reach(milestone, at);
                 }
 
+                stores.Startup.Reach(StartupMilestone.FrameworkReady);
+
                 _backend = BackendFactory?.Invoke();
                 _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             }
@@ -126,6 +128,7 @@ public class NcwApp : Application
             desktop.MainWindow = window;
             if (!UseMockData)
             {
+                stores.Startup.Reach(StartupMilestone.ShellCreated);
                 var background = ArcTokens.GetColor(window, ArcDesignTokenKind.Background);
                 NativeWindowBackground?.Invoke(window, background.R, background.G, background.B);
                 window.Opened += (_, _) => stores.Startup.Reach(StartupMilestone.WindowShown);

@@ -602,6 +602,44 @@ public class StartupProgressTests
     }
 
     [Fact]
+    public void The_delay_and_the_dwell_start_when_the_window_is_actually_displayed_not_before()
+    {
+        var f = UpToAgent();
+        var notYet = new StartupPresentation.State();   // 窗口还没显示:UI 线程在创建外壳,用户什么也看不到
+
+        var early = StartupPresentation.Decide(View(f, 3000), notYet, At(3000));
+        Assert.True(early.IsOpen);                      // 底色在(窗口出来的第一帧就是它)
+        Assert.False(early.ContentVisible);             // 但 3 秒过去了也不算「延迟已过」
+        Assert.Null(early.Next.ContentShownAt);
+        Assert.Equal(T0 + TimeSpan.FromSeconds(8), early.WakeAt);   // 没有延迟出现的唤醒,只有慢启动阈值
+
+        var shown = new StartupPresentation.State(At(3000));
+        Assert.False(StartupPresentation.Decide(View(f, 3249), shown, At(3249)).ContentVisible);
+        Assert.True(StartupPresentation.Decide(View(f, 3250), shown, At(3250)).ContentVisible);
+    }
+
+    [Fact]
+    public void A_failure_before_the_window_is_displayed_is_marked_visible_so_it_is_the_first_thing_seen()
+    {
+        var f = UpToAgent() with { Sidecar = new StartupSidecar(StartupSidecarPhase.Failed, "agent-not-found") };
+
+        var decision = StartupPresentation.Decide(View(f, 20), new StartupPresentation.State(), At(20));
+
+        Assert.True(decision.ContentVisible);
+    }
+
+    [Fact]
+    public void Everything_finished_before_the_window_was_displayed_still_reveals_without_ever_showing_content()
+    {
+        var f = AllContent().Reach(StartupMilestone.ShellLaidOut, At(5000));
+
+        var decision = StartupPresentation.Decide(View(f, 5000), new StartupPresentation.State(At(4990)), At(5000));
+
+        Assert.True(decision.Reveal);                   // 窗口刚显示 10 ms 就全部就绪:没有一闪而过的标识
+        Assert.False(decision.ContentVisible);
+    }
+
+    [Fact]
     public void A_start_that_is_ready_before_the_delay_never_shows_content_and_reveals_at_once()
     {
         var f = AllContent().Reach(StartupMilestone.ShellLaidOut, At(220));

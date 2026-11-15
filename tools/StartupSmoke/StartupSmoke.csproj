@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    开发用的「启动加载」冒烟程序(不对用户发布,不进 NextCoWork.slnx;AGENTS.md §1 的「tools/ 只给开发和 CI 用」),设计见 docs/design/03 §10.7:
+    · timeline:用真实的 ncw-agent 走一遍桌面启动流程(无界面,真实的 LocalAgentSidecar + DeviceLink + Store + StartupViewModel),记录每个里程碑的真实时间,冷 / 热各若干次 —— 校准慢启动 / 延迟出现 / 最短停留这几个阈值;
+    · faults:故障注入(Agent 不存在 / 起不来 / 反复崩溃 / 版本不匹配 / 数据根被占用 / 运行中被杀),确认每种都落到明确的失败面板而不是无限转圈,「重试」真的能恢复;
+    · takeover:真实的 2.x 库(只读副本,绝不改原库)走一遍真实接管,记录加载界面看到的阶段与步骤,以及被挡住 → 重试 → 摘要 → 继续的交接;
+    · window:真实窗口(macOS 上是真实的 Skia / Metal 渲染)里跑完整的 启动加载 → 淡出 → 外壳,记录第一帧、帧间隔、布局是否跳动、释放后有没有残留。
+    输出 `SMOKE <名字> PASS|FAIL <详情>` 和时间线表;退出码 = 失败项数。需要 ncw-agent:用 agent 选项或环境变量 NCW_AGENT_PATH 指给它(AOT 发布产物,不要用 bin/<配置>/<rid>/native/ 下的中间产物)。
+    数据根、客户端目录、profile 根全部放在临时目录里,不碰 ~/.next-cowork。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+    <ProjectReference Include="../../src/Ncw.Desktop/Ncw.Desktop.csproj" />
+    <ProjectReference Include="../../src/Ncw.UI/Ncw.UI.csproj" />
+    <!-- 只为了造「2.x 形状」的小夹具(没有所有权标记的库):和 Agent.Storage.Tests 的 TakeoverTests 同一个做法 -->
+    <ProjectReference Include="../../src/Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+  </ItemGroup>
+</Project>

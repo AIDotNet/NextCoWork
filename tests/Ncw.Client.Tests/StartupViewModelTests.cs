@@ -69,7 +69,7 @@ public class StartupViewModelTests
 
         public StartupViewModel Startup => Shell.Startup;
 
-        public Rig(bool tracking = true, StartupProfile profile = StartupProfile.Desktop)
+        public Rig(bool tracking = true, StartupProfile profile = StartupProfile.Desktop, bool shown = true)
         {
             Stores = new ClientStores(Clock);
             var devices = new DeviceRegistry
@@ -82,6 +82,10 @@ public class StartupViewModelTests
             if (tracking)
             {
                 Stores.Startup.Begin(profile);
+                if (shown)
+                {
+                    Stores.Startup.Reach(StartupMilestone.WindowShown);   // 窗口在起点就显示出来了(真实的应用里是 MainWindow.Opened)
+                }
             }
         }
 
@@ -151,6 +155,26 @@ public class StartupViewModelTests
         Assert.False(rig.Startup.IsContentVisible);
 
         rig.Clock.Advance(1);
+        rig.Startup.Tick();
+        Assert.True(rig.Startup.IsContentVisible);
+    }
+
+    [Fact]
+    public void Time_before_the_window_is_displayed_does_not_count_as_content_that_has_been_shown()
+    {
+        var rig = new Rig(shown: false);
+        rig.Clock.Advance(4000);                      // UI 线程在创建外壳,窗口还没出来
+        rig.Startup.Tick();
+
+        Assert.True(rig.Startup.IsPresented);         // 底色在(窗口出来的第一帧就是它)
+        Assert.False(rig.Startup.IsContentVisible);
+        Assert.Equal(T0 + TimeSpan.FromSeconds(8), rig.Startup.NextWake);   // 没有「延迟出现」的唤醒
+
+        rig.Reach(StartupMilestone.WindowShown);      // 窗口显示出来了:延迟从这一刻算
+        Assert.False(rig.Startup.IsContentVisible);
+        Assert.Equal(T0 + TimeSpan.FromMilliseconds(4250), rig.Startup.NextWake);
+
+        rig.Clock.Advance(250);
         rig.Startup.Tick();
         Assert.True(rig.Startup.IsContentVisible);
     }
