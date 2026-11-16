@@ -27,9 +27,10 @@
     <Border Classes="card">
       <StackPanel Spacing="12">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-          <Border Width="40" Height="40" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceRaised}" VerticalAlignment="Top">
-            <lucide:LucideIcon Kind="Sparkles" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
+          <Panel Width="40" Height="40" VerticalAlignment="Top">
+            <Image Source="avares://Ncw.UI/Assets/nextcowork-mark.png" Width="50" Height="50" Margin="-5"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Panel>
           <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
             <TextBlock FontWeight="SemiBold" Text="{l:NcwText AboutAppName}" />
             <StackPanel Orientation="Horizontal" Spacing="8">

@@ -49,10 +49,11 @@
         <Grid x:Name="SidebarLead" ColumnDefinitions="Auto,*,Auto" Margin="0,0,8,0">
           <Border x:Name="SidebarInset" Width="0" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
-            <Border Width="20" Height="20" CornerRadius="6" Background="{arc:ArcDesignTokenResource Foreground}">
-              <lucide:LucideIcon Kind="Sparkles" Size="12" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Foreground="{arc:ArcDesignTokenResource Background}" />
-            </Border>
+            <!-- 品牌标识(和启动加载界面同一张图;圆角方块自带透明边距,所以图比占位大一圈、用负边距收回) -->
+            <Panel Width="20" Height="20">
+              <Image Source="avares://Ncw.UI/Assets/nextcowork-mark.png" Width="25" Height="25" Margin="-2.5"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
             <TextBlock Text="NextCoWork" FontWeight="SemiBold" VerticalAlignment="Center" />
           </StackPanel>
           <ui:NcwButton Grid.Column="2" Classes="icon" Variant="Ghost"
