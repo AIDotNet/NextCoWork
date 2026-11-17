@@ -704,7 +704,7 @@ public sealed class SubagentRunTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_rig.WorkRoot, "a.txt"), "hello");
         _rig.Script("s1", SubRig.Calls(("c1", "Task", SubRig.TaskArgs())), Up.Text("ok"));
-        _rig.Script(SubRig.ChildSession("s1", "p1"), SubRig.Calls(("r1", "Read", $$"""{"file_path":"{{Path.Combine(_rig.WorkRoot, "a.txt")}}"}""")), Up.Text("read it"));
+        _rig.Script(SubRig.ChildSession("s1", "p1"), SubRig.Calls(("r1", "Read", $$"""{"file_path":"{{System.Text.Json.JsonEncodedText.Encode(Path.Combine(_rig.WorkRoot, "a.txt"))}}"}""")), Up.Text("read it"));
         var listener = new CollectingListener();
 
         await SubRig.Settled(_rig.Start("s1", "go", subscriptions: [Collect(_rig, listener)]));

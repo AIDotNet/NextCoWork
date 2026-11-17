@@ -109,9 +109,9 @@ internal sealed class ConPtyTerminal : PtyTerminal
 
             var startup = default(StartupInfoExW);
             startup.StartupInfo.Cb = (uint)sizeof(StartupInfoExW);
-            // ★ 必须设 STARTF_USESTDHANDLES(三个句柄留空):本进程的标准句柄被重定向时——ncw-agent 就是被桌面端用管道拉起的(stdin 生命线、stdout 的 ready 行),
-            // 测试宿主也是——不设它,子进程会沿用父进程那套重定向的句柄而不是伪终端,终端里一个字都看不到(node-pty 的 conpty.cc 同样处理)。
-            // 首次在 GitHub 的 Windows runner 上跑时,所有 ConPTY 用例都卡在「等不到第一行输出」。
+            // STARTF_USESTDHANDLES(三个句柄留空):本进程的标准句柄被重定向时——ncw-agent 就是被桌面端用管道拉起的(stdin 生命线、stdout 的 ready 行)——
+            // 不让子进程沿用父进程那套重定向的句柄,只用伪终端的(node-pty 的 conpty.cc 同样处理)。这是防御性的:没有在真机上对比过设与不设的差别,
+            // ConPTY 的输入输出由 WindowsConPtyTests 在 CI 的 Windows runner 上验证。
             startup.StartupInfo.Flags = StartfUseStdHandles;
             startup.AttributeList = attributeList;
 

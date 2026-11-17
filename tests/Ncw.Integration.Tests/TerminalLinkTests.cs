@@ -167,6 +167,7 @@ public sealed class TerminalLinkTests : IAsyncLifetime
     [Fact]
     public async Task Output_flows_to_the_sink_resumes_by_cursor_after_a_cut_and_the_store_stays_monotonic()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         Assert.SkipUnless(LocalTerminals.IsSupported, "no local PTY on this machine");
         var created = await _actions.CreateAsync(_deviceId, _projectId, 100, 30);
         Assert.True(created.IsOk);

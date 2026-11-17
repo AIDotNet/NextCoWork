@@ -44,20 +44,26 @@ public sealed class TestApp : Application
             return; // 不在界面线程上(非 Avalonia 用例):没有窗口可关
         }
 
-        foreach (var window in Opened.ToArray())
+        try
         {
-            try
+            foreach (var window in Opened.ToArray())
             {
-                window.Close();
+                // 有的用例自己起一个 headless 会话(另一条界面线程):那里的窗口归那条线程,这里不碰(Linux CI 上 MotionTests 的清理因此失败过)
+                if (window.CheckAccess())
+                {
+                    window.Close();
+                }
             }
-            catch (Exception)
-            {
-                // 用例已经结束:关窗时某个处理器抛错不该把下一条用例带倒
-            }
+
+            Opened.Clear();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        }
+        catch (Exception)
+        {
+            // 用例已经结束:清理时出的任何错都不该算到这条用例头上,也不该把下一条带倒
+            Opened.Clear();
         }
 
-        Opened.Clear();
-        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
         if (++_closedBatches % 8 == 0)
         {
             GC.Collect();

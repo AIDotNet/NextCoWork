@@ -191,7 +191,8 @@ public sealed class HostApiTests : IAsyncDisposable
         _fx.Manager.ReplyInteraction(prompt.RequestId, new PluginInteractionReply(Confirmed: true));
         await command;
 
-        Assert.Equal("""{"code":0,"stdout":"hello world it's"}""", Last("exec"));
+        // Windows 上的 echo 是 Git 带的 MSYS 程序:它按自己的规则重新解析命令行,单引号被当成引号吃掉(参数本身是按 CommandLineToArgv 规则原样传过去的)
+        Assert.Equal(OperatingSystem.IsWindows() ? """{"code":0,"stdout":"hello world its"}""" : """{"code":0,"stdout":"hello world it's"}""", Last("exec"));
         Assert.Empty(_fx.Manager.Snapshot().Interactions);
     }
 

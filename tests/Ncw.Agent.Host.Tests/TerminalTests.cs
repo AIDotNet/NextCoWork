@@ -126,6 +126,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task A_terminal_runs_a_command_streams_its_output_resizes_and_is_killed_with_a_contiguous_sequence()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         await using var rig = await Rig.StartAsync();
         var owner = rig.Owner;
@@ -225,6 +226,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task A_viewer_can_look_but_not_touch_and_a_member_can_use_local_terminals()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         await using var rig = await Rig.StartAsync();
         var terminal = await CreateAsync(rig.Owner, rig.Local);
@@ -267,6 +269,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task A_reconnecting_controller_resumes_from_its_cursor_and_gets_a_snapshot_when_the_cursor_is_gone()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         await using var rig = await Rig.StartAsync(new TerminalManagerOptions { BufferBytes = 2000 });
         var terminal = await CreateAsync(rig.Owner, rig.Local);
@@ -318,6 +321,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task Stopping_the_device_leaves_no_orphan_shell()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         var rig = await Rig.StartAsync();
         var pidFile = Path.Combine(rig.Conversation.WorkspaceDir, "shell.pid");
@@ -339,6 +343,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task Stopping_the_device_with_a_controller_still_connected_leaves_no_orphan_shell()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         var rig = await Rig.StartAsync();
         var pidFile = Path.Combine(rig.Conversation.WorkspaceDir, "shell.pid");
@@ -371,6 +376,7 @@ public sealed class TerminalTests
     [Fact]
     public async Task A_remote_terminal_needs_a_per_terminal_approval_that_only_its_own_controller_can_give_or_use()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "types POSIX shell syntax ($((…)), $$, rm -rf) into the terminal; the default Windows shell is cmd");
         RequirePty();
         await using var rig = await Rig.StartAsync();
         var (alice, reconnectAlice) = await rig.ConnectRemoteAsync("alice", "member");

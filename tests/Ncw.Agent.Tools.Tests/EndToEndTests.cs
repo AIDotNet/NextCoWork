@@ -232,6 +232,7 @@ public sealed class EndToEndTests : IDisposable
     [Fact]
     public async Task Aborting_the_run_kills_a_running_Bash_and_the_loop_ends_aborted_with_paired_results()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the scripted command is POSIX shell (echo $$ > pid.txt; exec sleep 60)");
         var llm = new FakeLlm()
             .Then(_ => Calls(("c1", "Bash", J(("command", "echo $$ > pid.txt; exec sleep 60"), ("description", "sleep")))));
         using var cts = new CancellationTokenSource();
