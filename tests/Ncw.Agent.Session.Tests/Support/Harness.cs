@@ -41,7 +41,7 @@ public sealed class Harness : IDisposable
 
     public string Root { get; }
 
-    public EnvPath RootPath => EnvPath.Posix(Root);
+    public EnvPath RootPath => LocalEnvironment.PathOf(Root);
 
     public AgentDatabase Db { get; }
 

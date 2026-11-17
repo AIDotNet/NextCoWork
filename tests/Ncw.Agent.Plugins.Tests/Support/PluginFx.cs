@@ -59,7 +59,7 @@ public sealed class FakeHttp : IPluginHttp
 public sealed class FakeWorkspaces(IExecutionEnvironment env, string root) : IPluginWorkspaces
 {
     public PluginWorkspaceTarget? Resolve(string workspaceId) =>
-        workspaceId == "w1" ? new PluginWorkspaceTarget("w1", "Project One", env, EnvPath.Posix(root)) : null;
+        workspaceId == "w1" ? new PluginWorkspaceTarget("w1", "Project One", env, LocalEnvironment.PathOf(root)) : null;
 }
 
 public sealed class CapturingLog : ILoopDiagnostics
@@ -102,7 +102,7 @@ public sealed class PluginFx : IAsyncDisposable
         Manager = new PluginManager(new PluginManagerOptions
         {
             Environment = Env,
-            Root = EnvPath.Posix(PluginRoot),
+            Root = LocalEnvironment.PathOf(PluginRoot),
             Kv = Kv,
             Tools = Registry,
             Secrets = Secrets,
@@ -141,7 +141,7 @@ public sealed class PluginFx : IAsyncDisposable
 
     public PluginManager Manager { get; }
 
-    public EnvPath P(string path) => EnvPath.Posix(path);
+    public EnvPath P(string path) => LocalEnvironment.PathOf(path);
 
     // ───────────────────────── 夹具包 ─────────────────────────
 

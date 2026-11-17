@@ -22,12 +22,12 @@ public sealed class AgentRegistryTests : IDisposable
 
     private static string Md(string description) => $"---\ndescription: {description}\n---\nbody\n";
 
-    private Task<AgentScanResult> Scan() => AgentLoader.ScanAsync(new AgentScanInput(_env, EnvPath.Posix(_global), null, null));
+    private Task<AgentScanResult> Scan() => AgentLoader.ScanAsync(new AgentScanInput(_env, LocalEnvironment.PathOf(_global), null, null));
 
     private sealed class Source(LocalEnvironment env, string global) : IAgentScanSource
     {
         public ValueTask<AgentScanInput> InputForAsync(string workspaceId, CancellationToken ct) =>
-            ValueTask.FromResult(new AgentScanInput(env, EnvPath.Posix(global), null, null));
+            ValueTask.FromResult(new AgentScanInput(env, LocalEnvironment.PathOf(global), null, null));
     }
 
     private static string[] BuiltinNames => [.. BuiltinAgents.All.Select(a => a.Name)];
@@ -204,7 +204,7 @@ public sealed class AgentRegistryTests : IDisposable
     private sealed class PerWorkspace(LocalEnvironment env, Dictionary<string, string> roots) : IAgentScanSource
     {
         public ValueTask<AgentScanInput> InputForAsync(string workspaceId, CancellationToken ct) =>
-            ValueTask.FromResult(new AgentScanInput(env, EnvPath.Posix(roots[workspaceId]), null, null));
+            ValueTask.FromResult(new AgentScanInput(env, LocalEnvironment.PathOf(roots[workspaceId]), null, null));
     }
 
     [Fact]

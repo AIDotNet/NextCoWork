@@ -35,7 +35,8 @@ jobs:
   build-test:
     name: build + test + AOT check (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # 首次真实运行(2026-11-17):macOS 约 36 分钟(界面截图测试占 31 分钟),Windows 60 分钟没跑完被取消。
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +82,7 @@ jobs:
           dotnet test NextCoWork.slnx --no-build
           --logger "trx;LogPrefix=true"
           --results-directory "${{ runner.temp }}/test-results"
+          --blame-hang --blame-hang-timeout 15m --blame-hang-dump-type none
 
       # UI 截图是视觉评审的依据(AGENTS.md §7):不管测试成败都上传。
       - name: Upload UI screenshots
@@ -102,15 +104,21 @@ jobs:
           retention-days: 14
 
       # ncw-agent 必须能以 NativeAOT 发布且零裁剪警告(AGENTS.md §5):任何 IL / ILC 警告都会让 publish-agent 失败。
+      # 下面几步不依赖测试结果:测试失败时也照样跑(只有被取消时才跳过),一轮 CI 就能同时看到测试和 AOT / 中继的结论。
       - name: Publish ncw-agent (NativeAOT, zero trim warnings)
+        id: publish_agent
+        if: ${{ !cancelled() }}
         run: ${{ env.NCW_BUILD }} publish-agent --rid ${{ matrix.rid }}
 
       - name: Smoke-test the published ncw-agent
+        if: ${{ !cancelled() && steps.publish_agent.outcome == 'success' }}
         run: ${{ env.NCW_BUILD }} verify --agent "artifacts/publish/${{ matrix.rid }}/agent/ncw-agent${{ matrix.exe }}"
 
       # 中继(服务端部署物)的发布与产物自检:默认自包含,再加 --aot 确认零警告 AOT 仍然可用(09 §9.3)。
       - name: Publish and self-check ncw-relay
+        if: ${{ !cancelled() }}
         run: ${{ env.NCW_BUILD }} build-relay --rid ${{ matrix.rid }}
 
       - name: Publish and self-check ncw-relay (NativeAOT)
+        if: ${{ !cancelled() }}
         run: ${{ env.NCW_BUILD }} build-relay --rid ${{ matrix.rid }} --aot

@@ -66,7 +66,7 @@ public abstract class ProcessContractTests : IAsyncLifetime
         };
         var result = await env.RunAsync(spec);
         var lines = result.Stdout.ToText().Split('\n');
-        Assert.Equal((await env.Fs.RealPathAsync(temp.Env)).Value, (await env.Fs.RealPathAsync(EnvPath.Posix(lines[0]))).Value);
+        Assert.Equal((await env.Fs.RealPathAsync(temp.Env)).Value, (await env.Fs.RealPathAsync(LocalEnvironment.PathOf(lines[0]))).Value);
         Assert.Equal("a b'c\"d", lines[1]);
     }
 

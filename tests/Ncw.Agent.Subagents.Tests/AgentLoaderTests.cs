@@ -35,7 +35,7 @@ public sealed class AgentLoaderTests : IDisposable
     private static string Md(string? description, string body = "You own this.") =>
         $"---\n{(description is null ? "" : $"description: {description}\n")}---\n{body}\n";
 
-    private Task<AgentScanResult> Scan() => AgentLoader.ScanAsync(new AgentScanInput(_env, EnvPath.Posix(_global), _env, EnvPath.Posix(_project)));
+    private Task<AgentScanResult> Scan() => AgentLoader.ScanAsync(new AgentScanInput(_env, LocalEnvironment.PathOf(_global), _env, LocalEnvironment.PathOf(_project)));
 
     private static List<string> Loaded(AgentScanResult result) => [.. result.Agents.Where(a => a.Source.Kind != AgentSourceKind.Builtin).Select(a => a.Name)];
 
@@ -96,7 +96,7 @@ public sealed class AgentLoaderTests : IDisposable
     [Fact]
     public async Task Missing_directories_are_not_an_error_having_no_agents_directory_is_the_norm()
     {
-        var result = await AgentLoader.ScanAsync(new AgentScanInput(_env, EnvPath.Posix(Path.Combine(_root, "does-not-exist")), null, null));
+        var result = await AgentLoader.ScanAsync(new AgentScanInput(_env, LocalEnvironment.PathOf(Path.Combine(_root, "does-not-exist")), null, null));
 
         Assert.Equal(BuiltinNames, result.Agents.Select(a => a.Name));
         Assert.Empty(result.Diagnostics);
@@ -400,6 +400,6 @@ public sealed class AgentLoaderTests : IDisposable
         var env = new DisconnectedEnvironment(_env);
 
         await Assert.ThrowsAsync<EnvironmentException>(() =>
-            AgentLoader.ScanAsync(new AgentScanInput(null, null, env, EnvPath.Posix(_project))));
+            AgentLoader.ScanAsync(new AgentScanInput(null, null, env, LocalEnvironment.PathOf(_project))));
     }
 }
