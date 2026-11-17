@@ -124,6 +124,11 @@ public static class ConversationReducer
             (next, rebuilt) = Fold(next, deviceId, rebuilt, e.Seq, e.Event, knownRev);
         }
 
+        // ★ 迟到的旧快照:快照的返回值和推送的事件走两条路,镜像可能已经收到了比它更靠后的事件。这时「当前状态」类的字段(流式文本、思考、重试、
+        //   上下文占用、工具卡片)以镜像为准,快照只补镜像里没有的——否则已经被 message_end 清掉的流式文本会被带回来,而能再次清掉它的事件
+        //   序号都不大于已收到的、会被当作重放丢弃,这段文本就永远留在镜像里;已经结束的工具也会变回运行中(规则 6)。
+        var stale = existing is not null && existing.Seq > snapshot.Seq;
+
         // 推断出来的收口(PhaseGuessed)不算「已知的终态」:真实的状态来了就替换它。
         var known = existing is { PhaseGuessed: true } ? RunPhase.Unknown : existing?.Phase ?? RunPhase.Unknown;
         var phase = RunLifecycle.Merge(known, RunLifecycle.Merge(rebuilt.Phase, PhaseOf(snapshot.State)));
@@ -134,7 +139,12 @@ public static class ConversationReducer
             Seq = Math.Max(existing?.Seq ?? 0, snapshot.Seq),
             Settled = snapshot.Settled || existing?.Settled == true,
             Error = rebuilt.Error ?? snapshot.Error ?? existing?.Error,
-            Tools = existing is null ? rebuilt.Tools : existing.Tools.SetItems(rebuilt.Tools),
+            Tools = existing is null ? rebuilt.Tools : stale ? rebuilt.Tools.SetItems(existing.Tools) : existing.Tools.SetItems(rebuilt.Tools),
+            Streaming = stale ? existing!.Streaming : rebuilt.Streaming,
+            Thinking = stale ? existing!.Thinking : rebuilt.Thinking,
+            Retry = stale ? existing!.Retry : rebuilt.Retry,
+            Context = stale ? existing!.Context ?? rebuilt.Context : rebuilt.Context,
+            CompactPhase = stale ? existing!.CompactPhase ?? rebuilt.CompactPhase : rebuilt.CompactPhase,
         };
         return next with { Runs = next.Runs.SetItem(run, merged) };
     }

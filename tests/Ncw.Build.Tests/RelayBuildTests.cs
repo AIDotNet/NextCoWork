@@ -111,9 +111,12 @@ public class RelayBuildTests
     [Fact]
     public void Artifact_layout_follows_the_publish_convention()
     {
+        // RepoLayout 会把根目录转成绝对路径:Windows 上 "/r" 变成 "D:\r",期望值也按同样的方式算
+        var root = Path.GetFullPath("/r");
+        var artifacts = Path.GetFullPath("/r/artifacts");
         var repo = new RepoLayout("/r", "/r/artifacts");
-        Assert.Equal(Path.Combine("/r", "src", "Ncw.Relay", "Ncw.Relay.csproj"), repo.RelayProject);
-        Assert.Equal(Path.Combine("/r/artifacts", "publish", "linux-x64", "relay"), repo.PublishDir(TestKit.LinuxX64, "relay"));
+        Assert.Equal(Path.Combine(root, "src", "Ncw.Relay", "Ncw.Relay.csproj"), repo.RelayProject);
+        Assert.Equal(Path.Combine(artifacts, "publish", "linux-x64", "relay"), repo.PublishDir(TestKit.LinuxX64, "relay"));
         Assert.Equal("ncw-relay", TestKit.LinuxX64.RelayExecutable);
         Assert.Equal("ncw-relay", TestKit.MacArm.RelayExecutable);
         Assert.Equal("ncw-relay.exe", TestKit.WinX64.RelayExecutable);

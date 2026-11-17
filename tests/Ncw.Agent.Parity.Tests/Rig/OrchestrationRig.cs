@@ -66,6 +66,7 @@ public sealed class OrchestrationRig : IDisposable
     private readonly Dictionary<string, int> _internalCounters = new(StringComparer.Ordinal);
     private readonly Dictionary<RunId, string> _labels = [];
     private readonly HashSet<int> _fired = [];
+    private readonly ConcurrentDictionary<string, bool> _toolEnded = new(StringComparer.Ordinal);
     private readonly List<JsonObject> _answers;
     private readonly object _gate2 = new();
     private readonly Diagnostics _log = new();
@@ -110,7 +111,7 @@ public sealed class OrchestrationRig : IDisposable
             ["upstream"] = key,
             ["request"] = request,
             ["afterChunk"] = chunk,
-        }), name => Gate(name).Task);
+        }), name => Gate(name).Task, ToolResultsObservedAsync);
 
         _config = new ProviderConfigSource(_input);
         var credentials = new CredentialResolver(new KeyStore(), new OAuthRegistry([]), _upstream, TimeProvider.System);
@@ -385,6 +386,25 @@ public sealed class OrchestrationRig : IDisposable
         if (callId is not null)
         {
             Fire(new JsonObject { ["run"] = label, ["event"] = name, ["callId"] = callId });
+        }
+
+        if (ev is ToolEndEvent ended)
+        {
+            // 放在 Fire 之后:等的人要的是「挂在这个 tool_end 上的用户操作已经做完」
+            _toolEnded[ended.CallId] = true;
+        }
+    }
+
+    /// <summary>
+    /// 上游应答前的对齐点(见 <see cref="RoutedUpstream"/> 的构造参数):等这些调用的 <c>tool_end</c> 都被 <see cref="Observe"/> 处理过。
+    /// 有上限:不经事件、由会话层补出来的工具结果(比如恢复时补的「已中断」)永远等不到,到点照旧往下走。
+    /// </summary>
+    private async Task ToolResultsObservedAsync(IReadOnlyList<string> callIds, CancellationToken ct)
+    {
+        var deadline = Environment.TickCount64 + 5_000;
+        while (!callIds.All(_toolEnded.ContainsKey) && Environment.TickCount64 < deadline)
+        {
+            await Task.Delay(1, ct).ConfigureAwait(false);
         }
     }
 

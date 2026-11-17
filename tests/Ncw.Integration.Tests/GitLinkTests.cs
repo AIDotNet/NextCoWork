@@ -56,8 +56,8 @@ public sealed class GitLinkTests : IAsyncLifetime
         try
         {
             using var probe = Process.Start(new ProcessStartInfo("git", "--version") { RedirectStandardOutput = true, UseShellExecute = false });
-            probe!.WaitForExit(10_000);
-            Assert.SkipUnless(probe.ExitCode == 0, "git is not available on this machine");
+            // 负载高的 Windows runner 上 `git --version` 也可能超过 10 秒:没退出时读 ExitCode 会抛 InvalidOperationException,给足时间并先确认退出
+            Assert.SkipUnless(probe!.WaitForExit(60_000) && probe.ExitCode == 0, "git is not available on this machine");
         }
         catch (System.ComponentModel.Win32Exception)
         {

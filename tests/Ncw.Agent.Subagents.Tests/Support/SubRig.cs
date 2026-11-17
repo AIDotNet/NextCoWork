@@ -30,7 +30,7 @@ public sealed class HostLikeRunExtension(SubRig rig) : IRunExtension
 
     public void OnCreated(RunHandle run)
     {
-        var runtime = new ToolRuntime { Environment = rig.Env, Root = EnvPath.Posix(rig.WorkRoot), Shells = rig.Shells };
+        var runtime = new ToolRuntime { Environment = rig.Env, Root = LocalEnvironment.PathOf(rig.WorkRoot), Shells = rig.Shells };
         lock (_runtimes)
         {
             _runtimes[run.RunId] = runtime;
@@ -100,7 +100,7 @@ public sealed class SubRig : IDisposable
     {
         Directory.CreateDirectory(_root);
         Env = new LocalEnvironment("dev");
-        WorkRoot = Env.Fs.RealPathAsync(EnvPath.Posix(Directory.CreateDirectory(Path.Combine(_root, "ws")).FullName)).AsTask().GetAwaiter().GetResult().Value;
+        WorkRoot = Env.Fs.RealPathAsync(LocalEnvironment.PathOf(Directory.CreateDirectory(Path.Combine(_root, "ws")).FullName)).AsTask().GetAwaiter().GetResult().Value;
         AgentsDir = Path.Combine(_root, "global", "agents");
         Directory.CreateDirectory(AgentsDir);
         Db = AgentDatabase.Open(Path.Combine(_root, "db"));
@@ -152,7 +152,7 @@ public sealed class SubRig : IDisposable
     private sealed class ScanSource(SubRig rig) : IAgentScanSource
     {
         public ValueTask<AgentScanInput> InputForAsync(string workspaceId, CancellationToken ct) =>
-            ValueTask.FromResult(new AgentScanInput(rig.Env, EnvPath.Posix(rig.AgentsDir), null, null));
+            ValueTask.FromResult(new AgentScanInput(rig.Env, LocalEnvironment.PathOf(rig.AgentsDir), null, null));
     }
 
     public string WorkRoot { get; }
@@ -254,7 +254,7 @@ public sealed class SubRig : IDisposable
         Clock = new FakeClock(),
         Delayer = new NoDelay(),
         Environment = Env,
-        WorkspaceRoot = EnvPath.Posix(WorkRoot),
+        WorkspaceRoot = LocalEnvironment.PathOf(WorkRoot),
         Extensions =
         [
             new PermissionExtension(Perms, PermissionRuleBook.CreateDefault()),

@@ -46,7 +46,7 @@ public sealed class InstructionsTests : IDisposable
     }
 
     private Task<InstructionsResult> Scan(bool global = false, string? imported = null) => ProjectInstructions.DiscoverAsync(
-        _env, EnvPath.Posix(Project), global ? new GlobalInstructions(_env, EnvPath.Posix(GlobalDir)) : null, imported);
+        _env, LocalEnvironment.PathOf(Project), global ? new GlobalInstructions(_env, LocalEnvironment.PathOf(GlobalDir)) : null, imported);
 
     /// <summary>真实祖先目录(/tmp、/Users/…)里可能有别的指令文件;断言只看本测试自己建的那几层。</summary>
     private IReadOnlyList<InstructionsFile> Mine(InstructionsResult r) => [.. r.Files.Where(f => f.Path.StartsWith(_base, StringComparison.Ordinal))];
@@ -114,7 +114,7 @@ public sealed class InstructionsTests : IDisposable
     [Fact]
     public async Task A_global_root_that_was_never_created_is_normal_and_not_a_diagnostic()
     {
-        var r = await ProjectInstructions.DiscoverAsync(_env, EnvPath.Posix(Project), new GlobalInstructions(_env, EnvPath.Posix(Path.Combine(_base, "nope"))));
+        var r = await ProjectInstructions.DiscoverAsync(_env, LocalEnvironment.PathOf(Project), new GlobalInstructions(_env, LocalEnvironment.PathOf(Path.Combine(_base, "nope"))));
 
         Assert.DoesNotContain(r.Files, f => f.Global);
         Assert.DoesNotContain(r.Diagnostics, d => d.Path.StartsWith(Path.Combine(_base, "nope"), StringComparison.Ordinal));

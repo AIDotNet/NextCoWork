@@ -34,7 +34,7 @@ public class WindowsConPtyTests
         var env = new LocalEnvironment("dev", new LocalEnvironmentOptions { Shell = Environment.GetEnvironmentVariable("ComSpec"), TerminalFactory = LocalTerminals.CreateFactory() });
         var terminal = await env.OpenTerminalAsync(new TerminalSpec());
         await using var output = new Collector(terminal);
-        await output.SendAsync("echo ncw-%%OS%%\r");
+        await output.SendAsync("echo ncw-%OS%\r"); // 交互式 cmd:%OS% 直接展开(%% 只在批处理文件里才是转义,这里会原样输出 ncw-%Windows_NT%)
         await output.WaitForAsync("ncw-Windows_NT");
         await output.SendAsync("exit 7\r");
         var exit = await terminal.Exited.WaitAsync(TimeSpan.FromSeconds(15));

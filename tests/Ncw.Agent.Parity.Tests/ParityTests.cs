@@ -16,6 +16,7 @@ public sealed class ParityTests
     public async Task The_csharp_agent_replays_the_recording_like_2x(string id)
     {
         var recording = Recording.ById(id);
+        Assert.SkipWhen(OperatingSystem.IsWindows() && recording.NeedsPosixShell, "this recording drives hooks / MCP servers through a POSIX shell");
         var replayed = await Replay.RunAsync(recording);
         if (Environment.GetEnvironmentVariable("NCW_PARITY_DUMP") is { Length: > 0 } dump)
         {

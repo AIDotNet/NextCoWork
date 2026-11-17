@@ -13,7 +13,7 @@ public sealed class ShellTests
     private static string Sleeper => OperatingSystem.IsWindows() ? "ping -n 60 127.0.0.1 > nul" : "sleep 60";
 
     private static async Task<BackgroundShellInfo> StartShell(Rig rig, string runId, string callId = "c1") =>
-        await rig.Shells!.StartAsync(new ShellStartRequest(Sleeper, EnvPath.Posix(rig.WorkRoot), null, new RunId(runId), callId), rig.Env, CancellationToken.None);
+        await rig.Shells!.StartAsync(new ShellStartRequest(Sleeper, LocalEnvironment.PathOf(rig.WorkRoot), null, new RunId(runId), callId), rig.Env, CancellationToken.None);
 
     [Fact]
     public async Task A_background_shell_outlives_the_run_that_started_it_both_when_it_ends_and_when_it_is_stopped()

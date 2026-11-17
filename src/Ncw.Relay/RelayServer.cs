@@ -85,6 +85,13 @@ public sealed class RelayServer : IAsyncDisposable
         {
             builder.WebHost.UseKestrelHttpsConfiguration();
             var loaded = X509Certificate2.CreateFromPemFile(certificate, options.CertificateKeyPath);
+            if (OperatingSystem.IsWindows())
+            {
+                // Windows 的 SChannel 用不了从 PEM 直接加载出来的「临时私钥」(握手时对端只看到连接被关掉):导出成 PKCS#12 再加载一遍,私钥就进了它认的密钥容器。
+                // 首次在 GitHub 的 Windows runner 上跑时 Kestrel_can_terminate_tls_itself… 握手失败。
+                using var ephemeral = loaded;
+                loaded = X509CertificateLoader.LoadPkcs12(ephemeral.Export(X509ContentType.Pkcs12), null);
+            }
             builder.WebHost.ConfigureKestrel(kestrel => kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = loaded));
         }
 

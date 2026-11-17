@@ -221,16 +221,39 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 | `verify --rid osx-arm64` | 2.0 s | PASS:ready 1.3 s、握手(协议 1、角色 owner)、版本 3.0.0-alpha.1、第二个实例被拒(75)、优雅退出(0) |
 | `sign`(ad-hoc,`NCW_MAC_SIGN_IDENTITY=-`) | 6.2 s | 261 个文件 + `.app`,`codesign --verify --deep --strict` 通过;签名后 `verify` 仍然 PASS(263 个文件与刷新后的 `bundle.json` 一致) |
 | `velopack --rid osx-arm64 --channel stable`(ad-hoc) | 11 s(首次 `dotnet tool restore` 另需约 1.5 分钟下载 vpk) | `NextCoWork-3.0.0-alpha.1-stable-full.nupkg` 76.6 MiB、`NextCoWork-stable-Portable.zip` 74.3 MiB、`NextCoWork-stable-Setup.pkg` 73.9 MiB、`releases.stable.json` 等;从 portable 包解出的 `.app` 通过 `codesign --verify --deep --strict` |
+| `sign --require` + `velopack`(**Developer ID Application**,2026-11-17,不公证) | `sign` 约 2.5 分钟(每个文件都要向 Apple 的时间戳服务取时间戳) | 266 个文件 + `.app`:`codesign --verify --deep --strict` 通过,`Authority=Developer ID Application`、带时间戳、`flags=runtime`(hardened runtime),主程序与 `NextCoWork Agent.app` 的 entitlements 为 allow-jit / allow-unsigned-executable-memory / disable-library-validation;签名后 `verify` 仍然 PASS;vpk 产物 `NextCoWork-3.0.0-stable-full.nupkg` 88.0 MiB、`Portable.zip` 86.7 MiB、`Setup.pkg` 86.0 MiB,从 portable 包解出的 `.app` 验签通过。`spctl` 报 `Unnotarized Developer ID`(没公证,预期);`Setup.pkg` **没有签名**(这台机器没有 Developer ID Installer 证书)。`timestamp.apple.com` 连不上时 codesign 报 "A timestamp was expected but was not found",网络恢复后重跑即可 |
 | `manifest` | 0.5 s | 4 个产物;没有密钥,`status = pending` 并明说。另用 `keygen` 生成的临时密钥走了一遍签名 → `manifest-verify`(签名与 sha256 通过;改一个字节后验证失败) |
 | `publish-desktop --version 3.0.0` / `3.0.1`(内置开发公钥)→ `bundle` → `verify` → `sign`(ad-hoc)→ `velopack`(3.0.1 加 `--keep-output`)→ `manifest`(Ed25519 签名)| 见 §7.5 | 自更新演练用的两个版本;`velopack --keep-output` 让 feed 累积版本、vpk 生成 3.0.0 → 3.0.1 的增量包(107 KiB,268 个文件里 11 个有改动) |
 | `build-relay`(默认自包含 / `--framework-dependent` / `--aot`) | 自包含约 4 s、框架依赖约 1 s(清掉 `obj/Release` 后)、AOT 约 9 s(完整 ILC) | 三种形态都零 IL / 裁剪警告、自检 PASS:自包含 `ncw-relay` 启动到 `/healthz` 200 约 1.7 s(123.2 MiB)、框架依赖约 0.3 s(11.9 MiB)、AOT 约 0.7 s(11.5 MiB);`/metrics` 200、非 WebSocket 请求 426、关 stdin 与 SIGTERM 都在几十毫秒内以 0 退出。**自检抓出两处真实缺陷(已修)**:① `Program.cs` 的 `ProcessExit` 处理器在 `using var stop` 释放之后再 `Cancel()`,优雅退出时抛 `ObjectDisposedException`、进程以 134 退出;② SIGTERM 被 ASP.NET 的 `ConsoleLifetime` 接管(只触发 `ApplicationStopping`),主流程不跟着退出,进程要等 SIGKILL——改为 `RelayServer.Stopping` 触发主流程结束 |
 
-**没有验证的部分**:Developer ID 签名与公证(没有证书和 Apple 账户:`--notarize` 的命令序列只有单测)、Windows 与 Linux(没有真机:`signtool`、Setup.exe、AppImage 只有命令构造的单测;`build-relay` 的自检在 Windows 上走的是关 stdin 这条路,SIGTERM 那条只在 macOS 上跑过)、`.pkg` 安装器签名。~~Velopack 的增量包与真正的自更新、已安装应用被 vpk 更新后 `Contents/MacOS/agent` 的行为~~:M7 已在 macOS 上演练(§7.5);仍没有验证的是 `.pkg` 安装器装出来的应用(演练用的是 portable 包解出来的 `.app`)。
+**没有验证的部分**:公证(Developer ID 签名已实跑,见上表;`--notarize` 的命令序列只有单测,决定 3.0 首发先不公证——从浏览器下载的包第一次打开会被 Gatekeeper 拦,要在「系统设置 → 隐私与安全性」里放行)、正式签名的应用被 vpk 更新后的行为(§7.5 的演练用的是 ad-hoc 签名)、Windows 与 Linux(没有真机:`signtool`、Setup.exe、AppImage 只有命令构造的单测;`build-relay` 的自检在 Windows 上走的是关 stdin 这条路,SIGTERM 那条只在 macOS 上跑过)、`.pkg` 安装器签名。~~Velopack 的增量包与真正的自更新、已安装应用被 vpk 更新后 `Contents/MacOS/agent` 的行为~~:M7 已在 macOS 上演练(§7.5);仍没有验证的是 `.pkg` 安装器装出来的应用(演练用的是 portable 包解出来的 `.app`)。
 
-### 7.1.1 CI 工作流(`.github/workflows/`,**未在真实 GitHub Actions 上运行过**)
+### 7.1.1 CI 工作流(`.github/workflows/`;`ci.yml` 已在真实 GitHub Actions 上跑通,`release.yml` **没有运行过**)
 
-> **工作流未在真实 GitHub Actions 上运行过。** 只做了静态检查(actionlint 通过、YAML 能被解析、没有任何密钥内容),每一步用到的命令则在 macOS 上手工跑过;
-> Windows / Linux runner 上的行为(Linux 的原生依赖包、`signtool` 的位置、AppImage 的 vpk 依赖、`security` 钥匙串步骤、Ed25519 清单签名的 secrets 接线)都要在第一次真实运行时核对。
+> **`ci.yml`**:2026-11-17 起在真实的 GitHub Actions 上运行(PR #195):三平台每一步都通过过——构建零警告、测试、`publish-agent`(NativeAOT、零裁剪警告)、`verify --agent` 冒烟、`build-relay`(默认与 `--aot`)。
+> 一共跑了 6 轮才三平台同时全绿(第 6 轮,8417 个测试;Linux 16 分钟、Windows 24 分钟、macOS 30 分钟)。
+> **`release.yml` 仍然没有在真实 GitHub Actions 上运行过**:只做了静态检查(actionlint 通过、YAML 能被解析、没有任何密钥内容);`signtool` 的位置、AppImage 的 vpk 依赖、
+> `security` 钥匙串步骤、Ed25519 清单签名的 secrets 接线都要在第一次真实运行时核对。
+
+**第一次真实运行暴露的问题**(都只在 macOS 上开发时看不出来):
+
+| 类别 | 现象 | 处理 |
+| --- | --- | --- |
+| 测试夹具假设 POSIX | Windows 首轮 349 个失败:把本机路径当 POSIX 路径、JSON 里拼反斜杠路径、`\r\n` 换行、SChannel 不接受 PEM 的临时私钥、往终端里敲 `$((…))` / `$$` / `rm -rf` | 夹具改成按平台取路径风格;落盘的 JSON 固定 `\n`;中继证书在 Windows 上转 PKCS#12;只能在 POSIX shell 下成立的用例在 Windows 上跳过并写明原因 |
+| 界面测试不关窗口 | 每条截图用例留下一个窗口和它的 Skia 位图:Linux runner 内存耗尽失联、Windows 60 分钟跑不完 | `Ncw.UI.Tests/TestApp.cs` 的程序集级钩子每条用例后关窗、定期回收(钩子不能碰 `Dispatcher.UIThread`,原因写在那里) |
+| 满载下才出现的时序假设 | 等待 5 秒不够、git 读操作超过 10 秒、假时钟在定时器挂上之前就被推进、挂在 `tool_end` 上的测试动作晚于下一个工具 | 逐个改成等条件而不是等时间 |
+| 产品里的真实问题 | 改角色时取消一个已释放的会话令牌源(控制端收到 Internal error);迟到的旧快照把已清掉的流式文本带回镜像;Grep 的预算从尝试原生后端之前起算;单实例的转发管道在成为主实例之后才开始监听;写一个已断开的连接时抛出原始的 `IOException` | 均已修复;「迟到的旧快照」和「Grep 预算」各有一条修复前稳定失败的单测,其余几项没有单独的回归测试(竞态难以稳定触发) |
+
+**还没有根治的偶发**(各出现过一次,只加了诊断信息,再出现时断言会带上现场):
+
+- Windows:Bash 工具跑 `cat app.txt` 退出码 0 但没有输出(`Ncw.Agent.Tools.Tests` 的 `Read_then_Edit_then_Bash_through_the_real_loop`)。如果不是 runner 的问题,就是 Windows 上命令输出可能被丢掉,**值得优先查**。
+- Windows:杀浏览器进程后 10 秒内没有报告退出(`RealBrowserTests`,出现过两轮);超时信息现在会区分「已退出但通知未到」和「仍在运行」。
+- macOS:真实浏览器用例里 `browser_cua_click` 报错(整条用例 81 秒,runner 很慢);断言现在会带上工具的错误文本。
+- Windows:`ConversationLinkTests` 的「重新生成」20 秒没等到新回复(本机加压 12 次复现不出);超时信息现在会带上当时的消息。
+
+**Windows 上跳过的 294 个用例**(`Assert.SkipWhen/SkipUnless`,原因写在用例里):`Ncw.Agent.Environments.Tests` 119、`Hooks` 59、`Host` 42、`Terminal` 27、`Parity` 13、`Workspace` 13、`Storage` 6、`Integration` 5、
+`Mcp` 3、`Extensions` 2、`Desktop` 2,以及 `Browser` / `Tools` / `UI` 各 1。它们依赖 POSIX shell、POSIX PTY、符号链接或 Unix 权限位;**这些路径在 Windows 上没有被验证**,「CI 绿」不覆盖它们。
+ConPTY 本身(`WindowsConPtyTests`:起 cmd、回显、退出码、调整大小、杀进程)在 Windows runner 上通过。
 
 两个文件,只用 .NET SDK(`global.json` 固定版本)和 `tools/Ncw.Build`,不装 Node / npm(AGENTS.md §6)。当前分支(`v3/avalonia`)上本来没有 `.github`;
 **`main` 上有 2.x 的同名文件 `ci.yml` / `release.yml`(另有 `publish-packages.yml`)**,所以 3.0 合入 `main` 时这两个文件会冲突,必须有意识地处理(替换、或改名为 `v3-*.yml` 与 2.x 并存),不会悄悄覆盖。

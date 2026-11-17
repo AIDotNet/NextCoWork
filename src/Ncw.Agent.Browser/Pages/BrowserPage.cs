@@ -73,6 +73,9 @@ public sealed partial class BrowserPage : IAsyncDisposable
                 w.WriteNumber("deviceScaleFactor", 1);
                 w.WriteBoolean("mobile", false);
             }, ct).ConfigureAwait(false);
+            // 焦点模拟:无头浏览器里页面不一定是「有焦点」的(同一个浏览器开了几个页面时只有一个是),没有焦点的页面收不到 Input.dispatchKeyEvent 的按键。
+            // 打开之后每个页面都当自己有焦点(Playwright 同样处理)。首次在 GitHub 的 macOS runner 上跑时,browser_press 的 Enter 没有到达页面。
+            await page.Send("Emulation.setFocusEmulationEnabled", w => w.WriteBoolean("enabled", true), ct).ConfigureAwait(false);
             return page;
         }
         catch

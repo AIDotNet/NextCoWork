@@ -235,14 +235,14 @@ public sealed class ConversationLinkTests : IAsyncLifetime
         return controller;
     }
 
-    private static async Task WaitUntil(Func<bool> condition, string what, int timeoutMs = 20_000)
+    private static async Task WaitUntil(Func<bool> condition, string what, int timeoutMs = 20_000, Func<string>? detail = null)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (!condition())
         {
             if (Environment.TickCount64 > deadline)
             {
-                Assert.Fail($"Timed out waiting for: {what}");
+                Assert.Fail(detail is null ? $"Timed out waiting for: {what}" : $"Timed out waiting for: {what}; got: {detail()}");
             }
 
             await Task.Delay(10);
@@ -546,7 +546,10 @@ public sealed class ConversationLinkTests : IAsyncLifetime
         var question = c.State.Sessions[session].Messages.First(m => m.Id == userId);
         Assert.True((await MessagesOf(c).EditAndResendAsync(session, userId, TextOf(question), MessageInputs.FilesOf(question), Options)).IsOk);
 
-        await WaitUntil(() => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "tell me a joke" && TextOf(m[1]) == "joke number two", "reply replaced, question kept");
+        await WaitUntil(
+            () => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "tell me a joke" && TextOf(m[1]) == "joke number two",
+            "reply replaced, question kept",
+            detail: () => string.Join(" | ", c.State.Sessions[session].Messages.Select(TextOf)));
     }
 
     /// <summary>一轮带工具调用的对话:提问 → 助手(调用 Write)→ 工具回执 → 助手(最终回复)= 4 条消息。</summary>

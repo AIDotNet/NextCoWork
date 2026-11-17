@@ -375,7 +375,8 @@ public sealed class ProjectRuleFile : IPermissionRuleStore
     private static byte[] Render(JsonElement raw, RuleBuckets buckets)
     {
         using var stream = new MemoryStream();
-        using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        // NewLine 固定为 \n:这个文件和 2.x 共用格式、会跟着项目跨机器走,不能在 Windows 上写成 \r\n(默认是 Environment.NewLine)
+        using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true, NewLine = "\n" }))
         {
             w.WriteStartObject();
             var wroteVersion = false;

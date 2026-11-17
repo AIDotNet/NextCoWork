@@ -548,6 +548,9 @@ public sealed class EndToEndTests : IDisposable
         _rig.Llm.Main(Say("kickoff 收到"));
         _rig.Llm.Judge(Up.Verdict(true, "好了"));
         _rig.Gate.Respond(pending.Id, pending.Version, new GoalProposalResponse(true), "ctrl");
+        // 批准之后「设立目标 + 投递 kickoff」在提案那个等待的续体里异步发生:Respond 返回时目标可能还没设上,这时「目标为空」「会话空闲」都成立,
+        // 直接 WaitGoalDone 会在目标开始之前就返回(Linux CI 满载时出现过)。所以先等到「达成」那一条落盘。
+        await Wait.UntilAsync(() => Markers() is { Count: > 0 } markers && markers[^1].Met, what: "the approved goal to be met");
         await WaitGoalDone();
 
         Assert.Equal("proposal_approved", Markers()[0].Origin);

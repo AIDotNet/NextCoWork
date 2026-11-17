@@ -94,7 +94,16 @@ public sealed class DeviceClient : IAsyncDisposable
         try
         {
             var key = method.Kind == MethodKind.Command ? idem ?? Guid.NewGuid().ToString("N") : null;
-            await _frames.WriteAsync(new RequestFrame(id, method.Name, FrameCodec.EncodePayload(parameters, method.ParamsShape), key), ct).ConfigureAwait(false);
+            try
+            {
+                await _frames.WriteAsync(new RequestFrame(id, method.Name, FrameCodec.EncodePayload(parameters, method.ParamsShape), key), ct).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is IOException or ObjectDisposedException)
+            {
+                // 请求还没写完对端就关了(Windows 的命名管道上是 "Pipe is broken"):和「等响应时连接断开」是同一件事,
+                // 给调用方同一个可重试的协议错误——上层只认 ProtocolException,原始的 IOException 会一路冒到界面。
+                throw new ProtocolException(ErrorCodes.Unavailable, "Connection closed", retryable: true);
+            }
 
             ResponseFrame response;
             try
