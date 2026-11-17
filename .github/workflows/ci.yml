@@ -1,7 +1,9 @@
 # NextCoWork 3.0(Avalonia 分支)的持续集成。docs/design/04 §7.1。
 #
-# 注意:本工作流**没有在真实的 GitHub Actions 上运行过**(只用 actionlint 做了静态检查,命令在 macOS 上手工跑过)。
-# 第一次推送后先看三平台各步是否通过,再把它当作合并门槛。
+# 2026-11-17 起在真实的 GitHub Actions 上运行(PR #195):第 6 轮三平台全绿(8417 个测试)。Windows 上有 294 个用例按平台跳过
+# (依赖 POSIX shell / PTY / 符号链接的),所以「Windows 绿」不等于这些路径在 Windows 上验证过。
+# 测试里还有偶发失败没有根治(见 docs/design/04 §7.1.1 的清单):红了先看是不是清单里的,再决定重跑还是排查。
+# macOS arm64 的 runner 有时因容量排不上(15 分钟后任务被取消,注解里写着 "not acquired by Runner"),重跑即可。
 #
 # 全部步骤只用 .NET SDK(global.json 固定版本)和 tools/Ncw.Build;不装 Node / npm(AGENTS.md §6)。
 name: ci
@@ -35,7 +37,8 @@ jobs:
   build-test:
     name: build + test + AOT check (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
-    # 首次真实运行(2026-11-17):macOS 约 36 分钟(界面截图测试占 31 分钟),Windows 60 分钟没跑完被取消。
+    # 实测(2026-11-17,第 6 轮):Linux 16 分钟、Windows 24 分钟、macOS 30 分钟(其中测试 10 / 15 / 19 分钟)。
+    # 首次运行时界面测试不关窗口,macOS 36 分钟、Windows 60 分钟没跑完、Linux runner 内存耗尽失联——所以留了余量。
     timeout-minutes: 120
     strategy:
       fail-fast: false
