@@ -286,6 +286,8 @@ internal sealed class ConPtyTerminal : PtyTerminal
         CloseHandle(_thread);
         CloseHandle(_process);
         CloseHandle(_job); // KILL_ON_JOB_CLOSE:还活着的后代在这里被带走
-        _writeLock.Dispose();
+        // _writeLock 故意不 Dispose:shell 因为刚写进去的输入而退出(`exit`)时,终端在写入收尾(Release)之前就被释放,
+        // 对已释放的 SemaphoreSlim 操作会抛 ObjectDisposedException(CI 的 macOS 上撞到过)。没取过 AvailableWaitHandle 的 SemaphoreSlim 不持有系统资源;
+        // 关闭之后再来的写入照常拿到锁,在底层句柄上得到「terminal closed」。
     }
 }
