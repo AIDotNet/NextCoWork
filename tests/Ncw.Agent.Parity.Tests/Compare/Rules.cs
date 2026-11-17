@@ -137,7 +137,8 @@ public static partial class Rules
 
         new("INTERRUPTED-TASK-RECEIPT", Section.Events | Section.Rows,
             new(Parity, "占位结果(`[interrupted: …]`)在 3.0 上**带 aborted 回执**"),
-            "父 Run 被中止时在途的 Task 调用:3.0 的占位结果带 aborted 回执(子 Run 结束后补写),2.x 没有;只放行「占位结果上多出的、状态为 aborted 的 subagent 回执」,占位文字本身仍逐字比较。",
+            "父 Run 被中止时在途的 Task 调用:3.0 的占位结果带 aborted 回执(子 Run 结束后补写),2.x 没有;只放行「占位结果上多出的、状态为 aborted 的 subagent 回执」,占位文字本身仍逐字比较。"
+            + "同一个调用的 aborted `subagent_end` 事件一并放行:它只在子 Run 赶在父 Run 的日志收口之前结束时才进得去(取决于时序,Linux 上常见、macOS 上少见),2.x 从不发。",
             (_, r, _, _) => r.Sum(n => RemoveInterruptedReceipt(n))),
 
         new("PLAN-FENCE-ASKS-FIRST", Section.Events | Section.Interactions,
@@ -753,6 +754,18 @@ public static partial class Rules
 
                 break;
             case JsonArray a:
+                // 事件流:这个调用以「已中止」占位收场时,它的 aborted subagent_end 进没进父 Run 的日志取决于时序——有就去掉(不计数:回执那一处才是这条规则的凭据)
+                var interrupted = a.OfType<JsonObject>()
+                    .Where(e => Str(e, "e") == "tool_end" && e["content"] is JsonValue content && content.TryGetValue<string>(out var text) && text.StartsWith(Interrupted, StringComparison.Ordinal))
+                    .Select(e => Str(e, "callId")).ToHashSet(StringComparer.Ordinal);
+                if (interrupted.Count > 0)
+                {
+                    foreach (var late in a.OfType<JsonObject>().Where(e => Str(e, "e") == "subagent_end" && Str(e, "status") == "aborted" && interrupted.Contains(Str(e, "callId"))).ToList())
+                    {
+                        a.Remove(late);
+                    }
+                }
+
                 count += a.Sum(RemoveInterruptedReceipt);
                 break;
         }

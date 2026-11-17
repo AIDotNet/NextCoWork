@@ -619,7 +619,7 @@ D16:构建发布脚本用 C# 重写,只给开发和 CI 用(AGENTS.md §1、§6)�
 - 项目 `deny` 规则命中时给模型的话:2.x 写死「in the workspace's .next-cowork/settings.local.json」,3.0 写「in the project's permission settings」(规则存放处不写死,同上面「deny 的话术不再写死」那一条);其余文字(规则原文、「不要换个工具达到同样的结果」)逐字相同。
 - 计划模式、`ask` 档位下,模型对**围栏之外**的文件调 `Write` / `Edit`:2.x 的审批只按工具名信任(`trustedPlanFileTool`),不弹窗,由写工具的围栏拒绝;3.0 的权限层自己再核对一遍(03 §计划模式的写入围栏:只有改的**正是**围栏文件才当作只读),围栏外的写入走普通审批,用户允许之后写工具的围栏照样拒绝(结果文字两边逐字相同,文件一个字节没动)。多一次弹窗是登记过的收紧(围栏没设上时写入不会被悄悄放行)的可见后果,不是缺陷。
 - 状态块(`<system-reminder>` 里的 Workspace state)的每一段在 3.0 两端去空白(`ContextAssembler.StateBlock` 的 `Trim`);2.x 原样保留。可见的后果:批准的计划文件以换行结尾时(几乎总是),2.x 的块在 `</system-reminder>` 之前多一个空行。只是一个空行,不影响模型读到的内容。
-- 父 Run 被中止时,正在前台等着的子代理那次 `Task` 调用:占位结果(`[interrupted: …]`)在 3.0 上**带 aborted 回执**(`subagent: {childRunId, status: aborted}`,子 Run 结束后由 `ReceiptStore` 按 callId 补写);2.x 的占位结果没有回执(`persistSubagentCompletion` 只改「已带同 childRunId 回执」的结果),父会话里就此没有任何东西指回那个子 Run。3.0 的写法让控制端重载之后仍能把那张卡片标成「已中止」并点开子会话,和规则 7(派生视图跟随真源、不丢状态)一致,所以登记为偏离、不当缺陷;模型看到的结果文字两边逐字相同。
+- 父 Run 被中止时,正在前台等着的子代理那次 `Task` 调用:占位结果(`[interrupted: …]`)在 3.0 上**带 aborted 回执**(`subagent: {childRunId, status: aborted}`,子 Run 结束后由 `ReceiptStore` 按 callId 补写);2.x 的占位结果没有回执(`persistSubagentCompletion` 只改「已带同 childRunId 回执」的结果),父会话里就此没有任何东西指回那个子 Run。3.0 的写法让控制端重载之后仍能把那张卡片标成「已中止」并点开子会话,和规则 7(派生视图跟随真源、不丢状态)一致,所以登记为偏离、不当缺陷;模型看到的结果文字两边逐字相同。同一个调用的 aborted `subagent_end` 事件只在子 Run 赶在父 Run 的日志收口之前结束时才进得去(时序相关:Linux 容器里常见、macOS 上少见;进不去时由 `subagent.stopped` 兜底),2.x 从不发,同一条规则一并放行。
 
 ## 并发不稳定测试的根因与修复
 
