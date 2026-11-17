@@ -20,41 +20,60 @@ internal static class InfoPlist
         return core;
     }
 
+    /// <summary>嵌套的 Agent 包的 bundle id(主包的子 id)。</summary>
+    public const string AgentBundleId = BundleId + ".agent";
+
     /// <param name="iconFile"><c>Contents/Resources</c> 里的图标文件名;为 null 不写 <c>CFBundleIconFile</c>(包里没有图标时)。</param>
-    public static string Render(string version, string? iconFile = null)
+    public static string Render(string version, string? iconFile = null) =>
+        Write(version, BundleLayout.AppName, BundleId, iconFile, sb =>
+        {
+            Pair(sb, "LSApplicationCategoryType", "public.app-category.developer-tools");
+            Pair(sb, "NSPrincipalClass", "NSApplication");
+            Flag(sb, "NSHighResolutionCapable", true);
+            // nextcowork:// 登录回调(docs/design/07 §2):macOS 靠 CFBundleURLTypes 注册。
+            sb.Append("  <key>CFBundleURLTypes</key>\n  <array>\n    <dict>\n");
+            sb.Append("      <key>CFBundleURLName</key>\n      <string>").Append(BundleId).Append("</string>\n");
+            sb.Append("      <key>CFBundleURLSchemes</key>\n      <array>\n        <string>").Append(UrlScheme).Append("</string>\n      </array>\n");
+            sb.Append("    </dict>\n  </array>\n");
+        });
+
+    /// <summary>
+    /// 嵌套的 <c>NextCoWork Agent.app</c>:后台应用(<c>LSBackgroundOnly</c>,不进 Dock、没有菜单),名字和图标给活动监视器看
+    /// (docs/design/04 §7.1「进程名称与图标」)。不注册任何 URL scheme。
+    /// </summary>
+    public static string RenderAgent(string version, string? iconFile = null) =>
+        Write(version, BundleLayout.MacAgentName, AgentBundleId, iconFile, sb => Flag(sb, "LSBackgroundOnly", true));
+
+    private static string Write(string version, string name, string bundleId, string? iconFile, Action<StringBuilder> extra)
     {
         var core = NumericVersion(version);
         var sb = new StringBuilder();
-        void Pair(string key, string value) => sb.Append("  <key>").Append(key).Append("</key>\n  <string>").Append(SecurityElement.Escape(value)).Append("</string>\n");
-        void Flag(string key, bool value) => sb.Append("  <key>").Append(key).Append("</key>\n  <").Append(value ? "true" : "false").Append("/>\n");
-
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         sb.Append("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n");
         sb.Append("<plist version=\"1.0\">\n<dict>\n");
-        Pair("CFBundleName", BundleLayout.AppName);
-        Pair("CFBundleDisplayName", BundleLayout.AppName);
-        Pair("CFBundleIdentifier", BundleId);
-        Pair("CFBundleExecutable", BundleLayout.AppName);
+        Pair(sb, "CFBundleName", name);
+        Pair(sb, "CFBundleDisplayName", name);
+        Pair(sb, "CFBundleIdentifier", bundleId);
+        Pair(sb, "CFBundleExecutable", name);
         if (iconFile is not null)
         {
-            Pair("CFBundleIconFile", iconFile);
+            Pair(sb, "CFBundleIconFile", iconFile);
         }
 
-        Pair("CFBundlePackageType", "APPL");
-        Pair("CFBundleInfoDictionaryVersion", "6.0");
-        Pair("CFBundleShortVersionString", core);
-        Pair("CFBundleVersion", core);
-        Pair("NCWFullVersion", version);
-        Pair("LSMinimumSystemVersion", MinimumSystemVersion);
-        Pair("LSApplicationCategoryType", "public.app-category.developer-tools");
-        Pair("NSPrincipalClass", "NSApplication");
-        Flag("NSHighResolutionCapable", true);
-        // nextcowork:// 登录回调(docs/design/07 §2):macOS 靠 CFBundleURLTypes 注册。
-        sb.Append("  <key>CFBundleURLTypes</key>\n  <array>\n    <dict>\n");
-        sb.Append("      <key>CFBundleURLName</key>\n      <string>").Append(BundleId).Append("</string>\n");
-        sb.Append("      <key>CFBundleURLSchemes</key>\n      <array>\n        <string>").Append(UrlScheme).Append("</string>\n      </array>\n");
-        sb.Append("    </dict>\n  </array>\n");
+        Pair(sb, "CFBundlePackageType", "APPL");
+        Pair(sb, "CFBundleInfoDictionaryVersion", "6.0");
+        Pair(sb, "CFBundleShortVersionString", core);
+        Pair(sb, "CFBundleVersion", core);
+        Pair(sb, "NCWFullVersion", version);
+        Pair(sb, "LSMinimumSystemVersion", MinimumSystemVersion);
+        extra(sb);
         sb.Append("</dict>\n</plist>\n");
         return sb.ToString();
     }
+
+    private static void Pair(StringBuilder sb, string key, string value) =>
+        sb.Append("  <key>").Append(key).Append("</key>\n  <string>").Append(SecurityElement.Escape(value)).Append("</string>\n");
+
+    private static void Flag(StringBuilder sb, string key, bool value) =>
+        sb.Append("  <key>").Append(key).Append("</key>\n  <").Append(value ? "true" : "false").Append("/>\n");
 }

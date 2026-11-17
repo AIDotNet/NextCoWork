@@ -40,4 +40,46 @@
     </ItemGroup>
     <Copy SourceFiles="@(_NcwAgentFiles)" DestinationFolder="$(OutDir)agent/%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
+
+  <!--
+    macOS 开发构建的 .app 外壳(docs/design/04 §7.1「进程名称与图标」):不从 .app 里启动,活动监视器里主进程和 Agent 都是可执行文件名 + 通用图标,
+    菜单栏 / ⌘Tab 也认不出应用。所以构建后在输出目录生成 NextCoWork.app(输出目录用硬链接放进 Contents/MacOS,几乎不占空间),
+    Agent 包成嵌套的 agent/NextCoWork Agent.app(可执行文件改名为 NextCoWork Agent,进程名就是它),dotnet run 从 .app 启动。
+    bundle id 用开发专用的 com.nextcowork.app.dev,也不注册 nextcowork://,免得抢正式安装的通知 / 链接。
+    原来的 <输出>/NextCoWork 和 <输出>/agent/ncw-agent 保留不动,测试和冒烟工具照旧用它们。发布包由 tools/Ncw.Build 的 bundle 生成,不走这里。
+  -->
+  <!-- 路径在目标里算:csproj 本体求值时 SDK 还没定义 OutDir -->
+  <Target Name="NcwMacDevAppPaths">
+    <PropertyGroup>
+      <NcwMacDevApp>$(OutDir)NextCoWork.app/</NcwMacDevApp>
+      <NcwMacDevAgentApp>$(NcwMacDevApp)Contents/MacOS/agent/NextCoWork Agent.app/</NcwMacDevAgentApp>
+    </PropertyGroup>
+  </Target>
+  <Target Name="NcwMacDevAppBundle" AfterTargets="CopyAgentSidecar" DependsOnTargets="NcwMacDevAppPaths" Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$(_IsPublishing)' != 'true'">
+    <PropertyGroup>
+      <!-- CFBundleShortVersionString 只接受数字点号:去掉预发布 / 构建后缀(和 tools/Ncw.Build 的 InfoPlist.NumericVersion 一致) -->
+      <NcwMacDevVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '[-+].*', ''))</NcwMacDevVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NcwMacDevMain Include="$(OutDir)**/*" Exclude="$(OutDir)NextCoWork.app/**;$(OutDir)agent/**" />
+      <_NcwMacDevAgent Include="$(OutDir)agent/**/*" Exclude="$(OutDir)agent/ncw-agent" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NcwMacDevMain)" DestinationFolder="$(NcwMacDevApp)Contents/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />
+    <Copy SourceFiles="@(_NcwMacDevAgent)" DestinationFolder="$(NcwMacDevAgentApp)Contents/MacOS/%(RecursiveDir)" SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />
+    <!-- apphost 按内嵌的程序集名(ncw-agent.dll)找入口,改文件名不影响启动 -->
+    <Copy SourceFiles="$(OutDir)agent/ncw-agent" DestinationFiles="$(NcwMacDevAgentApp)Contents/MacOS/NextCoWork Agent" SkipUnchangedFiles="true" UseHardlinksIfPossible="true" Condition="Exists('$(OutDir)agent/ncw-agent')" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Assets/AppIcon.icns" DestinationFolder="$(NcwMacDevApp)Contents/Resources" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Assets/AppIcon.icns" DestinationFolder="$(NcwMacDevAgentApp)Contents/Resources" SkipUnchangedFiles="true" />
+    <WriteLinesToFile File="$(NcwMacDevApp)Contents/Info.plist" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="$([System.String]::Copy('&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;&lt;plist version=&quot;1.0&quot;&gt;&lt;dict&gt;&lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;NextCoWork&lt;/string&gt;&lt;key&gt;CFBundleDisplayName&lt;/key&gt;&lt;string&gt;NextCoWork&lt;/string&gt;&lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;com.nextcowork.app.dev&lt;/string&gt;&lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;NextCoWork&lt;/string&gt;&lt;key&gt;CFBundleIconFile&lt;/key&gt;&lt;string&gt;AppIcon.icns&lt;/string&gt;&lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;APPL&lt;/string&gt;&lt;key&gt;CFBundleInfoDictionaryVersion&lt;/key&gt;&lt;string&gt;6.0&lt;/string&gt;&lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;$(NcwMacDevVersion)&lt;/string&gt;&lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;$(NcwMacDevVersion)&lt;/string&gt;&lt;key&gt;NSPrincipalClass&lt;/key&gt;&lt;string&gt;NSApplication&lt;/string&gt;&lt;key&gt;NSHighResolutionCapable&lt;/key&gt;&lt;true/&gt;&lt;/dict&gt;&lt;/plist&gt;'))" />
+    <WriteLinesToFile File="$(NcwMacDevAgentApp)Contents/Info.plist" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="$([System.String]::Copy('&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;&lt;plist version=&quot;1.0&quot;&gt;&lt;dict&gt;&lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;NextCoWork Agent&lt;/string&gt;&lt;key&gt;CFBundleDisplayName&lt;/key&gt;&lt;string&gt;NextCoWork Agent&lt;/string&gt;&lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;com.nextcowork.app.dev.agent&lt;/string&gt;&lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;NextCoWork Agent&lt;/string&gt;&lt;key&gt;CFBundleIconFile&lt;/key&gt;&lt;string&gt;AppIcon.icns&lt;/string&gt;&lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;APPL&lt;/string&gt;&lt;key&gt;CFBundleInfoDictionaryVersion&lt;/key&gt;&lt;string&gt;6.0&lt;/string&gt;&lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;$(NcwMacDevVersion)&lt;/string&gt;&lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;$(NcwMacDevVersion)&lt;/string&gt;&lt;key&gt;LSBackgroundOnly&lt;/key&gt;&lt;true/&gt;&lt;/dict&gt;&lt;/plist&gt;'))" />
+  </Target>
+
+  <!-- dotnet run 在 macOS 上从开发 .app 启动(见上);其他平台照旧 -->
+  <Target Name="NcwMacDevRunCommand" AfterTargets="ComputeRunArguments" DependsOnTargets="NcwMacDevAppPaths" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <PropertyGroup Condition="Exists('$(NcwMacDevApp)Contents/MacOS/NextCoWork')">
+      <RunCommand>$([System.IO.Path]::GetFullPath('$(NcwMacDevApp)Contents/MacOS/NextCoWork'))</RunCommand>
+    </PropertyGroup>
+  </Target>
 </Project>

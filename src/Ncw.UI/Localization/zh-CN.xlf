@@ -1708,6 +1708,12 @@
     <unit id="TrayNewSession"><segment><source>New session</source><target state="translated">新建会话</target></segment></unit>
     <unit id="TraySettings"><segment><source>Notification settings…</source><target state="translated">通知设置……</target></segment></unit>
     <unit id="TrayQuit"><segment><source>Quit NextCoWork</source><target state="translated">退出 NextCoWork</target></segment></unit>
+    <unit id="AppMenuAbout"><segment><source>About NextCoWork</source><target state="translated">关于 NextCoWork</target></segment></unit>
+    <unit id="AppMenuSettings"><segment><source>Settings…</source><target state="translated">设置…</target></segment></unit>
+    <unit id="AppMenuServices"><segment><source>Services</source><target state="translated">服务</target></segment></unit>
+    <unit id="AppMenuHide"><segment><source>Hide NextCoWork</source><target state="translated">隐藏 NextCoWork</target></segment></unit>
+    <unit id="AppMenuHideOthers"><segment><source>Hide Others</source><target state="translated">隐藏其他</target></segment></unit>
+    <unit id="AppMenuShowAll"><segment><source>Show All</source><target state="translated">全部显示</target></segment></unit>
     <unit id="TrayTooltip"><segment><source>NextCoWork: {0} waiting, {1} running</source><target state="translated">NextCoWork:{0} 项待处理,{1} 个运行中</target></segment></unit>
     <unit id="SettingsNotificationsHint"><segment><source>System notifications, the badge on the app icon, and the menu bar icon.</source><target state="translated">系统通知、应用图标上的角标和菜单栏图标。</target></segment></unit>
     <unit id="NotifySystemTitle"><segment><source>System notifications</source><target state="translated">系统通知</target></segment></unit>

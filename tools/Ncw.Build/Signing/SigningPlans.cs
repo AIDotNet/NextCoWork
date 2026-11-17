@@ -103,21 +103,55 @@ internal static class SigningPlans
     }
 
     /// <summary>
-    /// 应用包里需要单独签名的文件(路径深的在前:codesign 要由内到外,bundle 最后签)。
+    /// 应用包里需要单独签名的东西,按签名顺序(codesign 要由内到外,外层 bundle 由 <see cref="MacSignSequence"/> 最后签)。
     /// <c>Contents/MacOS</c> 下的**每个文件**都要签,包括托管 dll:.NET 应用把全部程序集放在 MacOS 里,
     /// 只签 Mach-O 的话,主程序签名时会报「In subcomponent: xxx.dll … code object is not signed at all」(Avalonia 的 macOS 发布指南也是逐个文件签)。
     /// 其余位置只签 Mach-O。
+    /// <para>
+    /// 嵌套的 .app(<c>agent/NextCoWork Agent.app</c>)自成一组、排在前面:它自己 <c>Contents/MacOS</c> 里的文件(主程序最后)→ 这个嵌套包目录本身;
+    /// 它的 Info.plist、图标由签嵌套包时封进去,不单独签。然后才是外层包的文件,外层主程序(CFBundleExecutable)最后。
+    /// </para>
     /// </summary>
     public static IReadOnlyList<string> MacNestedCode(string appDir)
     {
-        var macOs = Path.Combine(appDir, "Contents", "MacOS") + Path.DirectorySeparatorChar;
+        appDir = Path.TrimEndingDirectorySeparator(appDir);
+        var nestedApps = Directory.EnumerateDirectories(appDir, "*.app", SearchOption.AllDirectories)
+            .OrderByDescending(d => d.Count(c => c == Path.DirectorySeparatorChar))
+            .ThenBy(d => d, StringComparer.Ordinal)
+            .ToList();
+        var files = Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories)
+            .Where(f => new FileInfo(f).LinkTarget is null)
+            .ToList();
+
+        // 每个文件归属最内层的包
+        string Owner(string file) =>
+            nestedApps.FirstOrDefault(b => file.StartsWith(b + Path.DirectorySeparatorChar, StringComparison.Ordinal)) ?? appDir;
+
+        var result = new List<string>();
+        foreach (var bundle in nestedApps.Append(appDir))
+        {
+            // 外层包的主程序叫 NextCoWork(不管包目录叫什么);嵌套包的主程序和包同名
+            var mainName = bundle == appDir ? Bundle.BundleLayout.AppName : Path.GetFileNameWithoutExtension(bundle);
+            result.AddRange(BundleFiles(bundle, mainName, files.Where(f => Owner(f) == bundle)));
+            if (bundle != appDir)
+            {
+                result.Add(bundle);
+            }
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<string> BundleFiles(string bundle, string mainName, IEnumerable<string> owned)
+    {
+        var macOs = Path.Combine(bundle, "Contents", "MacOS") + Path.DirectorySeparatorChar;
         // 主程序(CFBundleExecutable)必须最后签:它签名时会检查同目录的其他文件是否都已签名。
-        var main = macOs + Bundle.BundleLayout.AppName;
-        return [.. Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories)
-            .Where(f => new FileInfo(f).LinkTarget is null && (f.StartsWith(macOs, StringComparison.Ordinal) || IsMachO(f)))
+        var main = macOs + mainName;
+        return owned
+            .Where(f => f.StartsWith(macOs, StringComparison.Ordinal) || IsMachO(f))
             .OrderBy(f => f == main ? 1 : 0)
             .ThenByDescending(f => f.Count(c => c == Path.DirectorySeparatorChar))
-            .ThenBy(f => f, StringComparer.Ordinal)];
+            .ThenBy(f => f, StringComparer.Ordinal);
     }
 
     public static ProcessSpec MacSignFile(string path, MacSignConfig config, bool withEntitlements)
@@ -147,7 +181,9 @@ internal static class SigningPlans
         var list = new List<ProcessSpec>();
         foreach (var file in nested)
         {
-            var isExecutable = IsMachO(file) && !file.EndsWith(".dylib", StringComparison.Ordinal) && !file.EndsWith(".so", StringComparison.Ordinal);
+            // 嵌套的 .app 目录和可执行文件一样带 entitlements
+            var isExecutable = Directory.Exists(file)
+                || (IsMachO(file) && !file.EndsWith(".dylib", StringComparison.Ordinal) && !file.EndsWith(".so", StringComparison.Ordinal));
             list.Add(MacSignFile(file, config, withEntitlements: isExecutable));
         }
 

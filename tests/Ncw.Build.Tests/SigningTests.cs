@@ -15,8 +15,10 @@ public class SigningPlanTests
     {
         dir.WriteBytes("A.app/Contents/MacOS/NextCoWork", MachOMagic);
         dir.WriteBytes("A.app/Contents/MacOS/Avalonia.dll", [0x4D, 0x5A, 0, 0]); // 托管 dll:在 MacOS 里也要签
-        dir.WriteBytes("A.app/Contents/MacOS/agent/ncw-agent", MachOMagic);
-        dir.WriteBytes("A.app/Contents/MacOS/agent/libe_sqlite3.dylib", MachOMagic);
+        dir.WriteBytes("A.app/Contents/MacOS/agent/NextCoWork Agent.app/Contents/MacOS/NextCoWork Agent", MachOMagic);
+        dir.WriteBytes("A.app/Contents/MacOS/agent/NextCoWork Agent.app/Contents/MacOS/libe_sqlite3.dylib", MachOMagic);
+        dir.Write("A.app/Contents/MacOS/agent/NextCoWork Agent.app/Contents/Info.plist", "<plist/>");
+        dir.Write("A.app/Contents/MacOS/agent/NextCoWork Agent.app/Contents/Resources/AppIcon.icns", "icns");
         dir.Write("A.app/Contents/Info.plist", "<plist/>");
         dir.Write("A.app/Contents/Resources/readme.txt", "text");
         return dir.Sub("A.app");
@@ -43,8 +45,17 @@ public class SigningPlanTests
         Assert.DoesNotContain(Path.Combine(app, "Contents", "Info.plist"), nested);
         Assert.DoesNotContain(Path.Combine(app, "Contents", "Resources", "readme.txt"), nested);
         Assert.Equal(Path.Combine(app, "Contents", "MacOS", "NextCoWork"), nested[^1]);
-        // 更深的(agent/ 里的)先于同级目录里的文件
-        Assert.True(nested.ToList().IndexOf(Path.Combine(app, "Contents", "MacOS", "agent", "ncw-agent")) < nested.ToList().IndexOf(Path.Combine(app, "Contents", "MacOS", "Avalonia.dll")));
+        // 嵌套的 Agent 包整组在前:它的文件(主程序最后)→ 嵌套包本身 → 外层包的文件
+        var list = nested.ToList();
+        var agentApp = Path.Combine(app, "Contents", "MacOS", "agent", "NextCoWork Agent.app");
+        var agentExe = Path.Combine(agentApp, "Contents", "MacOS", "NextCoWork Agent");
+        var agentLib = Path.Combine(agentApp, "Contents", "MacOS", "libe_sqlite3.dylib");
+        Assert.True(list.IndexOf(agentLib) < list.IndexOf(agentExe));
+        Assert.Equal(list.IndexOf(agentExe) + 1, list.IndexOf(agentApp));
+        Assert.True(list.IndexOf(agentApp) < list.IndexOf(Path.Combine(app, "Contents", "MacOS", "Avalonia.dll")));
+        // 嵌套包的 Info.plist 和图标由签嵌套包时封进去,不单独签
+        Assert.DoesNotContain(Path.Combine(agentApp, "Contents", "Info.plist"), list);
+        Assert.DoesNotContain(Path.Combine(agentApp, "Contents", "Resources", "AppIcon.icns"), list);
     }
 
     [Fact]
@@ -69,8 +80,10 @@ public class SigningPlanTests
         Assert.DoesNotContain("--entitlements", dylib.Args);
         var dll = seq.Single(s => s.Args[^1].EndsWith("Avalonia.dll", StringComparison.Ordinal));
         Assert.DoesNotContain("--entitlements", dll.Args);
-        var agent = seq.Single(s => s.Args[^1].EndsWith("ncw-agent", StringComparison.Ordinal));
+        var agent = seq.Single(s => s.Args[^1].EndsWith("NextCoWork Agent", StringComparison.Ordinal));
         Assert.Contains("--entitlements", agent.Args);
+        var agentApp = seq.Single(s => s.Args[^1].EndsWith("NextCoWork Agent.app", StringComparison.Ordinal));
+        Assert.Contains("--entitlements", agentApp.Args);
     }
 
     [Fact]

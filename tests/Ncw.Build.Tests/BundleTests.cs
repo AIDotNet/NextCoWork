@@ -12,7 +12,8 @@ public class BundleLayoutTests
         var l = new BundleLayout(TestKit.MacArm, "/o");
         Assert.Equal(Path.GetFullPath("/o") == "/o" ? "/o/NextCoWork.app" : Path.Combine("/o", "NextCoWork.app"), l.AppRoot);
         Assert.Equal(Path.Combine(l.AppRoot, "Contents", "MacOS"), l.ExecutableDir);
-        Assert.Equal(Path.Combine(l.AppRoot, "Contents", "MacOS", "agent", "ncw-agent"), l.AgentExe);
+        Assert.Equal(Path.Combine(l.AppRoot, "Contents", "MacOS", "agent", "NextCoWork Agent.app", "Contents", "MacOS", "NextCoWork Agent"), l.AgentExe);
+        Assert.Equal(Path.Combine(l.AppRoot, "Contents", "MacOS", "agent"), l.AgentRoot);
         Assert.Equal(Path.Combine(l.AppRoot, "Contents", "MacOS", "NextCoWork"), l.DesktopExe);
         Assert.Equal(Path.Combine("/o", "bundle.json"), l.ManifestPath); // 清单在包外,签名之后不动包内容
     }
@@ -49,6 +50,18 @@ public class InfoPlistTests
         Assert.Contains("<string>3.0.0-alpha.1</string>", text); // NCWFullVersion
         Assert.Contains("CFBundleExecutable", text);
         Assert.DoesNotContain("CFBundleIconFile", text); // 没有图标就不写这个键(指向不存在的文件会让 Dock 退回默认图标)
+    }
+
+    [Fact]
+    public void Agent_plist_is_a_background_app_with_its_own_id_and_no_url_scheme()
+    {
+        var text = XDocument.Parse(InfoPlist.RenderAgent("3.0.0", BundleLayout.MacIconFileName)).ToString();
+
+        Assert.Contains("<string>com.nextcowork.app.agent</string>", text);
+        Assert.Contains("<string>NextCoWork Agent</string>", text);
+        Assert.Contains("<key>LSBackgroundOnly</key>", text);
+        Assert.Contains("<key>CFBundleIconFile</key>", text);
+        Assert.DoesNotContain("CFBundleURLTypes", text);
     }
 
     [Fact]
@@ -91,8 +104,14 @@ public class BundleBuilderTests
         Assert.True(File.Exists(layout.InfoPlist));
         Assert.Equal("agent-exe", File.ReadAllText(layout.AgentExe)); // 不是桌面发布目录里那个误带的开发版 agent
         Assert.DoesNotContain(manifest.Files, f => f.Path.EndsWith(".pdb", StringComparison.Ordinal) || f.Path.Contains(".dSYM", StringComparison.Ordinal));
-        Assert.Contains(manifest.Files, f => f.Path == "Contents/MacOS/agent/ncw-agent");
-        Assert.Equal("Contents/MacOS/agent/ncw-agent", manifest.AgentExe);
+        const string agentExe = "Contents/MacOS/agent/NextCoWork Agent.app/Contents/MacOS/NextCoWork Agent";
+        Assert.Contains(manifest.Files, f => f.Path == agentExe);
+        Assert.DoesNotContain(manifest.Files, f => f.Path.EndsWith("/ncw-agent", StringComparison.Ordinal)); // 改了名,不留原名的副本
+        Assert.Equal(agentExe, manifest.AgentExe);
+        Assert.True(File.Exists(layout.MacAgentInfoPlist));
+        var agentPlist = File.ReadAllText(layout.MacAgentInfoPlist);
+        Assert.Contains("<string>NextCoWork Agent</string>", agentPlist);
+        Assert.Contains("<key>LSBackgroundOnly</key>", agentPlist);
         Assert.Equal("Contents/MacOS/NextCoWork", manifest.MainExe);
         Assert.Equal("osx-arm64", manifest.Rid);
         Assert.Equal("3.0.0-alpha.1", manifest.Version);
@@ -116,6 +135,9 @@ public class BundleBuilderTests
 
         Assert.Equal("icns-bytes", File.ReadAllText(layout.MacIconPath));
         Assert.Contains("<key>CFBundleIconFile</key>", File.ReadAllText(layout.InfoPlist));
+        // 嵌套的 Agent 包也带同一个图标(活动监视器里显示)
+        Assert.Equal("icns-bytes", File.ReadAllText(layout.MacAgentIconPath));
+        Assert.Contains("<key>CFBundleIconFile</key>", File.ReadAllText(layout.MacAgentInfoPlist));
     }
 
     [Fact]

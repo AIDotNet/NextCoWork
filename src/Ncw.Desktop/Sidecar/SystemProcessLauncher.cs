@@ -51,8 +51,8 @@ public sealed class SystemProcessLauncher : IProcessLauncher
         try
         {
             var process = Process.GetProcessById(pid);
-            // pid 会被复用:只接上确实叫 ncw-agent 的进程,绝不去终止别的程序。
-            if (process.HasExited || !process.ProcessName.StartsWith("ncw-agent", StringComparison.Ordinal))
+            // pid 会被复用:只接上确实是 Agent 的进程(ncw-agent,macOS 包里叫 NextCoWork Agent),绝不去终止别的程序。
+            if (process.HasExited || !AgentLocator.IsAgentProcessName(process.ProcessName))
             {
                 process.Dispose();
                 return null;

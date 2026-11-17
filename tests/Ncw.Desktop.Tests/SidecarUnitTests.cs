@@ -88,7 +88,7 @@ public class AgentLocatorTests
     {
         string? Env(string n) => n == "NCW_AGENT_PATH" ? "/dev/agent" : null;
         Assert.Equal("/dev/agent", AgentLocator.Locate("/app", Env, false, _ => true));
-        Assert.Equal(Path.Combine("/app", "agent", "ncw-agent"), AgentLocator.Locate("/app", Env, false, p => p != "/dev/agent"));
+        Assert.Equal(Path.Combine("/app", "agent", "ncw-agent"), AgentLocator.Locate("/app", Env, false, p => p == Path.Combine("/app", "agent", "ncw-agent")));
         Assert.Null(AgentLocator.Locate("/app", _ => null, false, _ => false));
     }
 
@@ -98,7 +98,25 @@ public class AgentLocatorTests
         // tools/Ncw.Build 的 BundleLayout:<桌面可执行文件目录>/agent/ncw-agent(macOS:Contents/MacOS/agent/)。两边各自写死同一个约定,这里钉住字面值。
         Assert.Equal("ncw-agent", AgentLocator.ExecutableName(false));
         Assert.Equal("ncw-agent.exe", AgentLocator.ExecutableName(true));
+        Assert.Equal(Path.Combine("NextCoWork Agent.app", "Contents", "MacOS", "NextCoWork Agent"), AgentLocator.MacBundledExecutable);
     }
+
+    [Fact]
+    public void On_macOS_the_nested_agent_app_wins_over_the_bare_executable()
+    {
+        var bundled = Path.Combine("/app/Contents/MacOS", "agent", "NextCoWork Agent.app", "Contents", "MacOS", "NextCoWork Agent");
+        Assert.Equal(bundled, AgentLocator.Locate("/app/Contents/MacOS", _ => null, windows: false, _ => true));
+        // Windows 没有嵌套包
+        Assert.EndsWith("ncw-agent.exe", AgentLocator.Locate("C:\\app", _ => null, windows: true, _ => true));
+    }
+
+    [Theory]
+    [InlineData("ncw-agent", true)]
+    [InlineData("NextCoWork Agent", true)]
+    [InlineData("NextCoWork", false)]
+    [InlineData("zsh", false)]
+    public void Only_agent_process_names_are_attached(string name, bool expected) =>
+        Assert.Equal(expected, AgentLocator.IsAgentProcessName(name));
 }
 
 public class PathsTests

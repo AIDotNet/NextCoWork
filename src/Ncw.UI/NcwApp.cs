@@ -22,6 +22,13 @@ public sealed record NcwUpdateContext(ClientStores Stores, IUiDispatcher Ui, Act
 /// <summary>应用。Arc 不需要 App.axaml 和样式,装配在 <see cref="NcwAppSetup"/>。</summary>
 public class NcwApp : Application
 {
+    /// <summary>
+    /// 应用名:macOS 菜单栏的应用菜单(「隐藏 / 退出 NextCoWork」)用它;不设时 Avalonia 用「Avalonia Application」(docs/design/04 §7.1「进程名称与图标」)。
+    /// </summary>
+    public const string AppName = "NextCoWork";
+
+    public NcwApp() => Name = AppName;
+
     private PrefsPersistence? _prefs;
     private LayoutPersistence? _layout;
     private IDisposable? _motion;
@@ -65,6 +72,70 @@ public class NcwApp : Application
 
     /// <summary><c>NCW_MOCK=1</c>:用模拟数据演示界面,不连接 Agent。</summary>
     public static bool UseMockData => Environment.GetEnvironmentVariable("NCW_MOCK") == "1";
+
+    /// <summary>
+    /// macOS 菜单栏的应用菜单。不挂的话 Avalonia 给的默认菜单是「About Avalonia」。这里只放本应用的两项,
+    /// 服务、隐藏、退出这些系统项由 Avalonia 补在后面。「设置…」走 <see cref="ShellViewModel.Execute"/>,和 ⌘, 同一个入口;
+    /// 不给菜单项挂快捷键,免得和窗口里的快捷键路由各管一份(用户改了快捷键时菜单不会跟着变)。
+    /// </summary>
+    private void InstallMacAppMenu(ShellViewModel shell)
+    {
+        void Show(Action then) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _attention?.ShowWindow();
+            then();
+        });
+
+        var about = new Avalonia.Controls.NativeMenuItem(NcwTexts.Get(NcwTextKind.AppMenuAbout))
+        {
+            Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => Show(() => shell.OpenSettingsSection(SettingsSection.About))),
+        };
+        var settings = new Avalonia.Controls.NativeMenuItem(NcwTexts.Get(NcwTextKind.AppMenuSettings))
+        {
+            Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => Show(() =>
+            {
+                if (!shell.Settings.IsOpen)
+                {
+                    shell.Execute(Ncw.Client.Shortcuts.AppCommand.OpenSettings);
+                }
+            })),
+        };
+        // Avalonia.Native 在平台初始化时已经给应用挂了默认菜单:「About Avalonia」+ 服务、隐藏、退出这些系统项。导出器只跟踪这份菜单的条目变化,
+        // 整个换掉不会生效(实测),所以只把第一项「About Avalonia」换成我们的,后面插上「设置…」,系统项原样保留。
+        var menu = Avalonia.Controls.NativeMenu.GetMenu(this);
+        if (menu is null)
+        {
+            menu = new Avalonia.Controls.NativeMenu();
+            Avalonia.Controls.NativeMenu.SetMenu(this, menu);
+        }
+
+        if (menu.Items.Count > 0 && menu.Items[0] is Avalonia.Controls.NativeMenuItem { Header: { } header } && header.StartsWith("About", StringComparison.Ordinal))
+        {
+            menu.Items.RemoveAt(0);
+        }
+
+        menu.Items.Insert(0, about);
+        menu.Items.Insert(1, new Avalonia.Controls.NativeMenuItemSeparator());
+        menu.Items.Insert(2, settings);
+
+        // Avalonia 补的系统项是写死的英文:按原文换成当前语言(认不出的不动)
+        foreach (var item in menu.Items.OfType<Avalonia.Controls.NativeMenuItem>())
+        {
+            NcwTextKind? kind = item.Header switch
+            {
+                "Services" => NcwTextKind.AppMenuServices,
+                "Hide Others" => NcwTextKind.AppMenuHideOthers,
+                "Show All" => NcwTextKind.AppMenuShowAll,
+                "Quit" or "Quit " + AppName => NcwTextKind.TrayQuit,
+                "Hide " + AppName => NcwTextKind.AppMenuHide,
+                _ => null,
+            };
+            if (kind is { } k)
+            {
+                item.Header = NcwTexts.Get(k);
+            }
+        }
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -145,6 +216,11 @@ public class NcwApp : Application
 
             // 提醒:系统通知、角标、托盘(菜单栏)图标;托盘开着时关窗只是藏起窗口,本机 Agent 继续运行(docs/design/03 §11.2)
             _attention = new NcwAttention(shell, window, desktop, NativeAttentionFactory?.Invoke());
+            if (OperatingSystem.IsMacOS())
+            {
+                InstallMacAppMenu(shell);
+            }
+
             if (this.TryGetFeature<IActivatableLifetime>() is { } reopen)
             {
                 reopen.Activated += (_, e) =>

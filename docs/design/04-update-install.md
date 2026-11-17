@@ -183,7 +183,10 @@ C# 控制台项目,在 `NextCoWork.slnx` 的 `/tools/` 下;单测在 `tests/Ncw.
 
 ```
 macOS    NextCoWork.app/Contents/MacOS/NextCoWork
-         NextCoWork.app/Contents/MacOS/agent/ncw-agent  + libe_sqlite3.dylib      (AppContext.BaseDirectory = Contents/MacOS/)
+         NextCoWork.app/Contents/MacOS/agent/NextCoWork Agent.app/Contents/MacOS/NextCoWork Agent  + libe_sqlite3.dylib
+                                                         (AppContext.BaseDirectory = Contents/MacOS/;Agent 是嵌套的后台应用,见下「进程名称与图标」)
+         …/NextCoWork Agent.app/Contents/Info.plist      (com.nextcowork.app.agent、LSBackgroundOnly、CFBundleIconFile)
+         …/NextCoWork Agent.app/Contents/Resources/AppIcon.icns
          NextCoWork.app/Contents/Info.plist              (com.nextcowork.app、nextcowork:// 的 CFBundleURLTypes、CFBundleIconFile、LSMinimumSystemVersion 14.0 ← 待核实)
          NextCoWork.app/Contents/Resources/AppIcon.icns  (Dock / Finder / ⌘Tab 的应用图标)
 Win/Linux NextCoWork/NextCoWork[.exe]  与  NextCoWork/agent/ncw-agent[.exe] + e_sqlite3
@@ -191,7 +194,12 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 ```
 
 **应用图标**:源图是 2.x 的 1024×1024 `build/icon.png`(已带 macOS 圆角方块和留白),放在 `src/Ncw.Desktop/Assets/AppIcon.png`;`AppIcon.icns` 用 `iconutil` 从它生成后**入库**(不在构建时生成,这样在非 macOS 主机上跨平台打 osx 包也有图标),`bundle` 把它复制进 `Contents/Resources/` 并在 Info.plist 写 `CFBundleIconFile`,缺文件就让 `bundle` 失败(而不是发出一个 Dock 里空白图标的包)。
-**不是从 .app 启动的**(`dotnet run` / IDE:进程是 `dotnet` 本身,Dock 会显示 dotnet 的默认图标)由 `MacDockIcon` 在 Avalonia 平台初始化后把内嵌的 `AppIcon.png` 设成 `NSApplication.applicationIconImage`(只改 Dock 里这一份,不写文件);从 .app 启动的不动,用包自带的图标。Windows / Linux 的窗口与安装包图标还没做。
+**不是从 .app 启动的**(IDE 直接起 `bin/` 下的可执行文件,Dock 会显示默认图标)由 `MacDockIcon` 在 Avalonia 平台初始化后把内嵌的 `AppIcon.png` 设成 `NSApplication.applicationIconImage`(只改 Dock 里这一份,不写文件);从 .app 启动的不动,用包自带的图标。Windows / Linux 的窗口与安装包图标还没做。
+
+**进程名称与图标(macOS)**:活动监视器、菜单栏、Dock、⌘Tab 里看到的名字和图标要和 2.x 一样是「NextCoWork」+ 应用图标,不能是可执行文件名 + 通用图标。
+- **应用名**:`NcwApp` 的 `Application.Name = "NextCoWork"`,并在应用上挂自己的原生应用菜单(「关于 NextCoWork」打开设置的「关于」、「设置…」);否则 Avalonia 给的默认菜单是「About Avalonia」。Avalonia 会在后面补上服务、隐藏、退出这些系统项。
+- **Agent**:活动监视器显示的是**可执行文件名**,图标取自它所在的应用包。所以 macOS 上 sidecar 是嵌套的后台应用 `agent/NextCoWork Agent.app`(`LSBackgroundOnly`:不进 Dock、没有菜单),可执行文件改名为 `NextCoWork Agent`(正好 16 个字符,内核的进程名不会被截断),和 2.x 的「NextCoWork Helper」同一个做法;Windows / Linux 不变(`agent/ncw-agent[.exe]`)。`publish-agent` 的产物仍叫 `ncw-agent`,`bundle` 放进包时改名。签名顺序:嵌套包里的文件 → 嵌套包 → 主程序 → 主包。
+- **开发构建**:`dotnet run` 在 macOS 上启动的是构建时生成的 `<输出>/NextCoWork.app`(输出目录用硬链接放进 `Contents/MacOS/`,`Info.plist` 用开发专用的 bundle id `com.nextcowork.app.dev`,不注册 `nextcowork://`,免得抢正式安装的链接),Agent 同样包成 `agent/NextCoWork Agent.app`。`bin/` 下原来的 `NextCoWork` 和 `agent/ncw-agent` 保留,测试和冒烟工具照旧用它们。
 
 **与设计的偏离**(先改文档,再实现):
 
@@ -199,7 +207,7 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 2. **`tools/Ncw.Release`(上传)还没做**:要等后端 B3 的上传接口。`Ncw.Build` 的 `manifest` 已经产出上传所需的元数据。
 3. **发布清单用分离签名**(见上),不是把签名嵌进 JSON。
 4. **macOS 的最终签名交给 vpk,不是我们的 `sign`**:vpk 会往 `.app` 里加自己的文件(更新器、`sq.version`),本机实测「`sign` 签完再 `vpk pack`」得到的 `.app` 通不过 `codesign --verify --deep --strict`(`a sealed resource is missing or invalid`)。所以 `velopack` 在设置了 `NCW_MAC_SIGN_IDENTITY` 时给 vpk 传 `--signAppIdentity`、`--signEntitlements`(vpk 要求扩展名 `.entitlements`),并在 `sign` 已经签过时加 `--signDisableDeep`(vpk 只补它自己加的文件);`.pkg` 签名与公证传 `--signInstallIdentity` / `--notaryProfile`。`sign` 仍然保留:Windows 必须先签主程序和 `ncw-agent.exe`,macOS 上用来尽早发现签名问题,并且是单独验证 sidecar 签名的入口。
-5. **`Contents/MacOS` 里的每个文件都要签,主程序最后签**。只签 Mach-O 会在签主程序时报 `In subcomponent: xxx.dll … code object is not signed at all`(.NET 应用把全部程序集放在 `Contents/MacOS`)。2.x 的另一个教训也带过来了:签名前 `xattr -cr`(位于 iCloud 同步目录里的输出会被盖上 `com.apple.FinderInfo`,`codesign` 拒绝)。
+5. **`Contents/MacOS` 里的每个文件都要签,主程序最后签**(嵌套的 `NextCoWork Agent.app` 只签它自己 `Contents/MacOS` 里的文件,再签整个嵌套包,在主程序之前)。只签 Mach-O 会在签主程序时报 `In subcomponent: xxx.dll … code object is not signed at all`(.NET 应用把全部程序集放在 `Contents/MacOS`)。2.x 的另一个教训也带过来了:签名前 `xattr -cr`(位于 iCloud 同步目录里的输出会被盖上 `com.apple.FinderInfo`,`codesign` 拒绝)。
 
 **本机实测**(macOS arm64,.NET 10.0.401,Release;`artifacts/` 在 `.gitignore` 里):
 
@@ -240,7 +248,7 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 
 在 M2 已有的 `LocalAgentSidecar` 上补全,逻辑只依赖可注入的抽象(`IProcessLauncher`、`IAgentHandshake`、`ISidecarPolicy`、`TimeProvider`),代码在 `src/Ncw.Desktop/Sidecar/`,单测在 `tests/Ncw.Desktop.Tests`(假进程 + 假握手 + 手动推进的假时钟,另有两个真实 `ncw-agent` 的冒烟)。
 
-- **找到 sidecar**:`NCW_AGENT_PATH`,否则桌面可执行文件目录下的 `agent/ncw-agent[.exe]`(7.1 的布局)。找不到:状态 `Failed / AgentNotFound`,每 5 秒再找一次(开发时可能还在构建)。
+- **找到 sidecar**:`NCW_AGENT_PATH`,否则桌面可执行文件目录下的 `agent/ncw-agent[.exe]`;macOS 上先找 `agent/NextCoWork Agent.app/Contents/MacOS/NextCoWork Agent`(7.1 的布局)。找不到:状态 `Failed / AgentNotFound`,每 5 秒再找一次(开发时可能还在构建)。
 - **就绪 = 握手成功**:本机通道 + 本机令牌 `hello` 成功才算就绪(不再看 stdout 的 ready 行);`WaitReadyAsync` 在 Agent 重启后换成新的信号,连接方不会拿到旧的「就绪」。拉起后最多等 30 秒。
 - **启动参数**(只给桌面端用,不是面向用户的命令行):`--mode local --data-root <数据根>`;令牌只经环境变量 `NCW_LOCAL_TOKEN`。「关窗后继续运行」关闭时再加 `--lifeline stdin`(stdin 管道断开,即 EOF,Agent 就优雅退出;桌面端崩溃时管道也会断)和 `--parent-pid`(双保险),所以不会留下孤儿进程;打开时两者都不带,Agent 脱离桌面端继续运行。
 - **崩溃重启与退避**:意外退出后等 1、2、4、8、16、30 秒(封顶)再重启;连续运行满 60 秒才算稳定、计数清零;连续 8 次失败后停下,状态 `Failed / CrashLoop`,等用户点重试(`Retry()`,同时可以跳过正在等待的退避)。拉不起来(权限、被安全软件拦截)和握手超时也走同一套退避。

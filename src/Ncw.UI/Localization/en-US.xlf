@@ -1708,6 +1708,12 @@
     <unit id="TrayNewSession"><segment><source>New session</source><target state="final">New session</target></segment></unit>
     <unit id="TraySettings"><segment><source>Notification settings…</source><target state="final">Notification settings…</target></segment></unit>
     <unit id="TrayQuit"><segment><source>Quit NextCoWork</source><target state="final">Quit NextCoWork</target></segment></unit>
+    <unit id="AppMenuAbout"><segment><source>About NextCoWork</source><target state="final">About NextCoWork</target></segment></unit>
+    <unit id="AppMenuSettings"><segment><source>Settings…</source><target state="final">Settings…</target></segment></unit>
+    <unit id="AppMenuServices"><segment><source>Services</source><target state="final">Services</target></segment></unit>
+    <unit id="AppMenuHide"><segment><source>Hide NextCoWork</source><target state="final">Hide NextCoWork</target></segment></unit>
+    <unit id="AppMenuHideOthers"><segment><source>Hide Others</source><target state="final">Hide Others</target></segment></unit>
+    <unit id="AppMenuShowAll"><segment><source>Show All</source><target state="final">Show All</target></segment></unit>
     <unit id="TrayTooltip"><segment><source>NextCoWork: {0} waiting, {1} running</source><target state="final">NextCoWork: {0} waiting, {1} running</target></segment></unit>
     <unit id="SettingsNotificationsHint"><segment><source>System notifications, the badge on the app icon, and the menu bar icon.</source><target state="final">System notifications, the badge on the app icon, and the menu bar icon.</target></segment></unit>
     <unit id="NotifySystemTitle"><segment><source>System notifications</source><target state="final">System notifications</target></segment></unit>

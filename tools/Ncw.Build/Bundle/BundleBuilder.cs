@@ -19,6 +19,19 @@ internal static class BundleBuilder
         Directory.CreateDirectory(layout.ExecutableDir);
         CopyTree(desktopDir, layout.ExecutableDir, skipTopLevelNames: [BundleLayout.AgentDirName]);
         CopyTree(agentDir, layout.AgentDir, skipTopLevelNames: []);
+        if (layout.IsMacBundle)
+        {
+            // 嵌套的后台应用:可执行文件改名(进程名就是文件名),配上自己的 Info.plist 和图标
+            File.Move(Path.Combine(layout.AgentDir, rid.AgentExecutable), layout.AgentExe);
+            Directory.CreateDirectory(Path.GetDirectoryName(layout.MacAgentIconPath)!);
+            if (macIcon is not null)
+            {
+                Require(macIcon, "macOS app icon (src/Ncw.Desktop/Assets/AppIcon.icns)");
+                File.Copy(macIcon, layout.MacAgentIconPath, overwrite: true);
+            }
+
+            File.WriteAllText(layout.MacAgentInfoPlist, InfoPlist.RenderAgent(version, macIcon is null ? null : BundleLayout.MacIconFileName));
+        }
 
         if (layout.IsMacBundle)
         {
