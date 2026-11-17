@@ -32,6 +32,14 @@ public sealed class Recording
 
     public JsonObject Expected => Root["expected"]!.AsObject();
 
+    /// <summary>
+    /// 这份录制要靠 POSIX shell 才能回放:钩子命令是 sh 语法(<c>echo … >&amp;2; exit 2</c>),MCP 服务器是 <c>/bin/sh -c &lt;脚本&gt;</c>。
+    /// 录制来自 macOS 上的 2.x,这些场景在 Windows 上没法原样回放(钩子在 Windows 上的行为由 <c>Ncw.Agent.Hooks.Tests</c> 覆盖)。
+    /// </summary>
+    public bool NeedsPosixShell =>
+        Input["mcpServers"] is JsonArray { Count: > 0 }
+        || (Input["files"] is JsonObject files && files.Any(f => f.Value?.GetValueKind() == System.Text.Json.JsonValueKind.String && f.Value.GetValue<string>().Contains("\"hooks\"", StringComparison.Ordinal)));
+
     public static string Directory => Path.Combine(AppContext.BaseDirectory, "Recordings");
 
     public static IReadOnlyList<Recording> LoadAll() =>
