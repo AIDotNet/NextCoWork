@@ -188,6 +188,7 @@ public sealed class DataGateTitleConverter : IValueConverter
         DataGateMode.Blocked => NcwTexts.Get(NcwTextKind.DataBlockedTitle),
         DataGateMode.Failed => NcwTexts.Get(NcwTextKind.DataFailedTitle),
         DataGateMode.Completed => NcwTexts.Get(NcwTextKind.DataDoneTitle),
+        DataGateMode.RolledBack => NcwTexts.Get(NcwTextKind.DataRolledBackTitle),
         _ => null,
     };
 

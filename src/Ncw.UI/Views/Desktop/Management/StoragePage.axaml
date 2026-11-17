@@ -176,6 +176,27 @@
                      Text="{Binding DangerFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
         </StackPanel>
       </Border>
+
+      <!-- ═══ 回到 NextCoWork 2.x(docs/design/04 §5):只在本机 owner、并且这份数据确实是从 2.x 迁移来的(迁移前的备份还在)时出现 ═══ -->
+      <TextBlock Classes="sectionTitle" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding ShowsRollback}" Text="{l:NcwText StorageRollbackTitle}" />
+      <Border Classes="card danger" IsVisible="{Binding ShowsRollback}">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText StorageRollbackHint}" />
+          <ui:NcwCheckbox IsChecked="{Binding RollbackAcknowledged, Mode=TwoWay}" Content="{l:NcwText StorageRollbackAcknowledge}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Variant="Danger" Command="{Binding RollBackToLegacyCommand}" IsEnabled="{Binding CanRollBack}" Content="{l:NcwText StorageRollbackAction}" />
+          </WrapPanel>
+          <!-- 已经请求、还没执行(退出被取消了):可以撤回 -->
+          <Border Classes="notice" IsVisible="{Binding Rollback.Pending, FallbackValue=False}" ui:NcwMotion.ShowMotion="Fade">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText StorageRollbackPending}" />
+              <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding CancelRollbackCommand}" Content="{l:NcwText StorageRollbackCancel}" />
+            </Grid>
+          </Border>
+          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding RollbackFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
+                     Text="{Binding RollbackFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        </StackPanel>
+      </Border>
     </StackPanel>
   </StackPanel>
 </UserControl>

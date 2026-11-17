@@ -81,6 +81,8 @@ public static class KeyText
 
     private static readonly Dictionary<string, NcwTextKind> ErrorKeys = new(StringComparer.Ordinal)
     {
+        // data(设置 · 数据 · 回退到 2.x)
+        ["data.rollback.unavailable"] = NcwTextKind.ErrDataRollbackUnavailable,
         // skills
         ["skills.authRequired"] = NcwTextKind.ErrSkillsAuthRequired,
         ["skills.packageTooLarge"] = NcwTextKind.ErrSkillsPackageTooLarge,

@@ -12,6 +12,8 @@ namespace Ncw.Agent.Host;
 /// <item>全新和已接管的数据根很快,在开始监听之前就准备好(<see cref="TryPrepareFast"/>);
 ///   需要接管 2.x 数据或者被挡住时,先开始监听,接管在后台进行,控制端通过 <c>data</c> 主题看进度。</item>
 /// <item>被挡住(2.x 在运行)或失败后,控制端调用 <c>data.retry</c> 重试;接管提交前的失败已由接管流程自动回退。</item>
+/// <item>回退到 2.x(04 §5,<see cref="RollbackToLegacy"/>):请求在关库之后执行(<see cref="Dispose"/>),上次没执行到的在下次启动、开库之前补上。
+///   回退之后停在 <see cref="DataStates.RolledBack"/>,不自动再接管;<c>data.retry</c> 在这个状态下就是「重新迁移」。</item>
 /// </list>
 /// </summary>
 public sealed class DataGate(
@@ -28,6 +30,9 @@ public sealed class DataGate(
     private readonly TakeoverOptions _takeover = takeoverOptions ?? new TakeoverOptions(clock);
     private DataStatus _status = new(DataStates.Preparing, null, null, null);
     private AgentDatabase? _database;
+
+    /// <summary>用户在「已回退到 2.x」的状态下明确要求重新迁移(<see cref="RetryAsync"/>)。</summary>
+    private volatile bool _retakeOver;
 
     public DataStatus Status => Volatile.Read(ref _status);
 
@@ -50,6 +55,11 @@ public sealed class DataGate(
         catch (TakeoverException)
         {
             return false;
+        }
+
+        if (RollbackToLegacy.Inspect(dataRoot).Pending)
+        {
+            return false; // 上次的回退请求没执行完:在 PrepareAsync 里补上
         }
 
         var kind = LegacyLayout.Inspect(dataRoot);
@@ -81,12 +91,55 @@ public sealed class DataGate(
         }
     }
 
+    /// <summary>
+    /// <c>data.retry</c>:重试被挡住或失败的准备;在 <see cref="DataStates.RolledBack"/> 状态下,这是用户明确要求「重新迁移」。
+    /// </summary>
+    public Task<DataStatus> RetryAsync(CancellationToken ct = default)
+    {
+        if (Status.State == DataStates.RolledBack)
+        {
+            _retakeOver = true;
+        }
+
+        return PrepareAsync(ct);
+    }
+
+    /// <summary>设置 · 数据:能不能回退到 2.x、有没有已经请求的回退。</summary>
+    public RollbackAvailability RollbackInfo() => RollbackToLegacy.Inspect(dataRoot);
+
+    /// <summary>登记回退请求(在 <see cref="Dispose"/> 关库之后执行)。不能回退时抛 <see cref="TakeoverException"/>。</summary>
+    public RollbackAvailability RequestRollback()
+    {
+        RollbackToLegacy.Request(dataRoot, clock.GetUtcNow().ToUnixTimeMilliseconds());
+        return RollbackInfo();
+    }
+
+    public RollbackAvailability CancelRollback()
+    {
+        RollbackToLegacy.Cancel(dataRoot);
+        return RollbackInfo();
+    }
+
     private string Prepare()
     {
         try
         {
             LiveOwnerCheck.AssertNone(LiveOwnerCheck.RootsFor(dataRoot), _takeover.IsAlive);
-            switch (LegacyLayout.Inspect(dataRoot))
+            // 上次请求的回退没在关库时执行到(Agent 被强杀):库还没打开,现在补上
+            if (RollbackToLegacy.RunPending(dataRoot, _takeover) is not null)
+            {
+                Console.Error.WriteLine("ncw-agent: the data root was rolled back to NextCoWork 2.x");
+            }
+
+            var kind = LegacyLayout.Inspect(dataRoot);
+            if (kind == DataRootKind.Legacy && RollbackToLegacy.IsRolledBack(dataRoot) && !_retakeOver)
+            {
+                // 用户回到了 2.x:不自动再接管,等用户在界面上明确点「重新迁移」
+                Set(new DataStatus(DataStates.RolledBack, null, null, null));
+                return Status.State;
+            }
+
+            switch (kind)
             {
                 case DataRootKind.Fresh when LegacyLayout.HasUnmigratedLayout(dataRoot):
                     throw new TakeoverException(TakeoverFailure.UnsupportedLayout, "2.x data is in an old layout.");
@@ -207,9 +260,23 @@ public sealed class DataGate(
         _ => DataReasons.Internal,
     };
 
+    /// <summary>关库;有回退请求就在关库之后执行(Agent 优雅退出的最后一步,这时会话、Run 都已经收尾)。</summary>
     public void Dispose()
     {
         Interlocked.Exchange(ref _database, null)?.Dispose();
+        try
+        {
+            if (RollbackToLegacy.RunPending(dataRoot, _takeover) is not null)
+            {
+                Console.Error.WriteLine("ncw-agent: the data root was rolled back to NextCoWork 2.x");
+            }
+        }
+        catch (Exception e) when (e is TakeoverException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            // 退出路径上不能抛;能重试的请求还留着,下次启动开库之前再做
+            Console.Error.WriteLine($"ncw-agent: rolling back to 2.x failed: {e.Message}");
+        }
+
         _gate.Dispose();
     }
 }

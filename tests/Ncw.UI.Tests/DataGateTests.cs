@@ -118,6 +118,22 @@ public class DataGateTests
     }
 
     [AvaloniaFact]
+    public void Data_handed_back_to_2x_waits_for_an_explicit_move_again()
+    {
+        var (window, vm, stores) = Render();
+
+        SetData(stores, new DataStatus(DataStates.RolledBack, null, null, null));
+        Dispatch();
+
+        Assert.True(Overlay(window).IsVisible);
+        Assert.Equal(DataGateMode.RolledBack, vm.DataGate.Mode);
+        Assert.True(vm.DataGate.IsRolledBack);
+        Assert.False(vm.DataGate.CanRetry); // 不是「出错了重试」,是「重新迁移」
+        Assert.NotEmpty(TitleOf(window));
+        Snapshot(window, "data-gate-rolled-back");
+    }
+
+    [AvaloniaFact]
     public void Completed_takeover_lists_keys_to_reenter()
     {
         var (window, _, stores) = Render();

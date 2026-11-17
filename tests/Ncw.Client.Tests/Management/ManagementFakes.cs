@@ -816,11 +816,14 @@ public sealed class ManagementKit
         Plugins = new FakePlugins(Rig.Stores);
         Dialogs = new ScriptedDialogs();
         Launcher = new FakeLauncher();
-        Pages = new ManagementPages(Rig.Stores, Settings, Skills, Commands, Hooks, Mcp, Usage, Storage, Gateway, () => Dialogs, () => Launcher, Clock, Plugins);
+        Pages = new ManagementPages(Rig.Stores, Settings, Skills, Commands, Hooks, Mcp, Usage, Storage, Gateway, () => Dialogs, () => Launcher, Clock, Plugins, Rollback);
         Scheduled = new SchedulesViewModel(Rig.Stores, Schedules, Clock);
     }
 
     public ManagementRig Rig { get; }
+
+    /// <summary>设置 · 数据 · 回退到 2.x(默认:这份数据是从 2.x 迁移来的,可以回退)。</summary>
+    public FakeRollback Rollback { get; } = new();
 
     public FixedClock Clock { get; }
 
@@ -860,4 +863,39 @@ public sealed class FixedClock(DateTimeOffset now) : TimeProvider
     public DateTimeOffset Now { get; set; } = now;
 
     public override DateTimeOffset GetUtcNow() => Now.ToUniversalTime();
+}
+
+/// <summary>回退到 2.x 的替身:记录调用;<see cref="RequestFailure"/> 不为空时请求失败(什么都不停、不退出)。</summary>
+public sealed class FakeRollback : IDataRollbackCommands
+{
+    public DataRollbackInfo Info { get; set; } = new(true, 1_700_000_000_000, false);
+
+    public ActionResult<DataRollbackInfo>? RequestFailure { get; set; }
+
+    public List<string> Calls { get; } = [];
+
+    public Task<ActionResult<DataRollbackInfo>> GetRollbackInfoAsync(CancellationToken ct = default)
+    {
+        Calls.Add("info");
+        return Task.FromResult(R.Ok(Info));
+    }
+
+    public Task<ActionResult<DataRollbackInfo>> RollBackToLegacyAsync(CancellationToken ct = default)
+    {
+        Calls.Add("rollback");
+        if (RequestFailure is { } failure)
+        {
+            return Task.FromResult(failure);
+        }
+
+        Info = Info with { Pending = true };
+        return Task.FromResult(R.Ok(Info));
+    }
+
+    public Task<ActionResult<DataRollbackInfo>> CancelRollbackAsync(CancellationToken ct = default)
+    {
+        Calls.Add("cancel");
+        Info = Info with { Pending = false };
+        return Task.FromResult(R.Ok(Info));
+    }
 }

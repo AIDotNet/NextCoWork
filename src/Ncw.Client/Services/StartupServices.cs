@@ -15,6 +15,12 @@ public interface IStartupHost
 
     /// <summary>补充的诊断文字(守护日志的尾部等);没有则 null。只含结构化事实和日志,不含令牌。</summary>
     string? Diagnostics();
+
+    /// <summary>
+    /// 让本机 Agent 优雅退出,<b>不管「关窗后继续运行」开没开</b>,之后守护不再重启它(设置 · 数据 · 回退到 2.x:回退在 Agent 关库之后执行)。
+    /// 没有本机 Agent 的宿主什么都不做。
+    /// </summary>
+    Task StopLocalAgentAsync() => Task.CompletedTask;
 }
 
 /// <summary>
