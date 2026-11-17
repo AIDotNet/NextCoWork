@@ -376,7 +376,7 @@ public sealed class GlobToolTests : IDisposable
 }
 
 /// <summary>替换 Fs 的环境包装(其余原样转给内层)。</summary>
-internal sealed class FsOverrideEnvironment(IExecutionEnvironment inner, IEnvironmentFs fs) : IExecutionEnvironment
+internal sealed class FsOverrideEnvironment(IExecutionEnvironment inner, IEnvironmentFs fs, Func<CommandSpec, Task<IEnvProcess>>? openProcess = null) : IExecutionEnvironment
 {
     public EnvironmentId Id => inner.Id;
 
@@ -404,7 +404,7 @@ internal sealed class FsOverrideEnvironment(IExecutionEnvironment inner, IEnviro
 
     public Task<EnvironmentFacts> ProbeToolsAsync(CancellationToken ct = default) => inner.ProbeToolsAsync(ct);
 
-    public Task<IEnvProcess> OpenProcessAsync(CommandSpec spec, CancellationToken ct = default) => inner.OpenProcessAsync(spec, ct);
+    public Task<IEnvProcess> OpenProcessAsync(CommandSpec spec, CancellationToken ct = default) => openProcess is null ? inner.OpenProcessAsync(spec, ct) : openProcess(spec);
 
     public Task<ITerminal> OpenTerminalAsync(TerminalSpec spec, CancellationToken ct = default) => inner.OpenTerminalAsync(spec, ct);
 
@@ -413,6 +413,18 @@ internal sealed class FsOverrideEnvironment(IExecutionEnvironment inner, IEnviro
     public Task<IPortForward> OpenLocalForwardAsync(string host, int port, CancellationToken ct = default) => inner.OpenLocalForwardAsync(host, port, ct);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>只在 <see cref="Advance"/> 时前进的时钟(只管读数,定时器照旧走系统的)。</summary>
+internal sealed class SteppedClock : TimeProvider
+{
+    private long _ticks;
+
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+    public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+
+    public void Advance(TimeSpan by) => Interlocked.Add(ref _ticks, by.Ticks);
 }
 
 public sealed class GrepToolTests : IDisposable
@@ -883,6 +895,29 @@ public sealed class GrepNativeBackendTests : IDisposable
         };
         return (k, value);
     }).ToArray();
+
+    /// <summary>
+    /// 原生后端又慢又用不了(机器满载、探测超时)时,回退的托管搜索要有自己完整的预算。
+    /// 2.x 的预算从托管搜索开始时起算;移植时写成了从尝试原生后端之前起算,原生那边一耗过 5 秒,托管搜索一个文件都不扫就报「超出预算」(Windows CI 上撞到过)。
+    /// </summary>
+    [Fact]
+    public async Task Time_lost_on_unusable_native_backends_does_not_eat_the_managed_search_budget()
+    {
+        var clock = new SteppedClock();
+        var env = new FsOverrideEnvironment(_fx.Env, _fx.Env.Fs, _ =>
+        {
+            clock.Advance(SearchLimits.SearchBudget + TimeSpan.FromSeconds(1));
+            return Task.FromException<IEnvProcess>(new EnvironmentException(EnvironmentErrorCode.ProcessStartFailed));
+        });
+        var runtime = new ToolRuntime { Environment = env, Root = _fx.Runtime.Root, GrepBackends = GrepBackends.All, Clock = clock };
+
+        var result = await _fx.Run(_grep, Fixture.Args(("pattern", "needle"), ("glob", "*.ts")), runtime: runtime);
+
+        Assert.False(result.IsError, result.Text());
+        Assert.Equal("managed", result.DetailsOrThrow().GetProperty("backend").GetString());
+        Assert.Contains("a.ts", result.Text());
+        Assert.DoesNotContain("budget", result.Text());
+    }
 
     [Theory]
     [MemberData(nameof(Cases))]
