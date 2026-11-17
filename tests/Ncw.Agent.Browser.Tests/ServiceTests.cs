@@ -63,8 +63,8 @@ public sealed class ServiceTests
 
         Assert.Equal(2, h.Launcher.Launches);
         var dirs = h.Launcher.Requests.Select(r => r.ProfileDirectory.Value).ToList();
-        Assert.EndsWith("/ws-1", dirs[0]);
-        Assert.EndsWith("/ws-2", dirs[1]);
+        Assert.Equal("ws-1", h.Launcher.Requests[0].ProfileDirectory.FileName); // 本机风格的路径:Windows 上分隔符是反斜杠
+        Assert.Equal("ws-2", h.Launcher.Requests[1].ProfileDirectory.FileName);
         Assert.NotEqual(dirs[0], dirs[1]);
     }
 

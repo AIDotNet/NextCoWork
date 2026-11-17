@@ -12,16 +12,21 @@ public class SshConfigTests
     {
         public string Home => SshConfigTests.Home;
 
-        public string? ReadAllText(string path) => files.GetValueOrDefault(path);
+        // 产品代码用 Path.Combine 拼本机路径:在 Windows 上会混进反斜杠,这份内存文件表按 '/' 存,查之前统一一下
+        public string? ReadAllText(string path) => files.GetValueOrDefault(path.Replace('\\', '/'));
 
         public IEnumerable<string> Glob(string pattern)
         {
+            pattern = pattern.Replace('\\', '/');
             var directory = pattern[..(pattern.LastIndexOf('/') + 1)];
             var filePattern = pattern[(pattern.LastIndexOf('/') + 1)..];
             return files.Keys.Where(k => k.StartsWith(directory, StringComparison.Ordinal) && !k[directory.Length..].Contains('/')
                 && SshConfig.Glob(filePattern, k[directory.Length..])).Order(StringComparer.Ordinal);
         }
     }
+
+    /// <summary>home 下的路径,按产品代码同样的方式拼(Windows 上 <c>Path.Combine</c> 用反斜杠连接 home 和后半段)。</summary>
+    private static string InHome(string rest) => Path.Combine(Home, rest);
 
     private const string Sample = """
         # global defaults
@@ -55,7 +60,7 @@ public class SshConfigTests
         Assert.Equal("alice", host.User);
         Assert.Equal(2222, host.Port);
         // IdentityFile 累加,按出现顺序:先 Host * 里的,再是 dev 自己的
-        Assert.Equal([$"{Home}/.ssh/id_default", $"{Home}/.ssh/id_dev"], host.IdentityFiles);
+        Assert.Equal([InHome(".ssh/id_default"), InHome(".ssh/id_dev")], host.IdentityFiles);
         Assert.True(host.IdentitiesOnly);
         Assert.Equal("bastion", host.ProxyJump);
         Assert.Equal(30, host.ServerAliveIntervalSeconds);
@@ -101,7 +106,7 @@ public class SshConfigTests
         var spaced = config.Resolve("spaced");
         Assert.Equal("eq.example.com", spaced.HostName);
         Assert.Equal(2201, spaced.Port);
-        Assert.Equal([$"{Home}/my keys/id one"], spaced.IdentityFiles);
+        Assert.Equal([InHome("my keys/id one")], spaced.IdentityFiles);
         Assert.Equal("quoted user", spaced.User);
         Assert.Equal("MIXED.example.com", config.Resolve("Mixed").HostName);
         // Host 模式不区分大小写
@@ -114,7 +119,7 @@ public class SshConfigTests
         var config = SshConfig.Parse("Host box\n HostName %h.internal\n User bob\n Port 2022\n IdentityFile ~/.ssh/%r@%h-%p\n IdentityFile %d/k_%n_%u\n", home: Home);
         var host = config.Resolve("box", localUser: "me");
         Assert.Equal("box.internal", host.HostName);
-        Assert.Equal([$"{Home}/.ssh/bob@box.internal-2022", $"{Home}/k_box_me"], host.IdentityFiles);
+        Assert.Equal([InHome(".ssh/bob@box.internal-2022"), $"{Home}/k_box_me"], host.IdentityFiles); // %d 是原样替换,不经 Path.Combine
     }
 
     [Fact]
@@ -293,7 +298,7 @@ public class SshRouteTests
         var route = SshRouteResolver.Resolve(new SshTarget.ConfigAlias("dev"), config, "me");
         Assert.Equal(2, route.Count);
         Assert.Equal(("bastion.example.com", 2200, "jump"), (route[0].HostName, route[0].Port, route[0].User));
-        Assert.Equal([$"{Home}/.ssh/id_bastion"], route[0].IdentityFiles);
+        Assert.Equal([Path.Combine(Home, ".ssh/id_bastion")], route[0].IdentityFiles);
         Assert.Equal(("dev.internal", 22, "alice"), (route[1].HostName, route[1].Port, route[1].User));
         Assert.Equal("[bastion.example.com]:2200", route[0].HostKeyName);
     }
