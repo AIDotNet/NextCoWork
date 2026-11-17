@@ -76,8 +76,7 @@
 │  │  ── 服务端 ──
 │  └─ Ncw.Relay/                 # 中继服务(Kestrel + WebSocket 哑管道),已实现,服务端部署物(见 09 §9)
 ├─ tools/
-│  ├─ Ncw.Build/                 # 构建、签名、公证、Velopack 打包
-│  └─ Ncw.Release/               # 上传发布产物(替代 upload-client-release.mjs)
+│  └─ Ncw.Build/                 # 构建、签名、公证、Velopack 打包、发布清单、上传(`upload`,替代 upload-client-release.mjs)
 ├─ tests/
 │  ├─ Ncw.Core.Tests/            # 派生函数、状态单调
 │  ├─ Ncw.Protocol.Tests/        # 按协议版本冻结的黄金向量、配对(含中间人)、续连、重同步、本机和局域网承载的集成测试
@@ -134,7 +133,7 @@
 | `unzipper` | System.IO.Compression | |
 | 插件宿主(BrowserWindow + iframe + MessagePort) | **Jaunt**(`JsEngine` / `JsPlugin`,每个插件独立 realm) | 见 [02 A7](02-agent.md#a7-插件与-js-执行jaunt) |
 | `sucrase`(2.x 里只用于 widget 的 TSX,**不用于插件加载**) | 插件只加载作者编译好的单文件 ESM(`.js` / `.mjs`),Agent 不转译 TypeScript | M4 评估后修正原稿「加载时擦除插件 TS」的假设,见 [02 A7.1](02-agent.md#a71-jaunt-评估与实现m4);widget 的 TSX 编译随 `widgets` 模块另议 |
-| 构建和发布脚本(`scripts/*.mjs`) | `tools/` 下的 C# 控制台项目(`Ncw.Build`,上传的 `Ncw.Release` 待做) | D16;2.x 的 `plugin-cli` 不移植;对照见 `docs/parity.md` |
+| 构建和发布脚本(`scripts/*.mjs`) | `tools/` 下的 C# 控制台项目(`Ncw.Build`,上传是它的 `upload` 子命令) | D16;2.x 的 `plugin-cli` 不移植;对照见 `docs/parity.md` |
 | `src/relay`(TS 中继) | `Ncw.Relay`(ASP.NET Core) | 全新设计,不兼容 2.x,全新部署 |
 
 ### 顺序

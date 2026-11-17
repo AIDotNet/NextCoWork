@@ -23,9 +23,9 @@
   2.x(<2.9)──electron-updater──▶ 2.9 桥接版 ──自管安装──▶ 3.0(Avalonia + 内置 ncw-agent)──Velopack──▶ 3.x
 ```
 
-**服务端门控**:feed 根据请求里的客户端版本决定下发什么。低于 2.9 的客户端只能拿到 2.9,不会直接拿到 3.0。
-2.9 通过新端点 `/api/client/updates/v3/manifest` 获取 3.0 的信息。
-→ 需要后端配合(见待定问题 Q5)。
+**服务端门控**:3.0 不进 electron-updater 的 feed(见下「为什么不直接把 3.0 放进 electron-updater 的 feed」),2.x 的 feed 里最新的就是 2.9,
+所以不需要按客户端版本门控(B1 不做)。2.9 通过 `GET /api/client/updates/v3/latest?channel=stable`(后端已实现,见 §7.4「后端」)得知各平台 3.0 的版本和安装包;
+签过名的清单原样在 `/api/client/updates/v3/{channel}/{rid}/release-manifest.json(.sig)`。
 
 ### 2.9 桥接版做的事
 
@@ -67,9 +67,9 @@
   Linux AppImage。
 - Feed:Velopack 的 `releases.{channel}.json` 是静态文件。nextco.work 新增 `/api/client/updates/v3/{channel}/` 来提供,
   通道沿用 `stable` / `beta`。**客户端实现里多了一级平台目录**:`/api/client/updates/v3/{channel}/{rid}/`(`rid` = `osx-arm64` / `win-x64` / `linux-x64`…)——
-  vpk 的产物文件名里没有平台标识,`releases.<channel>.json` 也是同名文件,几个平台放同一个目录会互相覆盖。这是对后端 B3 的假设,待和后端对齐(见 §7.4「对后端的假设」);
+  vpk 的产物文件名里没有平台标识,`releases.<channel>.json` 也是同名文件,几个平台放同一个目录会互相覆盖。后端已按这个布局实现(见 §7.4「后端」);
   feed 位置在客户端是可配置的(`NCW_UPDATE_FEED`:本地目录或本地 HTTP 服务,开发和测试用)。
-- 发布工具用 C# 重写:打包、签名、清单在 `tools/Ncw.Build`(M4 已做,见 §7),打包调用 Velopack 的 `vpk`;上传在 `tools/Ncw.Release`(待做,等 B3 的接口),沿用 2.x 的上传 token
+- 发布工具用 C# 重写:打包、签名、清单在 `tools/Ncw.Build`(M4 已做,见 §7),打包调用 Velopack 的 `vpk`;上传是 `tools/Ncw.Build upload`(见 §7.1;偏离:没有单独的 `Ncw.Release` 项目),沿用 2.x 的上传 token
   和同一组元数据(mandatory、minimumSupportedVersion、graceUntil、更新说明 base64)。
 - 强制更新的语义保持不变。`canStartNewRuns` 的判定改到 Agent 侧,由控制端上报版本,
   Agent 拒绝来自过低版本控制端的新 Run。**判定函数已经在 Core**(`Ncw.Core.Domain.UpdatePolicy`,纯函数,时钟由调用方传入,见 §7.4),
@@ -173,6 +173,7 @@ C# 控制台项目,在 `NextCoWork.slnx` 的 `/tools/` 下;单测在 `tests/Ncw.
 | `velopack` | `dotnet tool run vpk pack`:全量 `.nupkg`、portable、安装器(macOS `.pkg`;Windows `Setup.exe`;Linux AppImage)、`releases.<channel>.json` | `vpk` 版本只写在 `.config/dotnet-tools.json`(dotnet 工具包唯一能固定版本的地方);运行时库 `Velopack`(M7 桌面端接入时用)的版本写在 `Directory.Packages.props`,两者必须相同,`Ncw.Build.Tests` 核对。目标系统和宿主不同时带 vpk 的 `[os]` 前缀。macOS 签名交给 vpk(见偏离 4) |
 | `manifest` | 生成 `release-manifest.json`:各平台产物、sha256、大小、强制更新策略(mandatory / minimumSupportedVersion / graceUntil)、`url`(上传后才有,先为 null) | 有 Ed25519 私钥(`NCW_RELEASE_SIGNING_KEY` 为 32 字节种子的 base64,或 `NCW_RELEASE_SIGNING_KEY_FILE`;`NCW_RELEASE_SIGNING_KEY_ID`)就签,**没有就只写清单、`signing.status = "pending"`,并明说**(持有密钥的发布任务再跑一次)。用 BouncyCastle(.NET 没有内置 Ed25519,仓库本来就固定了它);已用 RFC 8032 §7.1 的向量验证 |
 | `manifest-verify` / `keygen` | 按公钥验证清单与分离签名并核对产物 sha256 / 生成密钥对 | `keygen` 拒绝把私钥写进仓库 |
+| `upload` | 把一个平台的 Velopack 输出目录(含签过名的 `release-manifest.json(.sig)`)发布到后端的 3.x feed:清单里每个文件 `HEAD` → `PUT /v3/blobs/{sha256}`,再 `POST /v3/{channel}/{rid}/publish` | **先在本地做客户端会做的检查**:`signing.status = signed`、用 `NCW_RELEASE_PUBLIC_KEYS`(按清单 keyId;或 `--public-key` / `NCW_RELEASE_PUBLIC_KEY`)验签、通道与平台一致、每个文件的大小和 sha256 与清单一致,任何一条不过就一个字节都不传。令牌只读 `NCW_RELEASE_UPLOAD_TOKEN`(不进日志),服务器 `--server` / `NCW_RELEASE_SERVER`(默认 `https://nextco.work`,公网只接受 HTTPS);`--dry-run` 只做本地检查;`--allow-older` 显式回滚。重跑幂等(已有的文件跳过)。后端协议见 §7.4「后端」 |
 | `build-relay` | 发布服务器中继 `ncw-relay`(`src/Ncw.Relay`,服务端部署物,09 §9.3),再对产物自检;**独立于上面桌面应用的流水线** | 形态:默认**自包含**(部署机不用装 .NET / ASP.NET 共享框架,约 123 MiB)、`--framework-dependent`(约 12 MiB,部署机要有 ASP.NET Core 10 运行时)、`--aot`(NativeAOT,约 11.5 MiB;和框架依赖互斥,不能跨操作系统编译,只支持 Release)。非 AOT 时显式 `PublishTrimmed=false`(AOT 隐含裁剪,不能再传这个参数)。**IL / 裁剪警告的规则和 `publish-agent` 完全一致**(任何 `IL…` / `ILC…` 都失败,clang `.pcm` 环境警告白名单,`--strict-warnings` 让其他警告也失败);`.pdb` / `.dSYM` 移到 `artifacts/symbols/<rid>-relay/`;产物在 `artifacts/publish/<rid>/relay/`。**自检**(`--skip-check` 跳过;产物平台和本机不同则只发布不启动并明说):以环境变量配置(回环上的空闲端口)启动产物 → `/healthz` 200 → `/metrics` 200 且非空 → 非 WebSocket 的 `GET /connect` 得 426 → 关闭 stdin(`NCW_RELAY_LIFELINE=stdin`,跨平台含 Windows)后限时内以 0 退出 → Unix 上再起一个实例发 **SIGTERM**(容器 / systemd 的停止方式)同样必须以 0 退出。健康检查路径是 `/healthz`(不是 `/health`) |
 
 **清单签名是分离签名**:对 `release-manifest.json` 的**原始字节**签,签名文件是 `release-manifest.json.sig`(base64)。验证方(2.9 里的 JS 或后端)不需要做 JSON 规范化。清单里的 `signing` 字段(算法、keyId、状态)在被签的字节里。
@@ -204,7 +205,7 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 **与设计的偏离**(先改文档,再实现):
 
 1. **D16「单文件程序(`dotnet run app.cs`)」→ 普通 C# 控制台项目**。工具链有十几个文件、要引用 `Ncw.Protocol`(`verify` 真的走协议)和 BouncyCastle、并且需要单测,单文件程序都不合适。仍然只有 C#,CI 只需要 .NET SDK。
-2. **`tools/Ncw.Release`(上传)还没做**:要等后端 B3 的上传接口。`Ncw.Build` 的 `manifest` 已经产出上传所需的元数据。
+2. **上传是 `Ncw.Build` 的 `upload` 子命令,不是单独的 `tools/Ncw.Release` 项目**:它要读清单、用同一套 Ed25519 代码验签、共用命令行解析和产物目录约定,拆成两个项目只多一份重复。
 3. **发布清单用分离签名**(见上),不是把签名嵌进 JSON。
 4. **macOS 的最终签名交给 vpk,不是我们的 `sign`**:vpk 会往 `.app` 里加自己的文件(更新器、`sq.version`),本机实测「`sign` 签完再 `vpk pack`」得到的 `.app` 通不过 `codesign --verify --deep --strict`(`a sealed resource is missing or invalid`)。所以 `velopack` 在设置了 `NCW_MAC_SIGN_IDENTITY` 时给 vpk 传 `--signAppIdentity`、`--signEntitlements`(vpk 要求扩展名 `.entitlements`),并在 `sign` 已经签过时加 `--signDisableDeep`(vpk 只补它自己加的文件);`.pkg` 签名与公证传 `--signInstallIdentity` / `--notaryProfile`。`sign` 仍然保留:Windows 必须先签主程序和 `ncw-agent.exe`,macOS 上用来尽早发现签名问题,并且是单独验证 sidecar 签名的入口。
 5. **`Contents/MacOS` 里的每个文件都要签,主程序最后签**(嵌套的 `NextCoWork Agent.app` 只签它自己 `Contents/MacOS` 里的文件,再签整个嵌套包,在主程序之前)。只签 Mach-O 会在签主程序时报 `In subcomponent: xxx.dll … code object is not signed at all`(.NET 应用把全部程序集放在 `Contents/MacOS`)。2.x 的另一个教训也带过来了:签名前 `xattr -cr`(位于 iCloud 同步目录里的输出会被盖上 `com.apple.FinderInfo`,`codesign` 拒绝)。
@@ -338,12 +339,23 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 **界面**(设置 · 本应用 · **关于**):当前版本、更新通道(稳定版 / 测试版)、检查更新、状态一句话、下载进度、更新说明、「下载更新」、「立即重启并更新」(本机还有任务在跑时提示会被中断)、必需 / 阻断卡片、**签名 / 清单类失败用单独的醒目卡片**
 (「更新已被拒绝……没有下载也没有安装任何东西」,和普通的网络 / 下载失败区分开)、上次检查时间(跨会话保留在 `<控制端目录>/update.json`,和通道一起)。文字全部在 `NcwTextKind` + 中英 xlf;失败原因按 `UpdateFail<Kind>` 约定翻译(从 2.x `update-error.test.ts` 移植的覆盖测试防止缺 key)。
 
-**对后端的假设**(B2 / B3,后端还不存在,待对齐):
-1. feed 按平台分目录:`/api/client/updates/v3/{channel}/{rid}/`,目录里是 vpk 的产物(`releases.<channel>.json`、全量 / 增量 `.nupkg`)+ `release-manifest.json` + `release-manifest.json.sig`,都是静态文件、**同一个目录**(后端不需要理解它们,只需要原样托管并按 `releases.<channel>.json` 的文件名提供)。
-2. 清单由 `tools/Ncw.Build manifest --scan <velopack 输出目录>` 生成并签名,**清单里列出这个目录里的全部包**(含历史版本的全量包,增量包要靠它们);`url` 字段目前为 null(下载地址 = feed 目录 + 文件名,不需要 `url`)。
-3. `mandatory` / `minimumSupportedVersion` / `graceUntil` 在清单里(被签名),**后端不再靠请求头决定**;2.x 的上传头(`X-Client-Mandatory` 等)由 `tools/Ncw.Release`(未做)翻译进清单。
-4. 低于 2.9 的客户端的门控(B1)不影响 3.x:3.x 只读自己的 feed。
-5. 公网只提供 HTTPS;客户端拒绝公网明文 HTTP(回环地址的 HTTP 只给开发)。
+**后端**(B2 / B3。已在后端仓库 `Codex/CoWork` 实现:`src/CoWork.Api/Endpoints/ClientFeedV3.cs`、`ClientReleaseV3Endpoints.cs`,用例在 `tests/CoWork.AuthTests`;**还没部署**):
+1. feed 按平台分目录:`/api/client/updates/v3/{channel}/{rid}/`,目录里是 vpk 的产物(`releases.<channel>.json`、全量 / 增量 `.nupkg`、安装器、portable)+ `release-manifest.json` + `release-manifest.json.sig`。
+   后端不解释包的内容,只原样返回(支持 Range 续传、ETag = sha256、`Cache-Control: no-cache`);Velopack 请求 `releases.<channel>.json` 时带的查询串不影响结果。
+2. **存储是「按 sha256 存内容 + 每个通道 × 平台一份快照」**,不进数据库(和 2.x 的 `client_release` 表完全分开):vpk 的安装器、portable、`releases.<channel>.json` 的文件名里没有版本号,
+   每次发布都是同名的新内容,不能按文件名做「上传一次不可改」。一次发布 = 先 `PUT /v3/blobs/{sha256}`(后端边收边算哈希,对不上就丢弃;已有就直接返回,重跑不重传;`HEAD` 先问),
+   再 `POST /v3/{channel}/{rid}/publish`(清单**原始字节**的 base64 + 分离签名),后端核对清单里每个文件都已上传、大小一致,再**原子地**换上新快照;换之前客户端看到的一直是上一份完整的快照。
+   旧快照留在 `history/`;默认拒绝发布比当前低的版本(`allowOlder` 显式回滚)。
+3. **后端不验 Ed25519 签名**(后端没有、也不需要发布公钥):它只检查 `signing.status = signed`、签名是 64 字节、schema / 产品 / 通道 / 平台一致、列出了 `releases.<channel>.json`。
+   **验签在 `upload` 里做**:用和 `publish-desktop` 同一份信任列表 `NCW_RELEASE_PUBLIC_KEYS`(按清单的 keyId 取),验不过就不上传——否则发出去的是一份所有客户端都会拒绝、并显示成「签名有问题」的更新。
+4. 清单由 `tools/Ncw.Build manifest --scan <velopack 输出目录>` 生成并签名,**清单里列出这个目录里的全部包**(含历史版本的全量包,增量包要靠它们);`url` 字段为 null(下载地址 = feed 目录 + 文件名)。
+5. `mandatory` / `minimumSupportedVersion` / `graceUntil` 在清单里(被签名),**后端不靠请求头决定**。
+6. `GET /v3/latest?channel=` 汇总各平台当前快照:版本、发布时间、更新说明、强制更新策略、给人下载的安装包(安装器 / portable / AppImage,不含 nupkg 与 feed 文件)和相对下载地址。官网下载页与 2.9 用它。
+7. 公网只提供 HTTPS;客户端和 `upload` 都拒绝公网明文 HTTP(回环地址的 HTTP 只给开发)。
+8. **已知窗口**:客户端分两次请求取清单和签名,恰好在两次之间换了快照,这一轮验签失败(下一轮检查恢复)。发布不频繁、两次请求相隔毫秒级,没有为它引入版本化 URL。
+9. **端到端已在本机走通**(2026-11-17,macOS arm64):后端用 `CoWork.AuthTests --serve` 起在回环上 → `upload` 把 §7.5 演练的 feed(3.0.0 + 3.0.1,6 个文件、318 MiB)传上去并发布 →
+   装好的 3.0.0 用 `NCW_UPDATE_FEED=http://127.0.0.1:5040/api/client/updates/v3/{channel}/{rid}/` 检查(43 ms)、下载增量包(157 ms)、交给更新器,3.0.1 起来后读回更新前写的数据,`report.json` 为 PASS。
+   注意:Velopack 把下载好的包缓存在 `~/Library/Caches/velopack/NextCoWork/packages`,启动时会先装上已下载未安装的更新;重复演练前要把那里的旧包挪开,否则测不到下载。
 
 ### 7.5 自更新本机演练(macOS arm64,真实的 Velopack 更新器与真实的 `ncw-agent`)
 
@@ -395,6 +407,6 @@ dotnet run --project tools/Ncw.Build -- manifest --scan artifacts/rehearsal/feed
 更新器的「等原进程退出」会报 `No such process … Continuing`(我们在它开始等之前就已经退出了,无害);更新器只等 60 秒,所以应用的退出要有兜底。
 
 **没有验证的部分**:Windows 与 Linux(没有真机:`Setup.exe` 的静默更新、`%LocalAppData%` 下的安装位置、AppImage 的替换、Windows 钩子里的协议注册、卸载钩子);Developer ID 签名与公证(演练用 ad-hoc 签名;Velopack 在 macOS 上对更新后的 `.app` 做 Gatekeeper 检查会怎样,换成正式签名后要重做一遍);`.pkg` 安装器装出来的应用(演练用的是 portable 包解出来的 `.app`);
-真实后端的 feed(B2 / B3 不存在,上面「对后端的假设」未对齐);2.8 → 2.9 → 3.0 的桥接(2.9 在 `main` 上,不在本分支);「更新前有任务在运行」的真实收尾(演练里没有跑中的 Run;Agent 对被中断 Run 的修复在 Agent 启动时,有 Agent 侧测试,没在更新场景里串起来);数据库迁移随更新执行(3.0.0 与 3.0.1 之间没有新迁移,迁移在 Agent 启动时做的这条路径没被更新场景真正走到);
+部署后的真实后端 feed(B2 / B3 已实现、本机端到端走通,但还没部署到 nextco.work);2.8 → 2.9 → 3.0 的桥接(2.9 在 `main` 上,不在本分支);「更新前有任务在运行」的真实收尾(演练里没有跑中的 Run;Agent 对被中断 Run 的修复在 Agent 启动时,有 Agent 侧测试,没在更新场景里串起来);数据库迁移随更新执行(3.0.0 与 3.0.1 之间没有新迁移,迁移在 Agent 启动时做的这条路径没被更新场景真正走到);
 界面上点按钮(演练走的是同一个 `UpdateService`,界面层由 Headless 测试覆盖)。
 

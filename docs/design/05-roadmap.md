@@ -150,9 +150,9 @@ M7 里的 2.9 桥接版也要尽早启动,因为它需要先在 2.x 用户中铺
 
 | # | 内容 | 用于 | 里程碑 |
 |---|---|---|---|
-| B1 | 更新 feed 按客户端版本门控:低于 2.9 只下发 2.9 | 升级链路 | M7(2.9 发布前就要上线) |
-| B2 | `/api/client/updates/v3/manifest`:3.0 各平台产物、sha256、Ed25519 签名 | 2.9 → 3.0 | M7。清单格式与签名(对原始字节的分离签名)已定并有契约测试(`UpdateContractTests`);端点本身不存在 |
-| B3 | Velopack feed `/api/client/updates/v3/{channel}/`,上传接口支持 Velopack 产物,沿用 mandatory / minimumSupportedVersion / graceUntil | 3.x 自更新 | M7。**客户端已对着假设实现并用本地 feed 演练**:feed 多一级平台目录 `/{channel}/{rid}/`(vpk 产物文件名不带平台)、目录里 vpk 产物 + 签名的 `release-manifest.json(.sig)` 原样托管、策略在被签名的清单里而不是请求头、公网只 HTTPS;待和后端对齐(04 §7.4「对后端的假设」) |
+| B1 | ~~更新 feed 按客户端版本门控:低于 2.9 只下发 2.9~~ | 升级链路 | **不做**:3.0 不进 electron-updater 的 feed,2.x 的 feed 里最新的就是 2.9(04 §2) |
+| B2 | 3.0 各平台的版本、安装包、sha256、Ed25519 签名的清单 | 2.9 → 3.0、官网下载页 | M7。**后端已实现,未部署**:`GET /api/client/updates/v3/latest?channel=`(汇总)+ 每个平台目录里原样的 `release-manifest.json(.sig)`(04 §7.4「后端」)。清单格式与签名有契约测试(`UpdateContractTests`) |
+| B3 | Velopack feed `/api/client/updates/v3/{channel}/{rid}/`,上传接口支持 Velopack 产物,沿用 mandatory / minimumSupportedVersion / graceUntil | 3.x 自更新 | M7。**后端已实现,未部署**(`Codex/CoWork` 分支 `feat/client-updates-v3`):按 sha256 上传 + 原子换快照,策略在被签名的清单里;上传工具是 `tools/Ncw.Build upload`(上传前验签)。本机端到端走通:`upload` → 后端 → 装好的 3.0.0 经真实 Velopack 更新到 3.0.1(04 §7.4「后端」第 9 条) |
 | B4 | 推送中继:注册 APNs / FCM 令牌,只转发不透明的事件 id | 移动端推送 | M5 |
 | B5 | 全新部署 C# 中继服务 `Ncw.Relay`(09 §9);无状态、按 deviceId 粘性路由;容量要能支撑手机和云端的长连接 | 局域网外连接、云端 | M6。**状态:服务本体与两端承载已完成**(单实例内存实现、哈希路由接口 + 421、限流 / 背压 / 空闲 / 带宽上限、指标与健康检查、结构化日志,`tests/Ncw.Relay.Tests` + `RelayLinkTests`)。**未做**:多实例部署与实例间转发(靠负载均衡器按 `d=` 粘性路由)、容量压测、TLS 证书与运维脚本(`Ncw.Build` 的 `build-relay`)、云端设备的路由下发(B7) |
 | B6 | 云端 Agent 编排服务:创建、唤醒、休眠、升级、删除;沙箱镜像;持久卷和快照 | 云端 Agent | M6。**Agent 侧已完成**:编排通道的 5 个 HTTP 端点和指令格式是契约([09 §13](09-protocol.md#13-编排控制通道m6agent--编排服务)),后端实现它们;假设见 §6.1 |

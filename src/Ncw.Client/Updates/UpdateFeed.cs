@@ -12,7 +12,7 @@ public sealed class UpdateException(UpdateFailureKind kind, string detail, Excep
 /// </summary>
 /// <remarks>
 /// <b>每个平台一个 feed 目录</b>(<c>{rid}</c>):vpk 的产物文件名里没有平台标识,<c>releases.&lt;channel&gt;.json</c> 也是同名文件,
-/// 几个平台放同一个目录会互相覆盖。这是对后端 B3 的假设,写在 docs/design/04 §3 等待对齐。
+/// 几个平台放同一个目录会互相覆盖。后端按这个布局实现(docs/design/04 §7.4「后端」)。
 /// </remarks>
 public sealed record FeedLocation(Uri? Http, string? Directory)
 {

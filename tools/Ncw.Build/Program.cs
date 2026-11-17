@@ -23,6 +23,7 @@ internal static class Program
         new ManifestCommand(),
         new ManifestVerifyCommand(),
         new KeygenCommand(),
+        new UploadCommand(),
         // 服务器中继的发布与自检,独立于上面「桌面应用」的那条流水线(中继是服务端部署物)。
         new BuildRelayCommand(),
     ];

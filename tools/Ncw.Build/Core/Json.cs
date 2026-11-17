@@ -10,6 +10,7 @@ namespace Ncw.Build.Core;
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(BundleManifest))]
 [JsonSerializable(typeof(ReleaseManifest))]
+[JsonSerializable(typeof(UploadPublishRequest))]
 internal sealed partial class BuildJson : JsonSerializerContext;
 
 internal static class JsonOut

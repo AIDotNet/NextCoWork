@@ -1,8 +1,8 @@
 namespace Ncw.Build.Release;
 
 /// <summary>
-/// 发布清单(docs/design/04 §2 步骤 4、05 B2):2.9 桥接版从 <c>/api/client/updates/v3/manifest</c> 取回它,
-/// 校验产物的 sha256,再用内置公钥校验清单的 Ed25519 签名。
+/// 发布清单(docs/design/04 §2、§7.4「后端」,05 B2 / B3):和产物一起放在 feed 目录 <c>/api/client/updates/v3/{channel}/{rid}/</c>,
+/// 3.x 客户端更新前用内置公钥校验它的 Ed25519 签名,并按它放行包;后端 <c>/v3/latest</c> 从它汇总各平台的版本与安装包。
 /// 签名是**分离签名**:对 <c>release-manifest.json</c> 的原始字节签,签名文件是 <c>release-manifest.json.sig</c>(base64)。
 /// 这样验证方(2.9 里的 JS 或任何语言)不需要做 JSON 规范化。
 /// </summary>
@@ -25,7 +25,7 @@ internal sealed record ReleasePolicy(bool Mandatory, string? MinimumSupportedVer
 
 /// <param name="Platform">RID,例如 osx-arm64。</param>
 /// <param name="Kind">velopack-setup / velopack-full / velopack-delta / portable / bundle-zip / … 由文件名推断或显式指定。</param>
-/// <param name="Url">下载地址:上传到后端之后才知道,生成清单时为 null(留给 Ncw.Release 回填后再签)。</param>
+/// <param name="Url">下载地址:上传到后端之后才知道,生成清单时为 null(下载地址 = feed 目录 + 文件名,不需要回填)。</param>
 internal sealed record ReleaseArtifact(string Platform, string Kind, string FileName, string Sha256, long Size, string? Url);
 
 /// <summary>
