@@ -18,7 +18,7 @@
     <m:PageHeader Title="{l:NcwText SettingsStorage}" Hint="{l:NcwText SettingsStorageHint}" ScopeText="{l:NcwText ScopeDevice}" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <!-- 统计 -->
       <TextBlock Classes="sectionTitle" Text="{l:NcwText StorageStatsTitle}" />
       <Border Classes="card" DataContext="{Binding Stats}" x:DataType="p:StorageStatsDto">
@@ -51,11 +51,11 @@
           </Grid>
           <ui:NcwSelect ChoiceSet="BackupFrequency" SelectedValue="{Binding BackupFrequency, Mode=TwoWay}" IsEnabled="{Binding OwnerGate.Allowed}" Label="{l:NcwText StorageBackupFrequency}" />
           <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding ApplyBackupSettingsCommand}" IsEnabled="{Binding OwnerGate.Allowed}" IsVisible="{Binding BackupDirty}" Content="{l:NcwText Apply}" />
+            <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding ApplyBackupSettingsCommand}" IsEnabled="{Binding OwnerGate.Allowed}" IsVisible="{Binding BackupDirty}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Content="{l:NcwText Apply}" />
             <ui:NcwButton Variant="Primary" Command="{Binding CreateBackupCommand}" IsEnabled="{Binding OwnerGate.Allowed}" IsLoading="{Binding IsBusy}"
                           arc:Tooltip.Tip="{Binding OwnerGate, Converter={x:Static cv:GateTextConverter.Instance}}" Content="{l:NcwText StorageBackupNow}" />
           </WrapPanel>
-          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding BackupJustCreated}" Text="{l:NcwText StorageBackupCreated}" />
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding BackupJustCreated}" ui:NcwMotion.ShowMotion="Rise" Text="{l:NcwText StorageBackupCreated}" />
         </StackPanel>
       </Border>
 
@@ -77,9 +77,9 @@
           </Grid>
         </StackPanel>
       </Border>
-      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding Vacuumed}" Text="{l:NcwText StorageVacuumed}" />
-      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding ExportDone}" Text="{l:NcwText StorageExported}" />
-      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding AttachmentsResult, Converter={x:Static ObjectConverters.IsNotNull}}"
+      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding Vacuumed}" ui:NcwMotion.ShowMotion="Rise" Text="{l:NcwText StorageVacuumed}" />
+      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding ExportDone}" ui:NcwMotion.ShowMotion="Rise" Text="{l:NcwText StorageExported}" />
+      <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding AttachmentsResult, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise"
                  Text="{Binding AttachmentsResult.Deleted, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageAttachmentsCleaned}" />
 
       <!-- ═══ 危险区 ═══ -->
@@ -92,7 +92,7 @@
           </Border>
 
           <!-- 操作入口(没有进行中的流程时) -->
-          <StackPanel Spacing="12" IsVisible="{Binding IsDangerIdle}" IsEnabled="{Binding DangerGate.Allowed}">
+          <StackPanel Spacing="12" IsVisible="{Binding IsDangerIdle}" ui:NcwMotion.ShowMotion="Fade" IsEnabled="{Binding DangerGate.Allowed}">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <StackPanel Spacing="2"><TextBlock Text="{l:NcwText StorageCleanAge}" /><TextBlock Classes="hint" Text="{l:NcwText StorageCleanAgeHint}" /></StackPanel>
               <ui:NcwSelect Grid.Column="1" ChoiceSet="CleanupAge" MinWidth="120" SelectedValue="{Binding Age, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText StorageCleanAge}" />
@@ -116,50 +116,52 @@
             </Grid>
           </StackPanel>
 
-          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsWorking}">
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsWorking}" ui:NcwMotion.ShowMotion="Fade">
             <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
             <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
           </StackPanel>
 
           <!-- 二次确认:展示预览的数字 -->
-          <Border Classes="card attention" IsVisible="{Binding IsConfirming}">
-            <StackPanel Spacing="8">
-              <TextBlock FontWeight="SemiBold" Text="{Binding Kind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=DangerConfirm}" />
-              <!-- 清理 -->
-              <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).CleanupPreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding CleanupPreview}" x:DataType="p:CleanupPreviewDto">
-                <TextBlock Text="{Binding SessionCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StoragePreviewSessions}" />
-                <TextBlock Classes="hint">
-                  <Run Text="{Binding MessageCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" /><Run Text=" · " /><Run Text="{Binding AttachmentCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitAttachments}" /><Run Text=" · " /><Run Text="{Binding Bytes, Converter={x:Static cv:BytesTextConverter.Instance}}" />
-                </TextBlock>
-                <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).HasUndeletable}" Text="{l:NcwText StoragePreviewUndeletable}" />
+          <ui:NcwCollapsible IsOpen="{Binding IsConfirming}">
+            <Border Classes="card attention">
+              <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Text="{Binding Kind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=DangerConfirm}" />
+                <!-- 清理 -->
+                <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).CleanupPreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding CleanupPreview}" x:DataType="p:CleanupPreviewDto">
+                  <TextBlock Text="{Binding SessionCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StoragePreviewSessions}" />
+                  <TextBlock Classes="hint">
+                    <Run Text="{Binding MessageCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" /><Run Text=" · " /><Run Text="{Binding AttachmentCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitAttachments}" /><Run Text=" · " /><Run Text="{Binding Bytes, Converter={x:Static cv:BytesTextConverter.Instance}}" />
+                  </TextBlock>
+                  <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).HasUndeletable}" Text="{l:NcwText StoragePreviewUndeletable}" />
+                </StackPanel>
+                <!-- 恢复 -->
+                <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).RestorePreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding RestorePreview}" x:DataType="p:RestorePreviewDto">
+                  <TextBlock Classes="mono" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="hint">
+                    <Run Text="{Binding Manifest.AppVersion}" /><Run Text=" · " /><Run Text="{Binding Manifest.SessionCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitSessions}" /><Run Text=" · " /><Run Text="{Binding Manifest.MessageCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" />
+                  </TextBlock>
+                  <TextBlock Classes="hint" IsVisible="{Binding Manifest.CreatedAt, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Manifest.CreatedAt, Converter={x:Static cv:DateTimeTextConverter.Instance}, ConverterParameter=full}" />
+                </StackPanel>
+                <!-- 导入 -->
+                <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).ImportPreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding ImportPreview}" x:DataType="p:ImportPreviewDto">
+                  <TextBlock Classes="hint">
+                    <Run Text="{Binding Sessions}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitSessions}" /><Run Text=" · " /><Run Text="{Binding Messages}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" />
+                  </TextBlock>
+                  <TextBlock Text="{Binding OverwriteCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageImportOverwrite}" />
+                  <TextBlock Classes="hint" Text="{Binding NewCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageImportNew}" />
+                </StackPanel>
+                <ui:NcwCheckbox IsChecked="{Binding Acknowledged, Mode=TwoWay}" IsVisible="{Binding NeedsAcknowledge}" Content="{l:NcwText StorageAcknowledge}" />
+                <WrapPanel Orientation="Horizontal">
+                  <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmCommand}" IsEnabled="{Binding CanConfirm}" Content="{l:NcwText StorageConfirmExecute}" />
+                  <ui:NcwButton Variant="Ghost" Command="{Binding CancelDangerCommand}" Content="{l:NcwText Cancel}" />
+                </WrapPanel>
+                <TextBlock Classes="hint" Text="{l:NcwText StorageTokenHint}" />
               </StackPanel>
-              <!-- 恢复 -->
-              <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).RestorePreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding RestorePreview}" x:DataType="p:RestorePreviewDto">
-                <TextBlock Classes="mono" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
-                <TextBlock Classes="hint">
-                  <Run Text="{Binding Manifest.AppVersion}" /><Run Text=" · " /><Run Text="{Binding Manifest.SessionCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitSessions}" /><Run Text=" · " /><Run Text="{Binding Manifest.MessageCount}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" />
-                </TextBlock>
-                <TextBlock Classes="hint" IsVisible="{Binding Manifest.CreatedAt, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Manifest.CreatedAt, Converter={x:Static cv:DateTimeTextConverter.Instance}, ConverterParameter=full}" />
-              </StackPanel>
-              <!-- 导入 -->
-              <StackPanel Spacing="2" IsVisible="{Binding $parent[UserControl].((vm:StorageViewModel)DataContext).ImportPreview, Converter={x:Static ObjectConverters.IsNotNull}}" DataContext="{Binding ImportPreview}" x:DataType="p:ImportPreviewDto">
-                <TextBlock Classes="hint">
-                  <Run Text="{Binding Sessions}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitSessions}" /><Run Text=" · " /><Run Text="{Binding Messages}" /><Run Text=" " /><Run Text="{l:NcwText StorageUnitMessages}" />
-                </TextBlock>
-                <TextBlock Text="{Binding OverwriteCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageImportOverwrite}" />
-                <TextBlock Classes="hint" Text="{Binding NewCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageImportNew}" />
-              </StackPanel>
-              <ui:NcwCheckbox IsChecked="{Binding Acknowledged, Mode=TwoWay}" IsVisible="{Binding NeedsAcknowledge}" Content="{l:NcwText StorageAcknowledge}" />
-              <WrapPanel Orientation="Horizontal">
-                <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmCommand}" IsEnabled="{Binding CanConfirm}" Content="{l:NcwText StorageConfirmExecute}" />
-                <ui:NcwButton Variant="Ghost" Command="{Binding CancelDangerCommand}" Content="{l:NcwText Cancel}" />
-              </WrapPanel>
-              <TextBlock Classes="hint" Text="{l:NcwText StorageTokenHint}" />
-            </StackPanel>
-          </Border>
+            </Border>
+          </ui:NcwCollapsible>
 
           <!-- 完成 -->
-          <Border Classes="notice" IsVisible="{Binding IsDone}">
+          <Border Classes="notice" IsVisible="{Binding IsDone}" ui:NcwMotion.ShowMotion="Rise">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <StackPanel Spacing="2">
                 <TextBlock Text="{Binding CleanupResult.Deleted, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=StorageDoneDeleted}" IsVisible="{Binding CleanupResult, Converter={x:Static ObjectConverters.IsNotNull}}" />
@@ -170,7 +172,7 @@
             </Grid>
           </Border>
 
-          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding DangerFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding DangerFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
                      Text="{Binding DangerFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
         </StackPanel>
       </Border>

@@ -16,7 +16,7 @@
     <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
       <Grid x:Name="TabRow" ColumnDefinitions="*,Auto" Margin="8,0">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <ItemsControl ItemsSource="{Binding Workspace.Tabs}">
+          <ItemsControl x:Name="TabStrip" ItemsSource="{Binding Workspace.Tabs}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <StackPanel Orientation="Horizontal" Spacing="4" />
@@ -38,7 +38,7 @@
                     <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                     <!-- 文件标签:有未保存的修改 -->
                     <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource TextMuted}"
-                            IsVisible="{Binding File.IsDirty}" arc:Tooltip.Tip="{l:NcwText FileUnsaved}" />
+                            IsVisible="{Binding File.IsDirty}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" arc:Tooltip.Tip="{l:NcwText FileUnsaved}" />
                     <ui:PlainButton Width="18" Height="18" CornerRadius="5"
                                     Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.CloseCommand}"
                                     CommandParameter="{Binding}"

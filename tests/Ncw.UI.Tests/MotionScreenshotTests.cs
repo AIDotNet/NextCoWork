@@ -258,6 +258,40 @@ public class MotionScreenshotTests : IDisposable
         Assert.Null(container.RenderTransform);
     }
 
+    [AvaloniaFact]
+    public void Switching_to_another_session_fades_the_transcript_and_only_the_new_tab_arrives()
+    {
+        NcwMotion.Apply(UiMotionLevel.Full);
+        var stores = ConversationScreenshotTests.Tools();
+        var (window, _, _) = Render(stores, 1200, true);
+        Advance(600);
+        var transcript = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "Transcript");
+        var strip = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "TabStrip");
+        Assert.False(NcwMotion.IsArriving(transcript));                               // 第一次打开会话:外层负责,转录自己不再淡一次
+        Assert.All(strip.GetRealizedContainers(), c => Assert.False(NcwMotion.IsArriving(c)));
+
+        Session(stores, "s-other", [User("o1", "另一个会话里的问题。")]);
+        stores.Selection.Update(_ => new SelectionState(Project, "s-other"));
+        Pump();
+
+        Assert.True(NcwMotion.IsArriving(transcript));                                // 换了会话:整个转录短淡入
+        var tabs = strip.GetRealizedContainers().ToList();
+        var fresh = tabs.Single(c => c.DataContext is WorkspaceTabViewModel { SessionId: "s-other" });
+        Assert.True(NcwMotion.IsArriving(fresh));                                     // 刚出现的标签淡入
+        Assert.All(tabs.Where(c => c != fresh), c => Assert.False(NcwMotion.IsArriving(c)));   // 整批重建的其它标签不闪
+        Advance(40);
+        Assert.InRange(transcript.Opacity, 0.01, 0.99);
+        Advance(400);
+        Assert.False(NcwMotion.IsArriving(transcript));
+        Assert.Equal(1, transcript.Opacity);
+        Assert.False(NcwMotion.IsArriving(fresh));
+
+        stores.Selection.Update(_ => new SelectionState(Project, "s-ncw-2"));         // 切回已有标签:转录淡入,但没有「新标签」
+        Pump();
+        Assert.All(strip.GetRealizedContainers(), c => Assert.False(NcwMotion.IsArriving(c)));
+        Advance(400);
+    }
+
     // ───────────────────────── 左右栏 ─────────────────────────
 
     private static T Part<T>(Control host, string name) where T : Control => host.GetVisualDescendants().OfType<T>().First(c => c.Name == name);

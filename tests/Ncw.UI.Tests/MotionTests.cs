@@ -557,6 +557,30 @@ public class MotionTests : IDisposable
         Assert.False(NcwMotion.IsArriving(pane));
     }
 
+    [AvaloniaFact]
+    public void ShowTier_fast_makes_a_state_swap_finish_in_the_fast_tier_while_the_default_stays_on_base()
+    {
+        var fast = new Border { Width = 28, Height = 28, IsVisible = false };
+        var standard = new Border { Width = 28, Height = 28, IsVisible = false };
+        NcwMotion.SetShowMotion(fast, NcwArrival.Grow);
+        NcwMotion.SetShowTier(fast, NcwMotionTier.Fast);
+        NcwMotion.SetShowMotion(standard, NcwArrival.Grow);
+        Show(new StackPanel { Children = { fast, standard } });
+
+        fast.IsVisible = true;
+        standard.IsVisible = true;
+        Advance(32);
+        Assert.True(fast.Opacity > standard.Opacity);                // 同一时刻,Fast 档走得更远
+        Advance(96);                                                 // 128 ms:Fast(160 ms 的减速曲线)已到终点;Base(240 ms)约 0.98,还在走
+
+        Assert.False(NcwMotion.IsArriving(fast));
+        Assert.Equal(1, fast.Opacity);
+        Assert.Null(fast.RenderTransform);
+        Assert.True(NcwMotion.IsArriving(standard));
+        Advance(400);
+        Assert.False(NcwMotion.IsArriving(standard));
+    }
+
     // ───────────────────────── 运行中指示 ─────────────────────────
 
     [AvaloniaFact]

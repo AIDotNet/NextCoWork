@@ -322,6 +322,13 @@ public partial class ConversationView : UserControl
 
         if (_vm.Session != _arrivalSession)
         {
+            // 从一个会话换到另一个:整个转录换了内容,短淡入(只动 Opacity,不碰布局与滚动;
+            // 第一次打开会话时整个对话区由外层 ShowMotion 淡入,这里不重复)。关闭级别下是空操作。
+            if (_arrivalSession is not null && _vm.Session is not null)
+            {
+                NcwMotion.Arrive(Transcript, NcwArrival.Fade, tier: NcwMotionTier.Fast);
+            }
+
             _arrivalSession = _vm.Session;
             _arrivalsArmed = false;
             _arriving.Clear();

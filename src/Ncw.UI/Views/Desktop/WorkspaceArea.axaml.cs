@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Shortcuts;
 using Ncw.Client.ViewModels;
@@ -15,7 +16,75 @@ public partial class WorkspaceArea : UserControl
     private ShellViewModel? _shell;
     private ProjectPanelViewModel? _panel;
 
-    public WorkspaceArea() => InitializeComponent();
+    /// <summary>上一次界面上显示着的标签 key(纯 UI 状态,只用来认「刚出现的标签」)。</summary>
+    private HashSet<string> _shownTabs = new(StringComparer.Ordinal);
+
+    private bool _tabsSnapshotPending;
+
+    public WorkspaceArea()
+    {
+        InitializeComponent();
+        TabStrip.ContainerPrepared += OnTabPrepared;
+    }
+
+    /// <summary>
+    /// 新标签淡入(docs/design/03 §9.4)。标签集合每次变化都整批重建(<c>WorkspaceViewModel.Refresh</c>),所以不能用 ArriveOnAttach(每次都会整排闪);
+    /// 这里按 key 认「真正新出现的」:上一批里没有、且和上一批有交集(同一个项目;换项目 / 首次显示是整批换掉,不播放),一次最多一个(新建会话、打开文件)。
+    /// </summary>
+    private void OnTabPrepared(object? sender, ContainerPreparedEventArgs e)
+    {
+        if (e.Container.DataContext is not WorkspaceTabViewModel tab)
+        {
+            return;
+        }
+
+        if (IsNewTab(tab.Key))
+        {
+            NcwMotion.Arrive(e.Container, NcwArrival.Fade, tier: NcwMotionTier.Fast);
+        }
+        else
+        {
+            NcwMotion.Rest(e.Container);
+        }
+
+        if (!_tabsSnapshotPending)
+        {
+            // 这一批 Clear + Add 都处理完后再记下「现在显示着的」
+            _tabsSnapshotPending = true;
+            Dispatcher.UIThread.Post(SnapshotTabs, DispatcherPriority.Background);
+        }
+    }
+
+    private bool IsNewTab(string key)
+    {
+        if (_shownTabs.Count == 0 || _shownTabs.Contains(key) || _shell is not { } shell)
+        {
+            return false;
+        }
+
+        var tabs = shell.Workspace.Tabs;
+        var fresh = 0;
+        var kept = false;
+        foreach (var t in tabs)
+        {
+            if (_shownTabs.Contains(t.Key))
+            {
+                kept = true;
+            }
+            else
+            {
+                fresh++;
+            }
+        }
+
+        return kept && fresh == 1;
+    }
+
+    private void SnapshotTabs()
+    {
+        _tabsSnapshotPending = false;
+        _shownTabs = _shell is { } shell ? shell.Workspace.Tabs.Select(t => t.Key).ToHashSet(StringComparer.Ordinal) : new(StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// 顶部这一行左右的留白:左边让给收起后并入的侧边栏头部,右边让给右上角常驻按钮(检查器收起时)。

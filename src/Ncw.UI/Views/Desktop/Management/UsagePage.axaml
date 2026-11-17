@@ -28,7 +28,7 @@
     <m:PageHeader Title="{l:NcwText SettingsUsage}" Hint="{l:NcwText SettingsUsageHint}" ScopeText="{l:NcwText ScopeDevice}" />
     <m:PageStatus />
 
-    <StackPanel Spacing="10" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="10" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding Range, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText UsageRange}">
         <ui:NcwSegmentedOption Value="{x:Static vm:UsageRange.Days7}" Label="{l:NcwText UsageRange7}" />
         <ui:NcwSegmentedOption Value="{x:Static vm:UsageRange.Days30}" Label="{l:NcwText UsageRange30}" />
@@ -36,7 +36,7 @@
         <ui:NcwSegmentedOption Value="{x:Static vm:UsageRange.All}" Label="{l:NcwText UsageRangeAll}" />
       </ui:NcwSegmented>
 
-      <Border Classes="card" IsVisible="{Binding IsEmptyData}">
+      <Border Classes="card" IsVisible="{Binding IsEmptyData}" ui:NcwMotion.ShowMotion="Fade">
         <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
           <lucide:LucideIcon Kind="ChartColumn" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText UsageEmptyTitle}" />
@@ -44,7 +44,7 @@
         </StackPanel>
       </Border>
 
-      <StackPanel Spacing="10" IsVisible="{Binding !IsEmptyData}">
+      <StackPanel Spacing="10" IsVisible="{Binding !IsEmptyData}" ui:NcwMotion.ShowMotion="Fade">
         <!-- 汇总 -->
         <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" DataContext="{Binding Summary}" x:DataType="p:UsageSummaryDto">
           <Border Classes="tile"><StackPanel Spacing="2">
@@ -118,12 +118,12 @@
           <ui:NcwSelect Grid.Column="1" ChoiceSet="LogStatus" MinWidth="120" SelectedValue="{Binding LogStatus, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText UsageLogsStatus}" />
           <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding SearchLogsCommand}" Content="{l:NcwText Search}" />
         </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding LogsLoading}">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding LogsLoading}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
           <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
         </StackPanel>
-        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding LogsFailure, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding LogsFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
-        <TextBlock Classes="hint" IsVisible="{Binding LogsEmpty}" Text="{l:NcwText UsageLogsEmpty}" />
+        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding LogsFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade" Text="{Binding LogsFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        <TextBlock Classes="hint" IsVisible="{Binding LogsEmpty}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText UsageLogsEmpty}" />
         <ItemsControl ItemsSource="{Binding Logs}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:UsageLogRow">

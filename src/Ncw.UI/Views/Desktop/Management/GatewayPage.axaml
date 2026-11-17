@@ -18,7 +18,7 @@
     <m:PageHeader Title="{l:NcwText SettingsGateway}" Hint="{l:NcwText SettingsGatewayHint}" ScopeText="{l:NcwText ScopeDevice}" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <!-- 始终显示的明文 HTTP 提示;暴露到局域网时更醒目 -->
       <Border Classes="notice">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
@@ -26,15 +26,17 @@
           <TextBlock Grid.Column="1" Classes="hint" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{l:NcwText GatewayPlainHttp}" />
         </Grid>
       </Border>
-      <Border Classes="card danger" IsVisible="{Binding ExposedToLan}">
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-          <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
-          <StackPanel Grid.Column="1" Spacing="2">
-            <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayLanExposedTitle}" />
-            <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
-          </StackPanel>
-        </Grid>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding ExposedToLan}">
+        <Border Classes="card danger">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <lucide:LucideIcon Kind="ShieldAlert" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Danger}" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayLanExposedTitle}" />
+              <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </ui:NcwCollapsible>
 
       <Border Classes="card">
         <StackPanel Spacing="12">
@@ -47,7 +49,7 @@
                           x:Name="EnabledSwitch" arc:Tooltip.Tip="{Binding LocalGate, Converter={x:Static cv:GateTextConverter.Instance}}" AutomationProperties.Name="{l:NcwText GatewayEnabled}" />
           </Grid>
           <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding !LocalGate.Allowed}" Text="{Binding LocalGate, Converter={x:Static cv:GateTextConverter.Instance}}" />
-          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding Status.Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding Status.Error, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
                      Text="{Binding Status.Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
 
           <!-- 允许局域网访问 -->
@@ -59,21 +61,23 @@
             <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllowRemote, Mode=OneWay}" Command="{Binding ToggleAllowRemoteCommand}" IsEnabled="{Binding CanWrite}"
                           AutomationProperties.Name="{l:NcwText GatewayAllowRemote}" />
           </Grid>
-          <Border Classes="card danger" IsVisible="{Binding ConfirmingAllowRemote}">
-            <StackPanel Spacing="8">
-              <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayAllowRemoteConfirmTitle}" />
-              <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
-              <WrapPanel Orientation="Horizontal">
-                <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmAllowRemoteCommand}" Content="{l:NcwText GatewayAllowRemoteConfirm}" />
-                <ui:NcwButton Variant="Ghost" Command="{Binding CancelAllowRemoteCommand}" Content="{l:NcwText Cancel}" />
-              </WrapPanel>
-            </StackPanel>
-          </Border>
+          <ui:NcwCollapsible IsOpen="{Binding ConfirmingAllowRemote}">
+            <Border Classes="card danger">
+              <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Text="{l:NcwText GatewayAllowRemoteConfirmTitle}" />
+                <TextBlock Classes="hint" Text="{l:NcwText GatewayLanExposedHint}" />
+                <WrapPanel Orientation="Horizontal">
+                  <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmAllowRemoteCommand}" Content="{l:NcwText GatewayAllowRemoteConfirm}" />
+                  <ui:NcwButton Variant="Ghost" Command="{Binding CancelAllowRemoteCommand}" Content="{l:NcwText Cancel}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </ui:NcwCollapsible>
         </StackPanel>
       </Border>
 
       <!-- 地址与 OpenAPI -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsListening}">
+      <StackPanel Spacing="8" IsVisible="{Binding IsListening}" ui:NcwMotion.ShowMotion="Fade">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText GatewayAddressesTitle}" />
         <Border Classes="card">
           <StackPanel Spacing="6">
@@ -98,16 +102,18 @@
       <!-- API 密钥:只在本机 owner 点「显示」后短暂可见,离开页面即清掉 -->
       <TextBlock Classes="sectionTitle" Text="{l:NcwText GatewayKeysTitle}" />
       <TextBlock Classes="hint" Text="{l:NcwText GatewayKeysHint}" />
-      <Border Classes="card danger" IsVisible="{Binding HasPendingRotate}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" Text="{Binding PendingRotate.Subject, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=GatewayRotateTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText GatewayRotateHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRotateCommand}" Content="{l:NcwText GatewayRotate}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelRotateCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingRotate}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingRotate.Subject, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=GatewayRotateTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText GatewayRotateHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRotateCommand}" Content="{l:NcwText GatewayRotate}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelRotateCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
       <ItemsControl ItemsSource="{Binding Keys}">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
@@ -117,13 +123,13 @@
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                   <StackPanel Spacing="2">
                     <TextBlock FontWeight="SemiBold" Text="{Binding Role, Converter={x:Static cv:RoleTextConverter.Instance}}" />
-                    <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding IsRevealed}" Text="{Binding Key}" />
-                    <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding !IsRevealed}" Text="••••••••••••••••" />
+                    <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding IsRevealed}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{Binding Key}" />
+                    <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding !IsRevealed}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="••••••••••••••••" />
                   </StackPanel>
                   <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" VerticalAlignment="Top">
-                    <ui:NcwButton Variant="Secondary" Command="{Binding RevealCommand}" IsVisible="{Binding !IsRevealed}" IsLoading="{Binding IsLoading}"
+                    <ui:NcwButton Variant="Secondary" Command="{Binding RevealCommand}" IsVisible="{Binding !IsRevealed}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" IsLoading="{Binding IsLoading}"
                                   IsEnabled="{Binding $parent[ItemsControl].((vm:GatewayViewModel)DataContext).LocalGate.Allowed}" Content="{l:NcwText GatewayReveal}" />
-                    <ui:NcwButton Variant="Ghost" Command="{Binding HideCommand}" IsVisible="{Binding IsRevealed}" Content="{l:NcwText GatewayHide}" />
+                    <ui:NcwButton Variant="Ghost" Command="{Binding HideCommand}" IsVisible="{Binding IsRevealed}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Content="{l:NcwText GatewayHide}" />
                     <ui:NcwButton Variant="Ghost" Command="{Binding AskRotateCommand}"
                                   IsEnabled="{Binding $parent[ItemsControl].((vm:GatewayViewModel)DataContext).LocalGate.Allowed}" Content="{l:NcwText GatewayRotate}" />
                   </WrapPanel>
@@ -135,7 +141,7 @@
       </ItemsControl>
 
       <!-- 供应商健康 -->
-      <StackPanel Spacing="6" IsVisible="{Binding IsListening}">
+      <StackPanel Spacing="6" IsVisible="{Binding IsListening}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Classes="sectionTitle" Margin="0,10,0,0" Text="{l:NcwText GatewayHealthTitle}" />
           <ui:NcwButton Grid.Column="1" Variant="Ghost" VerticalAlignment="Bottom" Command="{Binding ResetHealthCommand}" CommandParameter="" IsEnabled="{Binding CanWrite}" Content="{l:NcwText GatewayHealthReset}" />

@@ -27,7 +27,7 @@
     <desktop:AccountLoginStatus />
 
     <!-- ═══ 登录已过期 ═══ -->
-    <Border Classes="card attention" IsVisible="{Binding IsExpired}">
+    <Border Classes="card attention" IsVisible="{Binding IsExpired}" ui:NcwMotion.ShowMotion="Rise">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
         <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
         <StackPanel Grid.Column="1" Spacing="6">
@@ -51,7 +51,7 @@
         </StackPanel>
       </Grid>
     </Border>
-    <Border Classes="notice" IsVisible="{Binding SecureStorageUnavailable}">
+    <Border Classes="notice" IsVisible="{Binding SecureStorageUnavailable}" ui:NcwMotion.ShowMotion="Rise">
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
         <lucide:LucideIcon Kind="ShieldAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
         <StackPanel Grid.Column="1" Spacing="2">
@@ -62,7 +62,7 @@
     </Border>
 
     <!-- ═══ 没登录 ═══ -->
-    <Border Classes="card" IsVisible="{Binding IsSignedOut}">
+    <Border Classes="card" IsVisible="{Binding IsSignedOut}" ui:NcwMotion.ShowMotion="Fade">
       <StackPanel Spacing="8" Margin="0,6">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
           <lucide:LucideIcon Kind="CircleUser" Size="28" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
@@ -80,7 +80,7 @@
     </Border>
 
     <!-- ═══ 已登录:账户信息 ═══ -->
-    <Border Classes="card" IsVisible="{Binding IsSignedIn}">
+    <Border Classes="card" IsVisible="{Binding IsSignedIn}" ui:NcwMotion.ShowMotion="Fade">
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
           <ui:NcwAvatar VerticalAlignment="Top" DisplayName="{Binding UserLabel}" PhotoUrl="{Binding AvatarUrl}" />
@@ -99,28 +99,30 @@
           <lucide:LucideIcon Kind="Cpu" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <StackPanel Grid.Column="1" Spacing="2">
             <TextBlock Classes="hint" FontWeight="SemiBold" Text="{l:NcwText AccountAgentTitle}" />
-            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkAttached}" Text="{l:NcwText AccountAgentAttached}" />
-            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkPending}" Text="{l:NcwText AccountAgentPending}" />
-            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding AgentLinkFailed}" Text="{l:NcwText AccountAgentFailed}" />
+            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkAttached}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText AccountAgentAttached}" />
+            <TextBlock Classes="hint" IsVisible="{Binding AgentLinkPending}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText AccountAgentPending}" />
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding AgentLinkFailed}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText AccountAgentFailed}" />
           </StackPanel>
         </Grid>
       </StackPanel>
     </Border>
 
     <!-- 退出登录的二次确认 -->
-    <Border Classes="card danger" IsVisible="{Binding ConfirmingSignOut}">
-      <StackPanel Spacing="8">
-        <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutTitle}" />
-        <TextBlock Classes="hint" Text="{l:NcwText AccountSignOutHint}" />
-        <WrapPanel ItemSpacing="8" LineSpacing="8">
-          <ui:NcwButton Variant="Danger" Command="{Binding ConfirmSignOutCommand}" Content="{l:NcwText AccountSignOut}" />
-          <ui:NcwButton Variant="Ghost" Command="{Binding CancelSignOutCommand}" Content="{l:NcwText Cancel}" />
-        </WrapPanel>
-      </StackPanel>
-    </Border>
+    <ui:NcwCollapsible IsOpen="{Binding ConfirmingSignOut}">
+      <Border Classes="card danger">
+        <StackPanel Spacing="8">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutTitle}" />
+          <TextBlock Classes="hint" Text="{l:NcwText AccountSignOutHint}" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8">
+            <ui:NcwButton Variant="Danger" Command="{Binding ConfirmSignOutCommand}" Content="{l:NcwText AccountSignOut}" />
+            <ui:NcwButton Variant="Ghost" Command="{Binding CancelSignOutCommand}" Content="{l:NcwText Cancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+    </ui:NcwCollapsible>
 
     <!-- 账户操作失败(选团队、撤销控制端) -->
-    <Border Classes="problem" IsVisible="{Binding HasActionError}">
+    <Border Classes="problem" IsVisible="{Binding HasActionError}" ui:NcwMotion.ShowMotion="Rise">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
         <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
         <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding ActionError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
@@ -132,7 +134,7 @@
 
     <!-- ═══ 团队 ═══ -->
     <StackPanel Spacing="8" IsVisible="{Binding ShowsTeams}">
-      <Border Classes="card attention" IsVisible="{Binding NeedsTeam}">
+      <Border Classes="card attention" IsVisible="{Binding NeedsTeam}" ui:NcwMotion.ShowMotion="Rise">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
           <lucide:LucideIcon Kind="Users" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
           <StackPanel Grid.Column="1" Spacing="2">
@@ -181,28 +183,30 @@
           <lucide:LucideIcon Kind="RefreshCw" Size="14" />
         </ui:NcwButton>
       </Grid>
-      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ControllersLoading}">
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ControllersLoading}" ui:NcwMotion.ShowMotion="Fade">
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
         <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
       </StackPanel>
-      <Border Classes="card danger" IsVisible="{Binding ControllersFailed}">
+      <Border Classes="card danger" IsVisible="{Binding ControllersFailed}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
           <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ControllersError, Converter={x:Static cv:FailureTextConverter.Instance}}" />
           <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding LoadControllersCommand}" Content="{l:NcwText Retry}" />
         </Grid>
       </Border>
-      <TextBlock Classes="hint" IsVisible="{Binding ControllersEmptyOthers}" Text="{l:NcwText AccountControllersEmpty}" />
+      <TextBlock Classes="hint" IsVisible="{Binding ControllersEmptyOthers}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText AccountControllersEmpty}" />
 
-      <Border Classes="card danger" IsVisible="{Binding HasConfirmingRevoke}">
-        <StackPanel Spacing="8" DataContext="{Binding ConfirmingRevoke}" x:DataType="vm:ControllerRow">
-          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=AccountControllerRevokeTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText AccountControllerRevokeHint}" />
-          <WrapPanel ItemSpacing="8" LineSpacing="8">
-            <ui:NcwButton Variant="Danger" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).ConfirmRevokeCommand}" Content="{l:NcwText AccountControllerRevoke}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasConfirmingRevoke}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8" DataContext="{Binding ConfirmingRevoke}" x:DataType="vm:ControllerRow">
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=AccountControllerRevokeTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText AccountControllerRevokeHint}" />
+            <WrapPanel ItemSpacing="8" LineSpacing="8">
+              <ui:NcwButton Variant="Danger" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).ConfirmRevokeCommand}" Content="{l:NcwText AccountControllerRevoke}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <ItemsControl ItemsSource="{Binding Controllers}">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

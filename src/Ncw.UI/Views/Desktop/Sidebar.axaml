@@ -113,7 +113,7 @@
               <Border Classes="accountCard" Width="280">
                 <StackPanel Spacing="12">
                   <!-- 没登录 -->
-                  <StackPanel Spacing="10" IsVisible="{Binding !IsSignedIn}">
+                  <StackPanel Spacing="10" IsVisible="{Binding !IsSignedIn}" ui:NcwMotion.ShowMotion="Fade">
                     <StackPanel Spacing="4">
                       <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignedOutTitle}" />
                       <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText AccountSignedOutHint}" />
@@ -121,7 +121,7 @@
                     <ui:NcwButton Variant="Primary" HorizontalAlignment="Stretch" Command="{Binding SignInCommand}" IsEnabled="{Binding CanSignIn}" Content="{l:NcwText AccountSignIn}" />
                   </StackPanel>
                   <!-- 已登录:头像、名字、邮箱、团队 -->
-                  <StackPanel Spacing="10" IsVisible="{Binding IsSignedIn}">
+                  <StackPanel Spacing="10" IsVisible="{Binding IsSignedIn}" ui:NcwMotion.ShowMotion="Fade">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                       <ui:NcwAvatar Size="Large" VerticalAlignment="Center" DisplayName="{Binding UserLabel}" PhotoUrl="{Binding AvatarUrl}" />
                       <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -133,17 +133,17 @@
                       <lucide:LucideIcon Kind="Users" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                       <TextBlock Grid.Column="1" Classes="hint" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Text="{Binding SelectedTeamName}" />
                     </Grid>
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding IsExpired}">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding IsExpired}" ui:NcwMotion.ShowMotion="Rise">
                       <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
                       <TextBlock Grid.Column="1" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText AccountExpiredTitle}" />
                     </Grid>
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding NeedsTeam}">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding NeedsTeam}" ui:NcwMotion.ShowMotion="Rise">
                       <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
                       <TextBlock Grid.Column="1" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText AccountTeamRequiredTitle}" />
                     </Grid>
                   </StackPanel>
                   <!-- 退出登录的二次确认(和设置页同一个状态) -->
-                  <StackPanel Spacing="8" IsVisible="{Binding ConfirmingSignOut}">
+                  <StackPanel Spacing="8" IsVisible="{Binding ConfirmingSignOut}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast">
                     <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutTitle}" />
                     <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutHint}" />
                     <WrapPanel ItemSpacing="8" LineSpacing="8">
@@ -151,7 +151,7 @@
                       <ui:NcwButton Variant="Ghost" Command="{Binding CancelSignOutCommand}" Content="{l:NcwText Cancel}" />
                     </WrapPanel>
                   </StackPanel>
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding !ConfirmingSignOut}">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding !ConfirmingSignOut}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast">
                     <ui:NcwButton Variant="Ghost" HorizontalAlignment="Left" Click="OnOpenAccountSettings">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <lucide:LucideIcon Kind="Settings" Size="14" VerticalAlignment="Center" />
@@ -204,7 +204,7 @@
         <!-- 收件箱就地展开:现在要你处理的待办;点一条 = OpenAttention(和通知点击、⌘J 同一个入口) -->
         <ui:NcwCollapsible IsOpen="{Binding IsInboxOpen}">
           <StackPanel Margin="18,0,0,4">
-            <TextBlock Classes="hint" Margin="8,4" TextWrapping="Wrap" IsVisible="{Binding !HasInboxItems}" Text="{l:NcwText InboxEmptyTitle}" />
+            <TextBlock Classes="hint" Margin="8,4" TextWrapping="Wrap" IsVisible="{Binding !HasInboxItems}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText InboxEmptyTitle}" />
             <ItemsControl ItemsSource="{Binding InboxItems}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:InboxEntryViewModel">

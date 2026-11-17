@@ -18,7 +18,7 @@
     <m:PageHeader Title="{l:NcwText SettingsHooks}" Hint="{l:NcwText SettingsHooksHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
         <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText HooksRunNote}" />
         <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding NewCommand}" IsEnabled="{Binding CanWrite}"
@@ -31,104 +31,108 @@
       </Grid>
 
       <!-- 删除确认 -->
-      <Border Classes="card danger" IsVisible="{Binding HasPendingDelete}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" Text="{Binding PendingDelete.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=HooksDeleteTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText HooksDeleteHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmDeleteCommand}" Content="{l:NcwText DeleteLabel}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelDeleteCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingDelete}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingDelete.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=HooksDeleteTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText HooksDeleteHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmDeleteCommand}" Content="{l:NcwText DeleteLabel}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelDeleteCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- 编辑器 -->
-      <Border Classes="card" IsVisible="{Binding Editor.IsOpen}">
-        <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:HookEditorViewModel">
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText HooksNewTitle}" />
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText HooksEditTitle}" />
-          <Grid ColumnDefinitions="*,12,*">
-            <ui:NcwSelect ChoiceSet="HookEvent" SelectedValue="{Binding Event, Mode=TwoWay}" Label="{l:NcwText HooksEvent}" />
-            <ui:NcwSelect Grid.Column="2" ChoiceSet="HookType" SelectedValue="{Binding Type, Mode=TwoWay}" Label="{l:NcwText HooksType}" />
-          </Grid>
-          <ui:NcwSelect ChoiceSet="HookScope" SelectedValue="{Binding Scope, Mode=TwoWay}" IsEnabled="{Binding IsNew}" Label="{l:NcwText HooksScope}" Description="{l:NcwText HooksScopeHint}" />
-          <ui:NcwInput Text="{Binding Matcher, Mode=TwoWay}" Label="{l:NcwText HooksMatcher}" Description="{l:NcwText HooksMatcherHint}" Placeholder="Bash(git *)" />
-          <ui:NcwTextArea Text="{Binding Command, Mode=TwoWay}" IsVisible="{Binding IsCommand}" Label="{l:NcwText HooksCommand}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" MinHeight="72" />
-          <ui:NcwTextArea Text="{Binding Prompt, Mode=TwoWay}" IsVisible="{Binding !IsCommand}" Label="{l:NcwText HooksPrompt}" Description="{l:NcwText HooksPromptHint}" MinHeight="96" />
-          <Grid ColumnDefinitions="140,12,*">
-            <ui:NcwNumberField Minimum="1" Maximum="600" Step="5" UseGrouping="False" Value="{Binding TimeoutSeconds, Mode=TwoWay}" Label="{l:NcwText HooksTimeout}" />
-            <ui:NcwInput Grid.Column="2" Text="{Binding Description, Mode=TwoWay}" Label="{l:NcwText HooksDescription}" />
-          </Grid>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock VerticalAlignment="Center" Text="{l:NcwText HooksEnabled}" />
-            <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText HooksEnabled}" />
-          </Grid>
-
-          <!-- 环境变量:值只写不读(留空 = 沿用已存的值) -->
-          <StackPanel Spacing="6" IsVisible="{Binding IsCommand}">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="2">
-                <TextBlock FontWeight="SemiBold" Text="{l:NcwText HooksEnvTitle}" />
-                <TextBlock Classes="hint" Text="{l:NcwText HooksEnvHint}" />
-              </StackPanel>
-              <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).AddEnvCommand}" Content="{l:NcwText HooksEnvAdd}" />
+      <ui:NcwCollapsible IsOpen="{Binding Editor.IsOpen}">
+        <Border Classes="card">
+          <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:HookEditorViewModel">
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText HooksNewTitle}" />
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText HooksEditTitle}" />
+            <Grid ColumnDefinitions="*,12,*">
+              <ui:NcwSelect ChoiceSet="HookEvent" SelectedValue="{Binding Event, Mode=TwoWay}" Label="{l:NcwText HooksEvent}" />
+              <ui:NcwSelect Grid.Column="2" ChoiceSet="HookType" SelectedValue="{Binding Type, Mode=TwoWay}" Label="{l:NcwText HooksType}" />
             </Grid>
-            <ItemsControl ItemsSource="{Binding Env}">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:HookEnvRowViewModel">
-                  <Grid ColumnDefinitions="*,8,*,Auto">
-                    <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Placeholder="NAME" />
-                    <ui:NcwInput Grid.Column="2" Text="{Binding Value, Mode=TwoWay}" PasswordChar="•" Placeholder="{l:NcwText HooksEnvValuePlaceholder}" />
-                    <ui:NcwButton Grid.Column="3" Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).RemoveEnvCommand}" CommandParameter="{Binding}"
-                                  AutomationProperties.Name="{l:NcwText HooksEnvRemove}" arc:Tooltip.Tip="{l:NcwText HooksEnvRemove}">
-                      <lucide:LucideIcon Kind="X" Size="13" />
-                    </ui:NcwButton>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+            <ui:NcwSelect ChoiceSet="HookScope" SelectedValue="{Binding Scope, Mode=TwoWay}" IsEnabled="{Binding IsNew}" Label="{l:NcwText HooksScope}" Description="{l:NcwText HooksScopeHint}" />
+            <ui:NcwInput Text="{Binding Matcher, Mode=TwoWay}" Label="{l:NcwText HooksMatcher}" Description="{l:NcwText HooksMatcherHint}" Placeholder="Bash(git *)" />
+            <ui:NcwTextArea Text="{Binding Command, Mode=TwoWay}" IsVisible="{Binding IsCommand}" Label="{l:NcwText HooksCommand}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" MinHeight="72" />
+            <ui:NcwTextArea Text="{Binding Prompt, Mode=TwoWay}" IsVisible="{Binding !IsCommand}" Label="{l:NcwText HooksPrompt}" Description="{l:NcwText HooksPromptHint}" MinHeight="96" />
+            <Grid ColumnDefinitions="140,12,*">
+              <ui:NcwNumberField Minimum="1" Maximum="600" Step="5" UseGrouping="False" Value="{Binding TimeoutSeconds, Mode=TwoWay}" Label="{l:NcwText HooksTimeout}" />
+              <ui:NcwInput Grid.Column="2" Text="{Binding Description, Mode=TwoWay}" Label="{l:NcwText HooksDescription}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock VerticalAlignment="Center" Text="{l:NcwText HooksEnabled}" />
+              <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText HooksEnabled}" />
+            </Grid>
 
-          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" TextWrapping="Wrap" IsVisible="{Binding WarningKey, Converter={x:Static ObjectConverters.IsNotNull}}"
-                     Text="{Binding WarningKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
-          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" IsVisible="{Binding !CanSave}" />
-          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
-                     Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
-
-          <!-- 试运行结果(设备已脱敏) -->
-          <Border Classes="card" IsVisible="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestReport, Converter={x:Static ObjectConverters.IsNotNull}}">
-            <StackPanel Spacing="6" DataContext="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestReport}" x:DataType="p:HookRunReportDto">
-              <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
-                <ui:NcwStatusDot Tone="{Binding Outcome, Converter={x:Static cv:ToneConverter.Instance}}" />
-                <TextBlock FontWeight="SemiBold" Text="{Binding Outcome, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookOutcome}" />
-                <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DurationMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
-                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ExitCode, Converter={x:Static ObjectConverters.IsNotNull}}"
-                           Text="{Binding ExitCode, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=HooksExitCode}" />
-                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding Decision, Converter={x:Static ObjectConverters.IsNotNull}}"
-                           Text="{Binding Decision, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookDecision}" />
-              </WrapPanel>
-              <TextBlock Classes="hint" IsVisible="{Binding Reason, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Reason}" />
-              <TextBlock Classes="hint" Text="{Binding PromptVerdict, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookVerdict}" IsVisible="{Binding PromptVerdict, Converter={x:Static ObjectConverters.IsNotNull}}" />
-              <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Preview}" />
-              <TextBlock Classes="section" Text="stdout" IsVisible="{Binding Stdout, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Stdout, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Stdout}" />
-              <TextBlock Classes="section" Text="stderr" IsVisible="{Binding Stderr, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Stderr, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Stderr}" Foreground="{arc:ArcDesignTokenResource Danger}" />
-              <TextBlock Classes="hint" Text="{l:NcwText HooksRedacted}" />
+            <!-- 环境变量:值只写不读(留空 = 沿用已存的值) -->
+            <StackPanel Spacing="6" IsVisible="{Binding IsCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                  <TextBlock FontWeight="SemiBold" Text="{l:NcwText HooksEnvTitle}" />
+                  <TextBlock Classes="hint" Text="{l:NcwText HooksEnvHint}" />
+                </StackPanel>
+                <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).AddEnvCommand}" Content="{l:NcwText HooksEnvAdd}" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Env}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:HookEnvRowViewModel">
+                    <Grid ColumnDefinitions="*,8,*,Auto">
+                      <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Placeholder="NAME" />
+                      <ui:NcwInput Grid.Column="2" Text="{Binding Value, Mode=TwoWay}" PasswordChar="•" Placeholder="{l:NcwText HooksEnvValuePlaceholder}" />
+                      <ui:NcwButton Grid.Column="3" Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).RemoveEnvCommand}" CommandParameter="{Binding}"
+                                    AutomationProperties.Name="{l:NcwText HooksEnvRemove}" arc:Tooltip.Tip="{l:NcwText HooksEnvRemove}">
+                        <lucide:LucideIcon Kind="X" Size="13" />
+                      </ui:NcwButton>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
-          </Border>
 
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).SaveCommand}" IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
-            <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestCommand}" IsEnabled="{Binding CanSave}"
-                          IsLoading="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).IsTesting}" Content="{l:NcwText HooksTest}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).CloseEditorCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" TextWrapping="Wrap" IsVisible="{Binding WarningKey, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
+                       Text="{Binding WarningKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" IsVisible="{Binding !CanSave}" ui:NcwMotion.ShowMotion="Fade" />
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
+                       Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
 
-      <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+            <!-- 试运行结果(设备已脱敏) -->
+            <Border Classes="card" IsVisible="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestReport, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
+              <StackPanel Spacing="6" DataContext="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestReport}" x:DataType="p:HookRunReportDto">
+                <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+                  <ui:NcwStatusDot Tone="{Binding Outcome, Converter={x:Static cv:ToneConverter.Instance}}" />
+                  <TextBlock FontWeight="SemiBold" Text="{Binding Outcome, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookOutcome}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DurationMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ExitCode, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             Text="{Binding ExitCode, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=HooksExitCode}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding Decision, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             Text="{Binding Decision, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookDecision}" />
+                </WrapPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding Reason, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Reason}" />
+                <TextBlock Classes="hint" Text="{Binding PromptVerdict, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=HookVerdict}" IsVisible="{Binding PromptVerdict, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding Preview}" />
+                <TextBlock Classes="section" Text="stdout" IsVisible="{Binding Stdout, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Stdout, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Stdout}" />
+                <TextBlock Classes="section" Text="stderr" IsVisible="{Binding Stderr, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <SelectableTextBlock Classes="mono" TextWrapping="Wrap" IsVisible="{Binding Stderr, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding Stderr}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                <TextBlock Classes="hint" Text="{l:NcwText HooksRedacted}" />
+              </StackPanel>
+            </Border>
+
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).SaveCommand}" IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
+              <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).TestCommand}" IsEnabled="{Binding CanSave}"
+                            IsLoading="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).IsTesting}" Content="{l:NcwText HooksTest}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:HooksViewModel)DataContext).CloseEditorCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
+
+      <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
         <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
           <lucide:LucideIcon Kind="Webhook" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText HooksEmptyTitle}" />
@@ -174,7 +178,7 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}">
+      <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}" ui:NcwMotion.ShowMotion="Fade">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText DiagnosticsTitle}" />
         <ItemsControl ItemsSource="{Binding Diagnostics}">
           <ItemsControl.ItemTemplate>

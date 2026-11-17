@@ -13,7 +13,7 @@
     和主对话同一个归约与转录派生)。只靠回执重建的旧卡片(重启后没有子会话 id)点不开:给一句明确的提示,不发请求。
   -->
   <Grid RowDefinitions="Auto,*">
-    <Border Grid.Row="0" Classes="notice" Margin="10,2,10,6" IsVisible="{Binding HasNotice}">
+    <Border Grid.Row="0" Classes="notice" Margin="10,2,10,6" IsVisible="{Binding HasNotice}" ui:NcwMotion.ShowMotion="Rise">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
         <lucide:LucideIcon Kind="Info" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Warning}" />
         <TextBlock Grid.Column="1" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding Notice, Converter={x:Static cv:SubagentNoticeTextConverter.Instance}}" />
@@ -25,7 +25,7 @@
 
     <Panel Grid.Row="1">
       <!-- 卡片列表 -->
-      <ScrollViewer IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNull}}" HorizontalScrollBarVisibility="Disabled">
+      <ScrollViewer IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNull}}" ui:NcwMotion.ShowMotion="Fade" HorizontalScrollBarVisibility="Disabled">
         <ItemsControl Margin="10,4,10,12" ItemsSource="{Binding Subagents}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
@@ -65,7 +65,7 @@
       </ScrollViewer>
 
       <!-- 转录 -->
-      <Grid RowDefinitions="Auto,*" IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding Transcript, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade">
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="4" Margin="8,0,8,4" Height="32">
           <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CloseTranscriptCommand}" AutomationProperties.Name="{l:NcwText SubagentBack}" arc:Tooltip.Tip="{l:NcwText SubagentBack}">
             <lucide:LucideIcon Kind="ArrowLeft" Size="15" />
@@ -73,15 +73,15 @@
           <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Transcript.Title}" TextTrimming="CharacterEllipsis" />
         </Grid>
         <Panel Grid.Row="1" DataContext="{Binding Transcript}" x:DataType="vm:SubagentTranscriptViewModel">
-          <StackPanel IsVisible="{Binding IsLoading}" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
+          <StackPanel IsVisible="{Binding IsLoading}" ui:NcwMotion.ShowMotion="Fade" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
             <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <TextBlock Classes="hint" Text="{l:NcwText SubagentTranscriptLoading}" />
           </StackPanel>
-          <StackPanel IsVisible="{Binding IsUnknown}" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
+          <StackPanel IsVisible="{Binding IsUnknown}" ui:NcwMotion.ShowMotion="Fade" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
             <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource Warning}" />
             <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
           </StackPanel>
-          <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" Text="{l:NcwText SubagentTranscriptEmpty}" />
+          <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" Text="{l:NcwText SubagentTranscriptEmpty}" />
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <ItemsControl ItemsSource="{Binding Rows}" Margin="10,0,10,12">
               <ItemsControl.ItemsPanel>

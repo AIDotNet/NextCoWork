@@ -93,6 +93,17 @@ public static partial class NcwMotion
     public static void SetShowMotion(Control element, NcwArrival value) => element.SetValue(ShowMotionProperty, value);
 
     /// <summary>
+    /// <see cref="ShowMotionProperty"/> 与 <see cref="ArriveOnAttachProperty"/> 的进入时长档位(默认 <see cref="NcwMotionTier.Base"/>)。
+    /// 小图标 / 状态点 / 同一位置互换的按钮用 <see cref="NcwMotionTier.Fast"/>:它们是「状态换了」的反馈,不是新内容到达,不该拖。只在完整级别生效(减弱级别固定 Fast)。
+    /// </summary>
+    public static readonly AttachedProperty<NcwMotionTier> ShowTierProperty =
+        AvaloniaProperty.RegisterAttached<Control, Control, NcwMotionTier>("ShowTier", NcwMotionTier.Base);
+
+    public static NcwMotionTier GetShowTier(Control element) => element.GetValue(ShowTierProperty);
+
+    public static void SetShowTier(Control element, NcwMotionTier value) => element.SetValue(ShowTierProperty, value);
+
+    /// <summary>
     /// 控件每次挂到界面树上时播放一次进入。<b>只用在小的、不虚拟化的列表项上</b>(例如「已在另一台设备上处理」提示):
     /// 虚拟化列表(对话转录、文件树)回收 / 重新实例化容器时会重复触发,滚动时整屏闪动——那种列表由视图按「真正新增的行」调 <see cref="Arrive"/>。
     /// </summary>
@@ -133,7 +144,7 @@ public static partial class NcwMotion
         {
             if (e.GetNewValue<bool>() && GetShowMotion(c) is var kind and not NcwArrival.None && c.IsAttachedToVisualTree())
             {
-                Arrive(c, kind);
+                Arrive(c, kind, tier: GetShowTier(c));
             }
         });
     }
@@ -142,7 +153,7 @@ public static partial class NcwMotion
     {
         if (sender is Control c)
         {
-            Arrive(c, GetArriveOnAttach(c));
+            Arrive(c, GetArriveOnAttach(c), tier: GetShowTier(c));
         }
     }
 

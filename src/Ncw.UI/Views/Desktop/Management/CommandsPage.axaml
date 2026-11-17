@@ -15,16 +15,16 @@
     <m:PageHeader Title="{l:NcwText SettingsCommands}" Hint="{l:NcwText SettingsCommandsHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <ui:NcwSearchField Text="{Binding Filter, Mode=TwoWay}" PlaceholderText="{l:NcwText CommandsFilter}" />
-      <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+      <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
         <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
           <lucide:LucideIcon Kind="SquareSlash" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText CommandsEmptyTitle}" />
           <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText CommandsEmptyHint}" />
         </StackPanel>
       </Border>
-      <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText CommandsNoMatch}" />
+      <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText CommandsNoMatch}" />
 
       <ItemsControl ItemsSource="{Binding Commands}">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -49,7 +49,7 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}">
+      <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}" ui:NcwMotion.ShowMotion="Fade">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText DiagnosticsTitle}" />
         <ItemsControl ItemsSource="{Binding Diagnostics}">
           <ItemsControl.ItemTemplate>

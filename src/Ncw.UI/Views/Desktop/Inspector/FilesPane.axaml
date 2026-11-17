@@ -53,7 +53,7 @@
     <!-- 内容区:树 / 搜索结果 -->
     <Panel Grid.Row="3">
       <!-- 文件树 -->
-      <Grid IsVisible="{Binding ShowsTree}">
+      <Grid IsVisible="{Binding ShowsTree}" ui:NcwMotion.ShowMotion="Fade">
         <ui:NcwTreeView x:Name="Tree" Margin="4,0,4,6" Background="Transparent" BorderThickness="0"
                         RowHeight="28" ShowIcons="False" ItemsSource="{Binding Tree.Roots}" SelectedItem="{Binding Selected, Mode=TwoWay}">
           <ui:NcwTreeView.ItemTemplate>
@@ -73,13 +73,13 @@
       </Grid>
 
       <!-- 搜索结果 -->
-      <ScrollViewer IsVisible="{Binding ShowsSearch}" HorizontalScrollBarVisibility="Disabled">
+      <ScrollViewer IsVisible="{Binding ShowsSearch}" ui:NcwMotion.ShowMotion="Fade" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="6,0,6,12" Spacing="2">
-          <StackPanel Orientation="Horizontal" Spacing="8" Margin="8,4" IsVisible="{Binding Search.IsSearching}">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="8,4" IsVisible="{Binding Search.IsSearching}" ui:NcwMotion.ShowMotion="Fade">
             <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <TextBlock Classes="hint" Text="{l:NcwText FilesSearching}" />
           </StackPanel>
-          <TextBlock Classes="hint" Margin="8,8" IsVisible="{Binding Search.HasNoResults}" Text="{l:NcwText FilesNoResults}" />
+          <TextBlock Classes="hint" Margin="8,8" IsVisible="{Binding Search.HasNoResults}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText FilesNoResults}" />
           <insp:ProblemBar Margin="4,0" Problem="{Binding Search.Failure}" />
           <ItemsControl ItemsSource="{Binding Search.Results}">
             <ItemsControl.ItemTemplate>
@@ -99,7 +99,7 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding Search.Truncated}" Text="{l:NcwText FilesResultsTruncated}" />
+          <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding Search.Truncated}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText FilesResultsTruncated}" />
         </StackPanel>
       </ScrollViewer>
     </Panel>

@@ -72,7 +72,7 @@
           BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource Surface}">
     <StackPanel Spacing="6">
       <!-- 排队中的消息 -->
-      <ItemsControl ItemsSource="{Binding Queue}" IsVisible="{Binding HasQueue}">
+      <ItemsControl ItemsSource="{Binding Queue}" IsVisible="{Binding HasQueue}" ui:NcwMotion.ShowMotion="Rise">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Spacing="4" />
@@ -99,18 +99,18 @@
       </ItemsControl>
 
       <!-- 不能发送的原因 / 发送失败 -->
-      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasBlock}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasBlock}" ui:NcwMotion.ShowMotion="Rise">
         <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" VerticalAlignment="Center" TextWrapping="Wrap"
                    Text="{Binding State, Converter={x:Static cv:ComposerHintConverter.Block}}" />
         <!-- 没有可用的模型:不止告诉人「去设置里加」,直接给入口(03 §11.4) -->
         <ui:NcwButton Grid.Column="1" Variant="Primary" Height="26" MinHeight="0" Padding="10,0" Command="{Binding OpenProviderSettingsCommand}"
                       IsVisible="{Binding NeedsProvider}" Content="{l:NcwText ComposerAddProvider}" />
       </Grid>
-      <TextBlock Classes="hint" IsVisible="{Binding HasFailure}" Foreground="{arc:ArcDesignTokenResource Danger}"
+      <TextBlock Classes="hint" IsVisible="{Binding HasFailure}" ui:NcwMotion.ShowMotion="Fade" Foreground="{arc:ArcDesignTokenResource Danger}"
                  Text="{Binding LastFailure, Converter={x:Static cv:ComposerHintConverter.Failure}}" />
 
       <!-- 附件托盘:选好的照片 / 文件,上传进度、失败原因、重试 / 移除 -->
-      <ItemsControl ItemsSource="{Binding Attachments.Items}" IsVisible="{Binding Attachments.HasItems}">
+      <ItemsControl ItemsSource="{Binding Attachments.Items}" IsVisible="{Binding Attachments.HasItems}" ui:NcwMotion.ShowMotion="Rise">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Spacing="6" />
@@ -158,7 +158,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <TextBlock Classes="hint" IsVisible="{Binding Attachments.IsUploading}" Text="{l:NcwText AttachmentUploadingWait}" />
+      <TextBlock Classes="hint" IsVisible="{Binding Attachments.IsUploading}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText AttachmentUploadingWait}" />
 
       <!-- 书写区:Arc 的 token 编辑器(不画自己的框,边框是这张卡片)。`@文件`、开头的 `/命令` 是整体的 token,规则在 ComposerLogic.Mentions。
            Enter 由 code-behind 处理(发送 / 排队 / 选中候选),所以 SubmitOnEnter 关掉 -->
@@ -238,20 +238,20 @@
             </StackPanel>
           </ui:PlainButton>
           <!-- 运行中有文字:插话(立即送进当前 Run) -->
-          <ui:NcwButton Variant="Secondary" Height="28" MinHeight="0" Padding="10,0" Command="{Binding SteerCommand}" IsVisible="{Binding State.CanSteer}"
+          <ui:NcwButton Variant="Secondary" Height="28" MinHeight="0" Padding="10,0" Command="{Binding SteerCommand}" IsVisible="{Binding State.CanSteer}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast"
                         arc:Tooltip.Tip="{l:NcwText ComposerSteerHint}" Content="{l:NcwText ComposerSteer}" />
           <!-- 主按钮(圆形):发送 / 排队 / 停止 -->
           <ui:NcwButton x:Name="SendButton" Variant="Primary" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" CornerRadius="14" Command="{Binding SubmitCommand}"
-                        IsEnabled="{Binding State.CanSend}" IsVisible="{Binding PrimaryIsSend}"
+                        IsEnabled="{Binding State.CanSend}" IsVisible="{Binding PrimaryIsSend}" ui:NcwMotion.ShowMotion="Grow" ui:NcwMotion.ShowTier="Fast"
                         AutomationProperties.Name="{l:NcwText Send}" arc:Tooltip.Tip="{l:NcwText Send}">
             <lucide:LucideIcon Kind="ArrowUp" Size="15" />
           </ui:NcwButton>
           <ui:NcwButton x:Name="QueueButton" Variant="Primary" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" CornerRadius="14" Command="{Binding SubmitCommand}"
-                        IsVisible="{Binding PrimaryIsQueue}" AutomationProperties.Name="{l:NcwText ComposerQueue}" arc:Tooltip.Tip="{l:NcwText ComposerQueueHint}">
+                        IsVisible="{Binding PrimaryIsQueue}" ui:NcwMotion.ShowMotion="Grow" ui:NcwMotion.ShowTier="Fast" AutomationProperties.Name="{l:NcwText ComposerQueue}" arc:Tooltip.Tip="{l:NcwText ComposerQueueHint}">
             <lucide:LucideIcon Kind="ListPlus" Size="15" />
           </ui:NcwButton>
           <ui:NcwButton x:Name="StopButton" Variant="Danger" Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0" CornerRadius="14" Command="{Binding StopCommand}"
-                        IsVisible="{Binding PrimaryIsStop}" AutomationProperties.Name="{l:NcwText Stop}" arc:Tooltip.Tip="{l:NcwText Stop}">
+                        IsVisible="{Binding PrimaryIsStop}" ui:NcwMotion.ShowMotion="Grow" ui:NcwMotion.ShowTier="Fast" AutomationProperties.Name="{l:NcwText Stop}" arc:Tooltip.Tip="{l:NcwText Stop}">
             <lucide:LucideIcon Kind="Square" Size="12" />
           </ui:NcwButton>
         </StackPanel>

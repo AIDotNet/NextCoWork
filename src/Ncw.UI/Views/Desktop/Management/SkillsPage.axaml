@@ -18,40 +18,44 @@
     <m:PageHeader Title="{l:NcwText SettingsSkills}" Hint="{l:NcwText SettingsSkillsHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding Tab, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SkillsTabs}">
         <ui:NcwSegmentedOption Value="{x:Static vm:SkillsTab.Installed}" Label="{l:NcwText SkillsTabInstalled}" />
         <ui:NcwSegmentedOption Value="{x:Static vm:SkillsTab.Market}" Label="{l:NcwText SkillsTabMarket}" />
       </ui:NcwSegmented>
 
       <!-- 安装后的确认 / 登录提示 -->
-      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <TextBlock Text="{Binding JustInstalled, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsInstalled}" TextWrapping="Wrap" />
       </Border>
-      <Border Classes="card attention" IsVisible="{Binding AuthRequired}">
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-          <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
-          <StackPanel Grid.Column="1" Spacing="2">
-            <TextBlock FontWeight="SemiBold" Text="{l:NcwText SkillsAuthRequiredTitle}" />
-            <TextBlock Classes="hint" Text="{l:NcwText SkillsAuthRequiredHint}" />
-          </StackPanel>
-        </Grid>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding AuthRequired}">
+        <Border Classes="card attention">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock FontWeight="SemiBold" Text="{l:NcwText SkillsAuthRequiredTitle}" />
+              <TextBlock Classes="hint" Text="{l:NcwText SkillsAuthRequiredHint}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- 卸载二次确认 -->
-      <Border Classes="card danger" IsVisible="{Binding HasPendingUninstall}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsUninstallTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText SkillsUninstallHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText SkillsUninstall}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingUninstall}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=SkillsUninstallTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText SkillsUninstallHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText SkillsUninstall}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- ═══ 已安装 ═══ -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}">
+      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
           <ui:NcwSearchField Text="{Binding Filter, Mode=TwoWay}" PlaceholderText="{l:NcwText SkillsFilter}" />
           <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding InstallZipCommand}" IsEnabled="{Binding GlobalGate.Allowed}"
@@ -68,14 +72,14 @@
           <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText SkillsZipLimit}" />
         </WrapPanel>
 
-        <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+        <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
           <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
             <lucide:LucideIcon Kind="Sparkles" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText SkillsEmptyTitle}" />
             <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText SkillsEmptyHint}" />
           </StackPanel>
         </Border>
-        <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText SkillsNoMatch}" />
+        <TextBlock Classes="hint" IsVisible="{Binding ShowsNoMatch}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText SkillsNoMatch}" />
 
         <ItemsControl ItemsSource="{Binding Skills}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -120,7 +124,7 @@
         </ItemsControl>
 
         <!-- 加载诊断:哪个目录为什么被跳过 -->
-        <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}">
+        <StackPanel Spacing="4" IsVisible="{Binding HasDiagnostics}" ui:NcwMotion.ShowMotion="Fade">
           <TextBlock Classes="sectionTitle" Text="{l:NcwText DiagnosticsTitle}" />
           <ItemsControl ItemsSource="{Binding Diagnostics}">
             <ItemsControl.ItemTemplate>
@@ -136,23 +140,23 @@
       </StackPanel>
 
       <!-- ═══ 市场 ═══ -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}">
+      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
           <ui:NcwSearchField Text="{Binding MarketQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText SkillsMarketSearch}" />
           <ui:NcwSelect Grid.Column="1" MinWidth="140" NullText="{l:NcwText SkillsMarketAllCategories}" Placeholder="{l:NcwText SkillsMarketAllCategories}" ItemsSource="{Binding Categories}" SelectedValue="{Binding MarketCategory, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText SkillsMarketCategory}" />
           <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Search}" />
         </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
           <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
         </StackPanel>
-        <Border Classes="card danger" IsVisible="{Binding MarketFailed}">
+        <Border Classes="card danger" IsVisible="{Binding MarketFailed}" ui:NcwMotion.ShowMotion="Fade">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MarketFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
             <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Retry}" />
           </Grid>
         </Border>
-        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" Text="{l:NcwText SkillsMarketEmpty}" />
+        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText SkillsMarketEmpty}" />
 
         <ItemsControl ItemsSource="{Binding Market}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -180,7 +184,7 @@
         </ItemsControl>
 
         <!-- 详情 -->
-        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
           <StackPanel Spacing="8" DataContext="{Binding Detail}" x:DataType="p:SkillMarketDetailDto">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock FontWeight="SemiBold" Text="{Binding Item.DisplayName}" />

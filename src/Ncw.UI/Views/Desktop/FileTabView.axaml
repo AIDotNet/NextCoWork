@@ -27,19 +27,19 @@
             <TextBlock Classes="hint" Text="{Binding Line, Converter={x:Static cv:LineNumberTextConverter.Instance}}" />
           </Border>
           <Border Classes="chip" IsVisible="{Binding IsChunked}"><TextBlock Classes="hint" Text="{l:NcwText FileReadOnly}" /></Border>
-          <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding JustSaved}" Text="{l:NcwText FileSaved}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding JustSaved}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText FileSaved}" />
           <!-- Markdown:渲染 / 源码 -->
           <ui:NcwButton Variant="Ghost" Command="{Binding ToggleRenderedCommand}" IsVisible="{Binding IsMarkdown}" IsEnabled="{Binding !IsEditing}">
             <StackPanel Orientation="Horizontal" Spacing="6">
-              <lucide:LucideIcon Kind="Eye" Size="14" IsVisible="{Binding !ShowRendered}" />
-              <lucide:LucideIcon Kind="Code" Size="14" IsVisible="{Binding ShowRendered}" />
-              <TextBlock IsVisible="{Binding !ShowRendered}" Text="{l:NcwText FileViewRendered}" />
-              <TextBlock IsVisible="{Binding ShowRendered}" Text="{l:NcwText FileViewSource}" />
+              <lucide:LucideIcon Kind="Eye" Size="14" IsVisible="{Binding !ShowRendered}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" />
+              <lucide:LucideIcon Kind="Code" Size="14" IsVisible="{Binding ShowRendered}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" />
+              <TextBlock IsVisible="{Binding !ShowRendered}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText FileViewRendered}" />
+              <TextBlock IsVisible="{Binding ShowRendered}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText FileViewSource}" />
             </StackPanel>
           </ui:NcwButton>
-          <ui:NcwButton Variant="Ghost" Command="{Binding EditCommand}" IsVisible="{Binding !IsEditing}" IsEnabled="{Binding CanEdit}" Content="{l:NcwText FileEdit}" />
-          <ui:NcwButton Variant="Ghost" Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" Content="{l:NcwText Cancel}" />
-          <ui:NcwButton Variant="Primary" Command="{Binding SaveCommand}" IsVisible="{Binding IsEditing}" IsEnabled="{Binding CanSave}" Content="{l:NcwText Save}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding EditCommand}" IsVisible="{Binding !IsEditing}" IsEnabled="{Binding CanEdit}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Content="{l:NcwText FileEdit}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Content="{l:NcwText Cancel}" />
+          <ui:NcwButton Variant="Primary" Command="{Binding SaveCommand}" IsVisible="{Binding IsEditing}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" IsEnabled="{Binding CanSave}" Content="{l:NcwText Save}" />
           <ui:NcwDropdownMenu x:Name="MoreMenu">
             <ui:NcwDropdownMenu.Trigger>
               <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
@@ -52,7 +52,7 @@
 
       <StackPanel Grid.Row="1" Margin="16,0,16,6" Spacing="6">
         <insp:ProblemBar Problem="{Binding Failure}" />
-        <Border Classes="notice" IsVisible="{Binding HasConflict}">
+        <Border Classes="notice" IsVisible="{Binding HasConflict}" ui:NcwMotion.ShowMotion="Rise">
           <StackPanel Spacing="6">
             <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{l:NcwText FileConflict}" />
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -67,31 +67,31 @@
       <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
       <Panel>
         <!-- 加载中 -->
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,32,0,0" IsVisible="{Binding IsLoading}">
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,32,0,0" IsVisible="{Binding IsLoading}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock Classes="hint" Text="{l:NcwText FileLoading}" />
         </StackPanel>
         <!-- 文本:源码用无外框的代码块(铺满,横向滚动条吸附在可视底边);Markdown 渲染和编辑多一层 1100 宽的版心 -->
-        <ScrollViewer IsVisible="{Binding IsText}" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer IsVisible="{Binding IsText}" ui:NcwMotion.ShowMotion="Fade" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="0,0,0,16" Spacing="8">
             <ui:NcwCodeBlock Code="{Binding DisplayText}" Language="{Binding Language}" ShowLineNumbers="True" CopyLabel="{l:NcwText CodeCopy}"
-                             IsChromeless="True" StickyScrollBar="True" IsVisible="{Binding ShowsSource}" />
-            <StackPanel Margin="16,0" Spacing="8" MaxWidth="1100" HorizontalAlignment="Stretch" IsVisible="{Binding !ShowsSource}">
+                             IsChromeless="True" StickyScrollBar="True" IsVisible="{Binding ShowsSource}" ui:NcwMotion.ShowMotion="Fade" />
+            <StackPanel Margin="16,0" Spacing="8" MaxWidth="1100" HorizontalAlignment="Stretch" IsVisible="{Binding !ShowsSource}" ui:NcwMotion.ShowMotion="Fade">
               <ui:NcwMarkdown Text="{Binding DisplayText}" IsVisible="{Binding ShowsRendered}" />
               <ui:NcwTextArea x:Name="EditBox" Text="{Binding EditText, Mode=TwoWay}" FrameMinHeight="360" IsResizable="False"
                               FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                              IsVisible="{Binding IsEditing}" />
+                              IsVisible="{Binding IsEditing}" ui:NcwMotion.ShowMotion="Fade" />
             </StackPanel>
             <ui:NcwButton HorizontalAlignment="Center" Variant="Secondary" Command="{Binding LoadMoreCommand}" IsVisible="{Binding CanLoadMore}" Content="{l:NcwText FileShowMore}" />
           </StackPanel>
         </ScrollViewer>
         <!-- 图片 -->
-        <ScrollViewer IsVisible="{Binding IsImage}" HorizontalScrollBarVisibility="Auto">
+        <ScrollViewer IsVisible="{Binding IsImage}" ui:NcwMotion.ShowMotion="Fade" HorizontalScrollBarVisibility="Auto">
           <Image Margin="16,0,16,16" Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top"
                  Source="{Binding ImageData, Converter={x:Static cv:BytesToBitmapConverter.Instance}}" />
         </ScrollViewer>
         <!-- 二进制 / 过大 -->
-        <StackPanel IsVisible="{Binding IsBinary}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="24,48,24,24" Spacing="8" MaxWidth="360">
+        <StackPanel IsVisible="{Binding IsBinary}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="24,48,24,24" Spacing="8" MaxWidth="360">
           <lucide:LucideIcon Kind="FileX" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock Classes="hint" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding Reason, Converter={x:Static cv:BinaryReasonTextConverter.Instance}}" />
           <TextBlock Classes="hint" TextAlignment="Center" Text="{Binding Size, Converter={x:Static cv:FileSizeConverter.Instance}}" />

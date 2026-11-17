@@ -35,10 +35,10 @@
     <m:PageHeader Title="{l:NcwText SettingsPlugins}" Hint="{l:NcwText SettingsPluginsHint}" ScopeText="{l:NcwText ScopeDevice}" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
 
       <!-- ═══ 待处理提示(插件在等你回答) ═══ -->
-      <StackPanel Spacing="8" IsVisible="{Binding HasPrompts}">
+      <StackPanel Spacing="8" IsVisible="{Binding HasPrompts}" ui:NcwMotion.ShowMotion="Rise">
         <TextBlock Classes="sectionTitle" Margin="0,8,0,0" Text="{l:NcwText PluginPromptsTitle}" />
         <TextBlock Classes="hint" Text="{l:NcwText PluginPromptsHint}" />
         <ItemsControl ItemsSource="{Binding Prompts}">
@@ -124,7 +124,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
-      <Border Classes="notice" IsVisible="{Binding PromptHandledElsewhere}">
+      <Border Classes="notice" IsVisible="{Binding PromptHandledElsewhere}" ui:NcwMotion.ShowMotion="Rise">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
           <TextBlock Classes="hint" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{l:NcwText PluginPromptHandled}" />
           <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding DismissHandledCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
@@ -139,38 +139,42 @@
         <ui:NcwSegmentedOption Value="{x:Static vm:PluginsTab.Activity}" Label="{l:NcwText PluginTabActivity}" />
       </ui:NcwSegmented>
 
-      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="notice" IsVisible="{Binding JustInstalled, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <TextBlock Text="{Binding JustInstalled, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginInstalledNotice}" TextWrapping="Wrap" />
       </Border>
-      <Border Classes="notice" IsVisible="{Binding JustRan, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="notice" IsVisible="{Binding JustRan, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <TextBlock Text="{Binding JustRan, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginRanNotice}" TextWrapping="Wrap" />
       </Border>
 
       <!-- 卸载二次确认 -->
-      <Border Classes="card danger" IsVisible="{Binding HasPendingUninstall}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginUninstallTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText PluginUninstallHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText PluginUninstall}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingUninstall}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingUninstall.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=PluginUninstallTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText PluginUninstallHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmUninstallCommand}" Content="{l:NcwText PluginUninstall}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelUninstallCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
       <!-- 撤销必选能力的二次确认 -->
-      <Border Classes="card danger" IsVisible="{Binding HasPendingRevoke}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PendingRevoke, Converter={x:Static cv:PluginRevokeTitleConverter.Instance}}" />
-          <TextBlock Classes="hint" Text="{l:NcwText PluginRevokeHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRevokeCommand}" Content="{l:NcwText PluginRevokeConfirm}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingRevoke}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PendingRevoke, Converter={x:Static cv:PluginRevokeTitleConverter.Instance}}" />
+            <TextBlock Classes="hint" Text="{l:NcwText PluginRevokeHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRevokeCommand}" Content="{l:NcwText PluginRevokeConfirm}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelRevokeCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- ═══════════ 已安装 ═══════════ -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}">
+      <StackPanel Spacing="8" IsVisible="{Binding IsInstalledTab}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
           <StackPanel Spacing="2">
             <TextBlock Classes="hint" Text="{l:NcwText PluginInstalledNote}" />
@@ -186,7 +190,7 @@
         </Grid>
         <TextBlock Classes="hint" IsVisible="{Binding OwnerGate.Allowed}" Text="{l:NcwText PluginZipLimit}" />
 
-        <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+        <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
           <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
             <lucide:LucideIcon Kind="Puzzle" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText PluginEmptyTitle}" />
@@ -227,7 +231,7 @@
                   </Grid>
 
                   <!-- 状态说明 -->
-                  <Border Classes="problem" IsVisible="{Binding IsFaulted}">
+                  <Border Classes="problem" IsVisible="{Binding IsFaulted}" ui:NcwMotion.ShowMotion="Fade">
                     <StackPanel Spacing="6">
                       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                         <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource Danger}" />
@@ -240,10 +244,10 @@
                       </WrapPanel>
                     </StackPanel>
                   </Border>
-                  <Border Classes="problem" IsVisible="{Binding IsError}">
+                  <Border Classes="problem" IsVisible="{Binding IsError}" ui:NcwMotion.ShowMotion="Fade">
                     <TextBlock TextWrapping="Wrap" Text="{l:NcwText PluginStatusHintError}" />
                   </Border>
-                  <Border Classes="notice" IsVisible="{Binding IsPendingApproval}">
+                  <Border Classes="notice" IsVisible="{Binding IsPendingApproval}" ui:NcwMotion.ShowMotion="Rise">
                     <StackPanel Spacing="6">
                       <TextBlock FontWeight="SemiBold" Text="{l:NcwText PluginPendingTitle}" />
                       <ItemsControl ItemsSource="{Binding PendingPermissions}">
@@ -342,10 +346,10 @@
                               <ui:NcwInput IsVisible="{Binding IsText}" Text="{Binding Text, Mode=TwoWay}" IsEnabled="{Binding CanWrite}" Label="{Binding Title}" Description="{Binding Description}" />
                               <ui:NcwNumberField IsVisible="{Binding IsNumber}" Value="{Binding Number, Mode=TwoWay}" IsEnabled="{Binding CanWrite}" UseGrouping="False" Label="{Binding Title}" Description="{Binding Description}" />
                               <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4" IsVisible="{Binding CanWrite}">
-                                <ui:NcwButton Variant="Secondary" IsVisible="{Binding IsDirty}" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}" Content="{l:NcwText PluginConfigApply}" />
+                                <ui:NcwButton Variant="Secondary" IsVisible="{Binding IsDirty}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}" Content="{l:NcwText PluginConfigApply}" />
                                 <ui:NcwButton Variant="Ghost" IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}" Content="{l:NcwText PluginConfigReset}" />
                               </WrapPanel>
-                              <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding HasError}" Text="{Binding Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+                              <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" Text="{Binding Error, Converter={x:Static cv:FailureTextConverter.Instance}}" />
                             </StackPanel>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -409,17 +413,19 @@
       </StackPanel>
 
       <!-- ═══════════ 市场 ═══════════ -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}">
-        <Border Classes="card attention" IsVisible="{Binding AuthRequired}">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-            <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
-            <StackPanel Grid.Column="1" Spacing="2">
-              <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText PluginAuthRequiredTitle}" />
-              <TextBlock Classes="hint" Text="{l:NcwText PluginAuthRequiredHint}" />
-            </StackPanel>
-            <ui:NcwButton Grid.Column="2" Variant="Primary" VerticalAlignment="Top" Command="{Binding SignInCommand}" Content="{l:NcwText PluginSignIn}" />
-          </Grid>
-        </Border>
+      <StackPanel Spacing="8" IsVisible="{Binding IsMarketTab}" ui:NcwMotion.ShowMotion="Fade">
+        <ui:NcwCollapsible IsOpen="{Binding AuthRequired}">
+          <Border Classes="card attention">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <lucide:LucideIcon Kind="LogIn" Size="16" VerticalAlignment="Top" Foreground="{arc:ArcDesignTokenResource Warning}" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText PluginAuthRequiredTitle}" />
+                <TextBlock Classes="hint" Text="{l:NcwText PluginAuthRequiredHint}" />
+              </StackPanel>
+              <ui:NcwButton Grid.Column="2" Variant="Primary" VerticalAlignment="Top" Command="{Binding SignInCommand}" Content="{l:NcwText PluginSignIn}" />
+            </Grid>
+          </Border>
+        </ui:NcwCollapsible>
 
         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
           <ui:NcwSearchField Text="{Binding MarketQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText PluginMarketSearch}" />
@@ -469,21 +475,21 @@
           </StackPanel>
         </Border>
 
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MarketLoading}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
           <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding InstallingSlug, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding InstallingSlug, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
           <TextBlock Classes="hint" Text="{l:NcwText PluginMarketInstalling}" />
         </StackPanel>
-        <Border Classes="card danger" IsVisible="{Binding MarketFailed}">
+        <Border Classes="card danger" IsVisible="{Binding MarketFailed}" ui:NcwMotion.ShowMotion="Fade">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding MarketFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
             <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding SearchMarketCommand}" Content="{l:NcwText Retry}" />
           </Grid>
         </Border>
-        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" Text="{l:NcwText PluginMarketEmpty}" />
+        <TextBlock Classes="hint" IsVisible="{Binding MarketEmpty}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText PluginMarketEmpty}" />
 
         <ItemsControl ItemsSource="{Binding Market}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -531,7 +537,7 @@
         </Grid>
 
         <!-- 详情 -->
-        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Border Classes="card" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
           <StackPanel Spacing="8" DataContext="{Binding Detail}" x:DataType="p:PluginMarketDetailDto">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Item.DisplayName}" />
@@ -581,7 +587,7 @@
       </StackPanel>
 
       <!-- ═══════════ 活动与诊断 ═══════════ -->
-      <StackPanel Spacing="8" IsVisible="{Binding IsActivityTab}">
+      <StackPanel Spacing="8" IsVisible="{Binding IsActivityTab}" ui:NcwMotion.ShowMotion="Fade">
         <!-- 出错停止的插件 -->
         <StackPanel Spacing="6" IsVisible="{Binding HasFaulted}">
           <TextBlock Classes="sectionTitle" Margin="0,4,0,0" Text="{l:NcwText PluginFaultedTitle}" />
@@ -639,17 +645,17 @@
             <lucide:LucideIcon Kind="RefreshCw" Size="14" />
           </ui:NcwButton>
         </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ActivityLoading}">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ActivityLoading}" ui:NcwMotion.ShowMotion="Fade">
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
           <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
         </StackPanel>
-        <Border Classes="card danger" IsVisible="{Binding ActivityFailed}">
+        <Border Classes="card danger" IsVisible="{Binding ActivityFailed}" ui:NcwMotion.ShowMotion="Fade">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding ActivityFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
             <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding LoadActivityCommand}" Content="{l:NcwText Retry}" />
           </Grid>
         </Border>
-        <TextBlock Classes="hint" IsVisible="{Binding ActivityEmpty}" Text="{l:NcwText PluginActivityEmpty}" />
+        <TextBlock Classes="hint" IsVisible="{Binding ActivityEmpty}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText PluginActivityEmpty}" />
         <ItemsControl ItemsSource="{Binding Activity}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>

@@ -18,7 +18,7 @@
     <m:PageHeader Title="{l:NcwText SettingsMcp}" Hint="{l:NcwText SettingsMcpHint}" ScopeText="{l:NcwText ScopeDevice}" ShowProject="True" />
     <m:PageStatus />
 
-    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}">
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
         <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText McpRunNote}" />
         <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding NewCommand}" IsEnabled="{Binding CanWrite}"
@@ -30,89 +30,93 @@
         </ui:NcwButton>
       </Grid>
 
-      <Border Classes="card danger" IsVisible="{Binding HasPendingRemove}">
-        <StackPanel Spacing="8">
-          <TextBlock FontWeight="SemiBold" Text="{Binding PendingRemove.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=McpRemoveTitle}" />
-          <TextBlock Classes="hint" Text="{l:NcwText McpRemoveHint}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRemoveCommand}" Content="{l:NcwText DeleteLabel}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelRemoveCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingRemove}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingRemove.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=McpRemoveTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText McpRemoveHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRemoveCommand}" Content="{l:NcwText DeleteLabel}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelRemoveCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- 编辑器 -->
-      <Border Classes="card" IsVisible="{Binding Editor.IsOpen}">
-        <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:McpEditorViewModel">
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText McpNewTitle}" />
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText McpEditTitle}" />
-          <Grid ColumnDefinitions="*,12,*">
-            <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText McpName}" />
-            <ui:NcwInput Grid.Column="2" Text="{Binding Id, Mode=TwoWay}" IsEnabled="{Binding IsNew}" Label="{l:NcwText McpId}" Description="{l:NcwText McpIdHint}" />
-          </Grid>
-          <ui:NcwSelect ChoiceSet="McpTransport" SelectedValue="{Binding Transport, Mode=TwoWay}" Label="{l:NcwText McpTransport}" />
-          <ui:NcwInput Text="{Binding Description, Mode=TwoWay}" Label="{l:NcwText McpDescription}" />
-          <StackPanel Spacing="10" IsVisible="{Binding IsStdio}">
-            <ui:NcwInput Text="{Binding Command, Mode=TwoWay}" Label="{l:NcwText McpCommand}" Placeholder="npx" />
-            <ui:NcwTextArea Text="{Binding Args, Mode=TwoWay}" Label="{l:NcwText McpArgs}" Description="{l:NcwText McpArgsHint}" MinHeight="64" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
-            <ui:NcwInput Text="{Binding Cwd, Mode=TwoWay}" Label="{l:NcwText McpCwd}" />
-          </StackPanel>
-          <ui:NcwInput Text="{Binding Url, Mode=TwoWay}" IsVisible="{Binding !IsStdio}" Label="{l:NcwText McpUrl}" Placeholder="https://example.com/mcp" />
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:NcwText McpBindProject}" />
-              <TextBlock Classes="hint" Text="{l:NcwText McpBindProjectHint}" />
-            </StackPanel>
-            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding BindToProject, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText McpBindProject}" />
-          </Grid>
-
-          <!-- 密钥:环境变量(stdio)/ 请求头(远程)。值只写不读;写密钥是整张 map 一次写完 -->
-          <StackPanel Spacing="6">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="2">
-                <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsStdio}" Text="{l:NcwText McpEnvTitle}" />
-                <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsStdio}" Text="{l:NcwText McpHeadersTitle}" />
-                <TextBlock Classes="hint" Text="{l:NcwText McpSecretsHint}" />
-              </StackPanel>
-              <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).AddSecretCommand}" Content="{l:NcwText McpSecretAdd}" />
+      <ui:NcwCollapsible IsOpen="{Binding Editor.IsOpen}">
+        <Border Classes="card">
+          <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:McpEditorViewModel">
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText McpNewTitle}" />
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText McpEditTitle}" />
+            <Grid ColumnDefinitions="*,12,*">
+              <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText McpName}" />
+              <ui:NcwInput Grid.Column="2" Text="{Binding Id, Mode=TwoWay}" IsEnabled="{Binding IsNew}" Label="{l:NcwText McpId}" Description="{l:NcwText McpIdHint}" />
             </Grid>
-            <ItemsControl ItemsSource="{Binding Secrets}">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:McpSecretRowViewModel">
-                  <Grid ColumnDefinitions="*,8,*,Auto">
-                    <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Placeholder="NAME" />
-                    <ui:NcwInput Grid.Column="2" Text="{Binding Value, Mode=TwoWay}" PasswordChar="•" Placeholder="{l:NcwText McpSecretValuePlaceholder}" />
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="6,0,0,0">
-                      <Border Classes="chip" IsVisible="{Binding IsSet}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" Text="{l:NcwText McpSecretIsSet}" /></Border>
-                      <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).RemoveSecretCommand}" CommandParameter="{Binding}"
-                                    AutomationProperties.Name="{l:NcwText HooksEnvRemove}" arc:Tooltip.Tip="{l:NcwText HooksEnvRemove}">
-                        <lucide:LucideIcon Kind="X" Size="13" />
-                      </ui:NcwButton>
-                    </StackPanel>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+            <ui:NcwSelect ChoiceSet="McpTransport" SelectedValue="{Binding Transport, Mode=TwoWay}" Label="{l:NcwText McpTransport}" />
+            <ui:NcwInput Text="{Binding Description, Mode=TwoWay}" Label="{l:NcwText McpDescription}" />
+            <StackPanel Spacing="10" IsVisible="{Binding IsStdio}">
+              <ui:NcwInput Text="{Binding Command, Mode=TwoWay}" Label="{l:NcwText McpCommand}" Placeholder="npx" />
+              <ui:NcwTextArea Text="{Binding Args, Mode=TwoWay}" Label="{l:NcwText McpArgs}" Description="{l:NcwText McpArgsHint}" MinHeight="64" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
+              <ui:NcwInput Text="{Binding Cwd, Mode=TwoWay}" Label="{l:NcwText McpCwd}" />
+            </StackPanel>
+            <ui:NcwInput Text="{Binding Url, Mode=TwoWay}" IsVisible="{Binding !IsStdio}" Label="{l:NcwText McpUrl}" Placeholder="https://example.com/mcp" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:NcwText McpBindProject}" />
+                <TextBlock Classes="hint" Text="{l:NcwText McpBindProjectHint}" />
+              </StackPanel>
+              <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding BindToProject, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText McpBindProject}" />
+            </Grid>
 
-          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding !CanSave}" Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" />
-          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
-                     Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).SaveCommand}" IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
-            <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).TestDraftCommand}" Content="{l:NcwText McpTest}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).CloseEditorCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+            <!-- 密钥:环境变量(stdio)/ 请求头(远程)。值只写不读;写密钥是整张 map 一次写完 -->
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                  <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsStdio}" Text="{l:NcwText McpEnvTitle}" />
+                  <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsStdio}" Text="{l:NcwText McpHeadersTitle}" />
+                  <TextBlock Classes="hint" Text="{l:NcwText McpSecretsHint}" />
+                </StackPanel>
+                <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).AddSecretCommand}" Content="{l:NcwText McpSecretAdd}" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Secrets}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:McpSecretRowViewModel">
+                    <Grid ColumnDefinitions="*,8,*,Auto">
+                      <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Placeholder="NAME" />
+                      <ui:NcwInput Grid.Column="2" Text="{Binding Value, Mode=TwoWay}" PasswordChar="•" Placeholder="{l:NcwText McpSecretValuePlaceholder}" />
+                      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="6,0,0,0">
+                        <Border Classes="chip" IsVisible="{Binding IsSet}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" Text="{l:NcwText McpSecretIsSet}" /></Border>
+                        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).RemoveSecretCommand}" CommandParameter="{Binding}"
+                                      AutomationProperties.Name="{l:NcwText HooksEnvRemove}" arc:Tooltip.Tip="{l:NcwText HooksEnvRemove}">
+                          <lucide:LucideIcon Kind="X" Size="13" />
+                        </ui:NcwButton>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding !CanSave}" ui:NcwMotion.ShowMotion="Fade" Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" />
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
+                       Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).SaveCommand}" IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
+              <ui:NcwButton Margin="0,0,8,0" Variant="Secondary" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).TestDraftCommand}" Content="{l:NcwText McpTest}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding $parent[UserControl].((vm:McpViewModel)DataContext).CloseEditorCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
 
       <!-- 测试连接结果(脱敏的英文诊断只在 owner 的这个结果里) -->
-      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsTesting}">
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsTesting}" ui:NcwMotion.ShowMotion="Fade">
         <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
         <TextBlock Classes="hint" Text="{l:NcwText McpTesting}" />
       </StackPanel>
-      <Border Classes="card" IsVisible="{Binding TestResult, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="card" IsVisible="{Binding TestResult, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <StackPanel Spacing="6" DataContext="{Binding TestResult}" x:DataType="p:McpTestResultDto">
           <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
             <lucide:LucideIcon Kind="CircleCheck" Size="15" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding Ok}" />
@@ -127,7 +131,7 @@
         </StackPanel>
       </Border>
 
-      <Border Classes="card" IsVisible="{Binding ShowsEmpty}">
+      <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
         <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
           <lucide:LucideIcon Kind="Plug" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText McpEmptyTitle}" />
@@ -180,17 +184,17 @@
       </ItemsControl>
 
       <!-- 资源与提示 -->
-      <Border Classes="card" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="card" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
         <StackPanel Spacing="8">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock FontWeight="SemiBold" Text="{Binding Selected.Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=McpBrowseTitle}" />
             <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseBrowseCommand}" AutomationProperties.Name="{l:NcwText Close}"><lucide:LucideIcon Kind="X" Size="14" /></ui:NcwButton>
           </Grid>
-          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding BrowseLoading}">
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding BrowseLoading}" ui:NcwMotion.ShowMotion="Fade">
             <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
             <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
           </StackPanel>
-          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding BrowseFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+          <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding BrowseFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
                      Text="{Binding BrowseFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
           <TextBlock Classes="section" Text="{l:NcwText McpResources}" />
           <ItemsControl ItemsSource="{Binding Resources}">
