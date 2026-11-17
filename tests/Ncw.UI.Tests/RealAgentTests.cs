@@ -14,7 +14,6 @@ using Ncw.Protocol.Session;
 using Ncw.Protocol.Transport;
 using Ncw.UI.Chrome;
 using Ncw.UI.Views.Desktop;
-using Ncw.UI.Views.Desktop.Rail;
 
 namespace Ncw.UI.Tests;
 
@@ -81,10 +80,10 @@ public class RealAgentTests
         Assert.False(vm.Panel.HasProject);
         Snapshot(window, "real-agent-empty");
 
-        // 真的点项目栏底部的「+」
-        var plus = shell.GetVisualDescendants().OfType<ProjectRail>().Single()
+        // 真的点侧边栏项目树标题上的「+」
+        var plus = shell.GetVisualDescendants().OfType<Sidebar>().Single()
             .GetVisualDescendants().OfType<Ncw.UI.Controls.PlainButton>()
-            .Single(b => ReferenceEquals(b.Command, vm.Rail.AddProjectCommand));
+            .Single(b => ReferenceEquals(b.Command, vm.Sidebar.AddProjectCommand));
         var at = plus.TranslatePoint(new Point(plus.Bounds.Width / 2, plus.Bounds.Height / 2), window)!.Value;
         window.MouseDown(at, MouseButton.Left);
         window.MouseUp(at, MouseButton.Left);

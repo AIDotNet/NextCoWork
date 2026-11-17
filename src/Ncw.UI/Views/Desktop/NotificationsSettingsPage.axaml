@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.NotificationsSettingsPage"
+             x:DataType="vm:NotificationsSettingsViewModel">
+  <!--
+    设置 · 本应用 · 通知(docs/design/07 §3、03 §11.2):系统通知三类开关、应用图标角标、菜单栏图标(开着时关窗后继续在后台运行)。
+    做不到的平台如实写明(开关照样能拨,只是没有效果)。真源是偏好 Store,改了立即生效。
+  -->
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:NcwText SettingsNotifications}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsNotificationsHint}" TextWrapping="Wrap" />
+      <WrapPanel Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText ScopeApp}" /></Border>
+      </WrapPanel>
+    </StackPanel>
+
+    <TextBlock Classes="sectionTitle" Text="{l:NcwText NotifySystemTitle}" Margin="0,8,0,0" />
+    <Border Classes="card">
+      <StackPanel Spacing="12">
+        <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding !IsSystemNotificationSupported}" Text="{l:NcwText NotifyUnsupported}" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBlock Text="{l:NcwText NotifyPendingLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding NotifyPending, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText NotifyPendingLabel}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBlock Text="{l:NcwText NotifyFailedLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding NotifyFailed, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText NotifyFailedLabel}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBlock Text="{l:NcwText NotifyCompletedLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding NotifyCompleted, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText NotifyCompletedLabel}" />
+        </Grid>
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText NotifySystemHint}" />
+      </StackPanel>
+    </Border>
+
+    <TextBlock Classes="sectionTitle" Text="{l:NcwText NotifyBadgeTitle}" Margin="0,8,0,0" />
+    <Border Classes="card">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBlock Text="{l:NcwText NotifyBadgeLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding Badge, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText NotifyBadgeLabel}" />
+        </Grid>
+        <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding !IsBadgeSupported}" Text="{l:NcwText NotifyBadgeUnsupported}" />
+      </StackPanel>
+    </Border>
+
+    <TextBlock Classes="sectionTitle" Text="{l:NcwText NotifyTrayTitle}" Margin="0,8,0,0" />
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{l:NcwText NotifyTrayLabel}" TextWrapping="Wrap" />
+          <TextBlock Classes="hint" Text="{l:NcwText NotifyTrayHint}" TextWrapping="Wrap" />
+        </StackPanel>
+        <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding Tray, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText NotifyTrayLabel}" />
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

@@ -104,3 +104,11 @@ public sealed record WidgetRow(
     string LoadingText,
     string? DataJson,
     EnvRefDto? Env) : TranscriptRow(Key);
+
+/// <summary>
+/// 「工作区」分组表头:一轮已经全部完成(没有运行中的 Run、没有待处理的交互、没有还在跑的工具 / 子代理)之后,这一轮里除<b>最后一段回复文字</b>以外的操作
+/// (思考、工具调用、子代理、子代理汇报、中间的文字)收成一组(参考 Codex 的「已处理」折叠)。
+/// 转录仍然是平铺的:表头后面紧跟 <see cref="Members"/> 行就是这一组的成员,是否展开是纯 UI 状态(<c>ConversationViewModel</c>),收起时成员行不创建视图模型。
+/// <see cref="Actions"/> 是成员里的工具调用 + 子代理个数,<see cref="Failed"/> 是其中失败的工具个数;界面据此拼摘要(Client 不产出界面文字)。
+/// </summary>
+public sealed record WorkGroupRow(string Key, int Members, int Actions, int Failed) : TranscriptRow(Key);

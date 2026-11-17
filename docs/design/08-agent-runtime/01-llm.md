@@ -73,6 +73,8 @@ record StreamError(AgentError Error)                                   : LlmEven
   `NotMetered` = 没接计价,累加方保持已有值;`Unknown` = 查不到价格(整轮锁定为「未知」);`Known` = 累加。币种不同不能相加,得 `Unknown`。
 - `StreamAssembler` 把事件流折成最终助手消息(2.x 的 `BlockAccumulator` / `ToolCallAccumulator`):按下标归位、同下标的 `BlockOpaque` 合进思考块、
   工具调用在 end 时解析、没有 end 的工具调用判失败。Loop 用它,不要自己再写一份。
+  思考块记下**耗时**(`ThinkingPart.DurationMs`,时钟注入,Loop 传自己的 `TimeProvider`):从第一段思考增量到它之后第一个别的内容事件(文字、工具调用、消息结束;都没有就到最后一段思考增量)。
+  量不出来(没有思考增量、时钟没走、只有透传载体)是 null,不写假的 0——界面据此显示「思考了 N 秒」或只写「思考」。此前一直没记,转录里每个思考块都是「思考了 0 秒」。
 
 C# 实现:`ILlmClient.StreamAsync(ModelRef, LlmRequest, RequestContext, CancellationToken)` 返回 `IAsyncEnumerable<LlmEvent>`,内部用 `Channel<LlmEvent>`
 (生产者任务跑重试循环,消费者提前退出时取消生产者并等它收尾)。

@@ -72,8 +72,9 @@ internal static class Program
         NcwApp.UpdateServiceFactory = context => CreateUpdateService(context, () => backend?.Sidecar);
         NcwApp.RefreshTokenVaultFactory = static () => new AccountVault(NcwApp.ClientDirectory);
         Ncw.UI.Controls.NcwMotion.SystemReducesMotionProbe = SystemMotionProbe.ReducesMotion;   // 「动效 · 跟随系统」读系统的「减少动态效果」
-        NcwApp.NativeWindowBackground = NativeWindowBackground.Apply;   // 窗口第一帧就是加载界面的底色(docs/design/03 §10.6)
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        NcwApp.NativeWindowBackground = NativeWindowBackground.Apply;
+        NcwApp.NativeAttentionFactory = DesktopAttention.Create;   // 系统通知、Dock 角标、请求注意(docs/design/03 §11.2)   // 窗口第一帧就是加载界面的底色(docs/design/03 §10.6)
+        BuildAvaloniaApp().AfterSetup(static _ => MacDockIcon.ApplyWhenUnbundled()).StartWithClassicDesktopLifetime(args);   // Dock 图标:不是从 .app 启动时(dotnet run)自己设
         return 0;
     }
 

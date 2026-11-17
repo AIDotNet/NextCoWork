@@ -15,6 +15,8 @@ public interface IMessageCommands
 
     Task<ActionResult<Unit>> DeleteTurnAsync(SessionRef session, string userMessageId, CancellationToken ct = default);
 
+    Task<ActionResult<Unit>> DeleteReplyAsync(SessionRef session, string fromAssistantId, string toAssistantId, CancellationToken ct = default);
+
     Task<ActionResult<string>> BranchAsync(ProjectRef project, string sessionId, string userMessageId, CancellationToken ct = default);
 }
 
@@ -60,6 +62,14 @@ public sealed class MessageActions(DeviceRegistry devices, SessionActions sessio
     public Task<ActionResult<Unit>> DeleteTurnAsync(SessionRef session, string userMessageId, CancellationToken ct = default) =>
         Run(session.DeviceId, link => link.CallAsync(ConversationMethods.SessionsDeleteTurn,
             new SessionsDeleteTurnParams(session.SessionId, userMessageId), ct, idem: Idem("deleteTurn")));
+
+    /// <summary>
+    /// 只删 AI 的回复(<c>fromAssistantId..toAssistantId</c> 两条助手消息之间的全部,设备端再吃掉紧随其后的工具回执),提问留着。
+    /// 范围用 <see cref="Ncw.Client.Transcript.MessageTurns.ReplyOf"/> 取这一轮 AI 的全部回复。
+    /// </summary>
+    public Task<ActionResult<Unit>> DeleteReplyAsync(SessionRef session, string fromAssistantId, string toAssistantId, CancellationToken ct = default) =>
+        Run(session.DeviceId, link => link.CallAsync(ConversationMethods.SessionsDeleteReply,
+            new SessionsDeleteReplyParams(session.SessionId, fromAssistantId, toAssistantId), ct, idem: Idem("deleteReply")));
 
     /// <summary>
     /// 从某一轮分支出一个新会话(到这一轮为止的转录,独立的顶层会话),然后刷新这个项目的会话列表并打开它。返回新会话的 id。

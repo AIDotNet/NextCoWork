@@ -23,7 +23,7 @@
     <unit id="RightPanelHint"><segment><source>Right panel (⌘⌥I)</source><target state="translated">右侧面板(⌘⌥I)</target></segment></unit>
     <unit id="NewGroup"><segment><source>New group</source><target state="translated">新建项目组</target></segment></unit>
     <unit id="LeaveGroup"><segment><source>Remove from group</source><target state="translated">移出项目组</target></segment></unit>
-    <unit id="RemoveFromRail"><segment><source>Remove from sidebar</source><target state="translated">从项目栏移除</target></segment></unit>
+    <unit id="RemoveFromRail"><segment><source>Remove from sidebar</source><target state="translated">从侧边栏移除</target></segment></unit>
     <unit id="Rename"><segment><source>Rename</source><target state="translated">重命名</target></segment></unit>
     <unit id="ToggleGroup"><segment><source>Expand / collapse</source><target state="translated">展开 / 收起</target></segment></unit>
     <unit id="ChangeColor"><segment><source>Change color</source><target state="translated">更改颜色</target></segment></unit>
@@ -37,12 +37,35 @@
     <unit id="NewSession"><segment><source>New session</source><target state="translated">新建会话</target></segment></unit>
     <unit id="TerminalsAndAgents"><segment><source>Terminals &amp; agents</source><target state="translated">终端和智能体</target></segment></unit>
     <unit id="NewTerminal"><segment><source>New terminal</source><target state="translated">新建终端</target></segment></unit>
-    <unit id="ProjectSection"><segment><source>Project</source><target state="translated">项目</target></segment></unit>
+    <unit id="ProjectSection"><segment><source>Automation</source><target state="translated">自动化</target></segment></unit>
     <unit id="GitChanges"><segment><source>Git changes</source><target state="translated">Git 变更</target></segment></unit>
     <unit id="ScheduledTasks"><segment><source>Scheduled tasks</source><target state="translated">定时任务</target></segment></unit>
     <unit id="OpenASession"><segment><source>Open a session</source><target state="translated">打开一个会话</target></segment></unit>
     <unit id="SessionContentPlaceholder"><segment><source>Session content appears once the device protocol is connected (M4).</source><target state="translated">会话内容将在 M4 接入设备协议后显示。</target></segment></unit>
     <unit id="ContextUsage"><segment><source>Context usage</source><target state="translated">上下文占用</target></segment></unit>
+    <unit id="ContextCardRegion"><segment><source>Context window</source><target state="translated">上下文窗口</target></segment></unit>
+    <unit id="ContextCardOfTokens"><segment><source>of {0} tokens</source><target state="translated">/ {0} tokens</target></segment></unit>
+    <unit id="ContextCardUsed"><segment><source>used</source><target state="translated">已用</target></segment></unit>
+    <unit id="ContextCardFreeTokens"><segment><source>{0} free</source><target state="translated">剩余 {0}</target></segment></unit>
+    <unit id="ContextCardCellSize"><segment><source>Each cell is about {0} tokens</source><target state="translated">每格约 {0} tokens</target></segment></unit>
+    <unit id="ContextCardCompactsAt"><segment><source>Compacts at {0}%</source><target state="translated">到 {0}% 时自动压缩</target></segment></unit>
+    <unit id="ContextCardSystem"><segment><source>System prompt</source><target state="translated">系统提示</target></segment></unit>
+    <unit id="ContextCardTools"><segment><source>Tool definitions</source><target state="translated">工具定义</target></segment></unit>
+    <unit id="ContextCardInstructions"><segment><source>Instructions and reminders</source><target state="translated">项目说明与提醒</target></segment></unit>
+    <unit id="ContextCardSummary"><segment><source>Summary</source><target state="translated">摘要</target></segment></unit>
+    <unit id="ContextCardMessages"><segment><source>Conversation</source><target state="translated">对话</target></segment></unit>
+    <unit id="ContextCardFree"><segment><source>Free</source><target state="translated">空闲</target></segment></unit>
+    <unit id="ContextCardReserve"><segment><source>Reserved for the reply</source><target state="translated">留给回复</target></segment></unit>
+    <unit id="ContextCardNoSummary"><segment><source>None yet</source><target state="translated">暂无</target></segment></unit>
+    <unit id="ContextCardLegend"><segment><source>Breakdown</source><target state="translated">构成</target></segment></unit>
+    <unit id="ContextCardLegendRow"><segment><source>{0}: {1} tokens {2}</source><target state="translated">{0}:{1} tokens {2}</target></segment></unit>
+    <unit id="ContextCardModelPill"><segment><source>{0}, {1} context</source><target state="translated">{0},上下文 {1}</target></segment></unit>
+    <unit id="ContextCardModelMenu"><segment><source>Model</source><target state="translated">模型</target></segment></unit>
+    <unit id="ContextCardGridPart"><segment><source>{0} {1}</source><target state="translated">{0} {1}</target></segment></unit>
+    <unit id="ContextCardGridDescription"><segment><source>{0}: {1} of {2} tokens used ({3}). Compacts at {4}%.</source><target state="translated">{0}:已用 {1} / {2} tokens({3})。到 {4}% 时自动压缩。</target></segment></unit>
+    <unit id="ContextCardIdle"><segment><source>The agent compacts the conversation on its own at {0}%.</source><target state="translated">用到 {0}% 时 Agent 会自动压缩对话。</target></segment></unit>
+    <unit id="ContextCardCompact"><segment><source>Compact now</source><target state="translated">立即压缩</target></segment></unit>
+    <unit id="ContextCardNothingToFold"><segment><source>Only the newest messages are left; there is nothing to compact.</source><target state="translated">只剩最新的几条消息,没有可以压缩的了。</target></segment></unit>
     <unit id="SplitRight"><segment><source>Split right</source><target state="translated">向右分屏</target></segment></unit>
     <unit id="NewTab"><segment><source>New tab</source><target state="translated">新建标签页</target></segment></unit>
     <unit id="CloseTab"><segment><source>Close tab</source><target state="translated">关闭标签页</target></segment></unit>
@@ -111,6 +134,8 @@
     <unit id="MsgImageOpen"><segment><source>View image</source><target state="translated">查看图片</target></segment></unit>
     <unit id="MsgImageClose"><segment><source>Close image</source><target state="translated">关闭图片</target></segment></unit>
     <unit id="MsgRegenerate"><segment><source>Regenerate</source><target state="translated">重新生成</target></segment></unit>
+    <unit id="MsgDeleteReply"><segment><source>Delete this reply</source><target state="translated">删除这条回复</target></segment></unit>
+    <unit id="MsgDeleteReplyConfirm"><segment><source>Delete the AI reply to this question? Your question stays.</source><target state="translated">删除 AI 对这个问题的回复?你的提问会保留。</target></segment></unit>
     <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="translated">欢迎使用 NextCoWork 3.0</target></segment></unit>
     <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="translated">已从 NextCoWork 2.x 迁移 {0} 个项目、{1} 个会话。</target></segment></unit>
     <unit id="Continue"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>
@@ -218,8 +243,10 @@
     <unit id="DeleteSessionMessage"><segment><source>Delete “{0}”? All its messages and sub-agent records will be removed. This cannot be undone.</source><target state="translated">确定删除「{0}」?它的全部消息和子代理记录都会被删除,无法恢复。</target></segment></unit>
     <unit id="DeleteSessionTitle"><segment><source>Delete session</source><target state="translated">删除会话</target></segment></unit>
     <unit id="Dismiss"><segment><source>Dismiss</source><target state="translated">关闭提示</target></segment></unit>
-    <unit id="EmptySessionHint"><segment><source>Type a message below. Use @ to reference files and / for commands.</source><target state="translated">在下方输入消息。用 @ 引用文件,用 / 输入命令。</target></segment></unit>
+    <unit id="EmptySessionHint"><segment><source>Use @ to reference files and / for commands.</source><target state="translated">用 @ 引用文件,用 / 输入命令。</target></segment></unit>
     <unit id="EmptySessionTitle"><segment><source>What should we work on?</source><target state="translated">想让我做点什么?</target></segment></unit>
+    <unit id="EmptySessionTitleIn"><segment><source>What should we work on in {0}?</source><target state="translated">在 {0} 里做点什么?</target></segment></unit>
+    <unit id="EmptySessionChanges"><segment><source>{0} uncommitted changes</source><target state="translated">{0} 个未提交的改动</target></segment></unit>
     <unit id="ErrorContextOverflow"><segment><source>The conversation no longer fits the model’s context window.</source><target state="translated">对话已超出模型的上下文窗口。</target></segment></unit>
     <unit id="ErrorGeneric"><segment><source>Something went wrong.</source><target state="translated">出错了。</target></segment></unit>
     <unit id="ErrorRateLimited"><segment><source>The provider is rate limiting requests. Try again shortly.</source><target state="translated">供应商限流了,请稍后重试。</target></segment></unit>
@@ -362,6 +389,9 @@
     <unit id="ThinkingAuto"><segment><source>Thinking: auto</source><target state="translated">思考:自动</target></segment></unit>
     <unit id="ThinkingHigh"><segment><source>Thinking: high</source><target state="translated">思考:高</target></segment></unit>
     <unit id="ThinkingLabel"><segment><source>Thinking</source><target state="translated">思考</target></segment></unit>
+    <unit id="WorkGroupTitle"><segment><source>Work</source><target state="translated">工作区</target></segment></unit>
+    <unit id="WorkGroupActions"><segment><source>{0} actions</source><target state="translated">{0} 个操作</target></segment></unit>
+    <unit id="WorkGroupFailed"><segment><source>{0} failed</source><target state="translated">{0} 个失败</target></segment></unit>
     <unit id="ThinkingLow"><segment><source>Thinking: low</source><target state="translated">思考:低</target></segment></unit>
     <unit id="ThinkingMax"><segment><source>Thinking: max</source><target state="translated">思考:最大</target></segment></unit>
     <unit id="ThinkingMedium"><segment><source>Thinking: medium</source><target state="translated">思考:中</target></segment></unit>
@@ -369,6 +399,14 @@
     <unit id="ThinkingOff"><segment><source>Thinking: off</source><target state="translated">思考:关</target></segment></unit>
     <unit id="ThinkingPickerLabel"><segment><source>Thinking level</source><target state="translated">思考档位</target></segment></unit>
     <unit id="ThinkingXHigh"><segment><source>Thinking: extra high</source><target state="translated">思考:很高</target></segment></unit>
+    <unit id="ThinkingShortAuto"><segment><source>Auto</source><target state="translated">自动</target></segment></unit>
+    <unit id="ThinkingShortOff"><segment><source>Off</source><target state="translated">关</target></segment></unit>
+    <unit id="ThinkingShortMinimal"><segment><source>Minimal</source><target state="translated">极低</target></segment></unit>
+    <unit id="ThinkingShortLow"><segment><source>Low</source><target state="translated">低</target></segment></unit>
+    <unit id="ThinkingShortMedium"><segment><source>Medium</source><target state="translated">中</target></segment></unit>
+    <unit id="ThinkingShortHigh"><segment><source>High</source><target state="translated">高</target></segment></unit>
+    <unit id="ThinkingShortXHigh"><segment><source>Extra high</source><target state="translated">很高</target></segment></unit>
+    <unit id="ThinkingShortMax"><segment><source>Max</source><target state="translated">最大</target></segment></unit>
     <unit id="ThoughtForSeconds"><segment><source>Thought for {0} s</source><target state="translated">思考了 {0} 秒</target></segment></unit>
     <unit id="ToolInterrupted"><segment><source>Interrupted</source><target state="translated">已中断</target></segment></unit>
     <unit id="ToolMoreLines"><segment><source>{0} more line(s)</source><target state="translated">还有 {0} 行</target></segment></unit>
@@ -391,6 +429,7 @@
     <unit id="FilesNewFolder"><segment><source>New folder</source><target state="translated">新建文件夹</target></segment></unit>
     <unit id="FilesMoveToTrash"><segment><source>Move to trash</source><target state="translated">移到回收站</target></segment></unit>
     <unit id="FilesCopyPath"><segment><source>Copy path</source><target state="translated">复制路径</target></segment></unit>
+    <unit id="FilesCopyContent"><segment><source>Copy content</source><target state="translated">复制内容</target></segment></unit>
     <unit id="FilesCopyRelativePath"><segment><source>Copy relative path</source><target state="translated">复制相对路径</target></segment></unit>
     <unit id="FilesReveal"><segment><source>Show in file manager</source><target state="translated">在文件管理器中显示</target></segment></unit>
     <unit id="FilesOpenWith"><segment><source>Open with default app</source><target state="translated">用默认程序打开</target></segment></unit>
@@ -409,6 +448,10 @@
     <unit id="FileChunked"><segment><source>Large file — read-only, loaded in parts.</source><target state="translated">大文件:只读,分块加载。</target></segment></unit>
     <unit id="FileReadOnly"><segment><source>Read-only</source><target state="translated">只读</target></segment></unit>
     <unit id="FileLine"><segment><source>Line {0}</source><target state="translated">第 {0} 行</target></segment></unit>
+    <unit id="FileViewRendered"><segment><source>Preview</source><target state="translated">预览</target></segment></unit>
+    <unit id="FileViewSource"><segment><source>Source</source><target state="translated">源码</target></segment></unit>
+    <unit id="FileLineCount"><segment><source>{0} lines</source><target state="translated">{0} 行</target></segment></unit>
+    <unit id="FileUnsaved"><segment><source>Unsaved changes</source><target state="translated">有未保存的修改</target></segment></unit>
     <unit id="FileDiscardChanges"><segment><source>Discard changes</source><target state="translated">放弃修改</target></segment></unit>
     <unit id="DialogNewFile"><segment><source>New file</source><target state="translated">新建文件</target></segment></unit>
     <unit id="DialogNewFolder"><segment><source>New folder</source><target state="translated">新建文件夹</target></segment></unit>
@@ -1532,6 +1575,38 @@
     <unit id="MotionOff"><segment><source>Off</source><target state="translated">关闭</target></segment></unit>
     <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="translated">当前生效:{0}</target></segment></unit>
     <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="translated">这个平台读不到系统的「减少动态效果」设置,所以按「完整」处理;想减少动效请直接选「减弱」或「关闭」。</target></segment></unit>
+    <unit id="NewProjectTitle"><segment><source>New project</source><target state="translated">新建项目</target></segment></unit>
+    <unit id="NewProjectDescription"><segment><source>Register a folder on a connected device as a project.</source><target state="translated">把一台已连接设备上的文件夹登记为项目。</target></segment></unit>
+    <unit id="NewProjectDevice"><segment><source>Device</source><target state="translated">设备</target></segment></unit>
+    <unit id="NewProjectPath"><segment><source>Folder path</source><target state="translated">文件夹路径</target></segment></unit>
+    <unit id="NewProjectPathPlaceholder"><segment><source>/path/to/project</source><target state="translated">/path/to/project</target></segment></unit>
+    <unit id="NewProjectBrowse"><segment><source>Browse…</source><target state="translated">浏览…</target></segment></unit>
+    <unit id="NewProjectRemotePathHint"><segment><source>Enter the absolute path of the folder on that device. The folder must already exist there.</source><target state="translated">填写那台设备上文件夹的绝对路径,文件夹需要已经存在。</target></segment></unit>
+    <unit id="NewProjectName"><segment><source>Name (optional)</source><target state="translated">名称(可选)</target></segment></unit>
+    <unit id="NewProjectNamePlaceholder"><segment><source>Defaults to the folder name</source><target state="translated">默认使用文件夹名</target></segment></unit>
+    <unit id="NewProjectCreate"><segment><source>Add project</source><target state="translated">添加项目</target></segment></unit>
+    <unit id="NewProjectNoDevice"><segment><source>No connected device can add projects right now. Connect or pair a device first.</source><target state="translated">现在没有可以添加项目的已连接设备,请先连接或配对一台设备。</target></segment></unit>
+    <unit id="NewProjectErrorPathRequired"><segment><source>Enter a folder path.</source><target state="translated">请填写文件夹路径。</target></segment></unit>
+    <unit id="NewProjectErrorNotConnected"><segment><source>That device isn&#x27;t connected. Try again once it&#x27;s back.</source><target state="translated">这台设备没有连接,恢复连接后再试。</target></segment></unit>
+    <unit id="NewProjectErrorNotFound"><segment><source>That folder doesn&#x27;t exist on the device.</source><target state="translated">这台设备上没有这个文件夹。</target></segment></unit>
+    <unit id="NewProjectErrorForbidden"><segment><source>You don&#x27;t have permission to add projects on this device.</source><target state="translated">你在这台设备上没有添加项目的权限。</target></segment></unit>
+    <unit id="NewProjectErrorFailed"><segment><source>Couldn&#x27;t add the project. Check the path and try again.</source><target state="translated">无法添加项目,请检查路径后再试。</target></segment></unit>
+    <unit id="ChangeProjectIcon"><segment><source>Change icon…</source><target state="translated">更改图标…</target></segment></unit>
+    <unit id="ProjectIconTitle"><segment><source>Project icon</source><target state="translated">项目图标</target></segment></unit>
+    <unit id="ProjectIconDescription"><segment><source>How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</source><target state="translated">「{0}」在项目栏里的样子。只改本应用的布局,不影响设备上的文件夹。</target></segment></unit>
+    <unit id="ProjectIconInitials"><segment><source>Initials</source><target state="translated">首字母</target></segment></unit>
+    <unit id="ProjectIconText"><segment><source>Text</source><target state="translated">文字</target></segment></unit>
+    <unit id="ProjectIconImage"><segment><source>Image</source><target state="translated">图片</target></segment></unit>
+    <unit id="ProjectIconTextLabel"><segment><source>Text or emoji</source><target state="translated">文字或 emoji</target></segment></unit>
+    <unit id="ProjectIconTextPlaceholder"><segment><source>Up to 2 characters</source><target state="translated">最多 2 个字符</target></segment></unit>
+    <unit id="ProjectIconColor"><segment><source>Background color</source><target state="translated">底色</target></segment></unit>
+    <unit id="ProjectIconPickImage"><segment><source>Choose image…</source><target state="translated">选择图片…</target></segment></unit>
+    <unit id="ProjectIconImageHint"><segment><source>The image is center-cropped to a square and shrunk to 96 × 96, so it stays small.</source><target state="translated">图片会居中裁成正方形并压缩到 96 × 96,占用很小。</target></segment></unit>
+    <unit id="ProjectIconErrorTooLarge"><segment><source>That image is too large (up to 20 MB; PNG, GIF and BMP up to 25 megapixels).</source><target state="translated">图片太大(最多 20 MB;PNG、GIF、BMP 最多 2500 万像素)。</target></segment></unit>
+    <unit id="ProjectIconErrorUnsupported"><segment><source>Couldn&#x27;t read that image. PNG, JPEG, WebP, GIF and BMP are supported.</source><target state="translated">无法读取这张图片。支持 PNG、JPEG、WebP、GIF、BMP。</target></segment></unit>
+    <unit id="ProjectIconReset"><segment><source>Reset to default</source><target state="translated">恢复默认</target></segment></unit>
+    <unit id="FilePickIconImage"><segment><source>Choose an icon image</source><target state="translated">选择图标图片</target></segment></unit>
+    <unit id="FilePickIconImageType"><segment><source>Images</source><target state="translated">图片</target></segment></unit>
     <unit id="StartupA11yName"><segment><source>Starting NextCoWork</source><target state="translated">正在启动 NextCoWork</target></segment></unit>
     <unit id="StartupProgressLabel"><segment><source>Startup progress</source><target state="translated">启动进度</target></segment></unit>
     <unit id="StartupStageApp"><segment><source>Preparing the app</source><target state="translated">准备应用</target></segment></unit>
@@ -1579,5 +1654,119 @@
     <unit id="StartupHideDiagnostics"><segment><source>Hide diagnostics</source><target state="translated">收起诊断</target></segment></unit>
     <unit id="StartupCopyDiagnostics"><segment><source>Copy diagnostics</source><target state="translated">复制诊断信息</target></segment></unit>
     <unit id="StartupQuit"><segment><source>Quit</source><target state="translated">退出</target></segment></unit>
+    <unit id="CmdCommandPalette"><segment><source>Command palette</source><target state="translated">命令面板</target></segment></unit>
+    <unit id="CmdNewSession"><segment><source>New session</source><target state="translated">新建会话</target></segment></unit>
+    <unit id="CmdSearchProject"><segment><source>Search sessions, files and commands</source><target state="translated">搜索会话、文件和命令</target></segment></unit>
+    <unit id="CmdCloseTab"><segment><source>Close tab</source><target state="translated">关闭标签页</target></segment></unit>
+    <unit id="CmdStopRun"><segment><source>Stop the running task</source><target state="translated">停止运行</target></segment></unit>
+    <unit id="CmdApproveFirst"><segment><source>Allow the first pending approval once</source><target state="translated">允许第一个待审批(一次)</target></segment></unit>
+    <unit id="CmdNextAttention"><segment><source>Go to the next item waiting for you</source><target state="translated">转到下一项待处理</target></segment></unit>
+    <unit id="CmdFocusComposer"><segment><source>Focus the message box</source><target state="translated">聚焦输入框</target></segment></unit>
+    <unit id="CmdToggleSidebar"><segment><source>Show or hide the sidebar</source><target state="translated">显示 / 隐藏左侧栏</target></segment></unit>
+    <unit id="CmdToggleInspector"><segment><source>Show or hide the right panel</source><target state="translated">显示 / 隐藏右侧面板</target></segment></unit>
+    <unit id="CmdOpenSettings"><segment><source>Open settings</source><target state="translated">打开设置</target></segment></unit>
+    <unit id="CmdAddProject"><segment><source>Add project</source><target state="translated">添加项目</target></segment></unit>
+    <unit id="CmdRecentProject"><segment><source>Switch to the previous project</source><target state="translated">切换到上一个项目</target></segment></unit>
+    <unit id="CmdOpenReview"><segment><source>Review changes</source><target state="translated">审查改动</target></segment></unit>
+    <unit id="CmdOpenGit"><segment><source>Open Git</source><target state="translated">打开 Git</target></segment></unit>
+    <unit id="CmdOpenTerminal"><segment><source>Open terminal</source><target state="translated">打开终端</target></segment></unit>
+    <unit id="CmdSelectProject"><segment><source>Switch to project {0}</source><target state="translated">切换到第 {0} 个项目</target></segment></unit>
+    <unit id="PalettePlaceholder"><segment><source>Type a command, session, project, file or setting…</source><target state="translated">输入命令、会话、项目、文件或设置……</target></segment></unit>
+    <unit id="PaletteNoMatch"><segment><source>Nothing matches</source><target state="translated">没有匹配的结果</target></segment></unit>
+    <unit id="PaletteSearchingFiles"><segment><source>Searching files…</source><target state="translated">正在查找文件……</target></segment></unit>
+    <unit id="PaletteSettingsPrefix"><segment><source>Settings:</source><target state="translated">设置:</target></segment></unit>
+    <unit id="PaletteKindCommand"><segment><source>Command</source><target state="translated">命令</target></segment></unit>
+    <unit id="PaletteKindSession"><segment><source>Session</source><target state="translated">会话</target></segment></unit>
+    <unit id="PaletteKindProject"><segment><source>Project</source><target state="translated">项目</target></segment></unit>
+    <unit id="PaletteKindFile"><segment><source>File</source><target state="translated">文件</target></segment></unit>
+    <unit id="PaletteKindSettings"><segment><source>Settings</source><target state="translated">设置</target></segment></unit>
+    <unit id="PaletteHint"><segment><source>↑↓ to move · Enter to open · Esc to close</source><target state="translated">↑↓ 选择 · 回车打开 · Esc 关闭</target></segment></unit>
+    <unit id="SettingsShortcuts"><segment><source>Shortcuts</source><target state="translated">快捷键</target></segment></unit>
+    <unit id="SettingsShortcutsHint"><segment><source>Keyboard shortcuts for this app. Click a shortcut to record a new one; press Esc to cancel.</source><target state="translated">这个应用的键盘快捷键。点一个快捷键即可录制新的组合,按 Esc 取消。</target></segment></unit>
+    <unit id="ShortcutRecording"><segment><source>Press keys…</source><target state="translated">请按下组合键……</target></segment></unit>
+    <unit id="ShortcutNone"><segment><source>None</source><target state="translated">无</target></segment></unit>
+    <unit id="ShortcutReset"><segment><source>Reset</source><target state="translated">恢复默认</target></segment></unit>
+    <unit id="ShortcutResetAll"><segment><source>Reset all</source><target state="translated">全部恢复默认</target></segment></unit>
+    <unit id="ShortcutClear"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="ShortcutConflict"><segment><source>“{0}” used the same keys, so its shortcut was removed.</source><target state="translated">「{0}」原来用的是同一组按键,它的快捷键已清空。</target></segment></unit>
+    <unit id="ShortcutUnusable"><segment><source>Use a combination with ⌘, Ctrl or Alt, or a function key.</source><target state="translated">请使用带 ⌘、Ctrl 或 Alt 的组合,或功能键。</target></segment></unit>
+    <unit id="ShortcutCustom"><segment><source>Changed</source><target state="translated">已修改</target></segment></unit>
+    <unit id="AttnToolApproval"><segment><source>Approval needed</source><target state="translated">需要你批准</target></segment></unit>
+    <unit id="AttnToolApprovalDangerous"><segment><source>A risky action needs your approval</source><target state="translated">高风险操作需要你批准</target></segment></unit>
+    <unit id="AttnQuestion"><segment><source>The assistant has a question</source><target state="translated">助手在等你回答</target></segment></unit>
+    <unit id="AttnPlan"><segment><source>A plan is waiting for your approval</source><target state="translated">计划等你批准</target></segment></unit>
+    <unit id="AttnGoal"><segment><source>The assistant suggests a goal</source><target state="translated">助手建议设定一个目标</target></segment></unit>
+    <unit id="AttnWorkflow"><segment><source>A workflow is waiting for your approval</source><target state="translated">工作流等你批准</target></segment></unit>
+    <unit id="AttnDevice"><segment><source>A device needs your confirmation</source><target state="translated">设备需要你确认</target></segment></unit>
+    <unit id="AttnCompleted"><segment><source>Task finished</source><target state="translated">任务完成</target></segment></unit>
+    <unit id="AttnFailed"><segment><source>Task failed</source><target state="translated">任务失败</target></segment></unit>
+    <unit id="TrayOpen"><segment><source>Open NextCoWork</source><target state="translated">打开 NextCoWork</target></segment></unit>
+    <unit id="TrayPending"><segment><source>{0} waiting for you</source><target state="translated">{0} 项等你处理</target></segment></unit>
+    <unit id="TrayNothingPending"><segment><source>Nothing is waiting for you</source><target state="translated">没有待处理的事项</target></segment></unit>
+    <unit id="TrayRunning"><segment><source>{0} running</source><target state="translated">{0} 个任务运行中</target></segment></unit>
+    <unit id="TrayUnknown"><segment><source>Some devices are offline</source><target state="translated">部分设备未连接</target></segment></unit>
+    <unit id="TrayNewSession"><segment><source>New session</source><target state="translated">新建会话</target></segment></unit>
+    <unit id="TraySettings"><segment><source>Notification settings…</source><target state="translated">通知设置……</target></segment></unit>
+    <unit id="TrayQuit"><segment><source>Quit NextCoWork</source><target state="translated">退出 NextCoWork</target></segment></unit>
+    <unit id="TrayTooltip"><segment><source>NextCoWork: {0} waiting, {1} running</source><target state="translated">NextCoWork:{0} 项待处理,{1} 个运行中</target></segment></unit>
+    <unit id="SettingsNotificationsHint"><segment><source>System notifications, the badge on the app icon, and the menu bar icon.</source><target state="translated">系统通知、应用图标上的角标和菜单栏图标。</target></segment></unit>
+    <unit id="NotifySystemTitle"><segment><source>System notifications</source><target state="translated">系统通知</target></segment></unit>
+    <unit id="NotifySystemHint"><segment><source>No notification is shown while you are looking at that conversation.</source><target state="translated">正看着那个会话时不弹通知。</target></segment></unit>
+    <unit id="NotifyPendingLabel"><segment><source>Something needs you (approval, question, plan)</source><target state="translated">有事等你处理(审批、提问、计划)</target></segment></unit>
+    <unit id="NotifyCompletedLabel"><segment><source>A task finished</source><target state="translated">任务完成</target></segment></unit>
+    <unit id="NotifyFailedLabel"><segment><source>A task failed</source><target state="translated">任务失败</target></segment></unit>
+    <unit id="NotifyUnsupported"><segment><source>This platform cannot show system notifications yet. The badge and the menu bar icon still work.</source><target state="translated">这个平台暂时不能显示系统通知;角标和菜单栏图标照常可用。</target></segment></unit>
+    <unit id="NotifyBadgeTitle"><segment><source>App icon badge</source><target state="translated">应用图标角标</target></segment></unit>
+    <unit id="NotifyBadgeLabel"><segment><source>Show how many items are waiting for you on the app icon</source><target state="translated">在应用图标上显示待处理的数量</target></segment></unit>
+    <unit id="NotifyBadgeUnsupported"><segment><source>This platform has no app icon badge.</source><target state="translated">这个平台没有应用图标角标。</target></segment></unit>
+    <unit id="NotifyTrayTitle"><segment><source>Menu bar / tray icon</source><target state="translated">菜单栏 / 托盘图标</target></segment></unit>
+    <unit id="NotifyTrayLabel"><segment><source>Keep running in the menu bar (system tray) when the window is closed</source><target state="translated">关闭窗口后在菜单栏(系统托盘)继续运行</target></segment></unit>
+    <unit id="NotifyTrayHint"><segment><source>The local Agent keeps working on running tasks. To quit completely, choose Quit from the icon’s menu.</source><target state="translated">本机 Agent 会继续执行正在运行的任务;要彻底退出,用图标菜单里的「退出」。</target></segment></unit>
+    <unit id="ApprovalAlwaysAllowIn"><segment><source>Always allow in {0}</source><target state="translated">{0}总是允许</target></segment></unit>
+    <unit id="ApprovalRuleHint"><segment><source>“Always allow” remembers this rule: {0}</source><target state="translated">「总是允许」会记住这条规则:{0}</target></segment></unit>
+    <unit id="PendingBarHere"><segment><source>{0} waiting for you in this session</source><target state="translated">这个会话里有 {0} 项等你处理</target></segment></unit>
+    <unit id="PendingBarBoth"><segment><source>{0} waiting here, {1} in other sessions</source><target state="translated">这里 {0} 项等你处理,其他会话还有 {1} 项</target></segment></unit>
+    <unit id="PendingBarElsewhereOnly"><segment><source>{0} waiting for you in other sessions</source><target state="translated">其他会话里有 {0} 项等你处理</target></segment></unit>
+    <unit id="PendingBarNext"><segment><source>Next</source><target state="translated">下一项</target></segment></unit>
+    <unit id="PendingBarElsewhere"><segment><source>Go there</source><target state="translated">去处理</target></segment></unit>
+    <unit id="ErrorRunAbandoned"><segment><source>The task did not stop in time and was ended.</source><target state="translated">任务没能及时停下,已被强制结束。</target></segment></unit>
+    <unit id="ErrorRunInternal"><segment><source>The task stopped because of an internal error.</source><target state="translated">任务因为内部错误停止了。</target></segment></unit>
+    <unit id="ErrorRunNotStarted"><segment><source>The task could not start.</source><target state="translated">任务没能开始。</target></segment></unit>
+    <unit id="ErrorAuth"><segment><source>The provider rejected the credentials. Check the key or sign in again.</source><target state="translated">供应商拒绝了凭据,请检查密钥或重新登录。</target></segment></unit>
+    <unit id="ErrorNetwork"><segment><source>Could not reach the provider. Check the network and try again.</source><target state="translated">连不上供应商,请检查网络后重试。</target></segment></unit>
+    <unit id="ErrorProvider"><segment><source>The provider is unavailable or sent a response that could not be used. Try again shortly.</source><target state="translated">供应商暂时不可用,或返回了无法处理的响应,请稍后重试。</target></segment></unit>
+    <unit id="ErrorCacheUnsupported"><segment><source>This provider does not support prompt caching. Turn it off in the provider settings.</source><target state="translated">这个供应商不支持提示词缓存,请在供应商设置里关掉。</target></segment></unit>
+    <unit id="ErrorNoHealthyProvider"><segment><source>No provider is available for this model right now.</source><target state="translated">这个模型目前没有可用的供应商。</target></segment></unit>
+    <unit id="ErrorConflict"><segment><source>Another operation is using this conversation. Try again in a moment.</source><target state="translated">这个会话正被另一个操作占用,请稍后再试。</target></segment></unit>
+    <unit id="ErrorToolFailed"><segment><source>A tool failed to run.</source><target state="translated">有工具执行失败了。</target></segment></unit>
+    <unit id="ErrorAborted"><segment><source>Stopped.</source><target state="translated">已停止。</target></segment></unit>
+    <unit id="ErrorDetails"><segment><source>Details</source><target state="translated">详情</target></segment></unit>
+    <unit id="ErrorOpenProviders"><segment><source>Provider settings</source><target state="translated">供应商设置</target></segment></unit>
+    <unit id="ComposerAddProvider"><segment><source>Add a provider</source><target state="translated">添加供应商</target></segment></unit>
+    <unit id="StarterExplain"><segment><source>Explain how this project is structured</source><target state="translated">解释一下这个项目的结构和主要模块</target></segment></unit>
+    <unit id="StarterTests"><segment><source>Run the tests and fix whatever fails</source><target state="translated">跑一遍测试,修好失败的用例</target></segment></unit>
+    <unit id="StarterReview"><segment><source>Review my uncommitted changes for problems</source><target state="translated">检查一下我还没提交的改动有没有问题</target></segment></unit>
+    <unit id="StarterPlan"><segment><source>Make a plan first and wait for my go-ahead: </source><target state="translated">先出一个实现计划,我确认后再动手:</target></segment></unit>
+    <unit id="StarterBug"><segment><source>Help me track down a problem: </source><target state="translated">帮我排查一个问题:</target></segment></unit>
+    <unit id="StarterExplainShort"><segment><source>Explain the structure</source><target state="translated">解释项目结构</target></segment></unit>
+    <unit id="StarterTestsShort"><segment><source>Run and fix tests</source><target state="translated">跑测试并修复</target></segment></unit>
+    <unit id="StarterReviewShort"><segment><source>Review uncommitted changes</source><target state="translated">审查未提交的改动</target></segment></unit>
+    <unit id="StarterPlanShort"><segment><source>Plan first</source><target state="translated">先做计划</target></segment></unit>
+    <unit id="StarterBugShort"><segment><source>Track down a bug</source><target state="translated">排查问题</target></segment></unit>
+    <unit id="ComposerThinkingLabel"><segment><source>Thinking: {0}</source><target state="translated">思考:{0}</target></segment></unit>
+    <unit id="ComposerPermissionLabel"><segment><source>Permission: {0}</source><target state="translated">权限:{0}</target></segment></unit>
+    <unit id="GeneralCommonTitle"><segment><source>Common</source><target state="translated">常用</target></segment></unit>
+    <unit id="GeneralAdvancedTitle"><segment><source>Advanced</source><target state="translated">高级</target></segment></unit>
+    <unit id="GeneralAdvancedHint"><segment><source>Helper models, routing, compaction, limits, proxy</source><target state="translated">辅助模型、路由、压缩、上限、代理</target></segment></unit>
+    <unit id="SettingsSearch"><segment><source>Search settings</source><target state="translated">搜索设置</target></segment></unit>
+    <unit id="SettingsSearchNoMatch"><segment><source>No setting matches</source><target state="translated">没有匹配的设置</target></segment></unit>
+    <unit id="SidebarProjects"><segment><source>Projects</source><target state="translated">项目</target></segment></unit>
+    <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="translated">显示更多 ({0})</target></segment></unit>
+    <unit id="SidebarShowLess"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
+    <unit id="SidebarNoSessions"><segment><source>No sessions yet</source><target state="translated">还没有会话</target></segment></unit>
+    <unit id="SidebarPending"><segment><source>{0} pending</source><target state="translated">{0} 待处理</target></segment></unit>
+    <unit id="SidebarHideArchived"><segment><source>Hide archived</source><target state="translated">隐藏已归档</target></segment></unit>
+    <unit id="SidebarSignedIn"><segment><source>Signed in</source><target state="translated">已登录</target></segment></unit>
+    <unit id="SidebarProjectMenu"><segment><source>Project actions</source><target state="translated">项目操作</target></segment></unit>
   </file>
 </xliff>

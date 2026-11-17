@@ -21,10 +21,7 @@
           <!-- 设备断开:状态未知(规则 7),旋转图标,不判结束 -->
           <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" VerticalAlignment="Center" IsVisible="{Binding IsDeviceUnknown}" Foreground="{arc:ArcDesignTokenResource Warning}" />
           <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsRunning}" />
-          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasContext}" arc:Tooltip.Tip="{l:NcwText ContextUsage}">
-            <lucide:LucideIcon Kind="Gauge" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <TextBlock Classes="hint" VerticalAlignment="Center"><Run Text="{Binding ContextPercent}" /><Run Text="%" /></TextBlock>
-          </StackPanel>
+          <!-- 上下文占用环在输入框的工具行里(docs/design/03 §6),导航栏不再重复 -->
         </StackPanel>
       </ui:NcwNavbar.Trailing>
     </ui:NcwNavbar>

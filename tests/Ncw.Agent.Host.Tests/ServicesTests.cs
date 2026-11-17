@@ -103,6 +103,28 @@ public sealed class ServicesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_session_created_without_a_model_takes_the_project_default_then_the_device_default()
+    {
+        // 都没配:留空(控制端在候选里兜底)
+        var bare = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal(("", null), (bare.Model, bare.ModelProviderId));
+
+        // 设备默认模型
+        await _owner.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(new DeviceSettingsPatchDto(DefaultModel: new ModelPickDto("device-model", "pd"))));
+        var fromDevice = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal(("device-model", "pd"), (fromDevice.Model, fromDevice.ModelProviderId));
+
+        // 项目默认模型压过设备的;别名和供应商整对取
+        await _owner.CallAsync(SettingsMethods.ProjectUpdate, new ProjectSettingsPatchDto(_project.WorkspaceId, DefaultModel: new ModelPickDto("project-model", "pp")));
+        var fromProject = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal(("project-model", "pp"), (fromProject.Model, fromProject.ModelProviderId));
+
+        // 显式指定的压过一切
+        var explicitModel = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId, Model: "chosen"));
+        Assert.Equal(("chosen", null), (explicitModel.Model, explicitModel.ModelProviderId));
+    }
+
+    [Fact]
     public async Task The_proxy_password_is_stored_encrypted_and_only_a_has_flag_ever_leaves_the_device()
     {
         const string secret = "proxy-SECRET-pass-123";

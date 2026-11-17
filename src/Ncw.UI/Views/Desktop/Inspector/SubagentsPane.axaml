@@ -102,8 +102,9 @@
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <lucide:LucideIcon Kind="Brain" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                     <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsStreaming}"
+                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowDuration}"
                                Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
+                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowPlainLabel}" Text="{l:NcwText ThinkingLabel}" />
                   </StackPanel>
                 </DataTemplate>
                 <DataTemplate DataType="vm:ToolRowViewModel">

@@ -151,7 +151,7 @@ public class MotionScreenshotTests : IDisposable
         NcwMotion.Apply(UiMotionLevel.Off);
         var (window, _, vm) = Render(ConversationScreenshotTests.SubagentsAndTodo(), width, dark);
         var todo = vm.Conversation.Todo!;
-        var todoList = window.GetVisualDescendants().OfType<NcwCollapsible>().First(c => c.Child is ItemsControl);
+        var todoList = window.GetVisualDescendants().OfType<NcwCollapsible>().First(c => c.Child is ItemsControl && c.FindAncestorOfType<Ncw.UI.Views.Desktop.Sidebar>() is null); // 侧边栏里的收件箱 / 项目组也是折叠区,跳过
         Assert.True(todoList.IsVisible);                           // 待办默认展开
         Assert.Equal(1, todoList.Progress);
         var openHeight = todoList.Bounds.Height;
@@ -300,7 +300,7 @@ public class MotionScreenshotTests : IDisposable
         Advance(900);
         Assert.Null(left.RenderTransform);
         Assert.Equal(1, left.Opacity);
-        Assert.True(left.Bounds.Width > 300);
+        Assert.Equal(width, left.Bounds.Width, 0.5);               // 回到原来的宽度
     }
 
     [AvaloniaFact]
@@ -323,7 +323,7 @@ public class MotionScreenshotTests : IDisposable
         Assert.InRange(left.Opacity, 0.01, 0.99);
         Advance(400);
         Assert.Equal(1, left.Opacity);
-        Assert.Equal(352, Part<Grid>(shell, "Main").ColumnDefinitions[0].Width.Value);
+        Assert.Equal(Ncw.Client.Stores.UiPrefs.SidebarDefaultWidth, Part<Grid>(shell, "Main").ColumnDefinitions[0].Width.Value);
     }
 
     [AvaloniaFact]
@@ -346,7 +346,7 @@ public class MotionScreenshotTests : IDisposable
         Assert.Null(left.RenderTransform);
         Assert.Equal(1, left.Opacity);
         Assert.Equal(1, Grid.GetColumnSpan(left));
-        Assert.Equal(352, Part<Grid>(shell, "Main").ColumnDefinitions[0].Width.Value);
+        Assert.Equal(Ncw.Client.Stores.UiPrefs.SidebarDefaultWidth, Part<Grid>(shell, "Main").ColumnDefinitions[0].Width.Value);
     }
 
     [AvaloniaFact]

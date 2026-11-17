@@ -247,7 +247,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 |---|---|---|---|
 | `sessions.list` | query | viewer | 项目下的会话(侧边栏一行:标题、更新时间、归档、收藏)。**不含「是否在跑」**:那只由 `device` 主题的 activeRuns 回答(一个事实一个真源) |
 | `sessions.get` / `sessions.getPage` | query | viewer | 整段详情 / 一页(`limit`、`beforeMessageId`):消息、产生它们的 Run、用量、模型 |
-| `sessions.create` | command | member | 给了 `id` 时用 Ensure 语义(同 id 已存在返回现有的,不覆盖) |
+| `sessions.create` | command | member | 给了 `id` 时用 Ensure 语义(同 id 已存在返回现有的,不覆盖);没给模型时按项目默认模型 → 设备默认模型整对补上,都没配留空 |
 | `sessions.rename` / `setMode` / `setModel` / `archive` / `favorite` | command | member | 返回更新后的 `SessionDto`;`setMode` 同时让排队里还没被消费的条目跟着换模式 |
 | `sessions.delete` | command | **owner** | 先中止并等 Run 收尾、杀属于它们的后台 Shell、丢排队状态,再删库(含子代理转录) |
 | `sessions.duplicate` / `branch` | command | member | 复制整条 / 复制到某一轮为止的前缀,新会话是独立的顶层会话 |

@@ -184,10 +184,14 @@ C# 控制台项目,在 `NextCoWork.slnx` 的 `/tools/` 下;单测在 `tests/Ncw.
 ```
 macOS    NextCoWork.app/Contents/MacOS/NextCoWork
          NextCoWork.app/Contents/MacOS/agent/ncw-agent  + libe_sqlite3.dylib      (AppContext.BaseDirectory = Contents/MacOS/)
-         NextCoWork.app/Contents/Info.plist              (com.nextcowork.app、nextcowork:// 的 CFBundleURLTypes、LSMinimumSystemVersion 14.0 ← 待核实)
+         NextCoWork.app/Contents/Info.plist              (com.nextcowork.app、nextcowork:// 的 CFBundleURLTypes、CFBundleIconFile、LSMinimumSystemVersion 14.0 ← 待核实)
+         NextCoWork.app/Contents/Resources/AppIcon.icns  (Dock / Finder / ⌘Tab 的应用图标)
 Win/Linux NextCoWork/NextCoWork[.exe]  与  NextCoWork/agent/ncw-agent[.exe] + e_sqlite3
 bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件都不能再改
 ```
+
+**应用图标**:源图是 2.x 的 1024×1024 `build/icon.png`(已带 macOS 圆角方块和留白),放在 `src/Ncw.Desktop/Assets/AppIcon.png`;`AppIcon.icns` 用 `iconutil` 从它生成后**入库**(不在构建时生成,这样在非 macOS 主机上跨平台打 osx 包也有图标),`bundle` 把它复制进 `Contents/Resources/` 并在 Info.plist 写 `CFBundleIconFile`,缺文件就让 `bundle` 失败(而不是发出一个 Dock 里空白图标的包)。
+**不是从 .app 启动的**(`dotnet run` / IDE:进程是 `dotnet` 本身,Dock 会显示 dotnet 的默认图标)由 `MacDockIcon` 在 Avalonia 平台初始化后把内嵌的 `AppIcon.png` 设成 `NSApplication.applicationIconImage`(只改 Dock 里这一份,不写文件);从 .app 启动的不动,用包自带的图标。Windows / Linux 的窗口与安装包图标还没做。
 
 **与设计的偏离**(先改文档,再实现):
 

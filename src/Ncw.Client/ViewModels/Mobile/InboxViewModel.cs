@@ -426,7 +426,15 @@ public sealed partial class InboxViewModel : ObservableObject
         BadgeCount = inbox.BadgeCount;
         HasUnknown = inbox.HasUnknown;
         IsEmpty = Groups.Count == 0;
+        Updated?.Invoke();
     }
+
+    /// <summary>每次重新派生之后(桌面的提醒 <see cref="Services.AttentionMonitor"/> 据此比较新旧条目)。</summary>
+    public event Action? Updated;
+
+    /// <summary>当前的行(按 key):提醒需要项目名、会话标题、工具摘要这些已经映射好的数据。</summary>
+    public InboxEntryViewModel? Find(string key) =>
+        Groups.SelectMany(static g => g.Entries).FirstOrDefault(e => e.Key == key && !e.IsHandledElsewhere);
 
     private void Tombstone(InboxEntryViewModel row)
     {

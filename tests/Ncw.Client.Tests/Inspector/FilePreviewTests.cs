@@ -291,48 +291,42 @@ public class FilesPanelTests
         }
     }
 
+    private sealed class RecordingTabs : IFileTabHost
+    {
+        public List<(string Path, int? Line)> Opened { get; } = [];
+
+        public List<string> ClosedInside { get; } = [];
+
+        public Task OpenAsync(ProjectRef project, string path, int? line = null)
+        {
+            Opened.Add((path, line));
+            return Task.CompletedTask;
+        }
+
+        public void CloseInside(ProjectRef project, string path) => ClosedInside.Add(path);
+    }
+
     private static async Task<(FilesPanelViewModel Panel, FakeFiles Files, ScriptedDialogs Dialogs, RecordingLocal Local)> Create(bool local = true)
     {
         var files = new FakeFiles().Add("src/App.cs", "class App {}").Add("README.md", "hello");
         var dialogs = new ScriptedDialogs();
         var localFiles = new RecordingLocal();
         var panel = new FilesPanelViewModel(files, () => dialogs, () => DefaultInspectorText.Instance, () => localFiles, searchDebounce: TimeSpan.Zero);
+        panel.Tabs = new RecordingTabs();
         await panel.BindAsync(Project, "Demo", "/work/demo", canWrite: true, canOpenLocally: local);
         return (panel, files, dialogs, localFiles);
     }
 
     [Fact]
-    public async Task Opening_a_file_shows_the_preview_and_closing_goes_back_to_the_tree()
+    public async Task Opening_a_file_hands_it_to_the_workspace_as_a_tab_and_the_tree_stays()
     {
         var (panel, _, _, _) = await Create();
         var readme = panel.Tree.Roots.Single(n => n.Name == "README.md");
 
         await panel.OpenFileCommand.ExecuteAsync(readme);
 
-        Assert.True(panel.HasPreview);
-        Assert.False(panel.ShowsTree);
-        Assert.Equal("hello", panel.Preview!.DisplayText);
-
-        await panel.ClosePreviewCommand.ExecuteAsync(null);
-        Assert.False(panel.HasPreview);
+        Assert.Equal([("README.md", (int?)null)], ((RecordingTabs)panel.Tabs).Opened);
         Assert.True(panel.ShowsTree);
-    }
-
-    [Fact]
-    public async Task Closing_a_dirty_preview_asks_first_and_keeps_it_when_declined()
-    {
-        var (panel, _, dialogs, _) = await Create();
-        await panel.OpenFileCommand.ExecuteAsync(panel.Tree.Roots.Single(n => n.Name == "README.md"));
-        panel.Preview!.EditCommand.Execute(null);
-        panel.Preview.EditText = "changed";
-        dialogs.Confirm = false;
-
-        await panel.ClosePreviewCommand.ExecuteAsync(null);
-        Assert.True(panel.HasPreview);
-
-        dialogs.Confirm = true;
-        await panel.ClosePreviewCommand.ExecuteAsync(null);
-        Assert.False(panel.HasPreview);
     }
 
     [Fact]
@@ -346,7 +340,7 @@ public class FilesPanelTests
 
         Assert.Contains("createFile:src/Extra.cs", files.Mutations);
         Assert.Contains(src.Children, c => c.Name == "Extra.cs");
-        Assert.Equal("src/Extra.cs", panel.Preview?.Path);
+        Assert.Equal("src/Extra.cs", Assert.Single(((RecordingTabs)panel.Tabs).Opened).Path);
     }
 
     [Fact]
@@ -374,7 +368,7 @@ public class FilesPanelTests
         await panel.RenameCommand.ExecuteAsync(app);
 
         Assert.Contains("rename->src/Main.cs:src/App.cs", files.Mutations);
-        Assert.False(panel.HasPreview);
+        Assert.Equal(["src/App.cs"], ((RecordingTabs)panel.Tabs).ClosedInside);
         Assert.NotNull(panel.Tree.Find("src/Main.cs"));
         Assert.Null(panel.Tree.Find("src/App.cs"));
     }
@@ -436,8 +430,7 @@ public class FilesPanelTests
         Assert.Equal((2, "TODO: write"), (hit.Line, hit.Text));
 
         await panel.OpenResultCommand.ExecuteAsync(hit);
-        Assert.Equal(2, panel.Preview!.Line);
-        Assert.Equal("docs/guide.md", panel.Preview.Path);
+        Assert.Equal(("docs/guide.md", (int?)2), Assert.Single(((RecordingTabs)panel.Tabs).Opened));
     }
 
     [Fact]

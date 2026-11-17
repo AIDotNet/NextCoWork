@@ -179,7 +179,7 @@ public class MessageToolbarScreenshotTests
         Assert.True(row.Images[2].IsFailed);                // 附件引用取不到(设备没连上)→ 失败态,可以重试
         var thumbs = shell.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("thumb")).ToList();
         Assert.Equal(3, thumbs.Count);
-        Assert.Equal(2, shell.GetVisualDescendants().OfType<Image>().Count(i => i.Source is Bitmap && i.IsEffectivelyVisible));
+        Assert.Equal(2, thumbs.SelectMany(t => t.GetVisualDescendants().OfType<Image>()).Count(i => i.Source is Bitmap && i.IsEffectivelyVisible)); // 只数消息里的缩略图(外壳左上角的品牌图标也是位图)
         Snapshot(window, "images", dark);
     }
 
@@ -236,5 +236,38 @@ public class MessageToolbarScreenshotTests
                 && Avalonia.Automation.AutomationProperties.GetName(c) == Ncw.UI.Localization.NcwTexts.Get(Ncw.UI.Localization.NcwTextKind.MsgRegenerate))
             .ToList();
         Assert.Single(visible);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void An_ai_reply_offers_branch_and_delete_and_deleting_asks_for_a_second_confirmation(bool dark)
+    {
+        var (window, vm, shell) = Render(Chat(), dark);
+        var replies = vm.Conversation.Rows.OfType<AssistantRowViewModel>().ToList();
+        Assert.All(replies, r => Assert.True(r.HasTurn)); // 两段回复前面都有提问:都能分支
+
+        string Name(Ncw.UI.Localization.NcwTextKind kind) => Ncw.UI.Localization.NcwTexts.Get(kind);
+        var names = shell.GetVisualDescendants().OfType<Control>()
+            .Where(c => c is Ncw.UI.Controls.PlainButton && c.DataContext is AssistantRowViewModel)
+            .Select(c => Avalonia.Automation.AutomationProperties.GetName(c)).ToList();
+        Assert.Contains(Name(Ncw.UI.Localization.NcwTextKind.MsgBranch), names);
+        Assert.Contains(Name(Ncw.UI.Localization.NcwTextKind.MsgDeleteReply), names);
+
+        var last = replies[^1];
+        vm.Conversation.AskDeleteReplyCommand.Execute(last);
+        Dispatch();
+        Assert.True(last.IsConfirmingDelete);
+        // 确认状态钉住工具条,出现「删除这条回复?」的文字
+        Assert.Contains(shell.GetVisualDescendants().OfType<StackPanel>(), p => p.Classes.Contains("pinned") && p.DataContext == last && p.Opacity == 1);
+        Assert.Contains(shell.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == Name(Ncw.UI.Localization.NcwTextKind.MsgDeleteReplyConfirm) && t.IsEffectivelyVisible);
+        // 确认态只留确认文字和两个按钮:重新生成 / 分支 / 复制都收起来(和用户消息的确认态一致)
+        var visibleButtons = shell.GetVisualDescendants().OfType<Control>()
+            .Where(c => c is Ncw.UI.Controls.PlainButton && c.DataContext == last && c.IsEffectivelyVisible)
+            .Select(c => Avalonia.Automation.AutomationProperties.GetName(c)).ToList();
+        Assert.DoesNotContain(Name(Ncw.UI.Localization.NcwTextKind.MsgRegenerate), visibleButtons);
+        Assert.DoesNotContain(Name(Ncw.UI.Localization.NcwTextKind.MsgBranch), visibleButtons);
+        Assert.DoesNotContain(Name(Ncw.UI.Localization.NcwTextKind.MsgCopy), visibleButtons);
+        Snapshot(window, "reply-confirm-delete", dark);
     }
 }

@@ -94,6 +94,19 @@ public sealed class LayoutActions(ClientStores stores, Func<IClientText>? text =
 
     public void RemoveFromRail(ProjectRef project) => UpdateRail(r => RailLayoutOps.Remove(r, project));
 
+    /// <summary>右键「更改图标」:设置项目的外观;<paramref name="appearance"/> 为 null = 恢复默认(首字母 + 按 id 选的颜色)。</summary>
+    public void SetAppearance(ProjectRef project, ProjectAppearance? appearance) =>
+        stores.Layout.Update(state =>
+        {
+            var current = state.Appearance.GetValueOrDefault(project);
+            if (current == appearance)
+            {
+                return state;
+            }
+
+            return state with { Appearance = appearance is null ? state.Appearance.Remove(project) : state.Appearance.SetItem(project, appearance) };
+        });
+
     private void UpdateRail(Func<RailLayout, RailLayout> change) =>
         stores.Layout.Update(state =>
         {

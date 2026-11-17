@@ -24,4 +24,27 @@ public static class SessionActivityView
 
         return inIndex ? SessionActivity.Running : SessionActivity.Idle;
     }
+
+    /// <summary>
+    /// 这个会话里等用户处理的交互数(侧边栏会话行的「n 待处理」):<c>activeRuns</c> 广播里属于它的顶层 Run 的 <see cref="ActiveRun.PendingInteractions"/> 之和(已含子 Run 的)。
+    /// 设备没连上时是 0——和运行状态一样,断线时的旧数字不当现状(规则 7)。
+    /// </summary>
+    public static int PendingOf(string sessionId, ActiveRunIndex? index, DeviceConnection connection)
+    {
+        if (connection is not DeviceConnection.Connected || index is null)
+        {
+            return 0;
+        }
+
+        var pending = 0;
+        foreach (var run in index.Runs)
+        {
+            if (run.SessionId == sessionId)
+            {
+                pending += run.PendingInteractions;
+            }
+        }
+
+        return pending;
+    }
 }

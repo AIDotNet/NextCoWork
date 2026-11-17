@@ -46,6 +46,14 @@ public enum AgentLinkState
     Failed,
 }
 
+/// <summary>头像角标的含义(界面映射成颜色点):没登录不显示;已登录可用;登录过期 / 还要选团队需要处理。</summary>
+public enum AccountPresence
+{
+    None,
+    Active,
+    NeedsAttention,
+}
+
 /// <summary>
 /// 设置 · 本应用 · 账户(docs/design/07 §3):账户信息、团队、已登录的控制端、退出登录(<b>不涉及支付</b>);登录进行中 / 失败 / 过期的状态。
 /// 事实都在 <see cref="ClientStores.Account"/>(本控制端的账户会话,真源),这里只派生;动作都转给 <see cref="AccountService"/>(同一个用户意图只有一个方法)。
@@ -77,6 +85,12 @@ public sealed partial class AccountViewModel : ObservableObject
 
     /// <summary>头像上显示的一个字(没有头像图片时)。</summary>
     [ObservableProperty] public partial string Initial { get; private set; } = "";
+
+    /// <summary>账户后端给的头像地址(只认 http / https,其它当作没有);界面加载失败时退回 <see cref="UserLabel"/> 的首字母。</summary>
+    [ObservableProperty] public partial string? AvatarUrl { get; private set; }
+
+    /// <summary>项目栏头像的角标。</summary>
+    public AccountPresence Presence => !IsSignedIn ? AccountPresence.None : IsExpired || NeedsTeam ? AccountPresence.NeedsAttention : AccountPresence.Active;
 
     [ObservableProperty] public partial string? SelectedTeamName { get; private set; }
 
@@ -181,6 +195,7 @@ public sealed partial class AccountViewModel : ObservableObject
         UserLabel = session?.User?.Label;
         Email = session?.User?.Email is { Length: > 0 } email && email != UserLabel ? email : null;
         Initial = (UserLabel is { Length: > 0 } label ? label[..1] : "").ToUpperInvariant();
+        AvatarUrl = session?.User?.AvatarUrl is { Length: > 0 } url && Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) ? url : null;
         SelectedTeamName = session?.SelectedTeam?.Name;
         NeedsTeam = session is { ContextRequired: true };
         Banner = AccountBanner.Of(state);
@@ -224,7 +239,7 @@ public sealed partial class AccountViewModel : ObservableObject
         {
             nameof(IsSignedIn), nameof(IsSignedOut), nameof(IsExpired), nameof(IsActive), nameof(HasTeams), nameof(ShowsTeams), nameof(HasMultipleTeams), nameof(IsLoggingIn), nameof(IsExchanging),
             nameof(IsBrowserLogin), nameof(IsDeviceCodeLogin), nameof(UserCode), nameof(VerificationUri), nameof(HasLoginError), nameof(CanSignIn), nameof(ShowsBanner),
-            nameof(AgentLinkAttached), nameof(AgentLinkFailed), nameof(AgentLinkPending), nameof(HasAgentLink),
+            nameof(AgentLinkAttached), nameof(AgentLinkFailed), nameof(AgentLinkPending), nameof(HasAgentLink), nameof(Presence),
         })
         {
             OnPropertyChanged(name);

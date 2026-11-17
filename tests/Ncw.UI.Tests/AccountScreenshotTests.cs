@@ -232,6 +232,36 @@ public class AccountScreenshotTests
             h.Shell.Account.AskRevokeCommand.Execute(h.Shell.Account.Controllers[1]);
         }, Check: h => Assert.True(h.Shell.Account.HasConfirmingRevoke), Height: 1300),
 
+        // 项目栏的账户头像 + 账户卡片
+        new("rail-account-signedin", (r, s) => SignedIn(r, s, "t1"), After: h =>
+        {
+            ClickAccount(h);
+            return Task.CompletedTask;
+        }, Check: h =>
+        {
+            var rail = Find<Sidebar>(h).Single();
+            var avatar = rail.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwAvatar>().First(a => a.IsEffectivelyVisible);
+            Assert.Equal("Alice", avatar.DisplayName); // 不再是写死的占位名字
+            Assert.Equal(AvatarStatus.Online, avatar.Status);
+            Assert.True(rail.FindControl<Avalonia.Controls.Primitives.Popup>("AccountPopup")!.IsOpen);
+        }, Height: 800),
+        new("rail-account-signedout", Decided, Open: s => s.Onboarding.FinishCommand.Execute(null), After: h =>
+        {
+            ClickAccount(h);
+            return Task.CompletedTask;
+        }, Check: h =>
+        {
+            var rail = Find<Sidebar>(h).Single();
+            Assert.DoesNotContain(rail.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwAvatar>(), a => a.IsEffectivelyVisible && a.FindAncestorOfType<Avalonia.Controls.Primitives.Popup>() is null);
+            Assert.True(rail.FindControl<Avalonia.Controls.Primitives.Popup>("AccountPopup")!.IsOpen);
+        }, Height: 800),
+        new("rail-account-signout", (r, s) => SignedIn(r, s, "t1"), After: h =>
+        {
+            ClickAccount(h);
+            h.Shell.Account.AskSignOutCommand.Execute(null);
+            return Task.CompletedTask;
+        }, Check: h => Assert.True(h.Shell.Account.ConfirmingSignOut), Height: 800),
+
         // 状态条(主界面上)
         new("bar-expired", Expired, Check: h =>
         {
@@ -261,6 +291,13 @@ public class AccountScreenshotTests
         shell.Onboarding.FinishCommand.Execute(null);
     }
 
+    /// <summary>点项目栏左下角的头像(打开账户卡片)。</summary>
+    private static void ClickAccount(Host host)
+    {
+        var button = Find<Sidebar>(host).Single().FindControl<Avalonia.Controls.Button>("AccountButton")!;
+        button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    }
+
     /// <summary>账户页要在首次启动流程结束之后看(流程盖在设置页下面,但这样更接近真实使用)。</summary>
     private static void OpenAfterOnboarding(ShellViewModel shell)
     {
@@ -280,6 +317,7 @@ public class AccountScreenshotTests
     public static IEnumerable<object[]> ExtraMatrix() =>
         from scenario in Extra.Select(s => s.Name)
         from view in new[] { (1500, true), (600, false) }
+        where !(scenario.StartsWith("rail-", StringComparison.Ordinal) && view.Item1 < 900) // 窄窗口里项目栏收起了,头像不在界面上
         select new object[] { scenario, view.Item1, view.Item2 };
 
     [AvaloniaTheory]

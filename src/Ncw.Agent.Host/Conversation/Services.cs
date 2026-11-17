@@ -131,6 +131,12 @@ public sealed class AgentServices
     /// </summary>
     public Func<string, Ncw.Agent.Workspace.Git.ICommitMessageModel>? CommitMessages { get; init; }
 
+    /// <summary>
+    /// 会话标题自动生成(第一条消息发出时起一次旁路请求)。null = 跟着模型来源:用真实的供应商运行时(<see cref="Models"/> 为空)就开;注入了假的模型解析(测试)就关——
+    /// 否则每个会话多出的那次旁路请求会吃掉脚本化上游的响应。测试要验标题时显式给 true。
+    /// </summary>
+    public bool? SessionTitles { get; init; }
+
     /// <summary>终端管理器的参数(限额、环形缓冲、意图有效期……)。默认见 <see cref="Ncw.Agent.Terminal.TerminalManagerOptions"/>(<c>Time</c> 用 Host 的时钟)。测试用它缩短意图有效期、调小限额。</summary>
     public Ncw.Agent.Terminal.TerminalManagerOptions? Terminals { get; init; }
 

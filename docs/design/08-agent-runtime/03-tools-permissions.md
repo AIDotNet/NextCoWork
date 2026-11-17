@@ -153,7 +153,7 @@ record SshCredential(ExecutionEnvironmentRef Env, SshCredentialPromptKind Prompt
   Run 事件流里的 `interaction_request` / `interaction_resolved` 由 `RunEvent` 给出,编排层分配 `seq` 后并进事件流。
 - **子代理不能提问**:`OpenRun(runId, depth)` 的 `depth > 0` 返回 `CanInteract = false` 的句柄,发起任何交互当场抛 `InteractionRefusedException`(而不是挂起);权限扩展对子代理直接拒绝并给出可添加的规则。
 - **审批必须带执行环境标识**:`ToolPermission.Env`(设备 + 环境 + 名字 + 类型)必填,草稿缺它被拒。
-- 待处理交互数计入 `activeRuns` 广播(含所有子 Run 的),项目栏角标和手机推送都读这个数。
+- 待处理交互数计入 `activeRuns` 广播(含所有子 Run 的),侧边栏的待处理数和手机推送都读这个数。
 
 ## 5. Hooks
 

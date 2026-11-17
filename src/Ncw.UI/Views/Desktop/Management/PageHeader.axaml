@@ -15,17 +15,44 @@
   <StackPanel Spacing="4">
     <TextBlock Text="{Binding #Root.Title}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextWrapping="Wrap" />
     <TextBlock Classes="hint" Text="{Binding #Root.Hint}" IsVisible="{Binding #Root.Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <!-- 只有一台本机、没有 SSH 时,「设备 · 已连接 · 所有者」整排不画(03 §11.7);连接不正常、不是 owner、项目作用域的切换器照常 -->
     <WrapPanel Orientation="Horizontal" Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
-      <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding #Root.ScopeText}" /></Border>
+      <WrapPanel.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.Or}">
+          <Binding Path="Scope.ShowsScopeDetails" />
+          <Binding ElementName="Root" Path="ShowProject" />
+        </MultiBinding>
+      </WrapPanel.IsVisible>
+      <Border Classes="chip" IsVisible="{Binding Scope.ShowsScopeDetails}"><TextBlock Classes="hint" Text="{Binding #Root.ScopeText}" /></Border>
       <ui:NcwSelect MinWidth="200" ItemsSource="{Binding Scope.DeviceChoices}" SelectedValue="{Binding Scope.DeviceId, Mode=TwoWay}"
-                    IsVisible="{Binding Scope.HasDevices}" AutomationProperties.Name="{l:NcwText SettingsDeviceSwitcher}" />
+                    AutomationProperties.Name="{l:NcwText SettingsDeviceSwitcher}">
+        <ui:NcwSelect.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="Scope.ShowsDeviceSwitcher" />
+            <Binding ElementName="Root" Path="ShowSwitchers" />
+          </MultiBinding>
+        </ui:NcwSelect.IsVisible>
+      </ui:NcwSelect>
       <ui:NcwSelect MinWidth="200" ItemsSource="{Binding Scope.ProjectChoices}" SelectedValue="{Binding Scope.WorkspaceId, Mode=TwoWay}"
-                    IsVisible="{Binding #Root.ShowProject}" AutomationProperties.Name="{l:NcwText SettingsProjectSwitcher}" />
-      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    AutomationProperties.Name="{l:NcwText SettingsProjectSwitcher}">
+        <ui:NcwSelect.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding ElementName="Root" Path="ShowProject" />
+            <Binding ElementName="Root" Path="ShowSwitchers" />
+          </MultiBinding>
+        </ui:NcwSelect.IsVisible>
+      </ui:NcwSelect>
+      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding Scope.ShowsScopeDetails}">
         <ui:NcwStatusDot Tone="{Binding Scope.Connection, Converter={x:Static cv:ConnectionToneConverter.Instance}}" />
         <TextBlock Classes="hint" Text="{Binding Scope.Connection, Converter={x:Static cv:DeviceConnectionTextConverter.Instance}}" />
       </StackPanel>
-      <Border Classes="chip" IsVisible="{Binding Scope.Role, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="chip">
+        <Border.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="Scope.ShowsScopeDetails" />
+            <Binding Path="Scope.Role" Converter="{x:Static ObjectConverters.IsNotNull}" />
+          </MultiBinding>
+        </Border.IsVisible>
         <TextBlock Classes="hint" Text="{Binding Scope.Role, Converter={x:Static cv:RoleTextConverter.Instance}}" />
       </Border>
     </WrapPanel>

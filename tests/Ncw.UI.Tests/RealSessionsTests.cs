@@ -70,7 +70,7 @@ public class RealSessionsTests
         vm.Dialogs = dialogs; // 外壳装配时会换成 Arc 的实现;测试里换成脚本化的
 
         await Pump(() => stores.Workspace.State.Devices.GetValueOrDefault(link.DeviceId) is { Connection: DeviceConnection.Connected, Data.State: Ncw.Protocol.Methods.DataStates.Ready }, $"agent connected and data ready (device: {stores.Workspace.State.Devices.GetValueOrDefault(link.DeviceId)?.Connection}, data: {stores.Workspace.State.Devices.GetValueOrDefault(link.DeviceId)?.Data?.State})");
-        await vm.Projects.AddLocalProjectAsync();
+        await vm.Projects.NewProjectAsync();
         await Pump(() => vm.Panel.HasProject, "project added");
         Assert.Equal("owner", stores.Workspace.State.Devices[link.DeviceId].Role);
 

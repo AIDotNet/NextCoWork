@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Dialogs.ProjectIconDialog"
+             x:DataType="vm:ProjectIconViewModel">
+  <!--
+    「项目图标」窗口的内容(项目栏右键「更改图标…」,docs/design/03 §1「栏 1」):左边是和项目栏同样画法的预览,右边选样子——
+    首字母 / 文字(emoji)/ 图片;前两种可以选底色。图片在选的那一刻就压缩成 96×96(NcwIconImages),这里只拿到小图。图片用画刷做圆角方块的背景(ClipToBounds 只裁矩形)。
+  -->
+  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20" Margin="0,4,0,0">
+    <!-- 预览:和 RailProjectTile 同一个画法,放大一号 -->
+    <Panel Width="64" Height="64" VerticalAlignment="Top">
+      <Border CornerRadius="18" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}"
+              IsVisible="{Binding PreviewImage, Converter={x:Static ObjectConverters.IsNull}}">
+        <TextBlock Text="{Binding PreviewGlyph}" FontSize="26" FontWeight="SemiBold" Foreground="White"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Border>
+      <Border CornerRadius="18" Background="{arc:ArcDesignTokenResource SurfaceRaised}"
+              IsVisible="{Binding PreviewImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Border CornerRadius="18" Background="{Binding PreviewImage, Converter={x:Static cv:ProjectIconBrushConverter.Instance}}" />
+      </Border>
+    </Panel>
+
+    <StackPanel Grid.Column="1" Spacing="14">
+      <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding Mode, Mode=TwoWay}"
+                       AutomationProperties.Name="{l:NcwText ProjectIconTitle}">
+        <ui:NcwSegmentedOption Value="{x:Static vm:ProjectIconMode.Initials}" Label="{l:NcwText ProjectIconInitials}" />
+        <ui:NcwSegmentedOption Value="{x:Static vm:ProjectIconMode.Text}" Label="{l:NcwText ProjectIconText}" />
+        <ui:NcwSegmentedOption Value="{x:Static vm:ProjectIconMode.Image}" Label="{l:NcwText ProjectIconImage}" />
+      </ui:NcwSegmented>
+
+      <ui:NcwInput IsVisible="{Binding IsText}" Label="{l:NcwText ProjectIconTextLabel}" Text="{Binding Text, Mode=TwoWay}"
+                   Placeholder="{l:NcwText ProjectIconTextPlaceholder}" />
+
+      <StackPanel Spacing="6" IsVisible="{Binding IsImage}">
+        <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding PickImageCommand}" IsEnabled="{Binding !IsPicking}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon Kind="ImageUp" Size="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:NcwText ProjectIconPickImage}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:NcwButton>
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ProjectIconImageHint}" />
+        <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasImageError}"
+                   Text="{Binding ImageError, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=ProjectIconError}" />
+      </StackPanel>
+
+      <StackPanel Spacing="8" IsVisible="{Binding ShowsColor}">
+        <TextBlock Classes="hint" Text="{l:NcwText ProjectIconColor}" />
+        <ItemsControl ItemsSource="{Binding Palette}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel ItemSpacing="8" LineSpacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <ui:PlainButton Classes="swatch" CornerRadius="14"
+                              Command="{Binding $parent[ItemsControl].((vm:ProjectIconViewModel)DataContext).SetColorCommand}"
+                              CommandParameter="{Binding}" AutomationProperties.Name="{Binding}">
+                <Panel Width="28" Height="28">
+                  <Border CornerRadius="14" Background="{Binding Converter={x:Static cv:HexBrushConverter.Instance}}" />
+                  <lucide:LucideIcon Kind="Check" Size="14" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <lucide:LucideIcon.IsVisible>
+                      <MultiBinding Converter="{x:Static cv:StringEqualsMultiConverter.Instance}">
+                        <Binding />
+                        <Binding Path="$parent[ItemsControl].((vm:ProjectIconViewModel)DataContext).Color" />
+                      </MultiBinding>
+                    </lucide:LucideIcon.IsVisible>
+                  </lucide:LucideIcon>
+                </Panel>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

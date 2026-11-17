@@ -19,7 +19,7 @@
     </StackPanel>
     <!-- 设备作用域:设备切换器(窄屏下也放在标题下面,不挤标题) -->
     <ui:NcwSelect x:Name="DeviceSelect" HorizontalAlignment="Left" MinWidth="200" Margin="0,8,0,0" ItemsSource="{Binding DeviceChoices}"
-                  SelectedValue="{Binding DeviceId, Mode=TwoWay}" IsVisible="{Binding HasDevices}"
+                  SelectedValue="{Binding DeviceId, Mode=TwoWay}" IsVisible="{Binding ShowsDeviceSwitcher}"
                   AutomationProperties.Name="{l:NcwText SettingsDeviceSwitcher}" />
 
     <TextBlock Classes="hint" Margin="0,8,0,0" Text="{l:NcwText ModelsUnavailable}" IsVisible="{Binding !IsAvailable}" />
@@ -177,14 +177,18 @@
                 <!-- 展开:操作 + 模型别名 -->
                 <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
                 <StackPanel Margin="14,0,14,12" Spacing="8">
+                  <!-- 常用的两三个直接放;退出登录、删除密钥、删除供应商这些少用 / 危险的收进「⋯」(删除标红放最后,03 §11.6) -->
                   <WrapPanel Orientation="Horizontal">
                     <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding TestCommand}" Content="{l:NcwText ProviderTest}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding EditCommand}" Content="{l:NcwText ProviderEdit}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" Content="{l:NcwText ProviderImportModels}" />
                     <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding SignInCommand}" IsVisible="{Binding IsOAuth}" Content="{l:NcwText ProviderSignIn}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Ghost" Command="{Binding SignOutCommand}" IsVisible="{Binding IsOAuth}" Content="{l:NcwText ProviderSignOut}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Ghost" Command="{Binding RemoveKeyCommand}" IsVisible="{Binding HasLast4}" Content="{l:NcwText ProviderRemoveKey}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Danger" Command="{Binding RemoveCommand}" Content="{l:NcwText ProviderRemove}" />
+                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" Content="{l:NcwText ProviderImportModels}" />
+                    <ui:NcwDropdownMenu Margin="0,0,6,6" DataContextChanged="OnProviderMenuDataContext">
+                      <ui:NcwDropdownMenu.Trigger>
+                        <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+                          <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+                        </ui:NcwButton>
+                      </ui:NcwDropdownMenu.Trigger>
+                    </ui:NcwDropdownMenu>
                   </WrapPanel>
                   <TextBlock Classes="hint" Text="{l:NcwText ProviderNoModels}" IsVisible="{Binding !HasModels}" />
                   <ItemsControl ItemsSource="{Binding Aliases}">

@@ -134,13 +134,56 @@ public sealed partial class SettingsScope : ObservableObject
 
     public bool HasProjects => ProjectChoices.Count > 0;
 
+    /// <summary>设备这个维度要不要露出来(只有一台本机、没有 SSH 时不要;Core 的 <see cref="DeviceDimension"/>,03 §11.7)。</summary>
+    [ObservableProperty] public partial bool ShowsDevices { get; private set; } = true;
+
+    /// <summary>页头那一排「设备 · 连接状态 · 角色」要不要画(设备维度藏起来时,连接不正常或不是 owner 仍然要画)。</summary>
+    public bool ShowsScopeDetails => DeviceDimension.ShowsScopeDetails(ShowsDevices, Connection, Role);
+
+    /// <summary>设备切换器:有设备,而且设备维度露出来。</summary>
+    public bool ShowsDeviceSwitcher => HasDevices && ShowsDevices;
+
+    partial void OnShowsDevicesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowsScopeDetails));
+        OnPropertyChanged(nameof(ShowsDeviceSwitcher));
+    }
+
+    partial void OnConnectionChanged(DeviceConnection value) => OnPropertyChanged(nameof(ShowsScopeDetails));
+
+    partial void OnRoleChanged(string? value) => OnPropertyChanged(nameof(ShowsScopeDetails));
+
     public Gate GateFor(Need need) => ManagementAccess.Evaluate(Connection, Role, IsLocalChannel, need);
 
     partial void OnDeviceIdChanged(string? value) => Refresh();
 
-    partial void OnWorkspaceIdChanged(string? value) => Changed?.Invoke();
+    partial void OnWorkspaceIdChanged(string? value)
+    {
+        // 切换器换数据源时会先写一次 null、再写回原值:这一下不是用户选了「没有项目」,不通知(否则所有页面白白重读一遍)
+        if (value is null && ProjectChoices.Count > 0 && !_refreshing)
+        {
+            return;
+        }
+
+        Announce();
+    }
 
     private bool _refreshing;
+
+    /// <summary>上一次通知出去的作用域。只有「安定下来的」作用域真的变了才通知页面重读。</summary>
+    private (string? DeviceId, string? WorkspaceId, DeviceConnection Connection, string? Role)? _announced;
+
+    private void Announce()
+    {
+        var now = (DeviceId, WorkspaceId, Connection, Role);
+        if (_announced == now)
+        {
+            return;
+        }
+
+        _announced = now;
+        Changed?.Invoke();
+    }
 
     private void Refresh()
     {
@@ -152,7 +195,6 @@ public sealed partial class SettingsScope : ObservableObject
         _refreshing = true;
         try
         {
-            var before = (DeviceId, WorkspaceId, Connection, Role);
             var workspace = _stores.Workspace.State;
             var devices = workspace.Devices.Values
                 .Where(d => d.Connection != DeviceConnection.Revoked)
@@ -160,6 +202,11 @@ public sealed partial class SettingsScope : ObservableObject
                 .Select(d => new ChoiceItem(d.DeviceId, d.Name)).ToList();
             Sync(DeviceChoices, devices);
             OnPropertyChanged(nameof(HasDevices));
+            ShowsDevices = DeviceDimension.Shows(
+                devices.Count,
+                workspace.Devices.Values.Any(d => d.Kind != DeviceKind.Local && d.Connection != DeviceConnection.Revoked),
+                workspace.Projects.Values.Any(p => p.Environment == EnvironmentKind.Ssh));
+            OnPropertyChanged(nameof(ShowsDeviceSwitcher));
 
             if (DeviceId is null || !workspace.Devices.ContainsKey(DeviceId))
             {
@@ -198,15 +245,13 @@ public sealed partial class SettingsScope : ObservableObject
 
             OnPropertyChanged(nameof(IsConnected));
             OnPropertyChanged(nameof(HasProjects));
-            if (before != (DeviceId, WorkspaceId, Connection, Role))
-            {
-                Changed?.Invoke();
-            }
         }
         finally
         {
             _refreshing = false;
         }
+
+        Announce();
     }
 
     private static void Sync(ObservableCollection<ChoiceItem> target, List<ChoiceItem> items)
@@ -245,8 +290,11 @@ public abstract partial class ManagementPageViewModel : ObservableObject
     protected Need ReadNeed { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(IsError), nameof(IsUnknown), nameof(IsForbidden), nameof(ShowsContent))]
+    [NotifyPropertyChangedFor(nameof(IsIdle), nameof(IsLoading), nameof(IsReady), nameof(IsError), nameof(IsUnknown), nameof(IsForbidden), nameof(ShowsContent))]
     public partial PageState State { get; protected set; } = PageState.Idle;
+
+    /// <summary>还没读过(设置页里还没滚到这一段):画骨架占位,不让分区看起来是空的(docs/design/03 §11.6)。</summary>
+    public bool IsIdle => State == PageState.Idle;
 
     /// <summary>读取失败的原因(<see cref="PageState.Error"/>)。</summary>
     [ObservableProperty] public partial Failure? LoadFailure { get; protected set; }

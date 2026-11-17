@@ -25,6 +25,14 @@ public static class NcwMenus
         public Control? Icon { get; init; }
 
         public IReadOnlyList<Item>? Children { get; init; }
+
+        /// <summary>行尾的安静说明(Arc 快捷键提示的位置),例如模型的「200K · 视觉 · 思考」。</summary>
+        public string? Hint { get; init; }
+
+        /// <summary>组标签行(不可点、键盘跳过),例如模型菜单里的供应商名。只用 <see cref="Header"/>。</summary>
+        public bool IsLabel { get; init; }
+
+        public static Item Label(string header) => new(header, null) { IsLabel = true };
     }
 
     public static void Attach(Control target, IEnumerable<Item> items)
@@ -32,7 +40,7 @@ public static class NcwMenus
         var surface = new MenuSurface();
         foreach (var item in items)
         {
-            surface.Items.Add(Build(item));
+            surface.Items.Add(BuildAny(item));
         }
 
         TKCode.Arc.ContextMenu.SetMenu(target, surface);
@@ -40,7 +48,9 @@ public static class NcwMenus
 
     /// <summary>下拉菜单(<see cref="NcwDropdownMenu"/>)的条目:每次数据变了重新填一遍。</summary>
     public static void Populate(NcwDropdownMenu menu, IEnumerable<Item> items) =>
-        menu.ItemsSource = items.Select(Build).ToList();
+        menu.ItemsSource = items.Select(BuildAny).ToList();
+
+    private static Control BuildAny(Item item) => item.IsLabel ? new MenuEntryLabel { Text = item.Header } : Build(item);
 
     private static MenuEntry Build(Item item)
     {
@@ -50,6 +60,7 @@ public static class NcwMenus
             IsDestructive = item.IsDestructive,
             HasSeparatorBefore = item.SeparatorBefore,
             IsEnabled = !item.IsDisabled,
+            InputGestureText = item.Hint,
         };
 
         if (item.IsChecked)

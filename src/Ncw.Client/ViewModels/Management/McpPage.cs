@@ -68,6 +68,14 @@ public sealed partial class McpServerRowViewModel(McpViewModel owner, McpServerS
 
     public int Attempt => Dto.Attempt;
 
+    /// <summary>
+    /// 卡片上只留一个和状态有关的主操作(docs/design/03 §11.6):连接失败 / 连接中 → 「重连」;连上了 → 「资源与提示」;其余(测试、编辑、删除)在「⋯」菜单里。
+    /// 原来五个按钮一字排开、每张卡片都一样,删除和编辑长得一样。
+    /// </summary>
+    public bool PrimaryIsReconnect => Connection is McpConnection.Failed or McpConnection.Connecting;
+
+    public bool PrimaryIsBrowse => Connection == McpConnection.Connected;
+
     [RelayCommand]
     private Task ToggleAsync() => owner.SetEnabledAsync(this, !IsEnabled);
 

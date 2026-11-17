@@ -15,6 +15,26 @@
     宽度跟着容器走:列表最大宽度取 ContentMaxWidthLG,窄屏下左右各留 16px,卡片内部都能换行,手机宽度下可用。
   -->
   <UserControl.Styles>
+    <!-- 空会话(03 §11.4):标题下的上下文胶囊(分支 / 环境 / 改动),输入框下的起步建议胶囊 -->
+    <Style Selector="Border.ctxPill">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Padding" Value="10,3" />
+    </Style>
+    <Style Selector="Border.starterBox">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="CornerRadius" Value="999" />
+    </Style>
+    <Style Selector="ui|PlainButton.starter">
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="CornerRadius" Value="999" />
+    </Style>
+    <Style Selector="ui|PlainButton.starter TextBlock">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Style>
     <!-- 消息工具条:鼠标悬停才显示(手机上常驻;编辑 / 确认删除时钉住) -->
     <Style Selector="StackPanel.tools">
       <Setter Property="Opacity" Value="0" />
@@ -23,7 +43,7 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
   </UserControl.Styles>
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid x:Name="Root" RowDefinitions="Auto,*,Auto,Auto">
     <!-- 设备断开:运行中的状态未知,不判结束、不继续计时(规则 7) -->
     <Border Grid.Row="0" IsVisible="{Binding IsDeviceUnknown}" ui:NcwMotion.ShowMotion="Fade" Padding="16,8" Margin="16,8,16,0" CornerRadius="10"
             Background="{arc:ArcDesignTokenResource SurfaceMuted}">
@@ -34,12 +54,39 @@
     </Border>
 
     <Panel Grid.Row="1">
-      <!-- 空会话 -->
-      <StackPanel IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="24" MaxWidth="480">
-        <lucide:LucideIcon Kind="Sparkles" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-        <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"
-                   Text="{l:NcwText EmptySessionTitle}" TextAlignment="Center" TextWrapping="Wrap" />
-        <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText EmptySessionHint}" />
+      <!-- 空会话(03 §11.4):输入框是主角。标题和上下文贴在输入框上方(本行底部),起步建议在输入框下方(第 3 行);
+           空的时候第 1、3 行按比例分走剩余高度,输入框落在视觉中心偏上;发出第一条消息后第 3 行收起,输入框滑回底部(code-behind) -->
+      <StackPanel IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Bottom" Spacing="12" Margin="24,24,24,22">
+        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="SemiBold">
+          <Run Text="{Binding EmptyProjectName, Converter={x:Static cv:TextFormatPartConverter.Instance}, ConverterParameter=EmptySessionTitleIn:0}" /><Run
+               Text="{Binding EmptyProjectName}" Foreground="{arc:ArcDesignTokenResource Accent}" /><Run
+               Text="{Binding EmptyProjectName, Converter={x:Static cv:TextFormatPartConverter.Instance}, ConverterParameter=EmptySessionTitleIn:1}" />
+        </TextBlock>
+        <!-- 上下文:分支(git 概览已知才有)、执行环境(设备 · 环境)、未提交改动数(有才显示) -->
+        <WrapPanel HorizontalAlignment="Center" ItemSpacing="8" LineSpacing="8">
+          <Border Classes="ctxPill" IsVisible="{Binding HasEmptyBranch}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="GitBranch" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding EmptyBranch}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="ctxPill">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Panel VerticalAlignment="Center">
+                <lucide:LucideIcon Kind="Monitor" Size="12" IsVisible="{Binding !EmptyEnvIsSsh}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <lucide:LucideIcon Kind="Server" Size="12" IsVisible="{Binding EmptyEnvIsSsh}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              </Panel>
+              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding EmptyEnvLabel}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="ctxPill" IsVisible="{Binding HasEmptyChanges}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Ellipse Width="7" Height="7" VerticalAlignment="Center" Fill="{arc:ArcDesignTokenResource Warning}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center"
+                         Text="{Binding EmptyChanges, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=EmptySessionChanges}" />
+            </StackPanel>
+          </Border>
+        </WrapPanel>
       </StackPanel>
       <!-- 订阅中:选中了会话,快照还没到 -->
       <StackPanel IsVisible="{Binding IsLoading}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
@@ -47,7 +94,9 @@
         <TextBlock Classes="hint" Text="{l:NcwText SessionLoading}" />
       </StackPanel>
 
-      <!-- 转录:虚拟化,模板里带 ScrollViewer(code-behind 据此实现「跟随最新」) -->
+      <!-- 转录:虚拟化,模板里带 ScrollViewer(code-behind 据此实现「跟随最新」)。
+           面板是 NcwTranscriptPanel(记住量过的行高、没量过的按内容估):Avalonia 的 VirtualizingStackPanel 把没实例化的行一律估成视口里几行的平均高度,
+           总高度短得离谱,滚动条滑块过大、拖动乱跳 -->
       <ItemsControl x:Name="Transcript" ItemsSource="{Binding Rows}">
         <ItemsControl.Template>
           <ControlTemplate>
@@ -59,7 +108,7 @@
         </ItemsControl.Template>
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
-            <VirtualizingStackPanel Orientation="Vertical" />
+            <ui:NcwTranscriptPanel Estimator="{x:Static conv:TranscriptHeights.Instance}" />
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.DataTemplates>
@@ -170,37 +219,75 @@
             <Border Classes="msg" Margin="0,4" Background="Transparent"
                     Classes.touch="{Binding (ui:NcwDensity.IsTouch), RelativeSource={RelativeSource Self}}">
               <StackPanel Spacing="4">
-                <ui:NcwMarkdown Text="{Binding Text}" />
+                <!-- 流式中只把新增的一截推给 Markdown 的流(增量解析),落库后收尾;不是每个增量整篇重新解析 -->
+                <ui:NcwStreamingMarkdown Source="{Binding Text}" IsLive="{Binding IsStreaming}" />
                 <Border IsVisible="{Binding IsStreaming}" Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Left"
                         ui:NcwMotion.Busy="Breathe" Background="{arc:ArcDesignTokenResource Accent}" />
                 <!-- 复制整段回复的 Markdown 原文;流式中不显示(文字还在变) -->
-                <StackPanel Classes="tools" Orientation="Horizontal" HorizontalAlignment="Left" Height="24" IsVisible="{Binding !IsStreaming}">
-                  <ui:PlainButton Width="24" Height="24" Click="OnCopyText" Tag="{Binding Text}"
+                <StackPanel Classes="tools" Classes.pinned="{Binding IsConfirmingDelete}" Orientation="Horizontal" HorizontalAlignment="Left" Height="24" IsVisible="{Binding !IsStreaming}">
+                  <ui:PlainButton Width="24" Height="24" Click="OnCopyText" Tag="{Binding Text}" IsVisible="{Binding !IsConfirmingDelete}"
                                   AutomationProperties.Name="{l:NcwText MsgCopy}" arc:Tooltip.Tip="{l:NcwText MsgCopy}">
                     <lucide:LucideIcon Kind="Copy" Size="13" HorizontalAlignment="Center" />
                   </ui:PlainButton>
                   <!-- 重新生成:只在最近一轮的最后一段回复上出现(更早的回复后面还有对话,重跑会把后面全截掉) -->
-                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding CanRegenerate}"
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding ShowRegenerate}"
                                   IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
                                   Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).RegenerateCommand}" CommandParameter="{Binding}"
                                   AutomationProperties.Name="{l:NcwText MsgRegenerate}"
                                   arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgRegenerate}">
                     <lucide:LucideIcon Kind="RefreshCw" Size="13" HorizontalAlignment="Center" />
                   </ui:PlainButton>
+                  <!-- 从这段回复所在的这一轮分支(带到这一轮结束为止) -->
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding ShowBranch}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).BranchReplyCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgBranch}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgBranch}">
+                    <lucide:LucideIcon Kind="GitBranch" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <!-- 删除这一轮 AI 的全部回复(提问留着),原位二次确认 -->
+                  <ui:PlainButton Width="24" Height="24" IsVisible="{Binding !IsConfirmingDelete}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory}"
+                                  Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).AskDeleteReplyCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{l:NcwText MsgDeleteReply}"
+                                  arc:Tooltip.Tip="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CanEditHistory, Converter={x:Static cv:MessageActionTipConverter.Instance}, ConverterParameter=MsgDeleteReply}">
+                    <lucide:LucideIcon Kind="Trash2" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <TextBlock Classes="hint" VerticalAlignment="Center" Margin="4,0,6,0" IsVisible="{Binding IsConfirmingDelete}" Text="{l:NcwText MsgDeleteReplyConfirm}" />
+                  <ui:NcwButton Variant="Ghost" Height="24" MinHeight="0" Padding="8,0" IsVisible="{Binding IsConfirmingDelete}"
+                                Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).CancelDeleteReplyCommand}" CommandParameter="{Binding}" Content="{l:NcwText Cancel}" />
+                  <ui:NcwButton Variant="Danger" Height="24" MinHeight="0" Padding="8,0" IsVisible="{Binding IsConfirmingDelete}"
+                                Command="{Binding $parent[ItemsControl].((vm:ConversationViewModel)DataContext).DeleteReplyCommand}" CommandParameter="{Binding}" Content="{l:NcwText DeleteLabel}" />
                 </StackPanel>
               </StackPanel>
             </Border>
           </DataTemplate>
-          <!-- 思考块:默认折叠 -->
+          <!-- 「工作区」:一轮全部完成后,最后一段回复文字以外的操作收成这一行(默认收起);点开在下面平铺出成员行,成员缩进 -->
+          <DataTemplate DataType="vm:WorkGroupRowViewModel">
+            <ui:PlainButton HorizontalAlignment="Left" Margin="0,2" Padding="6,3" Click="OnToggleWorkGroup" AutomationProperties.Name="{l:NcwText WorkGroupTitle}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <lucide:LucideIcon Kind="Layers" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText WorkGroupTitle}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding HasActions}"
+                           Text="{Binding Actions, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=WorkGroupActions}" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding HasFailed}" Foreground="{arc:ArcDesignTokenResource Danger}"
+                           Text="{Binding Failed, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=WorkGroupFailed}" />
+              </StackPanel>
+            </ui:PlainButton>
+          </DataTemplate>
+          <!-- 思考块:默认折叠。标题三选一:流式中「思考中…」/ 有耗时「思考了 N 秒」/ 量不出耗时只写「思考」(不画假的「0 秒」)。
+               只有透传载体、没有文字的思考块根本不进转录(TranscriptBuilder) -->
           <DataTemplate DataType="vm:ThinkingRowViewModel">
             <StackPanel Margin="0,2" Spacing="4">
-              <ui:PlainButton HorizontalAlignment="Left" Padding="6,3" Click="OnToggleThinking" AutomationProperties.Name="{l:NcwText ThinkingLabel}">
+              <ui:PlainButton HorizontalAlignment="Left" Padding="6,3" Click="OnToggleThinking" IsEnabled="{Binding CanExpand}" AutomationProperties.Name="{l:NcwText ThinkingLabel}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                   <lucide:LucideIcon Kind="Brain" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                   <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
-                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsStreaming}"
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowDuration}"
                              Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
+                  <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowPlainLabel}" Text="{l:NcwText ThinkingLabel}" />
                 </StackPanel>
               </ui:PlainButton>
               <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
@@ -248,13 +335,31 @@
             </Grid>
           </DataTemplate>
           <!-- 错误与重试 -->
+          <!-- 错误卡片(03 §11.4):一句人话 + 能做的事(重试 / 去供应商设置)+ 「详情」里的原文(错误码 · 设备的诊断串,可选中复制) -->
           <DataTemplate DataType="vm:ErrorRowViewModel">
             <Border Classes="card danger" Margin="0,4">
-              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
-                <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Row, Converter={x:Static cv:ErrorTextConverter.Instance}}" />
-                <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}" Content="{l:NcwText Retry}" />
-              </Grid>
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <lucide:LucideIcon Kind="CircleAlert" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                  <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Row, Converter={x:Static cv:ErrorTextConverter.Instance}}" />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <ui:PlainButton Padding="6,3" Command="{Binding ToggleDetailCommand}" AutomationProperties.Name="{l:NcwText ErrorDetails}">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="hint" Text="{l:NcwText ErrorDetails}" VerticalAlignment="Center" />
+                        <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding IsDetailOpen}" Kind="ChevronDown" Size="12" VerticalAlignment="Center"
+                                           Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                      </StackPanel>
+                    </ui:PlainButton>
+                    <ui:NcwButton Variant="Secondary" Command="{Binding OpenProvidersCommand}" IsVisible="{Binding CanOpenProviders}" Content="{l:NcwText ErrorOpenProviders}" />
+                    <ui:NcwButton Variant="Secondary" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}" Content="{l:NcwText Retry}" />
+                  </StackPanel>
+                </Grid>
+                <ui:NcwCollapsible IsOpen="{Binding IsDetailOpen}">
+                  <Border Margin="26,0,0,0" Padding="10,6" CornerRadius="6" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+                    <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding Detail}" />
+                  </Border>
+                </ui:NcwCollapsible>
+              </StackPanel>
             </Border>
           </DataTemplate>
           <!-- 目标状态行 -->
@@ -296,7 +401,7 @@
     </Panel>
 
     <!-- 底部:提示、待办、目标条、输入框 -->
-    <StackPanel Grid.Row="2" Margin="16,0,16,16" Spacing="8" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
+    <StackPanel x:Name="BottomArea" Grid.Row="2" Margin="16,0,16,16" Spacing="8" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
       <!-- 消息操作(编辑 / 分支 / 删除一轮)失败:稳定 key 翻译成文字,可以关掉 -->
       <Border Classes="card danger" Padding="12,8" IsVisible="{Binding HasMessageError}" ui:NcwMotion.ShowMotion="Fade">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
@@ -386,11 +491,69 @@
         </Grid>
       </Border>
 
+      <!-- 待处理条(docs/design/03 §11.3):这个会话里有几张卡片在等你(点「下一项」滚过去并高亮),别的会话还有几项(点了 = ⌘J)。
+           卡片滚出视野时不用往上翻着找 -->
+      <Border Classes="card attention" Padding="12,6" IsVisible="{Binding ShowsPendingBar}" ui:NcwMotion.ShowMotion="Rise">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+          <lucide:LucideIcon Kind="BellRing" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+            <TextBlock.Text>
+              <MultiBinding Converter="{x:Static cv:PendingBarTextConverter.Instance}">
+                <Binding Path="PendingHere" />
+                <Binding Path="PendingElsewhere" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
+          <ui:NcwButton Grid.Column="2" Variant="Secondary" Height="28" MinHeight="0" Padding="10,0" Command="{Binding FocusNextPendingCommand}"
+                        IsVisible="{Binding PendingHere, Converter={x:Static cv:PositiveConverter.Instance}}" Content="{l:NcwText PendingBarNext}" />
+          <ui:NcwButton x:Name="ElsewhereButton" Grid.Column="3" Variant="Ghost" Height="28" MinHeight="0" Padding="10,0" Command="{Binding GoToElsewhereCommand}"
+                        IsVisible="{Binding PendingElsewhere, Converter={x:Static cv:PositiveConverter.Instance}}" Content="{l:NcwText PendingBarElsewhere}" />
+        </Grid>
+      </Border>
+
       <conv:ComposerView DataContext="{Binding Composer}" />
     </StackPanel>
 
+    <!-- 空会话:输入框下方的起步建议(点了填进输入框,不直接发送,可以改;悬停看完整的那句话)和输入提示 -->
+    <StackPanel Grid.Row="3" IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" VerticalAlignment="Top" Margin="16,0,16,16" Spacing="14"
+                MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthLG}">
+      <WrapPanel x:Name="Starters" HorizontalAlignment="Center" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="starterBox"><ui:PlainButton Classes="starter" Tag="StarterExplain" Click="OnStarterClick" arc:Tooltip.Tip="{l:NcwText StarterExplain}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <lucide:LucideIcon Kind="Map" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText StarterExplainShort}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:PlainButton></Border>
+        <Border Classes="starterBox"><ui:PlainButton Classes="starter" Tag="StarterTests" Click="OnStarterClick" arc:Tooltip.Tip="{l:NcwText StarterTests}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <lucide:LucideIcon Kind="FlaskConical" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText StarterTestsShort}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:PlainButton></Border>
+        <Border Classes="starterBox"><ui:PlainButton Classes="starter" Tag="StarterReview" Click="OnStarterClick" arc:Tooltip.Tip="{l:NcwText StarterReview}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <lucide:LucideIcon Kind="GitPullRequest" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText StarterReviewShort}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:PlainButton></Border>
+        <Border Classes="starterBox"><ui:PlainButton Classes="starter" Tag="StarterPlan" Click="OnStarterClick" arc:Tooltip.Tip="{l:NcwText StarterPlan}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <lucide:LucideIcon Kind="ClipboardList" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText StarterPlanShort}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:PlainButton></Border>
+        <Border Classes="starterBox"><ui:PlainButton Classes="starter" Tag="StarterBug" Click="OnStarterClick" arc:Tooltip.Tip="{l:NcwText StarterBug}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <lucide:LucideIcon Kind="Bug" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText StarterBugShort}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:PlainButton></Border>
+      </WrapPanel>
+      <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText EmptySessionHint}" />
+    </StackPanel>
+
     <!-- 灯箱:点缩略图放大。盖住整个对话区,点空白处 / 点关闭 / Esc 关掉;打开时 WebView 小组件让出空域(code-behind) -->
-    <Border x:Name="LightboxLayer" Grid.RowSpan="3" IsVisible="{Binding HasLightbox}" Background="{arc:ArcDesignTokenResource Scrim}"
+    <Border x:Name="LightboxLayer" Grid.RowSpan="4" IsVisible="{Binding HasLightbox}" Background="{arc:ArcDesignTokenResource Scrim}"
             ui:NcwMotion.ShowMotion="Fade" PointerPressed="OnLightboxBackdropPressed">
       <Grid Margin="24">
         <Border HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="10" ClipToBounds="True" PointerPressed="OnLightboxImagePressed">

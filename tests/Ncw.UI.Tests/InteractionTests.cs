@@ -9,12 +9,12 @@ using Ncw.Client.ViewModels;
 using Ncw.Core.Layout;
 using Ncw.UI.Chrome;
 using Ncw.UI.Views.Desktop;
-using Ncw.UI.Views.Desktop.Rail;
+using Ncw.UI.Views.Desktop.Tree;
 using TKCode.Arc;
 
 namespace Ncw.UI.Tests;
 
-/// <summary>在真实控件上操作:拖分隔条、右键菜单、项目栏拖放、浅色主题。</summary>
+/// <summary>在真实控件上操作:拖分隔条、右键菜单、侧边栏拖放、浅色主题。</summary>
 public class InteractionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 10, 0, 0, TimeSpan.FromHours(8));
@@ -66,7 +66,7 @@ public class InteractionTests
         window.MouseMove(start + new Point(80, 0), RawInputModifiers.LeftMouseButton);
         window.MouseUp(start + new Point(80, 0), MouseButton.Left);
         Dispatch();
-        Assert.InRange(vm.SidebarWidth, 352 + 70, 352 + 90);
+        Assert.InRange(vm.SidebarWidth, Ncw.Client.Stores.UiPrefs.SidebarDefaultWidth + 70, Ncw.Client.Stores.UiPrefs.SidebarDefaultWidth + 90);
 
         // 超过最大宽度会被夹住
         start = Center(splitter, window);
@@ -78,18 +78,19 @@ public class InteractionTests
         Snapshot(window, "resize-sidebar-max");
     }
 
+    private static SidebarProjectNode Node(Control root, string name) =>
+        root.GetVisualDescendants().OfType<SidebarProjectNode>().First(n => n.DataContext is SidebarProjectViewModel { Tile.Name: var n2 } && n2 == name);
+
     [AvaloniaFact]
     public void Right_click_on_a_project_opens_menu_and_new_group_wraps_it()
     {
         var (window, shell, vm) = Render();
-        var tile = shell.GetVisualDescendants().OfType<RailProjectTile>()
-            .First(t => t.DataContext is RailProjectViewModel { Name: "NextCoWork" });
-        var at = Center(tile, window);
+        var at = Center(Node(shell, "NextCoWork").HeaderRow, window);
 
         window.MouseDown(at, MouseButton.Right);
         window.MouseUp(at, MouseButton.Right);
         Dispatch();
-        Snapshot(window, "rail-context-menu");
+        Snapshot(window, "sidebar-context-menu");
 
         var entry = window.GetVisualDescendants()
             .Concat(window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
@@ -103,32 +104,38 @@ public class InteractionTests
         var project = vm.Rail.Items.OfType<RailGroupViewModel>().First().Members.Single();
         Assert.Equal("NextCoWork", project.Name);
         Assert.True(project.IsInGroup);
+        // 侧边栏跟着变:NextCoWork 现在在一个组的标题下面
+        Assert.Contains(vm.Sidebar.Items.OfType<SidebarGroupViewModel>(), g => g.Members.Any(m => m.Tile.Name == "NextCoWork"));
     }
 
     [AvaloniaFact]
-    public void Drop_plan_uses_real_tile_positions()
+    public void Drop_plan_uses_real_row_positions()
     {
         var (window, shell, vm) = Render();
-        var rail = shell.GetVisualDescendants().OfType<ProjectRail>().Single();
-        var tiles = rail.GetVisualDescendants().OfType<RailProjectTile>().ToList();
-        var ncw = tiles.First(t => t.DataContext is RailProjectViewModel { Name: "NextCoWork" });
-        var octopus = tiles.First(t => t.DataContext is RailProjectViewModel { Name: "Octopus" });
+        var sidebar = shell.GetVisualDescendants().OfType<Sidebar>().Single();
+        var ncw = Node(sidebar, "NextCoWork").HeaderRow;
+        var octopus = vm.Sidebar.Items.OfType<SidebarGroupViewModel>().SelectMany(g => g.Members).First(m => m.Tile.Name == "Octopus").Project.ToString();
 
-        // 拖 Octopus(组内)到 NextCoWork(顶层)的正中:两者新建一组
-        var middle = Center(ncw, rail);
-        var plan = rail.Plan("project", ((RailProjectViewModel)octopus.DataContext!).Project.ToString(), ncw, middle);
-        Assert.IsType<RailDrop.GroupWith>(plan);
+        // 拖 Octopus(组内)到 NextCoWork(顶层)标题行的正中:两者新建一组
+        var middle = Center(ncw, sidebar);
+        Assert.IsType<RailDrop.GroupWith>(sidebar.Plan("project", octopus, ncw, middle));
 
-        // 拖到 NextCoWork 的上沿:放到它前面(移出原来的组)
-        var top = ncw.TranslatePoint(new Point(ncw.Bounds.Width / 2, 3), rail)!.Value;
-        plan = rail.Plan("project", ((RailProjectViewModel)octopus.DataContext!).Project.ToString(), ncw, top);
-        vm.Rail.Drop(plan);
+        // 拖到 NextCoWork 标题行的上沿:放到它前面(移出原来的组)
+        var top = ncw.TranslatePoint(new Point(ncw.Bounds.Width / 2, 2), sidebar)!.Value;
+        var plan = sidebar.Plan("project", octopus, ncw, top);
+        vm.Sidebar.Drop(plan);
         Dispatch();
 
-        var first = Assert.IsType<RailProjectViewModel>(vm.Rail.Items[0]);
-        Assert.Equal("Octopus", first.Name);
-        Assert.False(first.IsInGroup);
-        Snapshot(window, "rail-after-drop");
+        var first = Assert.IsType<SidebarProjectViewModel>(vm.Sidebar.Items[0]);
+        Assert.Equal("Octopus", first.Tile.Name);
+        Assert.False(first.Tile.IsInGroup);
+
+        // 指针在展开出来的会话上(不是标题行)= 放到这个项目(连同会话)后面
+        var session = Node(sidebar, "NextCoWork").GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Conversation.SessionRow>().First();
+        var onSession = Center(session, sidebar);
+        var after = Assert.IsType<RailDrop.MoveProject>(sidebar.Plan("project", octopus, session, onSession));
+        Assert.IsType<RailTarget.TopLevel>(after.Target);
+        Snapshot(window, "sidebar-after-drop");
     }
 
     [AvaloniaFact]
@@ -200,8 +207,9 @@ public class InteractionTests
             var (window, shell, vm) = Render();
             var texts = shell.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToHashSet();
 
-            Assert.Contains("Sessions", texts);
-            Assert.Contains("Terminals & agents", texts);
+            Assert.Contains("Projects", texts);   // 侧边栏项目树的标题
+            Assert.Contains("Inbox", texts);
+            Assert.Contains("2 pending", texts);  // 会话行的待处理数
             Assert.Contains("Files", texts); // 右侧面板选中的页签
             Assert.Contains("3 min ago", texts);
             Assert.DoesNotContain("会话", texts);

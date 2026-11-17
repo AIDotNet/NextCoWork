@@ -4,7 +4,9 @@ using Ncw.Client.Accounts;
 using Ncw.Client.Actions;
 using Ncw.Client.Devices;
 using Ncw.Client.Services;
+using Ncw.Client.Shortcuts;
 using Ncw.Client.Stores;
+using Ncw.Core.Domain;
 
 namespace Ncw.Client.ViewModels;
 
@@ -12,7 +14,7 @@ namespace Ncw.Client.ViewModels;
 /// 桌面外壳。栏宽和栏的开关是需要持久化的界面偏好,唯一真源是 <see cref="ClientStores.Prefs"/>,
 /// 这里的属性只是读写它的入口;窄窗口下的抽屉开关是不持久化的纯 UI 状态,留在本类。
 /// </summary>
-public sealed partial class ShellViewModel : ObservableObject
+public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
 {
     public ShellViewModel(ClientStores stores, TimeProvider? clock = null, IDialogService? dialogs = null, DeviceRegistry? devices = null, InspectorServices? inspector = null, IComposerLookups? lookups = null,
         ManagementPages? management = null, SchedulesViewModel? scheduledTasks = null, MobileHostServices? host = null,
@@ -47,12 +49,15 @@ public sealed partial class ShellViewModel : ObservableObject
         Sessions = new SessionActions(stores, Devices, Conversations);
         Rail = new RailViewModel(stores, Actions, () => Dialogs, () => Text, Projects);
         Panel = new ProjectPanelViewModel(stores, Actions, Projects, Sessions, () => Dialogs, () => Text);
-        Workspace = new WorkspaceViewModel(stores, Sessions);
+        var inspectorServices = inspector ?? new InspectorServices(Files, Git, Review, Terminals, Subagents);
         Conversation = new ConversationViewModel(stores, Conversations, Subagents, Goals, clock ?? TimeProvider.System, lookups ?? new ComposerLookups(Files, Extensions.Commands),
             new AttachmentTrayViewModel(attachmentUploader ?? Attachments, () => Host.AttachmentPicker),
             new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock),
-            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments));
-        Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspector ?? new InspectorServices(Files, Git, Review, Terminals, Subagents));
+            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments), inspectorServices.Git);
+        Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspectorServices);
+        // 文件在主工作区里作为标签页打开:文件页签只负责「点了哪个」,预览与编辑在标签里
+        Workspace = new WorkspaceViewModel(stores, Sessions, inspectorServices.Files, () => Dialogs, () => Inspector.Text, () => Inspector.LocalFiles);
+        Inspector.Files.Tabs = Workspace;
         DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
         // 启动加载界面(docs/design/03 §10):事实由 StartupRecorder 锁存进 Store,ViewModel 只读;和数据页读同一份数据状态,同一时刻只有一个全屏层
         StartupRecorder = new StartupRecorder(stores, Devices);
@@ -67,7 +72,7 @@ public sealed partial class ShellViewModel : ObservableObject
             management ?? new ManagementPages(stores, SettingsActions, Extensions.Skills, Extensions.Commands, Extensions.Hooks, Extensions.Mcp, Usage, Storage, Gateway,
                 () => Dialogs, () => Launcher, clock ?? TimeProvider.System, Extensions.Plugins),
             Account, new AboutViewModel(stores, new UpdateActions(updates), clock));
-        Onboarding = new OnboardingViewModel(stores, Account, DataGate, Settings, () => Projects.AddLocalProjectAsync());
+        Onboarding = new OnboardingViewModel(stores, Account, DataGate, Settings, () => Projects.NewProjectAsync());
         // 插件市场安装需要账户令牌(plugins.authRequired):提示卡上的「去登录」打开设置的「账户」标签
         Settings.Pages.Plugins.SignInRequested += () => OpenAccountSettingsCommand.Execute(null);
         ScheduledTasks = scheduledTasks ?? new SchedulesViewModel(stores, Schedules, clock ?? TimeProvider.System);
@@ -78,7 +83,252 @@ public sealed partial class ShellViewModel : ObservableObject
         DevicesPage = new DevicesPageViewModel(stores, DeviceActions, Navigation);
         QrPairing = new QrPairingViewModel(() => Host.QrScanner, DeviceActions.PairWithQrAsync, clock);
         Push = new PushViewModel(stores, new PushActions(Devices), () => Host.Push, typeof(ShellViewModel).Assembly.GetName().Version?.ToString());
+        Palette = new CommandPaletteViewModel(stores, inspectorServices.Files);
+        // 待处理条上「其他会话还有 M 项」:收件箱里现在能处理、又不属于当前会话的;点它 = ⌘J
+        Inbox.Updated += UpdatePendingElsewhere;
+        Conversation.ElsewhereRequested += () => GoToNextAttention(elsewhereOnly: true);
+        Conversation.ProviderSettingsRequested += () => OpenSettingsSection(SettingsSection.Models);
+        // 当前会话改过文件:检查器自动给出「审查」页签(事实来自对话转录,检查器只拿一个布尔)
+        Conversation.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ConversationViewModel.HasFileChanges))
+            {
+                Inspector.SessionHasChanges = Conversation.HasFileChanges;
+            }
+        };
+        Inspector.SessionHasChanges = Conversation.HasFileChanges;
+        stores.Selection.Changed += UpdatePendingElsewhere;
+        UpdatePendingElsewhere();
+        Attention = new AttentionMonitor(stores, Inbox, () => AttentionSink, () => new AttentionContext(
+            IsWindowActive(), Conversation.Session is { } open ? (open.DeviceId, open.SessionId) : null), clock);
+        Palette.Invoked += OnPaletteInvoked;
+        // 桌面左侧边栏(docs/design/03 §1):项目树 + 全局入口;要外壳做的事经 ISidebarHost 回到这里
+        Sidebar = new SidebarViewModel(stores, Actions, this, Projects, Sessions, Inbox, () => Dialogs, () => Text);
         stores.Prefs.Changed += OnPrefsChanged;
+        stores.Selection.Changed += TrackRecentProject;
+        TrackRecentProject();
+    }
+
+    /// <summary>命令面板(⌘K)。</summary>
+    public CommandPaletteViewModel Palette { get; }
+
+    /// <summary>桌面的提醒:系统通知、角标、托盘摘要(docs/design/03 §11.2)。出口是 <see cref="AttentionSink"/>。</summary>
+    public AttentionMonitor Attention { get; }
+
+    /// <summary>提醒的出口。桌面 UI 层装配时换成系统通知 + 托盘的实现;手机和测试里什么也不做。</summary>
+    public IAttentionSink AttentionSink { get; set; } = NoAttention.Instance;
+
+    /// <summary>主窗口是不是在前台(决定要不要弹通知)。UI 层装配时接上。</summary>
+    public Func<bool> IsWindowActive { get; set; } = static () => true;
+
+    /// <summary>只有视图能做的事(把焦点放进某个输入框):<see cref="Execute"/> 发出请求,桌面外壳去做。</summary>
+    public event Action<ShellViewRequest>? ViewRequested;
+
+    /// <summary>整窗覆盖层(设置、首次启动、数据页、启动加载)正盖着外壳:这时快捷键只认「打开 / 关闭设置」和「命令面板」以外的什么都不做。</summary>
+    public bool IsCoveredByOverlay => Settings.IsOpen || Onboarding.IsOpen || DataGate.IsPresented || Startup.OwnsScreen;
+
+    // ───────────────────────── 快捷键 / 命令面板(docs/design/03 §11)─────────────────────────
+
+    /// <summary>
+    /// 执行一个意图。快捷键、命令面板、托盘菜单都走这里;每个分支只调已有的那一个入口(规则 4)。
+    /// 返回 false = 这次什么也没做(比如没有运行可停、没有待批的审批),视图据此决定按键要不要继续往下传。
+    /// </summary>
+    public bool Execute(AppCommand command)
+    {
+        if (IsCoveredByOverlay && command != AppCommand.OpenSettings)
+        {
+            return false;
+        }
+
+        if (ShortcutCatalog.ProjectIndex(command) is { } n)
+        {
+            Actions.SelectByIndex(n);
+            return true;
+        }
+
+        switch (command)
+        {
+            case AppCommand.CommandPalette:
+                Palette.Toggle();
+                return true;
+            case AppCommand.NewSession:
+                return Run(Sidebar.NewSessionCommand);
+            case AppCommand.SearchProject:
+                // 侧边栏没有单独的搜索框了(03 §1):⌘P 和 ⌘K 是同一个面板
+                Palette.Open();
+                return true;
+            case AppCommand.CloseTab:
+                return Workspace.ActiveTab is { } tab && Run(Workspace.CloseCommand, tab);
+            case AppCommand.StopRun:
+                return Conversation.Composer.State.CanStop && Run(Conversation.Composer.StopCommand);
+            case AppCommand.ApproveFirst:
+                return Conversation.Rows.OfType<InteractionRowViewModel>().FirstOrDefault(r => r.IsToolPermission && !r.IsBusy) is { } approval
+                    && Run(approval.AllowOnceCommand);
+            case AppCommand.NextAttention:
+                return GoToNextAttention();
+            case AppCommand.FocusComposer:
+                ViewRequested?.Invoke(ShellViewRequest.FocusComposer);
+                return Conversation.HasSession;
+            case AppCommand.ToggleSidebar:
+                ToggleSidebar();
+                return true;
+            case AppCommand.ToggleInspector:
+                ToggleInspector();
+                return true;
+            case AppCommand.OpenSettings:
+                if (Settings.IsOpen)
+                {
+                    Settings.CloseCommand.Execute(null);
+                }
+                else if (!IsCoveredByOverlay)
+                {
+                    Settings.OpenCommand.Execute(null);
+                }
+
+                return true;
+            case AppCommand.AddProject:
+                _ = Projects.NewProjectAsync();
+                return true;
+            case AppCommand.RecentProject:
+                // ProjectRef 是值类型:FirstOrDefault 找不到时给的是 default,不是 null,所以先过滤成可空
+                if (_recentProjects.Skip(1).Where(p => Stores.Workspace.State.Projects.ContainsKey(p)).Cast<ProjectRef?>().FirstOrDefault() is { } previous)
+                {
+                    Actions.Select(previous);
+                    return true;
+                }
+
+                return false;
+            case AppCommand.OpenReview:
+                return OpenInspectorTab(InspectorTabKind.Review);
+            case AppCommand.OpenGit:
+                return OpenInspectorTab(InspectorTabKind.Git);
+            case AppCommand.OpenTerminal:
+                return OpenInspectorTab(InspectorTabKind.Terminal);
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>设置页里的「快捷键」分区、托盘菜单要打开设置的某一段。</summary>
+    public void OpenSettingsSection(SettingsSection section)
+    {
+        Settings.Section = section;
+        if (!Settings.IsOpen)
+        {
+            Settings.OpenCommand.Execute(null);
+        }
+    }
+
+    /// <summary>
+    /// 打开一条「待我处理」:选中它的项目和会话,滚到那张卡片并高亮(收件箱、通知点击、⌘J、待处理条都走这里)。
+    /// 设备级条目(没有会话)打开设置的「设备」分区。
+    /// </summary>
+    public void OpenAttention(string deviceId, string? workspaceId, string? sessionId, string key)
+    {
+        if (sessionId is null || workspaceId is null)
+        {
+            OpenSettingsSection(SettingsSection.Devices);
+            return;
+        }
+
+        var project = new ProjectRef(deviceId, workspaceId);
+        Actions.Select(project);
+        Sessions.Open(project, sessionId);
+        Conversation.RequestFocus(key.StartsWith("i:", StringComparison.Ordinal) ? key : null);
+        _lastAttentionKey = key;
+    }
+
+    private string? _lastAttentionKey;
+
+    private void UpdatePendingElsewhere()
+    {
+        var open = Conversation.Session;
+        Conversation.PendingElsewhere = Inbox.Current.Entries.Count(e => e.IsActionable && !(open is { } s && e.DeviceId == s.DeviceId && e.SessionId == s.SessionId));
+    }
+
+    /// <summary>⌘J:按收件箱的顺序(Core 的 <see cref="ActivityInboxView"/>)转到下一条现在能处理的待办,到底后从头开始。<paramref name="elsewhereOnly"/>:跳过当前会话里的(待处理条上的「其他会话」)。</summary>
+    private bool GoToNextAttention(bool elsewhereOnly = false)
+    {
+        var open = Conversation.Session;
+        var actionable = Inbox.Current.Entries
+            .Where(e => e.IsActionable && !(elsewhereOnly && open is { } s && e.DeviceId == s.DeviceId && e.SessionId == s.SessionId))
+            .ToList();
+        if (actionable.Count == 0)
+        {
+            return false;
+        }
+
+        var index = actionable.FindIndex(e => e.Key == _lastAttentionKey);
+        var next = actionable[(index + 1) % actionable.Count];
+        OpenAttention(next.DeviceId, next.WorkspaceId, next.SessionId, next.Key);
+        return true;
+    }
+
+    private bool OpenInspectorTab(InspectorTabKind kind)
+    {
+        Inspector.AddCommand.Execute(kind);
+        if (IsInspectorNarrow)
+        {
+            IsInspectorDrawerOpen = true;
+        }
+        else
+        {
+            IsInspectorOpen = true;
+        }
+
+        return true;
+    }
+
+    private static bool Run(System.Windows.Input.ICommand command, object? parameter = null)
+    {
+        if (!command.CanExecute(parameter))
+        {
+            return false;
+        }
+
+        command.Execute(parameter);
+        return true;
+    }
+
+    private void OnPaletteInvoked(PaletteItemViewModel item)
+    {
+        switch (item.Kind)
+        {
+            case PaletteItemKind.Command when item.Command is { } command:
+                Execute(command);
+                break;
+            case PaletteItemKind.Project when item.Project is { } project:
+                Actions.Select(project);
+                break;
+            case PaletteItemKind.Session when item is { Project: { } project, SessionId: { } sessionId }:
+                Actions.Select(project);
+                Sessions.Open(project, sessionId);
+                break;
+            case PaletteItemKind.File when item is { Project: { } project, Path: { } path }:
+                _ = Workspace.OpenAsync(project, path);
+                break;
+            case PaletteItemKind.Settings when item.Section is { } section:
+                OpenSettingsSection(section);
+                break;
+        }
+    }
+
+    /// <summary>最近选过的项目(最近的在前,纯 UI 状态):⌃Tab 在最近两个项目之间切换。</summary>
+    private readonly List<ProjectRef> _recentProjects = [];
+
+    private void TrackRecentProject()
+    {
+        if (Stores.Selection.State.Project is not { } project || (_recentProjects.Count > 0 && _recentProjects[0] == project))
+        {
+            return;
+        }
+
+        _recentProjects.Remove(project);
+        _recentProjects.Insert(0, project);
+        if (_recentProjects.Count > 10)
+        {
+            _recentProjects.RemoveAt(_recentProjects.Count - 1);
+        }
     }
 
     public ClientStores Stores { get; }
@@ -183,8 +433,13 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Client 层要给用户看的文字。UI 层装配时换成按当前语言的实现。</summary>
     public IClientText Text { get; set; } = DefaultClientText.Instance;
 
+    /// <summary>手机「会话」标签的项目列表(和侧边栏同一份布局、角标)。</summary>
     public RailViewModel Rail { get; }
 
+    /// <summary>桌面左侧边栏:全局入口 + 项目树 + 账户(docs/design/03 §1)。</summary>
+    public SidebarViewModel Sidebar { get; }
+
+    /// <summary>手机的项目会话页(当前项目的会话列表、搜索、归档过滤)。</summary>
     public ProjectPanelViewModel Panel { get; }
 
     public WorkspaceViewModel Workspace { get; }
@@ -336,6 +591,25 @@ public sealed partial class ShellViewModel : ObservableObject
         }
     }
 
+    // ───────────────────────── 侧边栏要外壳做的事(ISidebarHost)─────────────────────────
+
+    void ISidebarHost.OpenPalette() => Palette.Open();
+
+    void ISidebarHost.OpenScheduledTasks() => ScheduledTasks.OpenCommand.Execute(null);
+
+    void ISidebarHost.OpenAttention(InboxEntry entry) => OpenAttention(entry.DeviceId, entry.WorkspaceId, entry.SessionId, entry.Key);
+
+    void ISidebarHost.NewTerminal(ProjectRef project)
+    {
+        Actions.Select(project);
+        OpenInspectorTab(InspectorTabKind.Terminal);
+        Inspector.Terminals.NewTerminalCommand.Execute(null);
+    }
+
+    void ISidebarHost.OpenSettings() => Execute(AppCommand.OpenSettings);
+
+    Ncw.Client.Services.ILocalFiles ISidebarHost.LocalFiles => Inspector.LocalFiles;
+
     private void OnPrefsChanged()
     {
         OnPropertyChanged(nameof(IsSidebarOpen));
@@ -343,4 +617,11 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(SidebarWidth));
         OnPropertyChanged(nameof(InspectorWidth));
     }
+}
+
+/// <summary>外壳请视图做的事(焦点只有视图能放)。</summary>
+public enum ShellViewRequest
+{
+    /// <summary>把焦点放进当前会话的输入框。</summary>
+    FocusComposer,
 }

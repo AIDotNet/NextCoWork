@@ -50,6 +50,21 @@ public static class NcwWidgetAirspace
 }
 
 /// <summary>
+/// widget 的 WebView 摆放时要避开的区域(<see cref="NcwWidgetSurface"/> 的裁剪)。<see cref="BottomInsetProperty"/> 设在一个祖先上(通常是转录的滚动容器):
+/// 它的底边往上收这么多,盖在内容底部的 Avalonia 浮层(「回到最新」按钮)就不会被原生视图盖住。改了之后让那个祖先重新排布(<c>InvalidateArrange</c>),
+/// 各个 WebView 在下一轮布局之后重新摆放。
+/// </summary>
+public static class NcwWidgetClip
+{
+    public static readonly AttachedProperty<double> BottomInsetProperty =
+        AvaloniaProperty.RegisterAttached<Visual, double>("BottomInset", typeof(NcwWidgetClip), defaultValue: 0);
+
+    public static double GetBottomInset(Visual visual) => visual.GetValue(BottomInsetProperty);
+
+    public static void SetBottomInset(Visual visual, double value) => visual.SetValue(BottomInsetProperty, value);
+}
+
+/// <summary>
 /// 把 Arc 的 token 解析成 <see cref="WidgetTokens"/> 要的源值(颜色 → CSS 颜色,字体 → CSS font-family)。<b>这里不写任何色值</b>:每一个值都是从当前主题的 Arc token 读出来的,
 /// 所以深浅色切换、换强调色之后重推就跟着变。映射(名字 → token 枚举)写成 switch 而不是反射,裁剪 / AOT 安全。
 /// </summary>

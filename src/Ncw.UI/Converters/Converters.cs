@@ -152,6 +152,30 @@ public sealed class TextFormatConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>
+/// 带一个占位符的文字按 <c>{0}</c> 拆成前后两段(参数 <c>"Key:0"</c> 取前段,<c>"Key:1"</c> 取后段),
+/// 让占位符的值能单独成一个 <c>Run</c>(换颜色 / 字重),语序仍由译文决定(空会话标题「在 {0} 里做点什么?」)。
+/// </summary>
+public sealed class TextFormatPartConverter : IValueConverter
+{
+    public static readonly TextFormatPartConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (parameter is not string spec || spec.Split(':') is not [var name, var part] || !Enum.TryParse<NcwTextKind>(name, out var kind))
+        {
+            return null;
+        }
+
+        var text = NcwTexts.Get(kind);
+        var at = text.IndexOf("{0}", StringComparison.Ordinal);
+        return at < 0 ? (part == "0" ? text : "") : part == "0" ? text[..at] : text[(at + 3)..];
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>接管页的标题(按 <see cref="DataGateMode"/>)。</summary>
 public sealed class DataGateTitleConverter : IValueConverter
 {

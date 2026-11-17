@@ -160,13 +160,19 @@
                   <ui:NcwSwitch Grid.Column="2" VerticalAlignment="Top" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
                                 IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" AutomationProperties.Name="{l:NcwText McpEnabled}" arc:Tooltip.Tip="{l:NcwText McpEnabled}" />
                 </Grid>
-                <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">
-                  <ui:NcwButton Variant="Secondary" Command="{Binding BrowseCommand}" Content="{l:NcwText McpBrowse}" />
-                  <ui:NcwButton Variant="Secondary" Command="{Binding ReconnectCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" Content="{l:NcwText McpReconnect}" />
-                  <ui:NcwButton Variant="Secondary" Command="{Binding TestCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" Content="{l:NcwText McpTest}" />
-                  <ui:NcwButton Variant="Ghost" Command="{Binding EditCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" Content="{l:NcwText Edit}" />
-                  <ui:NcwButton Variant="Ghost" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" Content="{l:NcwText DeleteLabel}" />
-                </WrapPanel>
+                <!-- 一个和状态有关的主操作 + 「⋯」菜单(资源与提示 / 重连 / 测试连接 / 编辑 / 删除,删除标红放最后;03 §11.6) -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <ui:NcwButton Variant="Secondary" Command="{Binding ReconnectCommand}" IsVisible="{Binding PrimaryIsReconnect}"
+                                IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}" Content="{l:NcwText McpReconnect}" />
+                  <ui:NcwButton Variant="Secondary" Command="{Binding BrowseCommand}" IsVisible="{Binding PrimaryIsBrowse}" Content="{l:NcwText McpBrowse}" />
+                  <ui:NcwDropdownMenu DataContextChanged="OnRowMenuDataContext" IsEnabled="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).CanWrite}">
+                    <ui:NcwDropdownMenu.Trigger>
+                      <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+                        <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+                      </ui:NcwButton>
+                    </ui:NcwDropdownMenu.Trigger>
+                  </ui:NcwDropdownMenu>
+                </StackPanel>
               </StackPanel>
             </Border>
           </DataTemplate>

@@ -195,6 +195,12 @@ internal sealed class ConversationService : IAsyncDisposable
             Interactions = new GateView(Gate),
             Shells = Shells,
         });
+        // 会话标题:第一条消息发出时起名(预览立即写、模型回答迟到再换)。注入了假模型解析时默认关,见 AgentServices.SessionTitles。
+        if (services.SessionTitles ?? (services.Models is null))
+        {
+            Titles = new SessionTitleGenerator(Sessions, _models, clock, session => PublishSession(session.Id), Log);
+        }
+
         Subagents.Bind(Registry);
         Planning.Bind(Registry);
         Subagents.ReportChanged += PublishSubagentReport;
@@ -240,6 +246,9 @@ internal sealed class ConversationService : IAsyncDisposable
 
     /// <summary>模型解析(别名 → 绑定):定时任务 / 开放网关这类设备内发起的 Run 用它在发起之前验证模型。</summary>
     public IModelResolver Models => _models;
+
+    /// <summary>会话标题生成器;关闭时(<see cref="AgentServices.SessionTitles"/>)为 null。</summary>
+    internal SessionTitleGenerator? Titles { get; }
 
     public AgentServices Services { get; }
 
@@ -509,6 +518,7 @@ internal sealed class ConversationService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        Titles?.Dispose();
         await Registry.ShutdownAsync().ConfigureAwait(false);
         await Domain.DisposeAsync().ConfigureAwait(false);
         Web.Dispose();
@@ -664,8 +674,37 @@ internal sealed record RunChanges(RunHandle Run, string RootRunId, string RootSe
 /// </summary>
 internal sealed class TappingDriver(IRunDriver inner, ConversationService service) : IRunDriver
 {
-    public Task<RunOutcome> RunAsync(RunHandle run, RunRequest request, IRunSink sink, CancellationToken ct) =>
-        inner.RunAsync(run, request, new TapSink(sink, run.SessionId, service), ct);
+    public Task<RunOutcome> RunAsync(RunHandle run, RunRequest request, IRunSink sink, CancellationToken ct)
+    {
+        StartTitle(run, request);
+        return inner.RunAsync(run, request, new TapSink(sink, run.SessionId, service), ct);
+    }
+
+    /// <summary>
+    /// 顶层 Run、会话里还没有任何消息(输入要等会话层在 Run 里落库,所以此刻数到 0 才是「第一条消息」)时,给会话起标题。
+    /// 旁路请求不挂在 Run 的任务上(<see cref="SessionTitleGenerator"/>):不阻塞对话、不随 Run 结束而取消。永不抛。
+    /// </summary>
+    private void StartTitle(RunHandle run, RunRequest request)
+    {
+        if (service.Titles is not { } titles || !run.IsTopLevel || run.Origin == RunOrigin.Subagent || run.State != RunState.Running)
+        {
+            return;
+        }
+
+        try
+        {
+            if (service.Sessions.Get(run.SessionId) is { } session
+                && request.Input.FirstOrDefault(m => m.Role == Ncw.Agent.Llm.Role.User && !m.Internal) is { } first
+                && service.Sessions.CountMessages(run.SessionId) == 0)
+            {
+                titles.Start(session, first, request.Model);
+            }
+        }
+        catch (Exception e)
+        {
+            service.Log.Warn("Could not start background title generation.", e);
+        }
+    }
 
     private sealed class TapSink(IRunSink inner, string sessionId, ConversationService service) : IRunSink
     {

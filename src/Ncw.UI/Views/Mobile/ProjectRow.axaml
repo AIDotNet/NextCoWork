@@ -11,9 +11,15 @@
   <ui:PlainButton Padding="0" CornerRadius="12" AutomationProperties.Name="{Binding Name}">
     <Border Classes="card" Padding="12,10" MinHeight="64" Opacity="{Binding IsOffline, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-        <Border Width="40" Height="40" CornerRadius="10" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}">
-          <TextBlock Text="{Binding Glyph}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
-        </Border>
+        <Panel Width="40" Height="40">
+          <Border CornerRadius="10" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}" IsVisible="{Binding !HasImage}">
+            <TextBlock Text="{Binding Glyph}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
+          </Border>
+          <!-- 自定义图片:画刷铺满,跟着圆角裁切 -->
+          <Border CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceRaised}" IsVisible="{Binding HasImage}">
+            <Border CornerRadius="10" Background="{Binding Image, Converter={x:Static cv:ProjectIconBrushConverter.Instance}}" />
+          </Border>
+        </Panel>
         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">

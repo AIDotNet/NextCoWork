@@ -81,6 +81,28 @@ public sealed class FileSizeConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>行数 → 「1,234 行」(文件标签的状态栏)。</summary>
+public sealed class LineCountTextConverter : IValueConverter
+{
+    public static readonly LineCountTextConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int lines ? NcwTexts.Format(NcwTextKind.FileLineCount, lines.ToString("N0", culture)) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>行号 → 「第 12 行」(从内容搜索点进来时命中的行)。</summary>
+public sealed class LineNumberTextConverter : IValueConverter
+{
+    public static readonly LineNumberTextConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int line ? NcwTexts.Format(NcwTextKind.FileLine, line.ToString(culture)) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>图片字节 → 位图(文件预览)。解码失败返回 null。</summary>
 public sealed class BytesToBitmapConverter : IValueConverter
 {

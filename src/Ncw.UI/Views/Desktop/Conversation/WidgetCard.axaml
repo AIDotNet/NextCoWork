@@ -14,23 +14,25 @@
   -->
   <Border Classes="card" Padding="0" Margin="0,3" Classes.danger="{Binding IsFailed}">
     <StackPanel>
+      <!-- 标题在 * 列里(放不下截断,不会压到右边的按钮上);环境标识和状态标记跟在后面的 Auto 列。
+           环境标识和工具行同一条规则(EnvBadge):本机不画,SSH / 其他环境一定画;完整的「设备 · 环境」在标题的悬停提示里 -->
       <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="12,8,8,0" ColumnSpacing="8">
         <lucide:LucideIcon Kind="ChartColumn" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <TextBlock Classes="mono" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                     Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-          <Border Classes="chip" IsVisible="{Binding EnvLabel, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Title}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" arc:Tooltip.Tip="{Binding EnvLabel}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border Classes="chip" IsVisible="{Binding ShowsEnv}">
             <StackPanel Orientation="Horizontal" Spacing="4">
               <lucide:LucideIcon Kind="Monitor" Size="11" VerticalAlignment="Center" IsVisible="{Binding !IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
               <lucide:LucideIcon Kind="Link" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
               <TextBlock Classes="hint" Text="{Binding EnvLabel}" TextWrapping="NoWrap" />
             </StackPanel>
           </Border>
-          <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowUnknownBadge}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText WidgetBadgeUnknown}" />
-          <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowOfflineBadge}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText WidgetBadgeOffline}" />
-          <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowExpiredBadge}" Text="{l:NcwText WidgetBadgeExpired}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="NoWrap" IsVisible="{Binding ShowUnknownBadge}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText WidgetBadgeUnknown}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="NoWrap" IsVisible="{Binding ShowOfflineBadge}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText WidgetBadgeOffline}" />
+          <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="NoWrap" IsVisible="{Binding ShowExpiredBadge}" Text="{l:NcwText WidgetBadgeExpired}" />
         </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" IsVisible="{Binding HasCard}">
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" IsVisible="{Binding HasCard}">
           <ui:NcwButton Classes="icon" Variant="Ghost" Click="OnCopySource"
                         AutomationProperties.Name="{l:NcwText WidgetCopySource}" arc:Tooltip.Tip="{l:NcwText WidgetCopySource}">
             <lucide:LucideIcon Kind="Copy" Size="13" />

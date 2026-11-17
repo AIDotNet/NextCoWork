@@ -54,6 +54,16 @@
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
     <Setter Property="TextWrapping" Value="Wrap" />
   </Style>
+  <!-- 工具调用行的工具名;失败的工具名和目标变红(结果仍默认收起)。失败写在后面,同样特异度时后者胜出 -->
+  <Style Selector="TextBlock.hint.toolName">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+  </Style>
+  <Style Selector="TextBlock.hint.toolTarget">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+  </Style>
+  <Style Selector="TextBlock.hint.failed">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Danger}" />
+  </Style>
   <Style Selector="TextBlock.mono">
     <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
     <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
@@ -156,6 +166,16 @@
   <Style Selector="Border.dot.ok"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Success}" /></Style>
   <Style Selector="Border.dot.warn"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Warning}" /></Style>
   <Style Selector="Border.dot.bad"><Setter Property="Background" Value="{arc:ArcDesignTokenResource Danger}" /></Style>
+  <!-- 强度刻度条(NcwLevelMeter):暗格是边框色,亮格是次要文字色;「自动」的亮格用强调色 -->
+  <Style Selector="ui|NcwLevelMeter > Border.bar">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource BorderStrong}" />
+  </Style>
+  <Style Selector="ui|NcwLevelMeter > Border.bar.on">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+  </Style>
+  <Style Selector="ui|NcwLevelMeter.auto > Border.bar.on">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}" />
+  </Style>
   <Style Selector="Border.problem">
     <Setter Property="Padding" Value="10,6" />
     <Setter Property="CornerRadius" Value="8" />

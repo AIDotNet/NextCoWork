@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Converters;
+using Ncw.UI.Localization;
 
 namespace Ncw.UI.Views.Desktop.Conversation;
 
@@ -12,7 +13,21 @@ public partial class InteractionCard : UserControl
     public InteractionCard()
     {
         InitializeComponent();
-        ScopeSelect.TextSelector = item => ScopeTextConverter.Text(item as string);
+        DataContextChanged += (_, _) =>
+        {
+            if (_scopes is not null)
+            {
+                _scopes.CollectionChanged -= OnScopesChanged;
+            }
+
+            _scopes = Row?.Scopes;
+            if (_scopes is not null)
+            {
+                _scopes.CollectionChanged += OnScopesChanged;
+            }
+
+            PopulateAlwaysMenu();
+        };
 
         // 触控模式(手机壳设置的继承属性):危险 / 普通审批都改成「长按允许」。手势的状态机在 Client 的 HoldGesture,这里只转发指针事件
         HoldAllow.HoldStarted += (_, _) => Row?.BeginAllowHold();
@@ -32,6 +47,23 @@ public partial class InteractionCard : UserControl
     }
 
     private InteractionRowViewModel? Row => DataContext as InteractionRowViewModel;
+
+    private System.Collections.ObjectModel.ObservableCollection<string>? _scopes;
+
+    private void OnScopesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => PopulateAlwaysMenu();
+
+    /// <summary>「总是允许 ▾」的菜单:设备给的每个记住范围一项(按当前语言);「允许一次」上标出当前的 ⌘↵ 快捷键(用户改过就跟着变)。</summary>
+    private void PopulateAlwaysMenu()
+    {
+        if (Row is not { } row)
+        {
+            return;
+        }
+
+        NcwMenus.Populate(AlwaysMenu, row.Scopes.Select(scope => new NcwMenus.Item(
+            NcwTexts.Format(NcwTextKind.ApprovalAlwaysAllowIn, ScopeTextConverter.Text(scope)), row.AlwaysAllowInCommand, scope)));
+        AllowGesture.Text = ShortcutText.Format(ShortcutText.CurrentGesture(Ncw.Client.Shortcuts.AppCommand.ApproveFirst));
+    }
 
     private void OnToggleOption(object? sender, RoutedEventArgs e)
     {

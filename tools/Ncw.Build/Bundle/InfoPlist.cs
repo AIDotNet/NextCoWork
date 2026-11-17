@@ -20,7 +20,8 @@ internal static class InfoPlist
         return core;
     }
 
-    public static string Render(string version)
+    /// <param name="iconFile"><c>Contents/Resources</c> 里的图标文件名;为 null 不写 <c>CFBundleIconFile</c>(包里没有图标时)。</param>
+    public static string Render(string version, string? iconFile = null)
     {
         var core = NumericVersion(version);
         var sb = new StringBuilder();
@@ -34,6 +35,11 @@ internal static class InfoPlist
         Pair("CFBundleDisplayName", BundleLayout.AppName);
         Pair("CFBundleIdentifier", BundleId);
         Pair("CFBundleExecutable", BundleLayout.AppName);
+        if (iconFile is not null)
+        {
+            Pair("CFBundleIconFile", iconFile);
+        }
+
         Pair("CFBundlePackageType", "APPL");
         Pair("CFBundleInfoDictionaryVersion", "6.0");
         Pair("CFBundleShortVersionString", core);

@@ -8,8 +8,9 @@ using Ncw.Protocol.Methods;
 namespace Ncw.Client.ViewModels;
 
 /// <summary>
-/// 文件页签(默认页签):惰性文件树、文件名 / 内容搜索、文件预览与简易编辑、右键菜单(新建 / 重命名 / 删除进回收站 / 复制路径 / 在文件管理器中显示 / 用默认程序打开 / 另存为)。
-/// 文件在设备上:树、预览、搜索结果都是纯 UI 状态,<b>不进 Store</b>(设备是真源);Git 状态角标来自 Git 镜像(由 <see cref="InspectorViewModel"/> 推进树)。
+/// 文件页签(默认页签):惰性文件树、文件名 / 内容搜索、右键菜单(新建 / 重命名 / 删除进回收站 / 复制路径 / 在文件管理器中显示 / 用默认程序打开 / 另存为)。
+/// 点开文件不在这里预览:交给 <see cref="Tabs"/>(主工作区的文件标签页,预览与简易编辑在那里)。
+/// 文件在设备上:树、搜索结果都是纯 UI 状态,<b>不进 Store</b>(设备是真源);Git 状态角标来自 Git 镜像(由 <see cref="InspectorViewModel"/> 推进树)。
 /// 「显示 / 打开 / 另存为」是客户端本机的动作,经 <see cref="ILocalFiles"/>,只对「本机设备 + 本机环境」的项目开放(<see cref="CanOpenLocally"/>)。
 /// </summary>
 public sealed partial class FilesPanelViewModel : ObservableObject
@@ -47,10 +48,8 @@ public sealed partial class FilesPanelViewModel : ObservableObject
 
     public string ProjectPath => Tree.ProjectPath;
 
-    /// <summary>打开的文件(预览 / 编辑);null = 显示树。</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasPreview), nameof(ShowsTree), nameof(ShowsSearch))]
-    public partial FilePreviewViewModel? Preview { get; private set; }
+    /// <summary>文件打开的去处:主工作区的文件标签页。装配时换成 <see cref="WorkspaceViewModel"/>。</summary>
+    public IFileTabHost Tabs { get; set; } = NoFileTabs.Instance;
 
     [ObservableProperty] public partial FileNodeViewModel? Selected { get; set; }
 
@@ -62,13 +61,11 @@ public sealed partial class FilesPanelViewModel : ObservableObject
     /// <summary>项目在本机设备的本机环境里:「在文件管理器中显示 / 用默认程序打开」才有意义。</summary>
     [ObservableProperty] public partial bool CanOpenLocally { get; set; }
 
-    public bool HasPreview => Preview is not null;
+    public bool ShowsSearch => Search.IsActive;
 
-    public bool ShowsSearch => Preview is null && Search.IsActive;
+    public bool ShowsTree => !Search.IsActive;
 
-    public bool ShowsTree => Preview is null && !Search.IsActive;
-
-    /// <summary>绑定到一个项目(换项目会关掉预览、清空搜索、换一棵树)。</summary>
+    /// <summary>绑定到一个项目(换项目会清空搜索、换一棵树)。</summary>
     public async Task BindAsync(ProjectRef? project, string name, string path, bool canWrite, bool canOpenLocally)
     {
         CanWrite = canWrite;
@@ -76,7 +73,6 @@ public sealed partial class FilesPanelViewModel : ObservableObject
         if (project != _project)
         {
             _project = project;
-            Preview = null;
             Selected = null;
             Failure = null;
             Search.Bind(project);
@@ -87,9 +83,9 @@ public sealed partial class FilesPanelViewModel : ObservableObject
         OnPropertyChanged(nameof(ProjectPath));
     }
 
-    // ───────────────────────── 预览 ─────────────────────────
+    // ───────────────────────── 打开 ─────────────────────────
 
-    /// <summary>点一个文件:预览。</summary>
+    /// <summary>点一个文件:在主工作区打开它的标签页。</summary>
     [RelayCommand]
     private async Task OpenFileAsync(FileNodeViewModel node)
     {
@@ -108,47 +104,12 @@ public sealed partial class FilesPanelViewModel : ObservableObject
         await OpenPathAsync(node.Path, null).ConfigureAwait(true);
     }
 
-    /// <summary>点一条搜索结果:预览那个文件(内容搜索带行号)。</summary>
+    /// <summary>点一条搜索结果:打开那个文件(内容搜索带行号)。</summary>
     [RelayCommand]
     private Task OpenResultAsync(FileSearchResult result) => OpenPathAsync(result.Path, result.Line);
 
-    public async Task OpenPathAsync(string path, int? line)
-    {
-        if (_project is not { } project)
-        {
-            return;
-        }
-
-        if (Preview is { IsDirty: true } && !await ConfirmDiscardAsync().ConfigureAwait(true))
-        {
-            return;
-        }
-
-        var preview = new FilePreviewViewModel(_files, project, path, CanWrite, line);
-        Preview = preview;
-        OnPropertyChanged(nameof(ShowsSearch));
-        await preview.LoadAsync().ConfigureAwait(true);
-    }
-
-    /// <summary>关掉预览回到树。有没保存的编辑要先确认。</summary>
-    [RelayCommand]
-    private async Task ClosePreviewAsync()
-    {
-        if (Preview is { IsDirty: true } && !await ConfirmDiscardAsync().ConfigureAwait(true))
-        {
-            return;
-        }
-
-        Preview = null;
-        OnPropertyChanged(nameof(ShowsSearch));
-        OnPropertyChanged(nameof(ShowsTree));
-    }
-
-    private async Task<bool> ConfirmDiscardAsync()
-    {
-        var text = _text();
-        return await _dialogs().ConfirmAsync(text.DiscardTitle, text.DiscardMessage, text.DiscardLabel).ConfigureAwait(true);
-    }
+    public Task OpenPathAsync(string path, int? line) =>
+        _project is { } project ? Tabs.OpenAsync(project, path, line) : Task.CompletedTask;
 
     /// <summary>搜索框的结果列表显隐跟着查询文字(视图在查询变化时调,保持 <see cref="ShowsTree"/> / <see cref="ShowsSearch"/> 同步)。</summary>
     public void NotifySearchChanged()
@@ -263,10 +224,9 @@ public sealed partial class FilesPanelViewModel : ObservableObject
 
     private void ClosePreviewIfInside(string path)
     {
-        if (Preview is { } preview && (preview.Path == path || preview.Path.StartsWith(path + "/", StringComparison.Ordinal)))
+        if (_project is { } project)
         {
-            Preview = null;
-            NotifySearchChanged();
+            Tabs.CloseInside(project, path);
         }
     }
 
@@ -325,21 +285,5 @@ public sealed partial class FilesPanelViewModel : ObservableObject
         }
 
         await _local().SaveAsync(node.Name, bytes).ConfigureAwait(true);
-    }
-
-    /// <summary>预览头里的「另存为」。</summary>
-    [RelayCommand]
-    private async Task SavePreviewAsAsync()
-    {
-        if (Preview is not { } preview)
-        {
-            return;
-        }
-
-        var bytes = await preview.ReadAllBytesAsync().ConfigureAwait(true);
-        if (bytes is not null)
-        {
-            await _local().SaveAsync(preview.Name, bytes).ConfigureAwait(true);
-        }
     }
 }

@@ -125,20 +125,89 @@ public class ComposerFileRefTests
     }
 
     [Fact]
-    public async Task Accepting_a_suggestion_turns_it_into_a_chip_and_removes_the_at_query_from_the_draft()
+    public async Task Accepting_a_suggestion_writes_an_at_name_token_into_the_draft_and_records_the_file()
     {
         var (composer, _, _) = Create();
+        var replaced = 0;
+        composer.DraftReplaced += (_, _) => replaced++;
         composer.Draft = "look at @Insp";
         await composer.WhenSuggested;
         composer.MoveSuggestionCommand.Execute(1);
 
         Assert.True(composer.AcceptSuggestion());
 
-        Assert.Equal("look at ", composer.Draft);
+        // 「@查询」换成「@文件名 」,输入框把它画成一个 token;光标放到末尾(DraftReplaced)
+        Assert.Equal("look at @Inspector.cs ", composer.Draft);
+        Assert.Equal(1, replaced);
         var chip = Assert.Single(composer.FileRefs);
-        Assert.Equal(("src/Ncw.Client/Inspector.cs", "Inspector.cs"), (chip.Path, chip.Name));
+        Assert.Equal(("src/Ncw.Client/Inspector.cs", "Inspector.cs", "@Inspector.cs"), (chip.Path, chip.Name, chip.Mention));
+        var span = Assert.Single(composer.Mentions(composer.Draft));
+        Assert.Equal((MentionSpan.FileKind, "src/Ncw.Client/Inspector.cs", "Inspector.cs", 8, 21), (span.Kind, span.Id, span.Label, span.Start, span.End));
         Assert.False(composer.ShowsSuggestions);
         Assert.True(composer.HasFileRefs);
+    }
+
+    [Fact]
+    public async Task Deleting_the_token_from_the_draft_drops_the_file_reference()
+    {
+        var (composer, _, _) = Create();
+        composer.Draft = "@Insp";
+        await composer.WhenSuggested;
+        composer.AcceptSuggestion();
+        Assert.Equal("@InspectorPanel.axaml ", composer.Draft);
+
+        composer.Draft = "explain ";      // 整个 token 被删掉(编辑器里一次退格删掉整个 token)
+
+        Assert.Empty(composer.FileRefs);
+        Assert.False(composer.HasFileRefs);
+    }
+
+    [Fact]
+    public async Task A_second_file_with_the_same_name_is_written_with_its_path()
+    {
+        var (composer, _, lookups) = Create();
+        composer.Draft = "@Insp";
+        await composer.WhenSuggested;
+        composer.AcceptSuggestion(); // src/Ncw.UI/InspectorPanel.axaml
+
+        composer.PickFileCommand.Execute(new FileSuggestionItem("tests/InspectorPanel.axaml", "InspectorPanel.axaml", "tests"));
+
+        Assert.Equal("@InspectorPanel.axaml @tests/InspectorPanel.axaml ", composer.Draft);
+        Assert.Equal(["InspectorPanel.axaml", "tests/InspectorPanel.axaml"], composer.FileRefs.Select(r => r.Label));
+        Assert.Equal(["src/Ncw.UI/InspectorPanel.axaml", "tests/InspectorPanel.axaml"], composer.Mentions(composer.Draft).Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Switching_sessions_keeps_each_drafts_tokens_and_references()
+    {
+        var (composer, _, _) = Create();
+        composer.Draft = "@Insp";
+        await composer.WhenSuggested;
+        composer.AcceptSuggestion();
+        var meta = new SessionDto("s-ncw-2", "nextcowork", null, "user", "t", null, "opus", null, "code", "auto", false, false, 1, 2);
+
+        composer.Update(new SessionRef("local", "s-ncw-2"), meta with { Id = "s-ncw-2" }, null, null, SessionActivity.Idle, DeviceConnection.Connected, "owner", Options());
+        Assert.Equal("", composer.Draft);
+        Assert.Empty(composer.FileRefs);
+
+        composer.Update(Session, meta with { Id = "s-ncw-1" }, null, null, SessionActivity.Idle, DeviceConnection.Connected, "owner", Options());
+        Assert.Equal("@InspectorPanel.axaml ", composer.Draft);
+        Assert.Single(composer.FileRefs); // 换回来时没有被「草稿里找不到」误删
+    }
+
+    [Fact]
+    public void Mentions_mark_a_known_leading_command_and_whole_word_file_names_only()
+    {
+        FileRefChip[] files = [new("src/a.cs", "a.cs"), new("src/a.cs.bak", "a.cs.bak")];
+        string[] commands = ["review"];
+
+        Assert.Equal(
+            [(MentionSpan.CommandKind, "review", 0, 7), (MentionSpan.FileKind, "src/a.cs", 8, 13), (MentionSpan.FileKind, "src/a.cs.bak", 18, 27)],
+            ComposerLogic.Mentions("/review @a.cs and @a.cs.bak, ok", files, commands).Select(m => (m.Kind, m.Id, m.Start, m.End)));
+        Assert.Empty(ComposerLogic.Mentions("/review", files, commands));             // 还在输入命令(后面没有空白)
+        Assert.Empty(ComposerLogic.Mentions("/unknown x", files, commands));          // 不是已知命令
+        Assert.Empty(ComposerLogic.Mentions("mail me@a.cs x", files, commands));      // @ 前面不是空白
+        Assert.Empty(ComposerLogic.Mentions("@a.csx", files, commands));              // 后面还连着字
     }
 
     [Fact]
@@ -167,12 +236,12 @@ public class ComposerFileRefTests
         composer.Draft = "@Insp";
         await composer.WhenSuggested;
         composer.AcceptSuggestion();
-        composer.Draft = "explain this";
+        composer.Draft += "explain this";
 
         await composer.SendCommand.ExecuteAsync(null);
 
         var (text, files) = Assert.Single(commands.Sent);
-        Assert.Equal("explain this", text);
+        Assert.Equal("@InspectorPanel.axaml explain this", text);
         Assert.Equal(["src/Ncw.UI/InspectorPanel.axaml"], files.Select(f => f.Path));
         Assert.Empty(composer.FileRefs); // 发出去了:chip 清掉
 
@@ -191,10 +260,12 @@ public class ComposerFileRefTests
         composer.AcceptSuggestion();
         Assert.Single(composer.FileRefs);
 
+        composer.Draft += "summarize";
         composer.RemoveFileCommand.Execute(composer.FileRefs[0]);
 
         Assert.Empty(composer.FileRefs);
         Assert.False(composer.HasFileRefs);
+        Assert.Equal("summarize", composer.Draft); // 草稿里的 @名字 一起删掉
     }
 
     [Fact]

@@ -22,6 +22,27 @@ public sealed class AccessAndScopeTests
     public void Gate_follows_the_role_and_the_channel(string role, Need need, bool local, GateReason expected) =>
         Assert.Equal(expected, ManagementAccess.Evaluate(DeviceConnection.Connected, role, local, need).Reason);
 
+    [Fact]
+    public void A_switcher_resetting_its_items_does_not_make_every_page_reload_but_a_real_switch_does()
+    {
+        var rig = new ManagementRig();
+        var changes = 0;
+        rig.Scope.Changed += () => changes++;
+        Assert.Equal(ManagementRig.Workspace, rig.Scope.WorkspaceId);
+
+        // 切换器换数据源时先写 null、再写回原值(Avalonia 的 SelectingItemsControl):作用域没变,不通知
+        rig.Scope.WorkspaceId = null;
+        rig.Scope.WorkspaceId = ManagementRig.Workspace;
+        rig.Scope.DeviceId = null;
+        Assert.Equal(ManagementRig.Device, rig.Scope.DeviceId); // 设备不能是空:重新选回来
+        Assert.Equal(0, changes);
+
+        rig.Scope.WorkspaceId = "ws2"; // 用户真的换了项目
+        Assert.Equal(1, changes);
+        rig.Scope.WorkspaceId = "ws2";
+        Assert.Equal(1, changes);
+    }
+
     [Theory]
     [InlineData(DeviceConnection.Offline)]
     [InlineData(DeviceConnection.Connecting)]

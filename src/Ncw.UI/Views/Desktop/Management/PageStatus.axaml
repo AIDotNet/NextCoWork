@@ -9,10 +9,22 @@
              x:Class="Ncw.UI.Views.Desktop.Management.PageStatus"
              x:DataType="vm:ManagementPageViewModel">
   <!--
-    管理页的状态条:加载中 / 设备未知(断开,规则 7)/ 角色读不了 / 读取失败(可重试)/ 只读说明 / 写操作失败条。
+    管理页的状态条:还没读过 / 加载中(骨架占位)/ 设备未知(断开,规则 7)/ 角色读不了 / 读取失败(可重试)/ 只读说明 / 写操作失败条。
     各页把它放在页头下面;内容区只在「就绪」时显示。
   -->
   <StackPanel Spacing="8">
+    <!-- 还没读过 / 读取中:骨架占位(三条淡色块,和内容大致一样高),不让分区看起来是空的或坏了 -->
+    <StackPanel Classes="skeleton" Spacing="10" Margin="0,4,0,8">
+      <StackPanel.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.Or}">
+          <Binding Path="IsIdle" />
+          <Binding Path="IsLoading" />
+        </MultiBinding>
+      </StackPanel.IsVisible>
+      <Border Height="44" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+      <Border Height="44" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}" Opacity="0.7" />
+      <Border Height="44" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}" Opacity="0.4" />
+    </StackPanel>
     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8" IsVisible="{Binding IsLoading}">
       <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
       <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" VerticalAlignment="Center" />

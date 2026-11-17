@@ -5,7 +5,7 @@ namespace Ncw.Build.Bundle;
 /// <summary>把桌面发布目录和 ncw-agent 的 AOT 发布目录合成「桌面应用包」(布局见 <see cref="BundleLayout"/>)。</summary>
 internal static class BundleBuilder
 {
-    public static BundleManifest Build(BundleLayout layout, string desktopDir, string agentDir, string version, TimeProvider clock)
+    public static BundleManifest Build(BundleLayout layout, string desktopDir, string agentDir, string version, TimeProvider clock, string? macIcon = null)
     {
         var rid = layout.Rid;
         Require(Path.Combine(desktopDir, rid.DesktopExecutable), $"desktop publish for {rid} (run publish-desktop first)");
@@ -23,7 +23,14 @@ internal static class BundleBuilder
         if (layout.IsMacBundle)
         {
             Directory.CreateDirectory(layout.ResourcesDir);
-            File.WriteAllText(layout.InfoPlist, InfoPlist.Render(version));
+            // 图标:Dock、Finder、⌘Tab 都读 Contents/Resources 里 CFBundleIconFile 指的 .icns;两处缺一处就是系统默认的空白图标
+            if (macIcon is not null)
+            {
+                Require(macIcon, "macOS app icon (src/Ncw.Desktop/Assets/AppIcon.icns)");
+                File.Copy(macIcon, layout.MacIconPath, overwrite: true);
+            }
+
+            File.WriteAllText(layout.InfoPlist, InfoPlist.Render(version, macIcon is null ? null : BundleLayout.MacIconFileName));
         }
 
         EnsureExecutable(layout.DesktopExe, rid);

@@ -23,8 +23,15 @@ public partial class NcwWidgetHost : UserControl
     public const int MaxLiveSurfaces = 8;
     private const int ReadyTimeoutSeconds = 12;
     private const double DefaultHeight = 120;
+    private const int MaxRememberedHeights = 256;
 
     private static int s_live;
+
+    /// <summary>
+    /// 每张卡片(设备 + 会话 + 调用)上次报上来的内容高度。纯 UI 缓存:虚拟化列表把卡片滚出去会销毁 WebView,滚回来重建时直接用上次的高度,
+    /// 而不是先占 120 再跳到真实高度——那一跳会让列表的总高度和滚动位置一起跳(跟随最新时还会把视图拽来拽去)。
+    /// </summary>
+    private static readonly Dictionary<WidgetRef, double> s_heights = [];
 
     private WidgetRowViewModel? _vm;
     private NcwWidgetSurface? _surface;
@@ -199,11 +206,13 @@ public partial class NcwWidgetHost : UserControl
         surface.ExternalRequested += uri => _ = bridge.OpenExternalAsync(uri);
         surface.Failed += OnSurfaceFailed;
         bridge.Ready += () => Dispatcher.UIThread.Post(() => OnPageReady(surface));
+        var key = _vm.Ref;
         bridge.HeightChanged += height => Dispatcher.UIThread.Post(() =>
         {
             if (ReferenceEquals(_surface, surface))
             {
                 surface.Height = height;
+                RememberHeight(key, height);
             }
         });
         bridge.Locked += () => Dispatcher.UIThread.Post(() => OnSurfaceFailed(WidgetSurfaceFailure.Crashed, "locked"));
@@ -235,9 +244,19 @@ public partial class NcwWidgetHost : UserControl
     }
 
     private double InitialHeight(WidgetCard card) =>
-        card.Size.Aspect is { } aspect && Bounds.Width > 0
-            ? WidgetLimits.ClampHeight(Bounds.Width * aspect)
-            : DefaultHeight;
+        _vm is not null && s_heights.TryGetValue(_vm.Ref, out var remembered) ? remembered
+        : card.Size.Aspect is { } aspect && Bounds.Width > 0 ? WidgetLimits.ClampHeight(Bounds.Width * aspect)
+        : DefaultHeight;
+
+    private static void RememberHeight(WidgetRef key, double height)
+    {
+        if (s_heights.Count >= MaxRememberedHeights && !s_heights.ContainsKey(key))
+        {
+            s_heights.Clear(); // 简单的上限:满了就清掉重来,只影响首帧高度
+        }
+
+        s_heights[key] = height;
+    }
 
     private void TearDownSurface()
     {

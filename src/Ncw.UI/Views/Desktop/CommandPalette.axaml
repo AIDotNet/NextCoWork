@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.CommandPalette"
+             x:DataType="vm:CommandPaletteViewModel"
+             ui:NcwMotion.IsPresent="{Binding IsOpen}" ui:NcwMotion.PresenceKind="Fade">
+  <!--
+    命令面板(⌘K,docs/design/03 §11):盖在外壳上的遮罩 + 顶部居中的卡片。输入框里 ↑↓ 移动、回车执行、Esc 关闭;点遮罩关闭。
+    结果来自 CommandPaletteViewModel(命令、当前项目的会话、项目、设置分区,和设备给的文件)。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.paletteCard">
+      <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusPanel}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+      <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowFloating}" />
+    </Style>
+    <Style Selector="ui|PlainButton.paletteRow">
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ui|PlainButton.paletteRow.active">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
+    </Style>
+    <Style Selector="Border.kbd">
+      <Setter Property="Padding" Value="5,1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <Border x:Name="Scrim" Background="{arc:ArcDesignTokenResource Scrim}" PointerPressed="OnScrimPressed" />
+    <Border x:Name="Card" Classes="paletteCard" Width="600" MaxWidth="600" Margin="16,72,16,16"
+            HorizontalAlignment="Center" VerticalAlignment="Top">
+      <Grid RowDefinitions="Auto,Auto,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="10,10,14,10">
+          <ui:NcwSearchField x:Name="QueryBox" Text="{Binding Query, Mode=TwoWay}"
+                             PlaceholderText="{l:NcwText PalettePlaceholder}" AutomationProperties.Name="{l:NcwText CmdCommandPalette}" />
+          <lucide:LucideIcon Grid.Column="1" Kind="LoaderCircle" Size="14" Classes="spin" Margin="8,0,0,0" VerticalAlignment="Center"
+                             Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsSearchingFiles}" />
+        </Grid>
+        <Border Grid.Row="1" Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+        <Grid Grid.Row="2" RowDefinitions="*,Auto">
+          <ScrollViewer x:Name="Scroller" MaxHeight="420">
+            <StackPanel Margin="6">
+              <TextBlock Classes="hint" Margin="10,10" IsVisible="{Binding ShowsNoMatch}" Text="{l:NcwText PaletteNoMatch}" />
+              <ItemsControl x:Name="Results" ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:PaletteItemViewModel">
+                    <ui:PlainButton Classes="paletteRow" Classes.active="{Binding IsActive}" Click="OnRowClick">
+                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <lucide:LucideIcon Kind="{Binding Kind, Converter={x:Static cv:PaletteKindConverter.Icon}}" Size="14"
+                                           VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="10,0,8,0" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Converter={x:Static cv:PaletteTitleConverter.Instance}}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Classes="hint" Text="{Binding Subtitle}" IsVisible="{Binding HasSubtitle}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Border Grid.Column="2" Classes="kbd" Margin="0,0,8,0" IsVisible="{Binding HasGesture}" VerticalAlignment="Center">
+                          <TextBlock Classes="hint" Text="{Binding Gesture, Converter={x:Static cv:GestureTextConverter.Instance}}" />
+                        </Border>
+                        <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowsKind}"
+                                   Text="{Binding Kind, Converter={x:Static cv:PaletteKindConverter.Label}}" />
+                      </Grid>
+                    </ui:PlainButton>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+          <TextBlock Grid.Row="1" Classes="hint" Margin="14,6,14,8" Text="{l:NcwText PaletteHint}" />
+        </Grid>
+      </Grid>
+    </Border>
+  </Panel>
+</UserControl>

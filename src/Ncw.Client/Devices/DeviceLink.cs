@@ -101,10 +101,11 @@ public sealed class DeviceLink : IAsyncDisposable
     }
 
     /// <summary>在这台设备上添加一个项目。设备推送的项目变化会更新 Store,这里返回新项目的引用方便立即选中。</summary>
-    public async Task<ProjectRef> AddProjectAsync(string path, CancellationToken ct = default)
+    public async Task<ProjectRef> AddProjectAsync(string path, string? name = null, CancellationToken ct = default)
     {
         var client = _client ?? throw new ProtocolException(ErrorCodes.Unavailable, "Device is not connected", retryable: true);
-        var project = await client.CallAsync(DeviceMethods.ProjectsAdd, new ProjectsAddParams(path, null), ct).ConfigureAwait(false);
+        var project = await client.CallAsync(DeviceMethods.ProjectsAdd, new ProjectsAddParams(path, string.IsNullOrWhiteSpace(name) ? null : name.Trim()), ct,
+            idem: $"projects.add:{Guid.NewGuid():N}").ConfigureAwait(false);
         var reference = new ProjectRef(DeviceId, project.WorkspaceId);
         // 推送可能晚于结果到达:先把这一个项目合进 Store,之后的推送是全量,会覆盖成同样的值。
         var list = await client.CallAsync(DeviceMethods.ProjectsList, Unit.Value, ct).ConfigureAwait(false);

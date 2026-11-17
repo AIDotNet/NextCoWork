@@ -31,20 +31,15 @@
       <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
     </Style>
   </UserControl.Styles>
-  <UserControl.KeyBindings>
-    <KeyBinding Gesture="Meta+B" Command="{Binding ToggleSidebarCommand}" />
-    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
-    <KeyBinding Gesture="Meta+Alt+I" Command="{Binding ToggleInspectorCommand}" />
-    <KeyBinding Gesture="Ctrl+Alt+I" Command="{Binding ToggleInspectorCommand}" />
-  </UserControl.KeyBindings>
+  <!-- 快捷键不在这里声明:按偏好里生效的手势表由 NcwShortcutRouter 挂在窗口上(docs/design/03 §11,可在设置里改) -->
 
   <Grid x:Name="Root" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
-    <Grid x:Name="Main" ColumnDefinitions="352,4,*,4,320">
+    <Grid x:Name="Main" ColumnDefinitions="280,4,*,4,320">
       <!-- 窄窗口下抽屉打开时的遮罩:点一下关闭抽屉 -->
       <Border x:Name="DrawerScrim" Grid.Column="0" Grid.ColumnSpan="5" ZIndex="9" IsVisible="False" ui:NcwMotion.PresenceKind="Fade"
               Background="{arc:ArcDesignTokenResource Scrim}" PointerPressed="OnScrimPressed" />
 
-      <!-- 左侧区域:头部 + 项目栏 + 项目面板。窄窗口下作为抽屉跨列覆盖在工作区上。 -->
+      <!-- 左侧区域:头部 + 侧边栏。窄窗口下作为抽屉跨列覆盖在工作区上;⌘B 完全收起。 -->
       <Grid x:Name="LeftArea" Grid.Column="0" RowDefinitions="40,*" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
         <Grid x:Name="SidebarLead" ColumnDefinitions="Auto,*,Auto" Margin="0,0,8,0">
           <Border x:Name="SidebarInset" Width="0" />
@@ -63,12 +58,8 @@
             <lucide:LucideIcon Kind="PanelLeftClose" Size="16" />
           </ui:NcwButton>
         </Grid>
-        <Grid Grid.Row="1" ColumnDefinitions="64,*">
-          <Border BorderThickness="0,0,1,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-            <desktop:ProjectRail DataContext="{Binding Rail}" />
-          </Border>
-          <desktop:ProjectPanel Grid.Column="1" DataContext="{Binding Panel}" />
-        </Grid>
+        <!-- 左侧边栏:全局入口 + 项目树 + 账户(docs/design/03 §1,2026-11 起取代「项目栏 + 项目面板」两栏) -->
+        <desktop:Sidebar Grid.Row="1" DataContext="{Binding Sidebar}" />
       </Grid>
 
       <!-- 拖动调整左侧区域宽度 -->
@@ -109,6 +100,9 @@
 
     <!-- 账户状态条:浮在工作区顶部(登录进行中 / 失败 / 过期 / 连不上 / 要选团队) -->
     <desktop:AccountStatusBar />
+
+    <!-- 命令面板(⌘K):盖在外壳上,整窗覆盖层(设置等)打开时不出现 -->
+    <desktop:CommandPalette x:Name="PaletteLayer" DataContext="{Binding Palette}" />
 
     <!-- 首次启动:账户还没做过决定时整窗覆盖(设置页和数据页盖在它上面,所以排在它们前面) -->
     <desktop:OnboardingOverlay DataContext="{Binding Onboarding}" />

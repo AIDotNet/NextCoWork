@@ -1,9 +1,12 @@
 using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
@@ -12,20 +15,33 @@ namespace Ncw.UI.Views.Desktop.Conversation;
 
 /// <summary>
 /// 会话内容。这里只有纯 UI 状态:转录的滚动位置、是否「跟随最新」、展开 / 折叠;所有事实都在 <see cref="ConversationViewModel"/> 里(来自 Store)。
-/// 跟随最新:在底部时,新行和流式增量让内容变高就滚到底;用户向上滚动就停止跟随并显示「回到最新」;回到底部又恢复。
+/// <para>跟随最新的规则在 <see cref="TranscriptFollow"/>(只认用户意图);这里只接线:滚动容器上的输入(滚轮 / 键盘 / 拖滚动条 / 手势)喂给它,
+/// 每一轮布局之后按它的判断贴底(<see cref="OnScrollerLayoutUpdated"/>,同一帧完成),「回到最新」按钮跟着它显示。</para>
 /// </summary>
 public partial class ConversationView : UserControl
 {
-    private const double BottomTolerance = 8;
-
     /// <summary>一轮里最多有几行算「刚到的」。一次性插进来更多(打开会话、快照到了、重连补齐)是加载历史,不是新消息,不播放进入动画。</summary>
     private const int MaxArrivalsPerTurn = 4;
 
+    /// <summary>贴底在一次连续的布局里最多追几轮(虚拟化列表每贴一次底都可能实例化新行、重估高度);到了上限就留到下一帧再追,不会卡死在一帧里。</summary>
+    private const int MaxPinsPerBurst = 12;
+
+    private readonly TranscriptFollow _follow = new();
     private ScrollViewer? _scroller;
-    private bool _pinning;
+    private int _pinBurst;
+    private bool _pinBurstResetQueued;
     private DispatcherTimer? _ticker;
     private ConversationViewModel? _vm;
     private IDisposable? _lightboxAirspace;
+
+    /// <summary>
+    /// 空会话时输入框下方那一行(第 3 行)分走的剩余高度,相对上方第 1 行的 1*。略大于 1:输入框落在视觉中心偏上一点(标题在它上面,建议在它下面)。
+    /// </summary>
+    private const double EmptyBelowWeight = 1.2;
+
+    // 空会话布局(纯 UI 状态):当前按哪种布局排的,以及是在哪个会话里变成空的(只有同一个会话里「空 → 有内容」= 发出了第一条消息,才让输入框滑回底部)
+    private bool _layoutEmpty;
+    private SessionRef? _emptySession;
 
     // 新行的进入动画(纯 UI 状态,docs/design/03 §9.2):虚拟化列表里只有「真正新追加」的行才动,滚动时被实例化的旧行不动,所以不影响滚动和跟随最新。
     private readonly HashSet<RowViewModel> _arriving = [];
@@ -37,30 +53,195 @@ public partial class ConversationView : UserControl
     public ConversationView()
     {
         InitializeComponent();
-        AddHandler(KeyDownEvent, OnPreviewKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         DetachedFromVisualTree += (_, _) => ReleaseLightboxAirspace();
         Transcript.ContainerPrepared += OnContainerPrepared;
         Transcript.ContainerClearing += (_, e) => NcwMotion.Rest(e.Container);
-        Transcript.TemplateApplied += (_, e) =>
+        Transcript.TemplateApplied += (_, e) => AttachScroller(e.NameScope.Find<ScrollViewer>("PART_Scroller"));
+        JumpButton.PropertyChanged += (_, e) =>
         {
-            if (_scroller is not null)
+            if (e.Property == IsVisibleProperty || e.Property == BoundsProperty)
             {
-                _scroller.ScrollChanged -= OnScrollChanged;
-            }
-
-            _scroller = e.NameScope.Find<ScrollViewer>("PART_Scroller");
-            if (_scroller is not null)
-            {
-                _scroller.ScrollChanged += OnScrollChanged;
+                UpdateWidgetInset();
             }
         };
     }
 
     /// <summary>当前是否跟随最新(测试用)。</summary>
-    public bool IsFollowing { get; private set; } = true;
+    public bool IsFollowing => _follow.IsFollowing;
 
     /// <summary>转录的滚动容器(测试用)。</summary>
     public ScrollViewer? Scroller => _scroller;
+
+    // ───────────────────────── 滚动容器接线 ─────────────────────────
+
+    private void AttachScroller(ScrollViewer? scroller)
+    {
+        if (_scroller is { } old)
+        {
+            old.ScrollChanged -= OnScrollChanged;
+            old.LayoutUpdated -= OnScrollerLayoutUpdated;
+            old.RemoveHandler(PointerWheelChangedEvent, OnScrollerWheel);
+            old.RemoveHandler(KeyDownEvent, OnScrollerKeyDown);
+            old.RemoveHandler(PointerPressedEvent, OnScrollerPointerPressed);
+            old.RemoveHandler(PointerReleasedEvent, OnScrollerPointerReleased);
+            old.RemoveHandler(PointerCaptureLostEvent, OnScrollerCaptureLost);
+            old.RemoveHandler(ScrollGestureEvent, OnScrollerGesture);
+        }
+
+        _scroller = scroller;
+        if (scroller is null)
+        {
+            return;
+        }
+
+        scroller.ScrollChanged += OnScrollChanged;
+        scroller.LayoutUpdated += OnScrollerLayoutUpdated;
+        // 隧道 + handledEventsToo:在 ScrollViewer 自己处理(并标记已处理)之前看到用户的意图
+        scroller.AddHandler(PointerWheelChangedEvent, OnScrollerWheel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        scroller.AddHandler(KeyDownEvent, OnScrollerKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+        scroller.AddHandler(PointerPressedEvent, OnScrollerPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        scroller.AddHandler(PointerReleasedEvent, OnScrollerPointerReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        scroller.AddHandler(PointerCaptureLostEvent, OnScrollerCaptureLost, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        scroller.AddHandler(ScrollGestureEvent, OnScrollerGesture, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        UpdateWidgetInset();
+    }
+
+    private bool AtBottom(ScrollViewer scroller) =>
+        TranscriptFollow.AtBottom(scroller.Offset.Y, scroller.Extent.Height, scroller.Viewport.Height);
+
+    private void OnScrollerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_scroller is { } scroller && e.Delta.Y != 0)
+        {
+            // Avalonia 的滚轮 Delta.Y > 0 = 往上滚
+            _follow.UserScroll(Environment.TickCount64, towardTop: e.Delta.Y > 0, canMoveUp: scroller.Offset.Y > 0.5);
+            UpdateJumpButton();
+        }
+    }
+
+    private void OnScrollerGesture(object? sender, ScrollGestureEventArgs e) =>
+        // 触摸 / 触控板手势:方向交给随后的偏移变化判断
+        _follow.UserScroll(Environment.TickCount64, towardTop: false, canMoveUp: true);
+
+    private void OnScrollerKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_scroller is not { } scroller)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.PageUp or Key.Up or Key.Home:
+                _follow.UserScroll(Environment.TickCount64, towardTop: true, canMoveUp: scroller.Offset.Y > 0.5);
+                break;
+            case Key.PageDown or Key.Down or Key.End or Key.Space:
+                _follow.UserScroll(Environment.TickCount64, towardTop: false, canMoveUp: true);
+                break;
+        }
+
+        UpdateJumpButton();
+    }
+
+    /// <summary>按在滚动条上(拖滑块、点轨道):拖动期间不贴底,方向由偏移变化判断。</summary>
+    private void OnScrollerPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is Visual source && source.FindAncestorOfType<ScrollBar>(includeSelf: true) is not null)
+        {
+            _follow.BeginDrag();
+        }
+    }
+
+    private void OnScrollerPointerReleased(object? sender, PointerReleasedEventArgs e) => EndDrag();
+
+    private void OnScrollerCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndDrag();
+
+    private void EndDrag()
+    {
+        if (_follow.IsDragging && _scroller is { } scroller)
+        {
+            _follow.EndDrag(AtBottom(scroller));
+            UpdateJumpButton();
+        }
+    }
+
+    private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (_scroller is not { } scroller)
+        {
+            return;
+        }
+
+        if (e.OffsetDelta.Y != 0)
+        {
+            _follow.OffsetChanged(Environment.TickCount64, e.OffsetDelta.Y, AtBottom(scroller));
+        }
+
+        UpdateJumpButton();
+    }
+
+    /// <summary>
+    /// 每一轮布局之后:跟随中而不在底部(新行、流式增量、卡片报高、虚拟化重估)就贴到底。在布局结束、渲染之前完成,屏幕上不会先出现错位的一帧;
+    /// 贴底本身会触发新的布局(虚拟化列表实例化底部的行、修正估算高度),所以会连追几轮直到稳定,有上限。
+    /// </summary>
+    private void OnScrollerLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (_scroller is not { } scroller || !_follow.ShouldPin(AtBottom(scroller)))
+        {
+            return;
+        }
+
+        if (_pinBurst++ >= MaxPinsPerBurst)
+        {
+            QueuePinBurstReset();
+            return;
+        }
+
+        QueuePinBurstReset();
+        scroller.Offset = new Vector(scroller.Offset.X, Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height));
+    }
+
+    private void QueuePinBurstReset()
+    {
+        if (_pinBurstResetQueued)
+        {
+            return;
+        }
+
+        _pinBurstResetQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _pinBurstResetQueued = false;
+            var exhausted = _pinBurst > MaxPinsPerBurst;
+            _pinBurst = 0;
+            if (exhausted)
+            {
+                _scroller?.InvalidateArrange(); // 上一帧没追上:再来一轮
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private void UpdateJumpButton()
+    {
+        JumpButton.IsVisible = !_follow.IsFollowing && _scroller is { } scroller && scroller.Extent.Height > scroller.Viewport.Height + TranscriptFollow.BottomTolerance;
+    }
+
+    /// <summary>「回到最新」浮在转录底部:WebView 小组件是盖在窗口上的原生视图,摆放时要让出这一条(<see cref="NcwWidgetClip"/>)。</summary>
+    private void UpdateWidgetInset()
+    {
+        if (_scroller is not { } scroller)
+        {
+            return;
+        }
+
+        var inset = JumpButton.IsVisible ? JumpButton.Bounds.Height + JumpButton.Margin.Bottom + 8 : 0;
+        if (Math.Abs(NcwWidgetClip.GetBottomInset(scroller) - inset) > 0.5)
+        {
+            NcwWidgetClip.SetBottomInset(scroller, inset);
+            scroller.InvalidateArrange();
+        }
+    }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -87,19 +268,54 @@ public partial class ConversationView : UserControl
         }
 
         // 换了会话:回到底部,重新跟随
-        IsFollowing = true;
-        JumpButton.IsVisible = false;
         UpdateTicker();
-        Dispatcher.UIThread.Post(ScrollToEnd, DispatcherPriority.Loaded);
+        ScrollToLatest();
+        ApplyEmptyLayout();
     }
+
+    /// <summary>
+    /// 空会话的布局(docs/design/03 §11.4):空的时候第 3 行(起步建议)和第 1 行按比例分走剩余高度,输入框落在中间;有内容了第 3 行收起,输入框回到底部。
+    /// 行高一次到位(只重排一次);同一个会话里从空变成有内容(发出了第一条消息)时,输入框从原来的位置用 <see cref="NcwMotion.Glide"/> 滑下去(只动 RenderTransform)。
+    /// 换会话、快照到了这类变化直接就位,不播放。
+    /// </summary>
+    private void ApplyEmptyLayout()
+    {
+        var empty = _vm?.IsEmpty == true;
+        if (empty == _layoutEmpty)
+        {
+            return;
+        }
+
+        _layoutEmpty = empty;
+        var glide = !empty && _vm?.Session is { } session && session == _emptySession && BottomArea.IsEffectivelyVisible;
+        _emptySession = empty ? _vm?.Session : null;
+        var before = glide ? BottomArea.TranslatePoint(default, Root)?.Y : null;
+        Root.RowDefinitions[3].Height = empty ? new GridLength(EmptyBelowWeight, GridUnitType.Star) : GridLength.Auto;
+        if (before is not { } from)
+        {
+            NcwMotion.StopGlide(BottomArea);
+            return;
+        }
+
+        NcwMotion.StopGlide(BottomArea);
+        Root.UpdateLayout();
+        if (BottomArea.TranslatePoint(default, Root) is { } after)
+        {
+            NcwMotion.Glide(BottomArea, from - after.Y);
+        }
+    }
+
+    /// <summary>空会话布局当前是否是「输入框居中」(测试用)。</summary>
+    public bool IsCenteredLayout => _layoutEmpty;
 
     /// <summary>
     /// 哪些行算「刚到的」:同一个会话里、快照已经到了、一轮里不超过 <see cref="MaxArrivalsPerTurn"/> 行的追加。
     /// 切会话后的第一批插入(整段历史)在这一轮结束之后才「武装」,所以不会整屏淡入。
+    /// 同一个视图模型里换了会话(行整批换掉)同样回到底部、重新跟随。
     /// </summary>
     private void OnRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (_vm is null || e.Action != NotifyCollectionChangedAction.Add || e.NewItems is null)
+        if (_vm is null)
         {
             return;
         }
@@ -110,6 +326,12 @@ public partial class ConversationView : UserControl
             _arrivalsArmed = false;
             _arriving.Clear();
             Dispatcher.UIThread.Post(() => _arrivalsArmed = true, DispatcherPriority.Background);
+            ScrollToLatest();
+            return;
+        }
+
+        if (e.Action != NotifyCollectionChangedAction.Add || e.NewItems is null)
+        {
             return;
         }
 
@@ -139,6 +361,8 @@ public partial class ConversationView : UserControl
 
     private void OnContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
+        // 展开着的「工作区」成员缩进一格(容器会被回收复用,每次都要重写)
+        e.Container.Margin = e.Container.DataContext is RowViewModel { InWorkGroup: true } ? new Thickness(18, 0, 0, 0) : default;
         if (e.Container.DataContext is RowViewModel row && _arriving.Remove(row))
         {
             NcwMotion.Arrive(e.Container, NcwArrival.Rise);
@@ -155,6 +379,10 @@ public partial class ConversationView : UserControl
         if (e.PropertyName == nameof(ConversationViewModel.NeedsTick))
         {
             UpdateTicker();
+        }
+        else if (e.PropertyName == nameof(ConversationViewModel.IsEmpty))
+        {
+            ApplyEmptyLayout();
         }
         else if (e.PropertyName == nameof(ConversationViewModel.HasLightbox))
         {
@@ -177,9 +405,9 @@ public partial class ConversationView : UserControl
     }
 
     /// <summary>Esc 关灯箱(不管焦点在输入框还是转录里;灯箱没开时什么都不拦)。</summary>
-    private void OnPreviewKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Avalonia.Input.Key.Escape && _vm?.HasLightbox == true)
+        if (e.Key == Key.Escape && _vm?.HasLightbox == true)
         {
             _vm.CloseLightboxCommand.Execute(null);
             e.Handled = true;
@@ -210,51 +438,41 @@ public partial class ConversationView : UserControl
         _ticker = null;
     }
 
-    private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    /// <summary>回到最新:恢复跟随并贴到底(「回到最新」按钮、换会话;测试也调它)。真正的贴底在下一轮布局之后(<see cref="OnScrollerLayoutUpdated"/>)。</summary>
+    public void ScrollToLatest()
     {
-        if (_scroller is not { } scroller)
+        _follow.Resume();
+        UpdateJumpButton();
+        _scroller?.InvalidateArrange();
+        Dispatcher.UIThread.Post(() =>
         {
-            return;
-        }
-
-        var atBottom = scroller.Offset.Y >= scroller.Extent.Height - scroller.Viewport.Height - BottomTolerance;
-        if (e.OffsetDelta.Y < 0 && !atBottom && !_pinning)
-        {
-            // 用户向上滚(程序自己贴底期间,虚拟化重估高度造成的偏移回退不算)
-            IsFollowing = false;
-        }
-        else if (atBottom)
-        {
-            IsFollowing = true;
-        }
-        else if ((e.ExtentDelta.Y != 0 || e.ViewportDelta.Y != 0) && IsFollowing)
-        {
-            // 内容变高(新行、流式增量):跟随就继续贴着底
-            Dispatcher.UIThread.Post(ScrollToEnd, DispatcherPriority.Background);
-            return;
-        }
-
-        JumpButton.IsVisible = !IsFollowing && scroller.Extent.Height > scroller.Viewport.Height;
+            // 绑定刚换、或列表还没有模板时没有布局可等:在 Loaded 之后补一次
+            if (_follow.IsFollowing && _scroller is { } scroller && !AtBottom(scroller))
+            {
+                scroller.InvalidateArrange();
+            }
+        }, DispatcherPriority.Loaded);
     }
 
-    private void ScrollToEnd()
+    /// <summary>
+    /// 用户展开 / 收起转录里的一行(工具、思考块):不再跟随最新。否则正好贴底(跟随)时,展开让内容变高,
+    /// 「跟随就贴底」会把视图拽到最底,刚展开的内容反而被顶出视野。用户自己滚到底或点「回到最新」时恢复跟随。
+    /// </summary>
+    public void PauseFollowing()
     {
-        _pinning = true;
-        _scroller?.ScrollToEnd();
-        IsFollowing = true;
-        JumpButton.IsVisible = false;
-        Dispatcher.UIThread.Post(() => _pinning = false, DispatcherPriority.Background);
+        _follow.Pause();
+        UpdateJumpButton();
     }
 
-    private void OnJumpToLatest(object? sender, RoutedEventArgs e) => ScrollToEnd();
+    private void OnJumpToLatest(object? sender, RoutedEventArgs e) => ScrollToLatest();
 
     /// <summary>
     /// 定位到一行(收件箱点进来:滚到那张审批卡片)。不再跟随最新,否则下一次内容变高又会把它顶走;「回到最新」按钮照常可用。
-    /// 虚拟化列表里目标行可能还没有实体,所以等布局之后再滚,并反复确认(滚动可能让邻近行重估高度)。
+    /// 虚拟化列表里目标行可能还没有实体,所以等布局之后再滚。
     /// </summary>
     private void OnFocusRequested(RowViewModel row)
     {
-        IsFollowing = false;
+        _follow.Pause();
         var index = _vm?.Rows.IndexOf(row) ?? -1;
         if (index < 0)
         {
@@ -264,7 +482,7 @@ public partial class ConversationView : UserControl
         Dispatcher.UIThread.Post(() =>
         {
             Transcript.ScrollIntoView(index);
-            JumpButton.IsVisible = _scroller is { } scroller && scroller.Extent.Height > scroller.Viewport.Height;
+            UpdateJumpButton();
         }, DispatcherPriority.Loaded);
     }
 
@@ -310,6 +528,24 @@ public partial class ConversationView : UserControl
     {
         if ((sender as Control)?.DataContext is ThinkingRowViewModel row)
         {
+            if (!row.IsExpanded)
+            {
+                PauseFollowing();
+            }
+
+            row.IsExpanded = !row.IsExpanded;
+        }
+    }
+
+    private void OnToggleWorkGroup(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is WorkGroupRowViewModel row)
+        {
+            if (!row.IsExpanded)
+            {
+                PauseFollowing(); // 展开会让内容变高,和展开思考块 / 工具行一样先暂停跟随最新
+            }
+
             row.IsExpanded = !row.IsExpanded;
         }
     }
@@ -327,6 +563,16 @@ public partial class ConversationView : UserControl
         if ((sender as Control)?.DataContext is HandledNotice notice)
         {
             _vm?.DismissNoticeCommand.Execute(notice);
+        }
+    }
+
+    /// <summary>起步建议:把这句话放进输入框(不发送),焦点放进去,用户可以改了再发。</summary>
+    private void OnStarterClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string key } && Enum.TryParse<Localization.NcwTextKind>(key, out var kind) && _vm is { } vm)
+        {
+            vm.Composer.Draft = Localization.NcwTexts.Get(kind);
+            this.GetVisualDescendants().OfType<ComposerView>().FirstOrDefault()?.FocusInput();
         }
     }
 }

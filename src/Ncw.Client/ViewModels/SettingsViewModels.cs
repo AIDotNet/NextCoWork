@@ -59,6 +59,12 @@ public enum SettingsSection
 
     /// <summary>本应用:外观(目前只有动效级别,docs/design/03 §9)。</summary>
     Appearance,
+
+    /// <summary>本应用:快捷键(查看、录制、恢复默认,docs/design/03 §11)。</summary>
+    Shortcuts,
+
+    /// <summary>本应用:通知(系统通知、Dock / 任务栏角标、托盘图标,docs/design/07 §3)。</summary>
+    Notifications,
 }
 
 /// <summary>设置页:整窗覆盖在外壳上,左侧导航 + 内容区。打开与否、当前分组是纯 UI 状态。</summary>
@@ -69,6 +75,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         Account = account ?? new AccountViewModel(stores, null);
         About = about ?? new AboutViewModel(stores, new UpdateActions(null));
         Appearance = new AppearanceViewModel(stores);
+        Shortcuts = new ShortcutsSettingsViewModel(stores);
+        Notifications = new NotificationsSettingsViewModel(stores);
         Devices = new DevicesSettingsViewModel(stores, devices, actions);
         Remote = new RemoteSettingsViewModel(stores, devices, actions);
         Models = models;
@@ -86,6 +94,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>「外观」页(本应用作用域):动效级别。</summary>
     public AppearanceViewModel Appearance { get; }
+
+    /// <summary>「快捷键」页(本应用作用域)。</summary>
+    public ShortcutsSettingsViewModel Shortcuts { get; }
+
+    /// <summary>「通知」页(本应用作用域)。</summary>
+    public NotificationsSettingsViewModel Notifications { get; }
 
     public ModelsSettingsViewModel Models { get; }
 
@@ -123,15 +137,33 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>这次打开设置以后已经读过数据的分区。</summary>
+    private readonly HashSet<SettingsSection> _activated = [];
+
+    /// <summary>
+    /// 分区成为当前分区时读它的数据——每次打开设置只读一次。设置页把所有分区排在一个滚动区里(docs/design/07),
+    /// 滚动途中「当前分区」会来回经过同一个分区,不能每经过一次就重读(会把刚出的结果、包括失败的提示,换成又一次读取)。
+    /// 网关的密钥照旧在离开网关时收起。重新打开设置会全部重读。
+    /// </summary>
     private void Activate(SettingsSection section)
     {
+        if (section != SettingsSection.Gateway)
+        {
+            Pages.Gateway.HideKeys();
+        }
+
+        if (!_activated.Add(section))
+        {
+            return;
+        }
+
         if (section == SettingsSection.Account)
         {
             _ = Account.ActivateAsync(); // 打开「账户」页时读已登录的控制端
         }
-        else if (section is SettingsSection.About or SettingsSection.Appearance)
+        else if (section is SettingsSection.About or SettingsSection.Appearance or SettingsSection.Shortcuts or SettingsSection.Notifications)
         {
-            // 「关于」「外观」是本应用的页:没有设备数据要读(自更新状态、界面偏好都在 Store 里)
+            // 「关于」「外观」「快捷键」「通知」是本应用的页:没有设备数据要读(自更新状态、界面偏好都在 Store 里)
         }
         else
         {
@@ -142,6 +174,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void Open()
     {
+        _activated.Clear();
         Devices.Refresh();
         IsOpen = true;
         Activate(Section);
@@ -151,11 +184,46 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void Close()
     {
         IsOpen = false;
+        SearchQuery = "";
         Pages.Gateway.HideKeys(); // 密钥只在页面打开时短暂持有
     }
 
     [RelayCommand]
     private void Show(SettingsSection section) => Section = section;
+
+    // ───────────────────────── 搜索(docs/design/03 §11.6)─────────────────────────
+
+    /// <summary>每个分区的全部文字(当前语言),界面装配时接上;没有接上时搜索没有结果。</summary>
+    public Func<IReadOnlyList<(SettingsSection Section, string Title, IReadOnlyList<string> Texts)>> SearchIndex { get; set; } = static () => [];
+
+    /// <summary>搜索框草稿(纯 UI 状态)。</summary>
+    [ObservableProperty] public partial string SearchQuery { get; set; } = "";
+
+    public ObservableCollection<SettingsHit> SearchHits { get; } = [];
+
+    public bool IsSearching => SearchQuery.Trim().Length > 0;
+
+    public bool ShowsNoSearchHits => IsSearching && SearchHits.Count == 0;
+
+    partial void OnSearchQueryChanged(string value)
+    {
+        SearchHits.Clear();
+        foreach (var hit in SettingsSearch.Find(value, SearchIndex()))
+        {
+            SearchHits.Add(hit);
+        }
+
+        OnPropertyChanged(nameof(IsSearching));
+        OnPropertyChanged(nameof(ShowsNoSearchHits));
+    }
+
+    /// <summary>点一个搜索结果:跳到那个分区,清掉搜索。</summary>
+    [RelayCommand]
+    private void OpenHit(SettingsHit hit)
+    {
+        SearchQuery = "";
+        Section = hit.Section;
+    }
 }
 
 /// <summary>「设备」页里的一行:一台配对过的远程设备。</summary>

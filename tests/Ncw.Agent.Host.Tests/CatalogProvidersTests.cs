@@ -34,6 +34,7 @@ public sealed class CatalogProvidersTests : IAsyncLifetime
         {
             Http = _up,
             CatalogDelayer = _catalogTimer,
+            SessionTitles = false, // 这里数的是正文的 HTTP 请求 / 用量行:标题的旁路请求另有测试(SessionTitleTests)
             CatalogStore = new MemoryCatalogStore(),
             Delayer = new NoDelay(),
             Loop = new AgentLoopOptions { ResumeDelays = [] },

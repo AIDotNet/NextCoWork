@@ -76,6 +76,14 @@ public interface IConversationCommands
 
     Task<SessionRef?> CreateSessionAsync(ProjectRef project, string? model = null, CancellationToken ct = default);
 
+    /// <summary>
+    /// 输入框里选了一个模型:记在会话上(<c>sessions.setModel</c>,重开应用 / 换回这个会话还是它);<paramref name="defaultForWorkspace"/> 非空时
+    /// 同时写成这个项目新会话的默认模型(<c>settings.project.update</c>,owner 才能写,2.x「药丸写回工作区默认值」)。返回会话上是否记住了。
+    /// 没有覆盖它的实现(单测里的假实现)什么也不做。
+    /// </summary>
+    Task<bool> SetModelAsync(SessionRef session, string alias, string? providerId, string? defaultForWorkspace = null, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
     // 带文件引用(输入框里 @ 选的文件)的重载。没有覆盖它们的实现(单测里的假实现)退化成把引用写成 `@路径` 追加在正文后面。
 
     Task<SendResult> SendAsync(SessionRef session, string text, IReadOnlyList<InputFile> files, SendOptionsDto options, CancellationToken ct = default) =>
@@ -136,6 +144,43 @@ public sealed class ConversationActions(DeviceRegistry devices, InteractionLedge
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 记住会话的模型(见 <see cref="IConversationCommands.SetModelAsync"/>)。更新后的会话经会话主题推回 Store,这里不改 Store。
+    /// 写项目默认值失败(不是 owner、设备拒绝)不算失败:会话上已经记住了,一个存不下来的默认值不值得打断用户。
+    /// </summary>
+    public async Task<bool> SetModelAsync(SessionRef session, string alias, string? providerId, string? defaultForWorkspace = null, CancellationToken ct = default)
+    {
+        if (Link(session.DeviceId) is not { } link)
+        {
+            return false;
+        }
+
+        try
+        {
+            await link.CallAsync(ConversationMethods.SessionsSetModel, new SessionsSetModelParams(session.SessionId, alias, providerId), ct,
+                idem: $"setModel:{session.SessionId}:{Ulid.New()}").ConfigureAwait(false);
+        }
+        catch (ProtocolException)
+        {
+            return false;
+        }
+
+        if (defaultForWorkspace is not null)
+        {
+            try
+            {
+                await link.CallAsync(SettingsMethods.ProjectUpdate, new ProjectSettingsPatchDto(defaultForWorkspace, DefaultModel: new ModelPickDto(alias, providerId)), ct,
+                    idem: $"project.defaultModel:{defaultForWorkspace}:{Ulid.New()}").ConfigureAwait(false);
+            }
+            catch (ProtocolException)
+            {
+                // 见上:只记在会话上
+            }
+        }
+
+        return true;
     }
 
     /// <summary>打开一个会话:订阅它的主题(快照进 Store,之后的变化跟着更新,断线重连后自动恢复)。</summary>

@@ -19,6 +19,9 @@ internal sealed class RepoLayout
 
     public string DesktopProject => Path.Combine(Root, "src", "Ncw.Desktop", "Ncw.Desktop.csproj");
 
+    /// <summary>应用图标(macOS 的 .icns,由同目录的 AppIcon.png 用 iconutil 生成后入库;不在构建时生成,这样在非 macOS 主机上跨平台打 osx 包也有图标)。</summary>
+    public string MacIcon => Path.Combine(Root, "src", "Ncw.Desktop", "Assets", "AppIcon.icns");
+
     public string BuildProps => Path.Combine(Root, "Directory.Build.props");
 
     public string ToolManifest => Path.Combine(Root, ".config", "dotnet-tools.json");

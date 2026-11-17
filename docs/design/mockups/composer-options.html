@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>输入框重设计方案</title>
+<style>
+/* 颜色全部是 token,名字对齐 Arc(Surface / SurfaceMuted / Border / TextSecondary / Accent …),落地时一一映射 */
+:root, :root[data-theme="dark"] {
+  --Page: #121212;
+  --Surface: #1a1a1a;
+  --SurfaceMuted: #222222;
+  --SurfaceRaised: #262626;
+  --SurfaceHover: #2c2c2c;
+  --Border: #303030;
+  --BorderSubtle: #262626;
+  --BorderStrong: #444444;
+  --Text: #ececec;
+  --TextSecondary: #a8a8a8;
+  --TextMuted: #727272;
+  --Accent: #7c9cff;
+  --AccentSoft: rgba(124,156,255,.14);
+  --OnPrimary: #121212;
+  --Primary: #ececec;
+  --PrimaryDisabled: #3a3a3a;
+  --Warning: #e3a53c;
+  --WarningSoft: rgba(227,165,60,.13);
+  --Danger: #ef6363;
+  --DangerSoft: rgba(239,99,99,.14);
+  --Success: #4cc38a;
+  --SuccessSoft: rgba(76,195,138,.13);
+  --Shadow: 0 12px 32px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.04);
+}
+:root[data-theme="light"] {
+  --Page: #f4f4f2;
+  --Surface: #ffffff;
+  --SurfaceMuted: #f3f3f1;
+  --SurfaceRaised: #ffffff;
+  --SurfaceHover: #ededeb;
+  --Border: #deddd9;
+  --BorderSubtle: #ebebe8;
+  --BorderStrong: #c8c7c2;
+  --Text: #1d1d1b;
+  --TextSecondary: #5d5d58;
+  --TextMuted: #93928d;
+  --Accent: #3d63dd;
+  --AccentSoft: rgba(61,99,221,.10);
+  --OnPrimary: #ffffff;
+  --Primary: #1d1d1b;
+  --PrimaryDisabled: #d6d5d0;
+  --Warning: #b4730d;
+  --WarningSoft: rgba(180,115,13,.10);
+  --Danger: #d23f3f;
+  --DangerSoft: rgba(210,63,63,.09);
+  --Success: #1f9460;
+  --SuccessSoft: rgba(31,148,96,.10);
+  --Shadow: 0 12px 32px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.05);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--Page); color: var(--Text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input, textarea { font: inherit; color: inherit; }
+svg.i { width: var(--s, 14px); height: var(--s, 14px); flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- 页面框架 ---------- */
+.page { max-width: 1120px; margin: 0 auto; padding: 32px 16px 80px; }
+.hero h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; letter-spacing: -.01em; }
+.hero p { margin: 0; color: var(--TextSecondary); max-width: 760px; }
+.controls { position: sticky; top: 0; z-index: 50; margin: 20px -16px 8px; padding: 10px 16px; background: color-mix(in srgb, var(--Page) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--BorderSubtle); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.controls .lbl { color: var(--TextMuted); font-size: 12px; margin-right: 6px; }
+.seg { display: inline-flex; background: var(--SurfaceMuted); border: 1px solid var(--Border); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg button { padding: 3px 10px; border-radius: 7px; font-size: 12.5px; color: var(--TextSecondary); white-space: nowrap; }
+.seg button:hover { color: var(--Text); }
+.seg button.on { background: var(--Surface); color: var(--Text); box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 0 0 1px var(--Border); }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav a { font-size: 12.5px; color: var(--TextSecondary); text-decoration: none; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--Border); }
+.nav a:hover { color: var(--Text); background: var(--SurfaceMuted); }
+
+section.opt { margin-top: 44px; scroll-margin-top: 70px; }
+.opt-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.opt-head .tag { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--Accent); background: var(--AccentSoft); padding: 4px 7px; border-radius: 6px; }
+.opt-head h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.opt-head .sub { color: var(--TextSecondary); font-size: 13px; }
+.opt-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; margin-top: 14px; align-items: start; }
+@media (max-width: 920px) { .opt-grid { grid-template-columns: 1fr; } }
+.notes { font-size: 13px; color: var(--TextSecondary); }
+.notes h4 { margin: 0 0 6px; font-size: 12px; color: var(--TextMuted); font-weight: 600; letter-spacing: .02em; }
+.notes ul { margin: 0 0 14px; padding-left: 18px; }
+.notes li { margin: 3px 0; }
+.notes li b { color: var(--Text); font-weight: 600; }
+.notes .pro li::marker { color: var(--Success); }
+.notes .con li::marker { color: var(--Warning); }
+
+/* ---------- 演示舞台:模拟会话区底部 ---------- */
+.stage { position: relative; background: var(--Page); border: 1px solid var(--BorderSubtle); border-radius: 14px; padding: 20px 20px 18px; min-height: 560px; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; overflow: visible; }
+:root[data-theme="dark"] .stage { background: #141414; }
+.stage.narrow { max-width: 390px; margin: 0 auto; padding: 14px 10px 12px; min-height: 640px; }
+.msg { max-width: 76%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; }
+.msg.user { align-self: flex-end; background: var(--SurfaceMuted); }
+.msg.agent { color: var(--TextSecondary); padding-left: 2px; }
+.msg.agent code { font: 12px ui-monospace, Menlo, monospace; background: var(--SurfaceMuted); padding: 1px 5px; border-radius: 5px; color: var(--Text); }
+.slot { position: relative; }
+
+/* ---------- 共用小部件 ---------- */
+.ib { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--TextSecondary); flex: none; }
+.ib:hover, .ib.open { background: var(--SurfaceHover); color: var(--Text); }
+.chip { height: 30px; padding: 0 8px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; color: var(--TextSecondary); font-size: 12.5px; white-space: nowrap; min-width: 0; }
+.chip:hover, .chip.open { background: var(--SurfaceHover); color: var(--Text); }
+.chip .nm { color: var(--Text); overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+.chip .chev { --s: 12px; opacity: .6; }
+.vsep { width: 1px; height: 16px; background: var(--Border); margin: 0 4px; flex: none; }
+.glyph { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 700 10px/1 -apple-system, sans-serif; color: #fff; flex: none; }
+.glyph.lg { width: 34px; height: 34px; border-radius: 9px; font-size: 15px; }
+.meter { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
+.meter i { width: 3px; border-radius: 1px; background: var(--BorderStrong); }
+.meter i.on { background: currentColor; }
+.meter.auto i.on { background: var(--Accent); }
+.badge { font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 5px; background: var(--SurfaceMuted); color: var(--TextSecondary); border: 1px solid var(--BorderSubtle); white-space: nowrap; }
+.badge.acc { color: var(--Accent); background: var(--AccentSoft); border-color: transparent; }
+.kbd { font: 11px ui-monospace, Menlo, monospace; color: var(--TextMuted); border: 1px solid var(--Border); border-radius: 4px; padding: 0 4px; }
+.perm-ask { color: var(--TextSecondary); }
+.perm-auto { color: var(--Success); }
+.perm-full { color: var(--Warning); }
+
+.send { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--Primary); color: var(--OnPrimary); flex: none; transition: transform .1s, background .15s; }
+.send:hover { transform: scale(1.05); }
+.send[disabled] { background: var(--PrimaryDisabled); color: var(--TextMuted); cursor: default; transform: none; }
+.send.stop { background: var(--Text); }
+.send.stop svg { fill: currentColor; stroke: none; }
+.send.queue { background: var(--Accent); color: #fff; }
+.steer { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--Border); font-size: 12.5px; color: var(--Text); display: inline-flex; align-items: center; gap: 5px; }
+.steer:hover { background: var(--SurfaceHover); }
+
+.ta { display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent; padding: 0; min-height: 22px; max-height: 220px; line-height: 1.55; font-size: 14px; }
+.ta::placeholder { color: var(--TextMuted); }
+
+.ring { position: relative; width: 20px; height: 20px; flex: none; }
+.ring svg { width: 20px; height: 20px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 2.5; }
+.ctx { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--TextMuted); padding: 0 6px; height: 30px; border-radius: 8px; white-space: nowrap; }
+.ctx:hover { background: var(--SurfaceHover); color: var(--TextSecondary); }
+.bar-mini { width: 54px; height: 4px; border-radius: 2px; background: var(--BorderStrong); overflow: hidden; }
+.bar-mini span { display: block; height: 100%; background: var(--TextSecondary); border-radius: 2px; }
+
+.run-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--Accent); box-shadow: 0 0 0 0 var(--Accent); animation: pulse 1.6s infinite; flex: none; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--Accent) 60%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* 附件 / 引用 / 排队 */
+.extras { display: flex; flex-direction: column; gap: 6px; }
+.refs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ref { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 8px; border-radius: 7px; background: var(--SurfaceMuted); border: 1px solid var(--BorderSubtle); font-size: 12.5px; }
+.ref .x { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--TextMuted); }
+.ref .x:hover { background: var(--SurfaceHover); color: var(--Text); }
+.ref .dir { color: var(--TextMuted); }
+.att { display: inline-flex; align-items: center; gap: 8px; padding: 5px 6px 5px 5px; border-radius: 9px; background: var(--SurfaceMuted); border: 1px solid var(--BorderSubtle); font-size: 12.5px; min-width: 0; max-width: 240px; }
+.att .thumb { width: 34px; height: 34px; border-radius: 6px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--TextSecondary); background: var(--SurfaceHover); }
+.att .thumb.img { background: linear-gradient(135deg, #5b7bd5, #9b6bd5 60%, #d58a6b); color: #fff; }
+.att .meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.att .meta .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att .meta .s { font-size: 11px; color: var(--TextMuted); }
+.att .meta .s.err { color: var(--Danger); }
+.att .prog { height: 3px; border-radius: 2px; background: var(--BorderStrong); overflow: hidden; width: 110px; }
+.att .prog span { display: block; height: 100%; background: var(--Accent); }
+.queue { display: flex; flex-direction: column; gap: 4px; }
+.qi { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 9px; background: var(--SurfaceMuted); font-size: 12.5px; }
+.qi .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi .mini { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--TextSecondary); }
+.qi .mini:hover { background: var(--SurfaceHover); color: var(--Text); }
+.hint-line { font-size: 12px; display: flex; align-items: center; gap: 6px; color: var(--TextMuted); }
+
+/* ---------- 弹层 ---------- */
+.anchor { position: relative; display: inline-flex; min-width: 0; }
+.pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; background: var(--SurfaceRaised); border: 1px solid var(--Border); border-radius: 12px; box-shadow: var(--Shadow); padding: 6px; min-width: 240px; animation: popin .12s ease-out; }
+.pop.r { left: auto; right: 0; }
+@keyframes popin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.pop-full { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30; background: var(--SurfaceRaised); border: 1px solid var(--Border); border-radius: 12px; box-shadow: var(--Shadow); padding: 6px; animation: popin .12s ease-out; }
+.sec-t { font-size: 11px; color: var(--TextMuted); padding: 8px 8px 4px; letter-spacing: .02em; display: flex; justify-content: space-between; align-items: center; }
+.row { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; font-size: 13px; }
+.row:hover, .row.kb { background: var(--SurfaceHover); }
+.row.sel { background: var(--AccentSoft); }
+.row[disabled] { opacity: .45; cursor: not-allowed; }
+.row .grow { flex: 1; min-width: 0; }
+.row .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .desc { font-size: 11.5px; color: var(--TextMuted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .ck { color: var(--Accent); --s: 14px; }
+.row .bdg { display: inline-flex; gap: 4px; flex: none; }
+.search { display: flex; align-items: center; gap: 7px; padding: 6px 8px 8px; border-bottom: 1px solid var(--BorderSubtle); margin-bottom: 4px; color: var(--TextMuted); }
+.search input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 13px; min-width: 0; }
+.search input::placeholder { color: var(--TextMuted); }
+.scroll { max-height: 300px; overflow: auto; }
+.pop-foot { border-top: 1px solid var(--BorderSubtle); margin-top: 4px; padding: 8px 8px 4px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--TextMuted); gap: 8px; }
+.pop-foot a { color: var(--TextSecondary); text-decoration: none; }
+.pop-foot a:hover { color: var(--Text); }
+.seg-in { display: flex; background: var(--SurfaceMuted); border: 1px solid var(--BorderSubtle); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg-in button { flex: 1; padding: 5px 0; border-radius: 7px; font-size: 12px; color: var(--TextSecondary); white-space: nowrap; }
+.seg-in button:hover:not([disabled]) { color: var(--Text); }
+.seg-in button.on { background: var(--Surface); color: var(--Text); box-shadow: 0 0 0 1px var(--Border); }
+.seg-in button[disabled] { opacity: .35; cursor: not-allowed; }
+.slash-row .cmd { font: 12.5px ui-monospace, Menlo, monospace; color: var(--Text); }
+.slash-row .arg { font: 12px ui-monospace, Menlo, monospace; color: var(--TextMuted); }
+
+/* ================= A 精修单卡 ================= */
+.A-card { background: var(--Surface); border: 1px solid var(--Border); border-radius: 18px; padding: 12px 10px 8px 14px; transition: border-color .15s, box-shadow .15s; }
+.A-card:focus-within { border-color: var(--BorderStrong); box-shadow: 0 0 0 3px color-mix(in srgb, var(--Text) 5%, transparent); }
+.A-card.running { border-color: color-mix(in srgb, var(--Accent) 45%, var(--Border)); }
+.A-card .extras { margin: 0 4px 10px 0; }
+.A-card .ta { padding: 2px 4px 10px 0; min-height: 44px; }
+.A-bar { display: flex; align-items: center; gap: 2px; margin-left: -6px; }
+.A-bar .l { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.A-bar .r { display: flex; align-items: center; gap: 4px; flex: none; }
+.narrow .A-bar .chip .txt, .narrow .A-bar .chip .chev, .narrow .A-bar .ctx .t { display: none; }
+.narrow .A-bar .chip .nm { max-width: 92px; }
+
+/* ================= B 模型与思考合一 ================= */
+.B-card { background: var(--Surface); border: 1px solid var(--Border); border-radius: 22px; padding: 14px 10px 10px 16px; }
+.B-card:focus-within { border-color: var(--BorderStrong); }
+.B-card .extras { margin: 0 6px 10px 0; }
+.B-card .ta { padding: 0 6px 12px 0; min-height: 44px; }
+.B-bar { display: flex; align-items: center; gap: 4px; margin-left: -6px; }
+.B-bar .l { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.B-combo { height: 32px; padding: 0 10px 0 6px; border-radius: 10px; border: 1px solid var(--Border); display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; min-width: 0; }
+.B-combo:hover, .B-combo.open { background: var(--SurfaceHover); }
+.B-combo .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.B-combo .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--TextMuted); }
+.B-combo .lv { color: var(--TextSecondary); display: inline-flex; align-items: center; gap: 5px; }
+.B-perm { height: 32px; padding: 0 10px; border-radius: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.B-perm:hover, .B-perm.open { background: var(--SurfaceHover); }
+.B-perm .pdot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.B-pop { width: 600px; padding: 0; display: grid; grid-template-columns: 1fr 250px; overflow: hidden; }
+.B-pop .lpane { padding: 6px; border-right: 1px solid var(--BorderSubtle); min-width: 0; }
+.B-pop .rpane { padding: 16px 16px 14px; background: color-mix(in srgb, var(--SurfaceMuted) 55%, var(--SurfaceRaised)); display: flex; flex-direction: column; gap: 12px; }
+.B-pop .rpane h3 { margin: 0; font-size: 15px; font-weight: 650; }
+.B-pop .rpane .pv { color: var(--TextMuted); font-size: 12px; }
+.B-pop .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px; }
+.B-pop .facts dt { color: var(--TextMuted); }
+.B-pop .facts dd { margin: 0; color: var(--Text); }
+.B-pop .lvl-t { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--TextMuted); margin-bottom: 6px; }
+.B-pop .lvl-t b { color: var(--Text); font-weight: 600; }
+.B-pop .nothink { font-size: 12px; color: var(--TextMuted); padding: 8px 10px; border: 1px dashed var(--Border); border-radius: 8px; }
+.narrow .B-pop { width: calc(100vw - 40px); max-width: 370px; grid-template-columns: 1fr; }
+.narrow .B-pop .rpane { border-top: 1px solid var(--BorderSubtle); padding: 12px; }
+.narrow .B-pop .facts, .narrow .B-pop .rpane .desc-p { display: none; }
+.narrow .B-pop .scroll { max-height: 200px; }
+.narrow .B-perm .txt { display: none; }
+.narrow .B-combo .nm { max-width: 110px; }
+
+/* ================= C 上下文条 ================= */
+.C-card { background: var(--Surface); border: 1px solid var(--Border); border-radius: 14px; overflow: visible; }
+.C-card:focus-within { border-color: var(--BorderStrong); }
+.C-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--BorderSubtle); background: var(--SurfaceMuted); border-radius: 14px 14px 0 0; font-size: 12px; color: var(--TextSecondary); min-height: 40px; }
+.C-head .crumb { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; border-radius: 6px; white-space: nowrap; }
+.C-head .crumb:hover { background: var(--SurfaceHover); color: var(--Text); }
+.C-head .crumb .i { --s: 13px; }
+.C-head .slash { color: var(--TextMuted); }
+.C-head .sp { flex: 1; }
+.C-perm { display: inline-flex; background: var(--Surface); border: 1px solid var(--Border); border-radius: 8px; padding: 2px; gap: 1px; }
+.C-perm button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px; color: var(--TextMuted); white-space: nowrap; }
+.C-perm button:hover { color: var(--Text); }
+.C-perm button.on.ask { background: var(--SurfaceHover); color: var(--Text); }
+.C-perm button.on.auto { background: var(--SuccessSoft); color: var(--Success); }
+.C-perm button.on.full { background: var(--WarningSoft); color: var(--Warning); }
+.C-body { padding: 12px 14px 4px; }
+.C-body .extras { margin-bottom: 10px; }
+.C-body .ta { min-height: 48px; }
+.C-foot { display: flex; align-items: center; gap: 2px; padding: 6px 8px 8px; }
+.C-foot .l { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.C-foot .r { display: flex; align-items: center; gap: 6px; }
+.C-model-pop { width: 420px; }
+.C-model-pop .row .ctxw { font: 11.5px ui-monospace, Menlo, monospace; color: var(--TextMuted); width: 42px; text-align: right; flex: none; }
+.narrow .C-head .crumb.hide-n, .narrow .C-head .slash.hide-n { display: none; }
+.narrow .C-perm button .txt { display: none; }
+.narrow .C-perm button.on .txt { display: inline; }
+.narrow .C-foot .hide-n { display: none; }
+.narrow .C-foot .chip .nm { max-width: 100px; }
+.narrow .C-foot .chip .txt { display: none; }
+.narrow .C-model-pop { width: calc(100vw - 40px); max-width: 370px; }
+
+/* ================= D 极简浮岛 ================= */
+.D-wrap { display: flex; flex-direction: column; gap: 8px; }
+.D-pill { display: flex; align-items: flex-end; gap: 6px; background: var(--Surface); border: 1px solid var(--Border); border-radius: 26px; padding: 7px 7px 7px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.D-pill:focus-within { border-color: var(--BorderStrong); }
+.D-pill .ta { padding: 7px 4px 5px; min-height: 36px; max-height: 180px; flex: 1; }
+.D-pill .ib { width: 36px; height: 36px; border-radius: 50%; }
+.D-pill .send { width: 36px; height: 36px; }
+.D-sum { height: 36px; border-radius: 18px; padding: 0 10px 0 6px; display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--TextSecondary); background: var(--SurfaceMuted); white-space: nowrap; }
+.D-sum:hover, .D-sum.open { background: var(--SurfaceHover); color: var(--Text); }
+.D-sum .i { --s: 13px; }
+.D-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px; }
+.D-pop { width: 380px; padding: 0; overflow: hidden; }
+.D-pop .blk { padding: 10px 12px; border-bottom: 1px solid var(--BorderSubtle); }
+.D-pop .blk:last-child { border-bottom: 0; }
+.D-pop .blk-t { font-size: 11.5px; color: var(--TextMuted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.D-pop .blk-t b { color: var(--Text); font-weight: 600; }
+.D-pop .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.D-pop .mcard { text-align: left; padding: 8px 9px; border-radius: 9px; border: 1px solid var(--BorderSubtle); display: flex; gap: 8px; align-items: center; min-width: 0; }
+.D-pop .mcard:hover { background: var(--SurfaceHover); }
+.D-pop .mcard.sel { border-color: var(--Accent); background: var(--AccentSoft); }
+.D-pop .mcard[disabled] { opacity: .45; cursor: not-allowed; }
+.D-pop .mcard .n { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.D-pop .mcard .c { font-size: 11px; color: var(--TextMuted); }
+.D-pop .more { margin-top: 6px; font-size: 12px; color: var(--TextSecondary); display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; }
+.D-pop .more:hover { background: var(--SurfaceHover); color: var(--Text); }
+.D-range { width: 100%; accent-color: var(--Accent); margin: 2px 0 0; }
+.D-ticks { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--TextMuted); margin-top: 2px; }
+.D-perms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.D-perms button { padding: 8px 6px; border-radius: 9px; border: 1px solid var(--BorderSubtle); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--TextSecondary); }
+.D-perms button:hover { background: var(--SurfaceHover); color: var(--Text); }
+.D-perms button.on.ask { border-color: var(--BorderStrong); color: var(--Text); background: var(--SurfaceHover); }
+.D-perms button.on.auto { border-color: var(--Success); color: var(--Success); background: var(--SuccessSoft); }
+.D-perms button.on.full { border-color: var(--Warning); color: var(--Warning); background: var(--WarningSoft); }
+.D-perms button .i { --s: 16px; }
+.D-plus-pop { min-width: 220px; }
+.D-run { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--TextSecondary); padding: 0 10px; }
+.narrow .D-sum .nm { display: none; }
+.narrow .D-pop { width: calc(100vw - 40px); max-width: 370px; }
+
+/* 手机宽度:弹层不跟按钮对齐,改为铺满输入框宽度(相当于 bottom sheet),避免超出屏幕 */
+.narrow .anchor { position: static; }
+.narrow .pop { left: 0 !important; right: 0 !important; width: auto !important; min-width: 0; max-width: none !important; }
+
+/* ---------- 对比表 ---------- */
+table.cmp { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+table.cmp th, table.cmp td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--BorderSubtle); vertical-align: top; }
+table.cmp th { color: var(--TextMuted); font-weight: 600; font-size: 12px; }
+table.cmp td:first-child { color: var(--TextSecondary); white-space: nowrap; }
+.tbl-wrap { overflow-x: auto; }
+.rec { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--AccentSoft); font-size: 13.5px; }
+.rec b { font-weight: 650; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <h1>输入框重设计 · 4 个方案</h1>
+    <p>每个方案都能点:模型 / 思考 / 权限 / 附件弹层都是真的。用上面的工具条切换「场景」(空、输入中、运行中、附件与引用、斜杠命令)和「宽度」(桌面 / 手机 compact),颜色名对齐 Arc token。模型数据是假的,能力字段对应现有的 <code>ModelChoice</code>(供应商、别名、上下文窗口、视觉、思考、是否可用)。</p>
+  </header>
+
+  <div class="controls">
+    <div><span class="lbl">场景</span><span class="seg" id="scn"></span></div>
+    <div><span class="lbl">宽度</span><span class="seg" id="wid"></span></div>
+    <div><span class="lbl">主题</span><span class="seg" id="thm"></span></div>
+    <nav class="nav"><a href="#A">A</a><a href="#B">B</a><a href="#C">C</a><a href="#D">D</a><a href="#cmp">对比</a></nav>
+  </div>
+
+  <section class="opt" id="A">
+    <div class="opt-head"><span class="tag">方案 A</span><h2>精修单卡</h2><span class="sub">保留现有结构,只解决视觉问题 —— 改动最小</span></div>
+    <div class="opt-grid">
+      <div class="stage" data-v="A"></div>
+      <aside class="notes">
+        <h4>改了什么</h4>
+        <ul>
+          <li><b>去掉内层边框</b>:现在是卡片套输入框两层圆角框,改成一张卡,焦点时整卡描边。</li>
+          <li><b>模型带供应商标识</b>,下拉按供应商分组、可搜索,行内显示上下文窗口 / 视觉 / 思考。</li>
+          <li><b>思考档位用刻度条</b>替代「思考:最大」文字,一眼看出强弱。</li>
+          <li><b>权限移到右侧并着色</b>:完全访问是琥珀色,和普通选项拉开。</li>
+          <li><b>上下文圆环</b>从状态行搬到发送键旁边(<code>ContextUsageEventDto</code> 已有)。</li>
+        </ul>
+        <h4>优点</h4>
+        <ul class="pro"><li>现有 <code>NcwDropdownMenu</code> 基本够用,只需支持分组 + 搜索头</li><li>用户零学习成本</li></ul>
+        <h4>代价</h4>
+        <ul class="con"><li>三个下拉仍是三次点击;窄屏只剩图标</li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="opt" id="B">
+    <div class="opt-head"><span class="tag">方案 B</span><h2>模型 + 思考合一</h2><span class="sub">一个按钮选「用什么、想多深」,思考档位跟着模型能力走</span></div>
+    <div class="opt-grid">
+      <div class="stage" data-v="B"></div>
+      <aside class="notes">
+        <h4>改了什么</h4>
+        <ul>
+          <li><b>双栏选择器</b>:左边是分组 + 搜索 + 「最近使用」,右边是选中模型的详情和它支持的思考档位。</li>
+          <li>不支持思考的模型直接说明,不再出现一个灰掉的思考按钮;切模型时档位自动夹到可用范围。</li>
+          <li><b>权限降为一个带色点的文字</b>,附件 / @ / / 合并到「+」菜单。</li>
+        </ul>
+        <h4>优点</h4>
+        <ul class="pro"><li>解决「思考档位和模型能力不匹配」的根本问题</li><li>工具条最干净,内容区更突出</li></ul>
+        <h4>代价</h4>
+        <ul class="con"><li>需要新的 Popup 控件(双栏),<code>NcwDropdownMenu</code> 不够</li><li>改档位要先打开模型面板,多一步</li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="opt" id="C">
+    <div class="opt-head"><span class="tag">方案 C</span><h2>上下文条</h2><span class="sub">把「在哪执行、能做什么」放到输入框顶上,权限一键切换</span></div>
+    <div class="opt-grid">
+      <div class="stage" data-v="C"></div>
+      <aside class="notes">
+        <h4>改了什么</h4>
+        <ul>
+          <li><b>顶部条</b>:设备 / 项目 / 分支(执行环境标识,和审批卡片一致),右边是权限分段按钮,三档常驻可见。</li>
+          <li><b>底部工具条</b>:附件、@、/ 三个显式入口;模型和思考;右侧是上下文用量条(带数字)。</li>
+          <li>模型下拉是带等宽数字列的紧凑表格,方便比较窗口大小。</li>
+        </ul>
+        <h4>优点</h4>
+        <ul class="pro"><li>权限和执行环境永远可见,安全感最强</li><li>@ 和 / 有可点击入口,新用户可发现</li></ul>
+        <h4>代价</h4>
+        <ul class="con"><li>纵向多占 ~40px</li><li>信息密度高,手机上需要折叠</li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="opt" id="D">
+    <div class="opt-head"><span class="tag">方案 D</span><h2>极简浮岛</h2><span class="sub">单行胶囊,设置收进一个摘要按钮 —— 手机优先</span></div>
+    <div class="opt-grid">
+      <div class="stage" data-v="D"></div>
+      <aside class="notes">
+        <h4>改了什么</h4>
+        <ul>
+          <li><b>胶囊输入</b>:单行起步,随内容长高;附件 / 引用 / 命令在「+」里。</li>
+          <li><b>一个摘要按钮</b>(供应商标识 + 档位刻度 + 权限盾牌)打开「运行设置」面板:常用模型卡片、思考滑杆、权限三选一。</li>
+          <li>附件和引用浮在胶囊上方,运行状态是一行小字。</li>
+        </ul>
+        <h4>优点</h4>
+        <ul class="pro"><li>手机和窄窗口最舒服,一套布局两端通用</li><li>所有运行设置在一个面板里一次调好</li></ul>
+        <h4>代价</h4>
+        <ul class="con"><li>桌面上当前模型名不直接可见(只有图标)</li><li>设置隐藏得最深</li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="opt" id="cmp">
+    <div class="opt-head"><span class="tag">对比</span><h2>怎么选</h2></div>
+    <div class="tbl-wrap">
+      <table class="cmp">
+        <thead><tr><th></th><th>A 精修单卡</th><th>B 模型+思考合一</th><th>C 上下文条</th><th>D 极简浮岛</th></tr></thead>
+        <tbody>
+          <tr><td>改动量</td><td>小</td><td>中(新双栏 Popup)</td><td>中</td><td>中(新面板)</td></tr>
+          <tr><td>切模型</td><td>1 次点击 + 选</td><td>1 次点击 + 选</td><td>1 次点击 + 选</td><td>1 次点击 + 选(常用),更多要展开</td></tr>
+          <tr><td>切思考</td><td>独立下拉</td><td>在模型面板里</td><td>独立下拉</td><td>面板里滑杆</td></tr>
+          <tr><td>权限可见性</td><td>彩色文字</td><td>色点 + 文字</td><td>常驻分段按钮</td><td>只有盾牌图标</td></tr>
+          <tr><td>执行环境</td><td>—</td><td>—</td><td>设备 / 项目 / 分支</td><td>—</td></tr>
+          <tr><td>上下文用量</td><td>圆环</td><td>—(可加)</td><td>用量条 + 数字</td><td>—(可加)</td></tr>
+          <tr><td>手机 compact</td><td>只剩图标</td><td>好</td><td>需折叠顶部条</td><td>最好</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rec"><b>我的建议:</b>桌面用 <b>B 的模型面板</b> + <b>A 的卡片和工具条</b>(权限着色、上下文圆环),手机 compact 走 <b>D</b>。B 的面板解决「思考档位与模型能力脱节」,是这几个方案里唯一修正交互问题、而不只是换皮的一项;C 的执行环境条可以作为后续多设备 / SSH 环境上线时再加的顶部行。</div>
+  </section>
+</div>
+
+<script>
+/* ---------------- 图标(lucide 路径) ---------------- */
+const ICONS = {
+  paperclip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/>',
+  brain: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  square: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  listPlus: '<path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/>',
+  corner: '<path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  at: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  slash: '<path d="M16 3 8 21"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  sliders: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  retry: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  settings: '<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
+};
+const PERM_ICON = {
+  ask: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.6c0 1.6-2.4 2.2-2.4 2.2M12 16h.01"/>',
+  auto: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  full: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/>',
+};
+const ic = (n, s, cls = '') => `<svg class="i ${cls}" style="--s:${s || 14}px" viewBox="0 0 24 24">${ICONS[n] || PERM_ICON[n] || ''}</svg>`;
+const pic = (p, s) => `<svg class="i" style="--s:${s || 14}px" viewBox="0 0 24 24">${PERM_ICON[p]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------------- 假数据(字段对齐 ModelChoice) ---------------- */
+const PROVIDERS = {
+  DeepSeek: { c: '#4d6bfe', g: 'D' },
+  Anthropic: { c: '#c96442', g: 'A' },
+  OpenAI: { c: '#10a37f', g: 'O' },
+  '阿里云百炼': { c: '#7b5cff', g: 'Q' },
+  Moonshot: { c: '#3a3a3a', g: 'K' },
+  Google: { c: '#4285f4', g: 'G' },
+};
+const T_ALL = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const MODELS = [
+  { key: 'ds-flash', name: 'DeepSeek V4.1 Flash 1017', short: 'V4.1 Flash', provider: 'DeepSeek', ctx: '128K', vision: false, think: ['off', 'low', 'medium', 'high', 'max'], avail: true, desc: '响应快、价格低,适合日常编码' },
+  { key: 'ds-pro', name: 'DeepSeek V4.1 Pro', short: 'V4.1 Pro', provider: 'DeepSeek', ctx: '128K', vision: false, think: ['off', 'low', 'medium', 'high', 'max'], avail: true, desc: '更强的推理,长任务更稳' },
+  { key: 'opus', name: 'Claude Opus 5.5', short: 'Opus 5.5', provider: 'Anthropic', ctx: '1M', vision: true, think: T_ALL, avail: true, desc: '最强的规划与重构能力' },
+  { key: 'sonnet', name: 'Claude Sonnet 5.5', short: 'Sonnet 5.5', provider: 'Anthropic', ctx: '1M', vision: true, think: T_ALL, avail: true, desc: '速度与能力的平衡' },
+  { key: 'haiku', name: 'Claude Haiku 5.5', short: 'Haiku 5.5', provider: 'Anthropic', ctx: '200K', vision: true, think: ['off', 'low', 'medium', 'high'], avail: true, desc: '最快,适合简单改动' },
+  { key: 'gpt', name: 'GPT-5.2', short: 'GPT-5.2', provider: 'OpenAI', ctx: '400K', vision: true, think: ['minimal', 'low', 'medium', 'high', 'xhigh'], avail: true, desc: '通用推理模型' },
+  { key: 'qwen', name: 'Qwen3 Coder Plus', short: 'Qwen3 Coder', provider: '阿里云百炼', ctx: '1M', vision: false, think: [], avail: true, desc: '代码专用,不支持思考档位' },
+  { key: 'kimi', name: 'Kimi K3', short: 'Kimi K3', provider: 'Moonshot', ctx: '256K', vision: true, think: ['off', 'auto'], avail: true, desc: '思考由模型自行决定' },
+  { key: 'gem', name: 'Gemini 3 Pro', short: 'Gemini 3', provider: 'Google', ctx: '1M', vision: true, think: ['low', 'high'], avail: false, reason: '未配置 API Key', desc: '' },
+];
+const RECENT = ['ds-flash', 'opus', 'sonnet'];
+const T_LABEL = { off: '关', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最大', auto: '自动' };
+const T_LEVEL = { off: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, max: 6, auto: 3 };
+const PERMS = [
+  { k: 'ask', label: '询问', hint: '有风险的操作先询问' },
+  { k: 'auto', label: '自动', hint: '常规操作自动放行' },
+  { k: 'full', label: '完全访问', hint: '从不询问(仅 owner)' },
+];
+const SLASH = [
+  { c: '/compact', a: '[说明]', d: '压缩上下文' },
+  { c: '/plan', a: '', d: '进入计划模式,先出方案再动手' },
+  { c: '/goal', a: '<目标>', d: '为会话设定一个目标' },
+  { c: '/model', a: '<名称>', d: '切换模型' },
+  { c: '/review', a: '', d: '审查当前改动 · 插件' },
+  { c: '/clear', a: '', d: '', soon: true },
+];
+const SCENES = {
+  idle: { label: '空', draft: '' },
+  typing: { label: '输入中', draft: '帮我把 ComposerView 的模型选择改成按供应商分组的列表,并补上对应的单测' },
+  running: { label: '运行中', draft: '顺便看一下 compact 模式下的截断' },
+  rich: { label: '附件与引用', draft: '对比这两个文件,截图里的对齐问题是哪个引起的?' },
+  slash: { label: '斜杠命令', draft: '/' },
+};
+
+/* ---------------- 状态 ---------------- */
+const S = { scene: 'idle', width: 'wide', theme: 'dark', model: 'ds-flash', think: 'max', perm: 'full', open: null, query: '', draft: '', focusSearch: false };
+const M = () => MODELS.find(m => m.key === S.model);
+const thinkOf = m => m.think.length ? m.think : [];
+
+function pickModel(key) {
+  const m = MODELS.find(x => x.key === key);
+  if (!m || !m.avail) return;
+  S.model = key;
+  const ts = thinkOf(m);
+  if (!ts.length) S.think = 'off';
+  else if (!ts.includes(S.think)) {
+    // 夹到最近的可用档位
+    const want = T_LEVEL[S.think];
+    S.think = ts.reduce((best, t) => Math.abs(T_LEVEL[t] - want) < Math.abs(T_LEVEL[best] - want) ? t : best, ts[0]);
+  }
+}
+
+/* ---------------- 小部件 ---------------- */
+const glyph = (prov, lg) => { const p = PROVIDERS[prov]; return `<span class="glyph${lg ? ' lg' : ''}" style="background:${p.c}">${p.g}</span>`; };
+function meter(t) {
+  const lv = T_LEVEL[t] ?? 0;
+  const auto = t === 'auto';
+  let h = '';
+  for (let i = 1; i <= 6; i++) h += `<i class="${i <= lv ? 'on' : ''}" style="height:${3 + i * 1.5}px"></i>`;
+  return `<span class="meter${auto ? ' auto' : ''}">${h}</span>`;
+}
+const permOf = k => PERMS.find(p => p.k === k);
+const isOpen = id => S.open === id;
+const draftHas = () => S.draft.trim().length > 0;
+
+function ring() {
+  const used = 42, win = 128, pct = used / win, r = 8, c = 2 * Math.PI * r;
+  return `<span class="ring"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="${r}" stroke="var(--BorderStrong)"/><circle cx="10" cy="10" r="${r}" stroke="var(--TextSecondary)" stroke-dasharray="${c * pct} ${c}" stroke-linecap="round"/></svg></span>`;
+}
+
+function sendCluster(v) {
+  const running = S.scene === 'running';
+  if (!running) {
+    return `<button class="send" ${draftHas() ? '' : 'disabled'} data-send title="发送 (Enter)">${ic('up', 16)}</button>`;
+  }
+  if (draftHas()) {
+    return `<button class="steer" title="立即送进当前运行">${ic('corner', 13)}插话</button><button class="send queue" data-send title="排队,运行结束后发送">${ic('listPlus', 16)}</button>`;
+  }
+  return `<button class="send stop" title="停止">${ic('square', 12)}</button>`;
+}
+
+function extrasHtml() {
+  let h = '';
+  if (S.scene === 'running') {
+    h += `<div class="queue"><div class="qi">${ic('clock', 13)}<span class="t">跑完后再把 xlf 的 key 排一下序</span><button class="mini">插话</button><button class="mini" title="移除">${ic('x', 12)}</button></div></div>`;
+  }
+  if (S.scene === 'rich') {
+    h += `<div class="refs">
+      <span class="ref">${ic('file', 12)}ComposerView.axaml <span class="dir">src/Ncw.UI/…/Conversation</span><button class="x">${ic('x', 11)}</button></span>
+      <span class="ref">${ic('file', 12)}ComposerLogic.cs<button class="x">${ic('x', 11)}</button></span>
+    </div>
+    <div class="refs">
+      <div class="att"><div class="thumb img">${ic('image', 16)}</div><div class="meta"><span class="n">截图 2026-11-15.png</span><span class="s">412 KB · 已上传</span></div><button class="ref x" style="border:0;background:none;padding:0">${ic('x', 12)}</button></div>
+      <div class="att"><div class="thumb">${ic('file', 16)}</div><div class="meta"><span class="n">trace.log</span><div class="prog"><span style="width:62%"></span></div></div><button class="ref x" style="border:0;background:none;padding:0">${ic('x', 12)}</button></div>
+      <div class="att"><div class="thumb">${ic('file', 16)}</div><div class="meta"><span class="n">design.pdf</span><span class="s err">超过 20 MB 上限</span></div><button class="ref x" style="border:0;background:none;padding:0" title="重试">${ic('retry', 12)}</button></div>
+    </div>`;
+  }
+  return h ? `<div class="extras">${h}</div>` : '';
+}
+
+function slashPop() {
+  if (S.scene !== 'slash') return '';
+  return `<div class="pop-full"><div class="sec-t">命令 <span><span class="kbd">↑↓</span> 选择 <span class="kbd">Tab</span> 补全</span></div>${SLASH.map((s, i) => `
+    <button class="row slash-row${i === 0 ? ' kb' : ''}" ${s.soon ? 'disabled' : ''}>
+      <span class="cmd">${s.c}</span><span class="arg">${s.a}</span>
+      <span class="grow desc" style="text-align:right">${s.soon ? '即将推出' : s.d}</span>
+    </button>`).join('')}</div>`;
+}
+
+function textarea(v, ph) {
+  return `<textarea class="ta" rows="1" data-ta="${v}" placeholder="${ph || '输入消息,@ 引用文件,/ 使用命令'}">${esc(S.draft)}</textarea>`;
+}
+
+/* ---- 弹层:模型(分组 + 搜索) ---- */
+function modelRows(opts = {}) {
+  const q = S.query.trim().toLowerCase();
+  const list = MODELS.filter(m => !q || (m.name + m.provider).toLowerCase().includes(q));
+  const row = m => `
+    <button class="row${m.key === S.model ? ' sel' : ''}" data-pick-model="${m.key}" ${m.avail ? '' : 'disabled'}>
+      ${glyph(m.provider)}
+      <span class="grow"><div class="ttl">${esc(m.name)}</div>${opts.desc ? `<div class="desc">${m.avail ? esc(m.desc) : esc(m.reason)}</div>` : (m.avail ? '' : `<div class="desc">${esc(m.reason)}</div>`)}</span>
+      ${opts.ctxCol ? `<span class="ctxw">${m.ctx}</span>` : ''}
+      <span class="bdg">${opts.ctxCol ? '' : `<span class="badge">${m.ctx}</span>`}${m.vision ? `<span class="badge" title="支持图片">${ic('eye', 11)}</span>` : ''}${m.think.length ? `<span class="badge" title="支持思考">${ic('brain', 11)}</span>` : ''}</span>
+      ${m.key === S.model ? ic('check', 14, 'ck') : '<span style="width:14px"></span>'}
+    </button>`;
+  let h = '';
+  if (!list.length) return `<div class="sec-t">没有匹配「${esc(S.query)}」的模型</div>`;
+  if (opts.recent && !q) {
+    h += `<div class="sec-t">最近使用</div>` + RECENT.map(k => row(MODELS.find(m => m.key === k))).join('');
+  }
+  const groups = [...new Set(list.map(m => m.provider))];
+  for (const g of groups) h += `<div class="sec-t">${esc(g)}</div>` + list.filter(m => m.provider === g).map(row).join('');
+  return h;
+}
+function searchBox(id) {
+  return `<div class="search">${ic('search', 13)}<input data-search="${id}" placeholder="搜索模型或供应商" value="${esc(S.query)}"><span class="kbd">⌘K</span></div>`;
+}
+function modelFoot() {
+  return `<div class="pop-foot"><span>上下文 · ${ic('eye', 11)} 视觉 · ${ic('brain', 11)} 思考</span><a href="#" onclick="return false">管理供应商 ${ic('chevR', 11)}</a></div>`;
+}
+function thinkRowsPop(align) {
+  const m = M();
+  const ts = thinkOf(m);
+  if (!ts.length) return `<div class="pop ${align}" style="width:240px"><div class="sec-t">思考档位</div><div class="row" style="cursor:default;color:var(--TextMuted)">${esc(m.short)} 不支持思考档位</div></div>`;
+  return `<div class="pop ${align}" style="width:220px"><div class="sec-t">思考档位 <span>${esc(m.short)}</span></div>${ts.map(t => `
+    <button class="row${t === S.think ? ' sel' : ''}" data-pick-think="${t}">${meter(t)}<span class="grow">${T_LABEL[t]}</span>${t === S.think ? ic('check', 14, 'ck') : ''}</button>`).join('')}
+    <div class="pop-foot"><span>越高越慢、越贵</span></div></div>`;
+}
+function permRowsPop(align) {
+  return `<div class="pop ${align}" style="width:270px"><div class="sec-t">权限</div>${PERMS.map(p => `
+    <button class="row${p.k === S.perm ? ' sel' : ''}" data-pick-perm="${p.k}"><span class="perm-${p.k}">${pic(p.k, 16)}</span><span class="grow"><div class="ttl">${p.label}</div><div class="desc">${p.hint}</div></span>${p.k === S.perm ? ic('check', 14, 'ck') : ''}</button>`).join('')}</div>`;
+}
+function attachPop(align) {
+  return `<div class="pop ${align} D-plus-pop">
+    <button class="row">${ic('image', 15)}<span class="grow">图片</span></button>
+    <button class="row">${ic('paperclip', 15)}<span class="grow">文件</span></button>
+    <button class="row">${ic('at', 15)}<span class="grow">引用项目文件</span><span class="kbd">@</span></button>
+    <button class="row">${ic('slash', 15)}<span class="grow">命令</span><span class="kbd">/</span></button>
+  </div>`;
+}
+
+/* ================= 方案 A ================= */
+function renderA() {
+  const m = M(), p = permOf(S.perm), ts = thinkOf(m);
+  const run = S.scene === 'running';
+  return `
+  <div class="slot">
+    ${slashPop()}
+    <div class="A-card${run ? ' running' : ''}">
+      ${extrasHtml()}
+      ${textarea('A')}
+      <div class="A-bar">
+        <div class="l">
+          <span class="anchor"><button class="ib${isOpen('A:att') ? ' open' : ''}" data-open="A:att" title="添加附件">${ic('paperclip', 16)}</button>${isOpen('A:att') ? attachPop('') : ''}</span>
+          <span class="vsep"></span>
+          <span class="anchor"><button class="chip${isOpen('A:model') ? ' open' : ''}" data-open="A:model" title="模型">${glyph(m.provider)}<span class="nm">${esc(m.name)}</span>${ic('chev', 12, 'chev')}</button>
+            ${isOpen('A:model') ? `<div class="pop" style="width:380px">${searchBox('A:model')}<div class="scroll">${modelRows({ recent: false })}</div>${modelFoot()}</div>` : ''}</span>
+          <span class="anchor"><button class="chip${isOpen('A:think') ? ' open' : ''}" data-open="A:think" ${ts.length ? '' : 'disabled style="opacity:.45"'} title="思考档位">${ic('brain', 14)}${meter(S.think)}<span class="txt">${ts.length ? T_LABEL[S.think] : '不支持'}</span>${ic('chev', 12, 'chev')}</button>
+            ${isOpen('A:think') ? thinkRowsPop('') : ''}</span>
+        </div>
+        <div class="r">
+          ${run ? `<span class="ctx"><span class="run-dot"></span><span class="t">运行中 · 18s</span></span>` : ''}
+          <span class="anchor"><button class="chip perm-${p.k}${isOpen('A:perm') ? ' open' : ''}" data-open="A:perm" title="权限">${pic(p.k, 14)}<span class="txt">${p.label}</span>${ic('chev', 12, 'chev')}</button>
+            ${isOpen('A:perm') ? permRowsPop('r') : ''}</span>
+          <button class="ctx" title="上下文 42K / 128K · 点击压缩">${ring()}<span class="t">33%</span></button>
+          ${sendCluster('A')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= 方案 B ================= */
+function renderB() {
+  const m = M(), p = permOf(S.perm), ts = thinkOf(m);
+  const run = S.scene === 'running';
+  const pane = `
+    <div class="pop B-pop">
+      <div class="lpane">${searchBox('B:model')}<div class="scroll">${modelRows({ recent: true })}</div></div>
+      <div class="rpane">
+        <div style="display:flex;gap:10px;align-items:center">${glyph(m.provider, true)}<div><h3>${esc(m.name)}</h3><div class="pv">${esc(m.provider)}</div></div></div>
+        <div class="desc-p" style="font-size:12.5px;color:var(--TextSecondary)">${esc(m.desc)}</div>
+        <dl class="facts"><dt>上下文</dt><dd>${m.ctx} tokens</dd><dt>图片</dt><dd>${m.vision ? '支持' : '不支持'}</dd><dt>思考</dt><dd>${ts.length ? ts.map(t => T_LABEL[t]).join(' / ') : '不支持'}</dd></dl>
+        <div>
+          <div class="lvl-t"><span>思考档位</span><b>${ts.length ? T_LABEL[S.think] : '—'}</b></div>
+          ${ts.length
+            ? `<div class="seg-in">${ts.map(t => `<button class="${t === S.think ? 'on' : ''}" data-pick-think="${t}" title="${T_LABEL[t]}">${T_LABEL[t]}</button>`).join('')}</div>`
+            : `<div class="nothink">这个模型不支持调整思考档位</div>`}
+        </div>
+        <div style="margin-top:auto;font-size:11.5px;color:var(--TextMuted)">选择会用于本会话之后的回合 · <span class="kbd">Esc</span> 关闭</div>
+      </div>
+    </div>`;
+  return `
+  <div class="slot">
+    ${slashPop()}
+    <div class="B-card">
+      ${extrasHtml()}
+      ${textarea('B', '有什么要做的?')}
+      <div class="B-bar">
+        <div class="l">
+          <span class="anchor"><button class="ib${isOpen('B:att') ? ' open' : ''}" data-open="B:att" style="border-radius:50%;border:1px solid var(--Border);width:32px;height:32px" title="添加">${ic('plus', 16)}</button>${isOpen('B:att') ? attachPop('') : ''}</span>
+          <span class="anchor"><button class="B-combo${isOpen('B:model') ? ' open' : ''}" data-open="B:model">${glyph(m.provider)}<span class="nm">${esc(m.name)}</span>${ts.length ? `<span class="dot"></span><span class="lv">${meter(S.think)}${T_LABEL[S.think]}</span>` : ''}${ic('chev', 12, 'chev')}</button>${isOpen('B:model') ? pane : ''}</span>
+        </div>
+        ${run ? `<span class="ctx"><span class="run-dot"></span>运行中</span>` : ''}
+        <span class="anchor"><button class="B-perm perm-${p.k}${isOpen('B:perm') ? ' open' : ''}" data-open="B:perm"><span class="pdot"></span><span class="txt">${p.label}</span></button>${isOpen('B:perm') ? permRowsPop('r') : ''}</span>
+        ${sendCluster('B')}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= 方案 C ================= */
+function renderC() {
+  const m = M(), ts = thinkOf(m);
+  const run = S.scene === 'running';
+  return `
+  <div class="slot">
+    ${slashPop()}
+    <div class="C-card">
+      <div class="C-head">
+        <button class="crumb">${ic('monitor')}本机</button><span class="slash hide-n">/</span>
+        <button class="crumb hide-n">${ic('folder')}NextCoWork</button><span class="slash hide-n">/</span>
+        <button class="crumb hide-n">${ic('branch')}v3/avalonia</button>
+        ${run ? `<span class="crumb" style="color:var(--Accent)"><span class="run-dot"></span>运行中 18s</span>` : ''}
+        <span class="sp"></span>
+        <span class="C-perm">${PERMS.map(p => `<button class="${p.k}${p.k === S.perm ? ' on' : ''}" data-pick-perm="${p.k}" title="${p.hint}">${pic(p.k, 13)}<span class="txt">${p.label}</span></button>`).join('')}</span>
+      </div>
+      <div class="C-body">
+        ${extrasHtml()}
+        ${textarea('C')}
+      </div>
+      <div class="C-foot">
+        <div class="l">
+          <button class="ib" title="附件">${ic('paperclip', 15)}</button>
+          <button class="ib hide-n" title="引用文件 (@)">${ic('at', 15)}</button>
+          <button class="ib hide-n" title="命令 (/)">${ic('slash', 15)}</button>
+          <span class="vsep"></span>
+          <span class="anchor"><button class="chip${isOpen('C:model') ? ' open' : ''}" data-open="C:model">${ic('cpu', 14)}<span class="nm">${esc(m.name)}</span><span class="badge txt">${m.ctx}</span>${ic('chev', 12, 'chev')}</button>
+            ${isOpen('C:model') ? `<div class="pop C-model-pop">${searchBox('C:model')}<div class="scroll">${modelRows({ ctxCol: true })}</div>${modelFoot()}</div>` : ''}</span>
+          <span class="anchor"><button class="chip${isOpen('C:think') ? ' open' : ''}" data-open="C:think" ${ts.length ? '' : 'disabled style="opacity:.45"'}>${ic('brain', 14)}<span class="txt">思考</span><span class="nm" style="color:var(--Text)">${ts.length ? T_LABEL[S.think] : '—'}</span>${ic('chev', 12, 'chev')}</button>
+            ${isOpen('C:think') ? thinkRowsPop('') : ''}</span>
+        </div>
+        <div class="r">
+          <button class="ctx hide-n" title="上下文用量 · 点击压缩"><span class="bar-mini"><span style="width:33%"></span></span>42K / 128K</button>
+          ${sendCluster('C')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= 方案 D ================= */
+function renderD() {
+  const m = M(), p = permOf(S.perm), ts = thinkOf(m);
+  const run = S.scene === 'running';
+  const tIdx = ts.indexOf(S.think);
+  const shown = MODELS.filter(x => RECENT.includes(x.key) || x.key === S.model).slice(0, 4);
+  const showAll = S.dAll;
+  const panel = `
+    <div class="pop r D-pop">
+      <div class="blk">
+        <div class="blk-t"><span>模型</span><b>${esc(m.name)}</b></div>
+        ${showAll
+          ? `${searchBox('D:sum')}<div class="scroll" style="max-height:200px">${modelRows({})}</div>`
+          : `<div class="mgrid">${shown.map(x => `<button class="mcard${x.key === S.model ? ' sel' : ''}" data-pick-model="${x.key}">${glyph(x.provider)}<span style="min-width:0"><div class="n">${esc(x.short)}</div><div class="c">${x.ctx}${x.vision ? ' · 视觉' : ''}</div></span></button>`).join('')}</div>
+             <button class="more" data-d-all>全部模型 (${MODELS.length}) ${ic('chevR', 12)}</button>`}
+      </div>
+      <div class="blk">
+        <div class="blk-t"><span>思考</span><b>${ts.length ? T_LABEL[S.think] : '不支持'}</b></div>
+        ${ts.length
+          ? `<input type="range" class="D-range" min="0" max="${ts.length - 1}" step="1" value="${Math.max(0, tIdx)}" data-think-range>
+             <div class="D-ticks">${ts.map(t => `<span>${T_LABEL[t]}</span>`).join('')}</div>`
+          : `<div style="font-size:12px;color:var(--TextMuted)">${esc(m.short)} 不支持调整思考档位</div>`}
+      </div>
+      <div class="blk">
+        <div class="blk-t"><span>权限</span><b>${p.hint}</b></div>
+        <div class="D-perms">${PERMS.map(x => `<button class="${x.k}${x.k === S.perm ? ' on' : ''}" data-pick-perm="${x.k}">${pic(x.k, 16)}${x.label}</button>`).join('')}</div>
+      </div>
+    </div>`;
+  const tray = extrasHtml();
+  return `
+  <div class="slot D-wrap">
+    ${slashPop()}
+    ${tray ? `<div class="D-tray" style="flex-direction:column">${tray}</div>` : ''}
+    ${run ? `<div class="D-run"><span class="run-dot"></span>运行中 · 18s · 回合 3 <span style="flex:1"></span><span style="color:var(--TextMuted)">上下文 33%</span></div>` : ''}
+    <div class="D-pill">
+      <span class="anchor"><button class="ib${isOpen('D:plus') ? ' open' : ''}" data-open="D:plus" title="添加">${ic('plus', 18)}</button>${isOpen('D:plus') ? attachPop('') : ''}</span>
+      ${textarea('D', '问点什么,或者 @ 文件 / 命令')}
+      <span class="anchor"><button class="D-sum${isOpen('D:sum') ? ' open' : ''}" data-open="D:sum" title="运行设置">${glyph(m.provider)}<span class="nm">${esc(m.short)}</span>${ts.length ? meter(S.think) : ''}<span class="perm-${p.k}" style="display:inline-flex">${pic(p.k, 13)}</span></button>${isOpen('D:sum') ? panel : ''}</span>
+      ${run && draftHas() ? `<button class="steer" style="height:36px;border-radius:18px">插话</button>` : ''}
+      ${sendCluster('D').replace('<button class="steer"', '<button class="steer" style="display:none"')}
+    </div>
+  </div>`;
+}
+
+/* ---------------- 渲染 ---------------- */
+const CHAT = `
+  <div class="msg user">输入框底部的三个下拉太像了,看不出哪个是权限</div>
+  <div class="msg agent">我看了 <code>ComposerView.axaml</code>,模型 / 思考 / 权限现在共用同一种 <code>PlainButton.tool</code> 样式……</div>`;
+const RENDER = { A: renderA, B: renderB, C: renderC, D: renderD };
+
+function render() {
+  document.documentElement.dataset.theme = S.theme;
+  seg('scn', Object.entries(SCENES).map(([k, v]) => [k, v.label]), S.scene, k => { S.scene = k; S.draft = SCENES[k].draft; S.open = null; });
+  seg('wid', [['wide', '桌面'], ['narrow', '手机 compact']], S.width, k => { S.width = k; S.open = null; });
+  seg('thm', [['dark', '深色'], ['light', '浅色']], S.theme, k => { S.theme = k; });
+  document.querySelectorAll('.stage').forEach(st => {
+    const v = st.dataset.v;
+    st.classList.toggle('narrow', S.width === 'narrow');
+    st.innerHTML = CHAT + RENDER[v]();
+  });
+  document.querySelectorAll('textarea.ta').forEach(autosize);
+  if (S.focusSearch && S.open) {
+    const el = document.querySelector(`[data-search="${S.open}"]`);
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    S.focusSearch = false;
+  }
+}
+function seg(id, items, cur, on) {
+  const el = document.getElementById(id);
+  el.innerHTML = items.map(([k, l]) => `<button class="${k === cur ? 'on' : ''}" data-k="${k}">${l}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (!b) return; on(b.dataset.k); render(); };
+}
+function autosize(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 220) + 'px'; }
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const open = t.closest('[data-open]');
+  if (open) {
+    const id = open.dataset.open;
+    if (open.hasAttribute('disabled')) return;
+    S.open = S.open === id ? null : id;
+    S.query = ''; S.dAll = false;
+    S.focusSearch = /model|sum/.test(id);
+    render(); return;
+  }
+  const pm = t.closest('[data-pick-model]');
+  if (pm) {
+    pickModel(pm.dataset.pickModel);
+    // B / D 的面板里同时有思考与权限,选模型后保持打开;A / C 选完即关
+    if (!/^(B|D):/.test(S.open || '')) S.open = null;
+    S.dAll = false;
+    render(); return;
+  }
+  const pt = t.closest('[data-pick-think]');
+  if (pt) { S.think = pt.dataset.pickThink; if (!/^B:/.test(S.open || '')) S.open = null; render(); return; }
+  const pp = t.closest('[data-pick-perm]');
+  if (pp) { S.perm = pp.dataset.pickPerm; if (!/^D:/.test(S.open || '')) S.open = null; render(); return; }
+  if (t.closest('[data-d-all]')) { S.dAll = true; S.focusSearch = true; render(); return; }
+  if (t.closest('[data-send]')) { S.draft = ''; render(); return; }
+  if (S.open && !t.closest('.pop')) { S.open = null; render(); }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.matches('textarea.ta')) {
+    S.draft = t.value; autosize(t);
+    const v = t.dataset.ta;
+    const stage = t.closest('.stage');
+    // 只局部刷新发送键,不整体重绘(保留光标)
+    const old = stage.querySelector('[data-send], .send.stop');
+    if (old && S.scene !== 'running') { old.toggleAttribute('disabled', !draftHas()); }
+    return;
+  }
+  if (t.matches('[data-search]')) { S.query = t.value; S.focusSearch = true; render(); return; }
+  if (t.matches('[data-think-range]')) {
+    // 拖动中只更新文字,松手(change)再整体重绘,避免拖动被打断
+    S.think = thinkOf(M())[+t.value];
+    const b = t.closest('.blk').querySelector('.blk-t b'); if (b) b.textContent = T_LABEL[S.think];
+  }
+});
+document.addEventListener('change', e => { if (e.target.matches('[data-think-range]')) render(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.open) { S.open = null; render(); }
+  if (e.key === 'Enter' && !e.shiftKey && e.target.matches('textarea.ta')) { e.preventDefault(); if (draftHas()) { S.draft = ''; render(); } }
+});
+// 预览参数(方便截图):?scene=rich&open=B:model&width=narrow&theme=light&model=qwen
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (SCENES[q.get('scene')]) { S.scene = q.get('scene'); S.draft = SCENES[S.scene].draft; }
+  if (q.get('width')) S.width = q.get('width');
+  if (q.get('theme')) S.theme = q.get('theme');
+  if (q.get('model')) pickModel(q.get('model'));
+  if (q.get('open')) S.open = q.get('open');
+  if (q.get('only')) document.querySelectorAll('section.opt, header.hero').forEach(x => { if (x.id !== q.get('only')) x.style.display = 'none'; });
+})();
+render();
+</script>
+</body>
+</html>

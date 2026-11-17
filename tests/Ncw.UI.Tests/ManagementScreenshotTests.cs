@@ -476,8 +476,20 @@ public class ManagementScreenshotTests
         Assert.True(Overlay(host).IsCompact);
         host.Shell.Settings.ShowCommand.Execute(SettingsSection.Hooks);
         Dispatch(8);
-        Assert.NotEmpty(Find<HooksPage>(host));
-        Assert.Empty(Find<GeneralSettingsPage>(host));
+        // 所有分区排在一个滚动区里:选中「Hooks」= 导航选中它、滚动区滚到它(它的顶边在可见区域里),其他分区仍在,只是滚出去了
+        Assert.Equal(SettingsSection.Hooks, Overlay(host).SelectedSection);
+        var hooks = Assert.Single(Find<HooksPage>(host));
+        var top = hooks.TranslatePoint(new Avalonia.Point(0, 0), host.Window)!.Value.Y;
+        Assert.InRange(top, 0, host.Window.Bounds.Height / 2);
+        Assert.NotEmpty(Find<GeneralSettingsPage>(host));
+
+        // 靠后的分区(插件)也滚得到:分区内容刚排好时导航会按位置选到别的分区,要被拨回来
+        host.Shell.Settings.ShowCommand.Execute(SettingsSection.Plugins);
+        Dispatch(10);
+        Assert.Equal(SettingsSection.Plugins, Overlay(host).SelectedSection);
+        Assert.Equal(SettingsSection.Plugins, host.Shell.Settings.Section);
+        var plugins = Assert.Single(Find<PluginsPage>(host));
+        Assert.InRange(plugins.TranslatePoint(new Avalonia.Point(0, 0), host.Window)!.Value.Y, -plugins.Bounds.Height + 1, host.Window.Bounds.Height - 1);
 
         var wide = Render(Typical[0], 1500, true);
         Assert.False(Overlay(wide).IsCompact);

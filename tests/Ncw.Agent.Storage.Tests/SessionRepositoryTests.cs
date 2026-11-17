@@ -30,6 +30,55 @@ public sealed class SessionRepositoryTests : SessionTestBase
         Assert.Equal("idle", Text("SELECT status FROM sessions WHERE id = $id", ("$id", session.Id)));
     }
 
+    [Fact]
+    public void A_generated_title_is_written_in_two_steps_and_never_overrides_a_name_the_user_chose()
+    {
+        var session = Repo.Create(new SessionCreate("ws", "s", CreatedAt: 1));
+        Repo.SetArchived("s", true);
+        var before = Repo.Get("s")!;
+
+        var preview = Repo.BeginGeneratedTitle("s", "  first message  ")!;
+        Assert.Equal(("first message", "generated"), (preview.Title, preview.TitleSource));
+        Assert.Equal(before.UpdatedAt, preview.UpdatedAt); // 自动起名不把会话顶到最前面
+        Assert.Null(Repo.BeginGeneratedTitle("s", "again")); // 已经起过名:不重复
+
+        var final = Repo.FinishGeneratedTitle(preview, "模型起的标题")!;
+        Assert.Equal(("模型起的标题", "generated", true, before.UpdatedAt), (final.Title, final.TitleSource, final.Archived, final.UpdatedAt));
+        Assert.Equal("模型起的标题", Repo.Get(session.Id)!.Title);
+    }
+
+    [Fact]
+    public void A_late_generated_title_loses_to_a_rename_a_delete_or_a_recreate()
+    {
+        Repo.Create(new SessionCreate("ws", "renamed", CreatedAt: 1));
+        var renamedPreview = Repo.BeginGeneratedTitle("renamed", "preview")!;
+        Repo.Rename("renamed", "新对话"); // 手动改回占位名也是用户的选择
+        Assert.Null(Repo.FinishGeneratedTitle(renamedPreview, "late"));
+        Assert.Equal(("新对话", "manual"), (Repo.Get("renamed")!.Title, Repo.Get("renamed")!.TitleSource));
+        Assert.Null(Repo.BeginGeneratedTitle("renamed", "x")); // manual 不再被自动起名
+
+        Repo.Create(new SessionCreate("ws", "deleted", CreatedAt: 1));
+        var deletedPreview = Repo.BeginGeneratedTitle("deleted", "preview")!;
+        Repo.Delete("deleted");
+        Assert.Null(Repo.FinishGeneratedTitle(deletedPreview, "late"));
+        Assert.Null(Repo.Get("deleted"));
+
+        Repo.Create(new SessionCreate("ws", "again", CreatedAt: 1));
+        var stale = Repo.BeginGeneratedTitle("again", "preview")!;
+        Repo.Delete("again");
+        Repo.Create(new SessionCreate("ws", "again", CreatedAt: 2)); // 同 id 重建:创建时间不同
+        Assert.Null(Repo.FinishGeneratedTitle(stale, "late"));
+        Assert.Equal("新对话", Repo.Get("again")!.Title);
+    }
+
+    [Fact]
+    public void A_session_that_was_named_by_the_user_at_creation_is_not_auto_titled()
+    {
+        Repo.Create(new SessionCreate("ws", "named", Title: "My project"));
+        Assert.Null(Repo.BeginGeneratedTitle("named", "preview"));
+        Assert.Equal("My project", Repo.Get("named")!.Title);
+    }
+
     [Theory]
     [InlineData("", "default")]
     [InlineData("  ", "default")]

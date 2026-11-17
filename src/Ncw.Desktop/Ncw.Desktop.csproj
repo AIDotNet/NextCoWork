@@ -21,6 +21,10 @@
     <InternalsVisibleTo Include="Ncw.Desktop.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Dock 图标(不从 .app 启动时,见 MacDockIcon)。.icns 是给 tools/Ncw.Build 放进 .app 用的,不内嵌。 -->
+    <EmbeddedResource Include="Assets/AppIcon.png" LogicalName="Ncw.Desktop.AppIcon.png" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Ncw.UI/Ncw.UI.csproj" />
     <!--
       只为了构建顺序和打包 sidecar:不引用 Agent 的代码(ReferenceOutputAssembly=false),

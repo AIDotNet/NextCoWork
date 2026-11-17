@@ -76,6 +76,9 @@ public static class WidgetShell
         * { box-sizing: border-box; }
         [hidden] { display: none !important; }
         html, body { margin: 0; padding: 0; background: transparent; }
+        /* 页面自己不滚:宿主只把 WebView 摆在卡片的可见段上,用 ncw:widget:viewport 告诉页面滚到哪(脚本滚动不受 overflow:hidden 影响);
+           滚轮也就不会被困在小组件里 */
+        html, body { overflow: hidden; }
         body {
           font-family: var(--font-sans);
           font-size: 14px;
@@ -89,7 +92,7 @@ public static class WidgetShell
     /// <summary>
     /// 页面侧运行时(外壳的脚本,<b>带本页 nonce 的唯一一段内联脚本</b>)。它做五件事:① 收宿主消息(<c>__ncwHost.recv</c>);② 把内容塞进 <c>#ncw-root</c>、
     /// 逐个重建脚本并带上 nonce(按顺序:有 <c>src</c> 的等它加载完再跑下一个,Chart.js 之类的库才在内联脚本之前就绪);③ 量高度上报(量 <c>#ncw-root</c> 而不是 body,
-    /// 否则会把宿主刚设的高度量回去、无限长高);④ 提供 <c>window.ncw</c>;⑤ 把链接点击转成 <c>openUrl</c> 调用(导航本身由宿主拦下)。
+    /// 否则会把宿主刚设的高度量回去、无限长高);④ 提供 <c>window.ncw</c>;⑤ 把链接点击转成 <c>openUrl</c> 调用(导航本身由宿主拦下);⑥ 按宿主给的可见段起点滚动自己(<c>viewport</c>)。
     /// <para>没有 <c>sendPrompt()</c>:它是 widget 通往 Agent 主循环的输入通道,2.x 同样不给。</para>
     /// <para>手写的 JS 常量(不引入 Node / TypeScript 构建,AGENTS.md §6);没有 JS 引擎可以在单测里跑它,所以它的行为只在真实 WebView 里验证
     /// (<c>NcwWidgetSmokeTests</c>,环境变量开启)。单测只核对它自包含、消息名与 <see cref="WidgetMessages"/> 一致。</para>
@@ -99,6 +102,7 @@ public static class WidgetShell
           'use strict';
           var M = {
             content: 'ncw:widget:content', theme: 'ncw:widget:theme', loading: 'ncw:widget:loading', env: 'ncw:widget:env', reply: 'ncw:widget:reply',
+            viewport: 'ncw:widget:viewport',
             ready: 'ncw:widget:ready', height: 'ncw:widget:height', call: 'ncw:widget:call'
           };
           var nonceMeta = document.querySelector('meta[name="ncw-widget-nonce"]');
@@ -228,6 +232,9 @@ public static class WidgetShell
                   break;
                 case M.env: applyEnv(message.env); break;
                 case M.reply: applyReply(message); break;
+                case M.viewport:
+                  if (typeof message.top === 'number' && isFinite(message.top)) { window.scrollTo(0, Math.max(0, message.top)); }
+                  break;
               }
             }
           };

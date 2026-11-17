@@ -1,0 +1,283 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:tree="using:Ncw.UI.Views.Desktop.Tree"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             x:Class="Ncw.UI.Views.Desktop.Sidebar"
+             x:DataType="vm:SidebarViewModel">
+  <!--
+    左侧边栏(docs/design/03 §1「左侧边栏」,2026-11 起取代「项目栏 + 项目面板」):
+      全局入口(新会话 / 搜索 / 收件箱 / 定时任务)→ 项目树(项目组 → 项目 → 会话)→ 底部账户。
+    状态全部来自 Core 的派生函数(ProjectActivityView、SessionActivityView、ActivityInboxView),这里只摆。拖放规则是 RailDropPlanner(code-behind 只换算命中)。
+  -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.keyHint">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- 待处理数:提醒色的小胶囊(项目行、项目组、会话行、收件箱共用) -->
+    <Style Selector="Border.pendingPill">
+      <Setter Property="MinWidth" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource WarningSubtle}" />
+    </Style>
+    <Style Selector="Border.pendingPill > TextBlock">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Warning}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- 侧边栏的底色就是 SurfaceMuted:悬停和选中要比它亮一档才看得见 -->
+    <Style Selector="ui|PlainButton:pointerover">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+    </Style>
+    <Style Selector="ui|PlainButton.active">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+    </Style>
+    <Style Selector="Border.accountCard">
+      <Setter Property="Padding" Value="14" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+      <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowFloating}" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:SidebarProjectViewModel">
+      <tree:SidebarProjectNode />
+    </DataTemplate>
+    <DataTemplate DataType="vm:SidebarGroupViewModel">
+      <tree:SidebarGroupNode />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Panel>
+    <DockPanel>
+      <!-- 底部:账户(点开是账户卡片)+ 设置 -->
+      <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}" Padding="8,6">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+          <Panel x:Name="AccountArea" x:DataType="vm:AccountViewModel"
+                 DataContext="{Binding $parent[desktop:DesktopShell].((vm:ShellViewModel)DataContext).Account, FallbackValue={x:Null}}">
+            <ui:PlainButton x:Name="AccountButton" Height="40" Padding="4,0,6,0" Click="OnAccountClick"
+                            AutomationProperties.Name="{l:NcwText SettingsAccount}">
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                <Panel Width="30" Height="30" VerticalAlignment="Center">
+                  <ui:NcwAvatar IsVisible="{Binding IsSignedIn}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                DisplayName="{Binding UserLabel}" PhotoUrl="{Binding AvatarUrl}"
+                                Status="{Binding Presence, Converter={x:Static cv:AccountPresenceConverter.Instance}}" />
+                  <Border IsVisible="{Binding !IsSignedIn}" Width="30" Height="30" CornerRadius="15" Background="{arc:ArcDesignTokenResource SurfaceRaised}">
+                    <lucide:LucideIcon Kind="User" Size="16" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  </Border>
+                </Panel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsSignedIn}" Text="{Binding UserLabel}" />
+                  <TextBlock Classes="hint" TextTrimming="CharacterEllipsis" Text="{Binding Email}">
+                    <TextBlock.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsSignedIn" />
+                        <Binding Path="Email" Converter="{x:Static ObjectConverters.IsNotNull}" />
+                      </MultiBinding>
+                    </TextBlock.IsVisible>
+                  </TextBlock>
+                  <TextBlock Classes="hint" Text="{l:NcwText SidebarSignedIn}">
+                    <TextBlock.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsSignedIn" />
+                        <Binding Path="Email" Converter="{x:Static ObjectConverters.IsNull}" />
+                      </MultiBinding>
+                    </TextBlock.IsVisible>
+                  </TextBlock>
+                  <TextBlock TextTrimming="CharacterEllipsis" IsVisible="{Binding !IsSignedIn}" Text="{l:NcwText AccountSignedOutTitle}" />
+                </StackPanel>
+              </Grid>
+            </ui:PlainButton>
+            <Popup x:Name="AccountPopup" PlacementTarget="{Binding #AccountButton}" Placement="TopEdgeAlignedLeft" VerticalOffset="-6"
+                   IsLightDismissEnabled="True" ShouldUseOverlayLayer="True">
+              <Border Classes="accountCard" Width="280">
+                <StackPanel Spacing="12">
+                  <!-- 没登录 -->
+                  <StackPanel Spacing="10" IsVisible="{Binding !IsSignedIn}">
+                    <StackPanel Spacing="4">
+                      <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignedOutTitle}" />
+                      <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText AccountSignedOutHint}" />
+                    </StackPanel>
+                    <ui:NcwButton Variant="Primary" HorizontalAlignment="Stretch" Command="{Binding SignInCommand}" IsEnabled="{Binding CanSignIn}" Content="{l:NcwText AccountSignIn}" />
+                  </StackPanel>
+                  <!-- 已登录:头像、名字、邮箱、团队 -->
+                  <StackPanel Spacing="10" IsVisible="{Binding IsSignedIn}">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                      <ui:NcwAvatar Size="Large" VerticalAlignment="Center" DisplayName="{Binding UserLabel}" PhotoUrl="{Binding AvatarUrl}" />
+                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding UserLabel}" />
+                        <TextBlock Classes="hint" TextTrimming="CharacterEllipsis" Text="{Binding Email}" IsVisible="{Binding Email, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding SelectedTeamName, Converter={x:Static ObjectConverters.IsNotNull}}">
+                      <lucide:LucideIcon Kind="Users" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                      <TextBlock Grid.Column="1" Classes="hint" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Text="{Binding SelectedTeamName}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding IsExpired}">
+                      <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                      <TextBlock Grid.Column="1" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText AccountExpiredTitle}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding NeedsTeam}">
+                      <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+                      <TextBlock Grid.Column="1" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:NcwText AccountTeamRequiredTitle}" />
+                    </Grid>
+                  </StackPanel>
+                  <!-- 退出登录的二次确认(和设置页同一个状态) -->
+                  <StackPanel Spacing="8" IsVisible="{Binding ConfirmingSignOut}">
+                    <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutTitle}" />
+                    <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText AccountSignOutHint}" />
+                    <WrapPanel ItemSpacing="8" LineSpacing="8">
+                      <ui:NcwButton Variant="Danger" Command="{Binding ConfirmSignOutCommand}" Content="{l:NcwText AccountSignOut}" />
+                      <ui:NcwButton Variant="Ghost" Command="{Binding CancelSignOutCommand}" Content="{l:NcwText Cancel}" />
+                    </WrapPanel>
+                  </StackPanel>
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding !ConfirmingSignOut}">
+                    <ui:NcwButton Variant="Ghost" HorizontalAlignment="Left" Click="OnOpenAccountSettings">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <lucide:LucideIcon Kind="Settings" Size="14" VerticalAlignment="Center" />
+                        <TextBlock Text="{l:NcwText AccountOpenAccount}" />
+                      </StackPanel>
+                    </ui:NcwButton>
+                    <ui:NcwButton Grid.Column="1" Variant="Ghost" IsVisible="{Binding IsSignedIn}" IsEnabled="{Binding !IsBusy}" Command="{Binding AskSignOutCommand}"
+                                  AutomationProperties.Name="{l:NcwText AccountSignOut}" arc:Tooltip.Tip="{l:NcwText AccountSignOut}">
+                      <lucide:LucideIcon Kind="LogOut" Size="14" VerticalAlignment="Center" />
+                    </ui:NcwButton>
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </Popup>
+          </Panel>
+          <ui:PlainButton x:Name="SettingsButton" Grid.Column="1" Width="32" Height="32" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}"
+                          AutomationProperties.Name="{l:NcwText Settings}" arc:Tooltip.Tip="{l:NcwText Settings}">
+            <lucide:LucideIcon Kind="Settings" Size="16" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </Grid>
+      </Border>
+
+      <!-- 全局入口 -->
+      <StackPanel DockPanel.Dock="Top" Margin="8,2,8,6" Spacing="1">
+        <ui:PlainButton x:Name="NewSessionButton" Height="30" Padding="8,0" Command="{Binding NewSessionCommand}" IsEnabled="{Binding HasCurrentProject}"
+                        AutomationProperties.Name="{l:NcwText NewSession}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+            <lucide:LucideIcon Kind="SquarePen" Size="15" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{l:NcwText NewSession}" VerticalAlignment="Center" />
+            <TextBlock x:Name="NewSessionKey" Grid.Column="2" Classes="keyHint" />
+          </Grid>
+        </ui:PlainButton>
+        <ui:PlainButton Height="30" Padding="8,0" Command="{Binding SearchCommand}" AutomationProperties.Name="{l:NcwText Search}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+            <lucide:LucideIcon Kind="Search" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <TextBlock Grid.Column="1" Text="{l:NcwText Search}" VerticalAlignment="Center" />
+            <TextBlock x:Name="SearchKey" Grid.Column="2" Classes="keyHint" />
+          </Grid>
+        </ui:PlainButton>
+        <ui:PlainButton x:Name="InboxButton" Height="30" Padding="8,0" Command="{Binding ToggleInboxCommand}" Classes.active="{Binding IsInboxOpen}"
+                        AutomationProperties.Name="{l:NcwText InboxTitle}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+            <lucide:LucideIcon Kind="Inbox" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <TextBlock Grid.Column="1" Text="{l:NcwText InboxTitle}" VerticalAlignment="Center" />
+            <Border Grid.Column="2" Classes="pendingPill" IsVisible="{Binding InboxCount, Converter={x:Static cv:PositiveConverter.Instance}}">
+              <TextBlock Text="{Binding InboxCount, Converter={x:Static cv:CountConverter.Instance}}" />
+            </Border>
+          </Grid>
+        </ui:PlainButton>
+        <!-- 收件箱就地展开:现在要你处理的待办;点一条 = OpenAttention(和通知点击、⌘J 同一个入口) -->
+        <ui:NcwCollapsible IsOpen="{Binding IsInboxOpen}">
+          <StackPanel Margin="18,0,0,4">
+            <TextBlock Classes="hint" Margin="8,4" TextWrapping="Wrap" IsVisible="{Binding !HasInboxItems}" Text="{l:NcwText InboxEmptyTitle}" />
+            <ItemsControl ItemsSource="{Binding InboxItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:InboxEntryViewModel">
+                  <ui:PlainButton Padding="8,5" Command="{Binding $parent[desktop:Sidebar].((vm:SidebarViewModel)DataContext).OpenInboxItemCommand}" CommandParameter="{Binding}"
+                                  AutomationProperties.Name="{Binding Converter={x:Static cv:InboxHeadlineConverter.Instance}}">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                      <Panel Width="14" VerticalAlignment="Top" Margin="0,2,0,0">
+                        <lucide:LucideIcon Kind="ShieldAlert" Size="13" Foreground="{arc:ArcDesignTokenResource Warning}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=ToolApproval}" />
+                        <lucide:LucideIcon Kind="CircleHelp" Size="13" Foreground="{arc:ArcDesignTokenResource Accent}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Question}" />
+                        <lucide:LucideIcon Kind="ClipboardList" Size="13" Foreground="{arc:ArcDesignTokenResource Accent}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=PlanApproval}" />
+                        <lucide:LucideIcon Kind="Target" Size="13" Foreground="{arc:ArcDesignTokenResource Accent}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=GoalProposal}" />
+                        <lucide:LucideIcon Kind="Link" Size="13" Foreground="{arc:ArcDesignTokenResource Warning}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=DeviceApproval}" />
+                        <lucide:LucideIcon Kind="Play" Size="13" Foreground="{arc:ArcDesignTokenResource Accent}"
+                                           IsVisible="{Binding Kind, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=WorkflowApproval}" />
+                      </Panel>
+                      <StackPanel Grid.Column="1" Spacing="1">
+                        <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Converter={x:Static cv:InboxHeadlineConverter.Instance}}" />
+                        <TextBlock Classes="hint" TextTrimming="CharacterEllipsis">
+                          <TextBlock.Text>
+                            <MultiBinding Converter="{x:Static cv:JoinDotConverter.Instance}">
+                              <Binding Path="ProjectName" />
+                              <Binding Path="SessionTitle" />
+                            </MultiBinding>
+                          </TextBlock.Text>
+                        </TextBlock>
+                      </StackPanel>
+                    </Grid>
+                  </ui:PlainButton>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ui:NcwCollapsible>
+        <ui:PlainButton Height="30" Padding="8,0" Command="{Binding OpenScheduledTasksCommand}" AutomationProperties.Name="{l:NcwText ScheduledTasks}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+            <lucide:LucideIcon Kind="CalendarClock" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <TextBlock Grid.Column="1" Text="{l:NcwText ScheduledTasks}" VerticalAlignment="Center" />
+          </Grid>
+        </ui:PlainButton>
+      </StackPanel>
+
+      <!-- 项目树标题:「+」= 新建项目窗口 -->
+      <Grid DockPanel.Dock="Top" Height="28" Margin="16,0,12,0" ColumnDefinitions="*,Auto">
+        <TextBlock Classes="section" Text="{l:NcwText SidebarProjects}" />
+        <ui:PlainButton Grid.Column="1" Width="22" Height="22" CornerRadius="6" Command="{Binding AddProjectCommand}"
+                        AutomationProperties.Name="{l:NcwText AddProject}" arc:Tooltip.Tip="{l:NcwText AddProject}">
+          <lucide:LucideIcon Kind="Plus" Size="13" HorizontalAlignment="Center" />
+        </ui:PlainButton>
+      </Grid>
+
+      <ScrollViewer x:Name="TreeScroll">
+        <StackPanel x:Name="TreeArea" Margin="8,0,8,12" Background="Transparent" MinHeight="80">
+          <ItemsControl x:Name="Tree" ItemsSource="{Binding Items}" />
+          <!-- 没有项目:原来项目面板的空状态(和「+」是同一个动作) -->
+          <StackPanel IsVisible="{Binding !HasProjects}" HorizontalAlignment="Center" Spacing="10" Margin="16,24">
+            <lucide:LucideIcon Kind="FolderPlus" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Text="{l:NcwText NoProjectsTitle}" HorizontalAlignment="Center" FontWeight="SemiBold" />
+            <TextBlock Classes="hint" Text="{l:NcwText NoProjectsHint}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+            <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding AddProjectCommand}" Content="{l:NcwText AddFolder}" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </DockPanel>
+
+    <!-- 拖放的落点提示:前后放置是一条横线,成组 / 进组给目标行描一圈 -->
+    <Canvas x:Name="MarkLayer" IsHitTestVisible="False">
+      <Border x:Name="DropLine" Height="2" CornerRadius="1" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="False" />
+      <Border x:Name="DropRing" CornerRadius="8" BorderThickness="2" BorderBrush="{arc:ArcDesignTokenResource Accent}" IsVisible="False" />
+    </Canvas>
+  </Panel>
+</UserControl>

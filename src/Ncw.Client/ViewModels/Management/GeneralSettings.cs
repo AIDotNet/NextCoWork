@@ -35,9 +35,11 @@ public sealed partial class ModelPickRow(GeneralSettingsViewModel owner, ModelPi
 
     partial void OnKeyChanged(string value)
     {
-        if (!Syncing)
+        // 只有用户在加载好的页面上真的选了一项才写:控件在数据到达之前(或候选里没有这个值时)回写的 null / 空值不是用户的选择,
+        // 照写会把设备上的设置改成「跟随默认」(03 §11.6 调整布局时发现)
+        if (!Syncing && value is not null && owner.IsReady && Choices.Any(c => c.Value == value))
         {
-            _ = owner.SetPickAsync(this, value ?? "");
+            _ = owner.SetPickAsync(this, value);
         }
     }
 }
@@ -74,6 +76,18 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
     }
 
     public ObservableCollection<ModelPickRow> Picks { get; } = [];
+
+    /// <summary>默认模型:页面最上面「常用」里的那一项(docs/design/03 §11.6)。</summary>
+    public ModelPickRow DefaultPick => Picks[0];
+
+    /// <summary>其余辅助模型(权限审查、目标评估、压缩、补全、图像、子代理):收在「高级」里。</summary>
+    public IReadOnlyList<ModelPickRow> AuxPicks => [.. Picks.Skip(1)];
+
+    /// <summary>展开「高级」(纯 UI 状态,不持久化)。</summary>
+    [ObservableProperty] public partial bool ShowAdvanced { get; set; }
+
+    [RelayCommand]
+    private void ToggleAdvanced() => ShowAdvanced = !ShowAdvanced;
 
     /// <summary>设备上的设置(镜像);没读到为 null。</summary>
     [ObservableProperty] public partial DeviceSettingsDto? Settings { get; private set; }

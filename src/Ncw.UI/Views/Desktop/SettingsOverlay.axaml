@@ -12,145 +12,195 @@
              x:DataType="vm:SettingsViewModel"
              ui:NcwMotion.IsPresent="{Binding IsOpen}" ui:NcwMotion.PresenceKind="Fade">
   <!--
-    设置页(docs/design/07):整窗覆盖,左侧导航 220px + 内容区(最大 760)。顶部 40px 留给拖动窗口和 macOS 红绿灯。
-    分组:本应用(设备、关于)、设备(通用、模型、技能、命令、Hooks、MCP、用量、存储、连接与远程、网关)、项目(项目设置)。
-    窄屏(< 760)导航收成 56px 的图标栏(文字藏起来,图标上有提示),内容区拿到剩下的宽度。Esc 关闭。
+    设置页(docs/design/07):整窗覆盖。左侧导航 + 一个滚动区,所有分区按导航的顺序排在这个滚动区里(Arc 的 FluidTabControl,封装 NcwSideNav):
+    点导航滚到那一段,滚动时导航跟着当前分区走。分组:本应用(账户、设备、外观、快捷键、通知、关于)、设备(通用 …… 网关)、项目(项目设置);
+    分组是不可选的导航项(导航里一行小字,内容里一段标题)。
+    数据按需加载:分区成为当前分区(点到或滚到)时 ViewModel 的 Section 变化,照旧由 SettingsViewModel.Activate 去读它的数据,没滚到的分区不读。
+    顶部 40px 留给拖动窗口和 macOS 红绿灯。窄屏(< 760)导航收成 56px 的图标栏(文字和分组藏起来,图标上有提示)。Esc 关闭。
   -->
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
   </UserControl.KeyBindings>
   <UserControl.Styles>
+    <!-- 导航里的分组标题:小字、次要色;不可用但不显示成「灰掉」 -->
     <Style Selector="TextBlock.group">
       <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
-      <Setter Property="Margin" Value="12,14,12,4" />
     </Style>
-    <Style Selector="ui|PlainButton.nav">
-      <Setter Property="Padding" Value="12,7" />
+    <!-- 内容区里的分组标题 -->
+    <Style Selector="TextBlock.groupTitle">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="MaxWidth" Value="760" />
+    </Style>
+    <!-- 内容区各分区:最宽 760(Arc 的 ContentMaxWidthMD),居中 -->
+    <Style Selector=":is(UserControl).page">
+      <Setter Property="MaxWidth" Value="760" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="CornerRadius" Value="8" />
     </Style>
-    <Style Selector="ui|PlainButton.nav.active">
-      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
-    </Style>
-    <!-- 内容区各页:切换分组时淡入(进入动效,NcwMotion.ShowMotion) -->
-    <Style Selector="Panel#Body > :is(UserControl)">
-      <Setter Property="ui:NcwMotion.ShowMotion" Value="Fade" />
-    </Style>
-    <!-- 窄屏:只留图标 -->
+    <!-- 各页页头不再各带一份设备 / 项目切换器(只在「设备」分组标题处放一份,见上) -->
+    <Style Selector="m|PageHeader"><Setter Property="ShowSwitchers" Value="False" /></Style>
+    <!-- 窄屏:只留图标;分组标题只藏文字(导航项留着当分组间的空行——整项藏起来会连同内容里的分组标题和作用域切换器一起藏掉) -->
     <Style Selector="Grid.compact TextBlock.navText"><Setter Property="IsVisible" Value="False" /></Style>
     <Style Selector="Grid.compact TextBlock.group"><Setter Property="IsVisible" Value="False" /></Style>
-    <Style Selector="Grid.compact ui|PlainButton.nav"><Setter Property="Padding" Value="0,8" /><Setter Property="HorizontalContentAlignment" Value="Center" /></Style>
     <Style Selector="Grid.compact StackPanel.navHead"><Setter Property="IsVisible" Value="False" /></Style>
   </UserControl.Styles>
 
-  <Grid x:Name="Layout" ColumnDefinitions="220,*" Background="{arc:ArcDesignTokenResource Background}">
-    <!-- 左侧导航 -->
-    <Border Background="{arc:ArcDesignTokenResource SurfaceMuted}" BorderThickness="0,0,1,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="8,40,8,8">
-          <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,6">
-            <TextBlock Classes="navText" Text="{l:NcwText Settings}" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}" VerticalAlignment="Center" />
-            <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseCommand}"
-                          AutomationProperties.Name="{l:NcwText CloseSettings}" arc:Tooltip.Tip="{l:NcwText CloseSettings}">
-              <lucide:LucideIcon Kind="X" Size="16" />
-            </ui:NcwButton>
-          </Grid>
+  <Grid x:Name="Layout" RowDefinitions="Auto,*" Background="{arc:ArcDesignTokenResource Background}">
+    <!-- 标题行:左边「设置」和关闭(和导航同宽),右边空着(拖动窗口) -->
+    <Grid x:Name="HeadRow" ColumnDefinitions="220,*" Margin="0,40,0,0">
+      <StackPanel Margin="16,0,8,8" Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Classes="navHead" VerticalAlignment="Center">
+            <TextBlock Text="{l:NcwText Settings}" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseCommand}"
+                        AutomationProperties.Name="{l:NcwText CloseSettings}" arc:Tooltip.Tip="{l:NcwText CloseSettings}">
+            <lucide:LucideIcon Kind="X" Size="16" />
+          </ui:NcwButton>
+        </Grid>
+        <!-- 搜索设置(03 §11.6):在每个分区的全部文字(名字和说明)里找,结果浮在导航上,点一个跳过去 -->
+        <ui:NcwSearchField x:Name="SearchBox" Classes="navHead" Text="{Binding SearchQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText SettingsSearch}"
+                           AutomationProperties.Name="{l:NcwText SettingsSearch}" />
+      </StackPanel>
+    </Grid>
 
-          <TextBlock Classes="group" Text="{l:NcwText SettingsAppGroup}" />
-          <ui:PlainButton Classes="nav" Classes.active="{Binding IsAccountSection}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Account}" arc:Tooltip.Tip="{l:NcwText SettingsAccount}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="CircleUser" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsAccount}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Devices}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Devices}" arc:Tooltip.Tip="{l:NcwText SettingsDevices}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Monitor" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsDevices}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding IsAppearanceSection}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Appearance}" arc:Tooltip.Tip="{l:NcwText SettingsAppearance}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Palette" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsAppearance}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding IsAboutSection}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.About}" arc:Tooltip.Tip="{l:NcwText SettingsAbout}" x:Name="AboutNav">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Info" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsAbout}" /></StackPanel>
-          </ui:PlainButton>
-
-          <TextBlock Classes="group" Text="{l:NcwText SettingsDeviceGroup}" />
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=General}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.General}" arc:Tooltip.Tip="{l:NcwText SettingsGeneral}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="SlidersHorizontal" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsGeneral}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding IsModelsSection}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Models}" arc:Tooltip.Tip="{l:NcwText SettingsModels}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Cpu" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsModels}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Skills}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Skills}" arc:Tooltip.Tip="{l:NcwText SettingsSkills}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Sparkles" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsSkills}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Commands}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Commands}" arc:Tooltip.Tip="{l:NcwText SettingsCommands}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="SquareSlash" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsCommands}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Hooks}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Hooks}" arc:Tooltip.Tip="{l:NcwText SettingsHooks}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Webhook" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsHooks}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Mcp}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Mcp}" arc:Tooltip.Tip="{l:NcwText SettingsMcp}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Plug" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsMcp}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Plugins}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Plugins}" arc:Tooltip.Tip="{l:NcwText SettingsPlugins}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Puzzle" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsPlugins}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Usage}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Usage}" arc:Tooltip.Tip="{l:NcwText SettingsUsage}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="ChartColumn" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsUsage}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Storage}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Storage}" arc:Tooltip.Tip="{l:NcwText SettingsStorage}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="HardDrive" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsStorage}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding IsRemoteSection}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Remote}" arc:Tooltip.Tip="{l:NcwText SettingsRemote}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Wifi" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsRemote}" /></StackPanel>
-          </ui:PlainButton>
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Gateway}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Gateway}" arc:Tooltip.Tip="{l:NcwText SettingsGateway}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="Network" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsGateway}" /></StackPanel>
-          </ui:PlainButton>
-
-          <TextBlock Classes="group" Text="{l:NcwText SettingsProjectGroup}" />
-          <ui:PlainButton Classes="nav" Classes.active="{Binding Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Project}"
-                          Command="{Binding ShowCommand}" CommandParameter="{x:Static vm:SettingsSection.Project}" arc:Tooltip.Tip="{l:NcwText SettingsProject}">
-            <StackPanel Orientation="Horizontal" Spacing="8"><lucide:LucideIcon Kind="FolderCog" Size="15" /><TextBlock Classes="navText" Text="{l:NcwText SettingsProject}" /></StackPanel>
-          </ui:PlainButton>
+    <!-- 导航 + 所有分区(当前分区与 ViewModel 的 Section 由 code-behind 同步,只在一个方向上推,滚动途中不互相打断) -->
+    <ui:NcwSideNav x:Name="Nav" Grid.Row="1" TabListWidth="220" SectionSpacing="48" ContentPadding="32,8,32,48"
+                   AutomationProperties.Name="{l:NcwText Settings}">
+      <ui:NcwSideNavItem Classes="group" IsEnabled="False">
+        <ui:NcwSideNavItem.Header><TextBlock Classes="group" Text="{l:NcwText SettingsAppGroup}" /></ui:NcwSideNavItem.Header>
+        <TextBlock Classes="groupTitle" Text="{l:NcwText SettingsAppGroup}" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Account}" arc:Tooltip.Tip="{l:NcwText SettingsAccount}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="CircleUser" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsAccount}" /></ui:NcwSideNavItem.Header>
+        <desktop:AccountSettingsPage DataContext="{Binding Account}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Devices}" arc:Tooltip.Tip="{l:NcwText SettingsDevices}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Monitor" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsDevices}" /></ui:NcwSideNavItem.Header>
+        <desktop:DevicesSettingsPage DataContext="{Binding Devices}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Appearance}" arc:Tooltip.Tip="{l:NcwText SettingsAppearance}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Palette" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsAppearance}" /></ui:NcwSideNavItem.Header>
+        <desktop:AppearanceSettingsPage DataContext="{Binding Appearance}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Shortcuts}" arc:Tooltip.Tip="{l:NcwText SettingsShortcuts}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Keyboard" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsShortcuts}" /></ui:NcwSideNavItem.Header>
+        <desktop:ShortcutsSettingsPage DataContext="{Binding Shortcuts}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Notifications}" arc:Tooltip.Tip="{l:NcwText SettingsNotifications}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Bell" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsNotifications}" /></ui:NcwSideNavItem.Header>
+        <desktop:NotificationsSettingsPage DataContext="{Binding Notifications}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem x:Name="AboutNav" Tag="{x:Static vm:SettingsSection.About}" arc:Tooltip.Tip="{l:NcwText SettingsAbout}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Info" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsAbout}" /></ui:NcwSideNavItem.Header>
+        <desktop:AboutSettingsPage DataContext="{Binding About}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Classes="group" IsEnabled="False">
+        <ui:NcwSideNavItem.Header><TextBlock Classes="group" Text="{l:NcwText SettingsDeviceGroup}" /></ui:NcwSideNavItem.Header>
+        <!-- 「设备」分组的作用域:设备 / 项目切换器只放这一份(各页页头里的由下面的样式关掉),下面各分区都按它读数据 -->
+        <StackPanel MaxWidth="760" Spacing="8">
+          <TextBlock Classes="groupTitle" Text="{l:NcwText SettingsDeviceGroup}" />
+          <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+            <ui:NcwSelect x:Name="ScopeDevice" MinWidth="200" ItemsSource="{Binding Pages.Scope.DeviceChoices}" SelectedValue="{Binding Pages.Scope.DeviceId, Mode=TwoWay}"
+                          IsVisible="{Binding Pages.Scope.ShowsDeviceSwitcher}" AutomationProperties.Name="{l:NcwText SettingsDeviceSwitcher}" />
+            <ui:NcwSelect x:Name="ScopeProject" MinWidth="200" ItemsSource="{Binding Pages.Scope.ProjectChoices}" SelectedValue="{Binding Pages.Scope.WorkspaceId, Mode=TwoWay}"
+                          IsVisible="{Binding Pages.Scope.HasProjects}" AutomationProperties.Name="{l:NcwText SettingsProjectSwitcher}" />
+          </WrapPanel>
         </StackPanel>
-      </ScrollViewer>
-    </Border>
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.General}" arc:Tooltip.Tip="{l:NcwText SettingsGeneral}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="SlidersHorizontal" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsGeneral}" /></ui:NcwSideNavItem.Header>
+        <m:GeneralSettingsPage DataContext="{Binding Pages.General}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Models}" arc:Tooltip.Tip="{l:NcwText SettingsModels}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Cpu" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsModels}" /></ui:NcwSideNavItem.Header>
+        <desktop:ModelsSettingsPage DataContext="{Binding Models}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Skills}" arc:Tooltip.Tip="{l:NcwText SettingsSkills}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Sparkles" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsSkills}" /></ui:NcwSideNavItem.Header>
+        <m:SkillsPage DataContext="{Binding Pages.Skills}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Commands}" arc:Tooltip.Tip="{l:NcwText SettingsCommands}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="SquareSlash" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsCommands}" /></ui:NcwSideNavItem.Header>
+        <m:CommandsPage DataContext="{Binding Pages.Commands}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Hooks}" arc:Tooltip.Tip="{l:NcwText SettingsHooks}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Webhook" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsHooks}" /></ui:NcwSideNavItem.Header>
+        <m:HooksPage DataContext="{Binding Pages.Hooks}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Mcp}" arc:Tooltip.Tip="{l:NcwText SettingsMcp}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Plug" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsMcp}" /></ui:NcwSideNavItem.Header>
+        <m:McpPage DataContext="{Binding Pages.Mcp}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Plugins}" arc:Tooltip.Tip="{l:NcwText SettingsPlugins}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Puzzle" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsPlugins}" /></ui:NcwSideNavItem.Header>
+        <m:PluginsPage DataContext="{Binding Pages.Plugins}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Usage}" arc:Tooltip.Tip="{l:NcwText SettingsUsage}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="ChartColumn" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsUsage}" /></ui:NcwSideNavItem.Header>
+        <m:UsagePage DataContext="{Binding Pages.Usage}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Storage}" arc:Tooltip.Tip="{l:NcwText SettingsStorage}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="HardDrive" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsStorage}" /></ui:NcwSideNavItem.Header>
+        <m:StoragePage DataContext="{Binding Pages.Storage}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Remote}" arc:Tooltip.Tip="{l:NcwText SettingsRemote}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Wifi" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsRemote}" /></ui:NcwSideNavItem.Header>
+        <desktop:RemoteSettingsPage DataContext="{Binding Remote}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Gateway}" arc:Tooltip.Tip="{l:NcwText SettingsGateway}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="Network" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsGateway}" /></ui:NcwSideNavItem.Header>
+        <m:GatewayPage DataContext="{Binding Pages.Gateway}" Classes="page" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Classes="group" IsEnabled="False">
+        <ui:NcwSideNavItem.Header><TextBlock Classes="group" Text="{l:NcwText SettingsProjectGroup}" /></ui:NcwSideNavItem.Header>
+        <TextBlock Classes="groupTitle" Text="{l:NcwText SettingsProjectGroup}" />
+      </ui:NcwSideNavItem>
+      <ui:NcwSideNavItem Tag="{x:Static vm:SettingsSection.Project}" arc:Tooltip.Tip="{l:NcwText SettingsProject}">
+        <ui:NcwSideNavItem.Icon><lucide:LucideIcon Kind="FolderCog" Size="15" /></ui:NcwSideNavItem.Icon>
+        <ui:NcwSideNavItem.Header><TextBlock Classes="navText" Text="{l:NcwText SettingsProject}" /></ui:NcwSideNavItem.Header>
+        <m:ProjectSettingsPage DataContext="{Binding Pages.Project}" Classes="page" />
+      </ui:NcwSideNavItem>
+    </ui:NcwSideNav>
 
-    <!-- 内容区 -->
-    <ScrollViewer Grid.Column="1" Margin="0,40,0,0">
-      <Panel x:Name="Body" MaxWidth="760" Margin="32,8,32,32" HorizontalAlignment="Stretch">
-        <desktop:AccountSettingsPage DataContext="{Binding Account}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAccountSection}" />
-        <desktop:DevicesSettingsPage DataContext="{Binding Devices}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsDevicesSection}" />
-        <desktop:AppearanceSettingsPage DataContext="{Binding Appearance}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAppearanceSection}" />
-        <desktop:AboutSettingsPage DataContext="{Binding About}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsAboutSection}" />
-        <desktop:ModelsSettingsPage DataContext="{Binding Models}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsModelsSection}" />
-        <desktop:RemoteSettingsPage DataContext="{Binding Remote}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).IsRemoteSection}" />
-        <m:GeneralSettingsPage DataContext="{Binding Pages.General}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=General}" />
-        <m:ProjectSettingsPage DataContext="{Binding Pages.Project}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Project}" />
-        <m:SkillsPage DataContext="{Binding Pages.Skills}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Skills}" />
-        <m:CommandsPage DataContext="{Binding Pages.Commands}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Commands}" />
-        <m:HooksPage DataContext="{Binding Pages.Hooks}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Hooks}" />
-        <m:McpPage DataContext="{Binding Pages.Mcp}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Mcp}" />
-        <m:PluginsPage DataContext="{Binding Pages.Plugins}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Plugins}" />
-        <m:UsagePage DataContext="{Binding Pages.Usage}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Usage}" />
-        <m:StoragePage DataContext="{Binding Pages.Storage}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Storage}" />
-        <m:GatewayPage DataContext="{Binding Pages.Gateway}" IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:NameEqualsConverter.Instance}, ConverterParameter=Gateway}" />
-      </Panel>
-    </ScrollViewer>
+    <!-- 搜索结果:盖在导航上(和导航同宽再宽一点),每条是「分区名 + 命中的那一句」 -->
+    <Border Grid.Row="1" ZIndex="20" Width="340" Margin="8,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+            IsVisible="{Binding IsSearching}" Padding="6" CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}" BorderThickness="1"
+            BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource SurfaceRaised}" BoxShadow="{arc:ArcDesignTokenResource ShadowFloating}">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="hint" Margin="8,6" IsVisible="{Binding ShowsNoSearchHits}" Text="{l:NcwText SettingsSearchNoMatch}" />
+        <ItemsControl ItemsSource="{Binding SearchHits}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SettingsHit">
+              <ui:PlainButton Padding="8,6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="OnHitClick">
+                <StackPanel Spacing="1">
+                  <TextBlock FontWeight="SemiBold" Text="{Binding Section, Converter={x:Static cv:SettingsSectionTitleConverter.Instance}}" />
+                  <TextBlock Classes="hint" Text="{Binding Snippet}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </ui:PlainButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>

@@ -15,8 +15,13 @@ public sealed record ProjectInfo(
     bool WorkingTreeClean,
     string? EnvironmentId = null);
 
-/// <summary>项目在项目栏上的外观。属于用户布局,和 <see cref="RailLayout"/> 一起同步。</summary>
-public sealed record ProjectAppearance(string? Glyph, string Color);
+/// <summary>
+/// 项目在项目栏上的外观。属于用户布局,和 <see cref="RailLayout"/> 一起同步(本地持久化见 <see cref="Services.LayoutPersistence"/>)。
+/// </summary>
+/// <param name="Glyph">自定义文字 / emoji;null = 项目名首字母。</param>
+/// <param name="Color">文字图标的底色(用户数据,不是主题色)。</param>
+/// <param name="Image">自定义图片:压缩好的 96×96 JPEG / PNG 的 base64(<see cref="Services.ProjectIconSpec"/>);有图片时压过文字。</param>
+public sealed record ProjectAppearance(string? Glyph, string Color, string? Image = null);
 
 /// <summary>控制端看到的一台设备。</summary>
 /// <param name="Data">设备数据状态(<c>data</c> 主题的镜像);没连上时为 null(未知)。</param>

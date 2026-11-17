@@ -8,9 +8,12 @@ namespace Ncw.Agent.Llm;
 /// 把事件流折成最终的助手消息(2.x <c>BlockAccumulator</c> / <c>ToolCallAccumulator</c>)。
 /// 块按下标归位(可以交错);工具调用参数按字符串累积,只在 end 时解析一次,失败变成 <see cref="ToolCallPart.InputError"/> 而不是异常;
 /// 同下标的 <see cref="BlockOpaque"/> 合进思考块;出错或取消时最终消息仍保留已收到的内容和用量。
+/// 思考块记下耗时(<see cref="ThinkingPart.DurationMs"/>):从第一段思考增量到它之后第一个别的内容事件(没有就到最后一段思考增量),界面显示「思考了 N 秒」。
 /// </summary>
-public sealed class StreamAssembler
+public sealed class StreamAssembler(TimeProvider? clock = null)
 {
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+
     private enum Kind
     {
         Text,
@@ -35,6 +38,19 @@ public sealed class StreamAssembler
         public JsonElement Input { get; set; }
 
         public string? InputError { get; set; }
+
+        /// <summary>思考块:第一段增量到达的时刻、结束的时刻(之后第一个别的内容事件;没有就是最后一段增量)。时间戳来自注入的时钟。</summary>
+        public long? ThinkingFrom { get; set; }
+
+        public long? ThinkingTo { get; set; }
+
+        public bool ThinkingClosed { get; set; }
+
+        /// <summary>耗时(毫秒);量不出来(没有思考增量、时钟没走)为 null,不写一个假的 0。</summary>
+        public int? DurationMs(TimeProvider clock) =>
+            ThinkingFrom is { } from && ThinkingTo is { } to && clock.GetElapsedTime(from, to).TotalMilliseconds is var ms and >= 1
+                ? (int)Math.Min(ms, int.MaxValue)
+                : null;
     }
 
     private readonly SortedDictionary<int, Block> _blocks = [];
@@ -76,6 +92,20 @@ public sealed class StreamAssembler
         return block;
     }
 
+    /// <summary>别的内容开始了(文字、工具调用、消息结束):还开着的思考块到此为止,记下结束时刻。</summary>
+    private void CloseThinking()
+    {
+        long? now = null;
+        foreach (var block in _blocks.Values)
+        {
+            if (block is { Kind: Kind.Thinking, ThinkingFrom: not null, ThinkingClosed: false })
+            {
+                block.ThinkingTo = now ??= _clock.GetTimestamp();
+                block.ThinkingClosed = true;
+            }
+        }
+    }
+
     public void Apply(LlmEvent ev)
     {
         switch (ev)
@@ -87,17 +117,30 @@ public sealed class StreamAssembler
                 UpstreamModel = start.UpstreamModel ?? UpstreamModel;
                 break;
             case TextDelta text:
+                CloseThinking();
                 Get(text.Index, Kind.Text).Text.Append(text.Text);
                 break;
             case ThinkingDelta thinking:
-                Get(thinking.Index, Kind.Thinking).Text.Append(thinking.Text);
+            {
+                var block = Get(thinking.Index, Kind.Thinking);
+                block.Text.Append(thinking.Text);
+                var now = _clock.GetTimestamp();
+                block.ThinkingFrom ??= now;
+                if (!block.ThinkingClosed)
+                {
+                    block.ThinkingTo = now;
+                }
+
                 break;
+            }
+
             case BlockOpaque opaque:
                 // 透传载体和同下标的思考文字合进同一个思考块;没有文字(redacted、空推理条目)时单独成块。
                 Get(opaque.Index, Kind.Thinking).Opaque = opaque.Opaque;
                 break;
             case ToolCallStart start:
             {
+                CloseThinking();
                 var block = Get(start.Index, Kind.ToolCall);
                 block.CallId = start.CallId;
                 block.Name = start.Name;
@@ -133,6 +176,7 @@ public sealed class StreamAssembler
 
                 break;
             case MessageEnd end:
+                CloseThinking();
                 Completed = true;
                 Stop = end.Stop;
                 Usage = end.Usage;
@@ -166,7 +210,7 @@ public sealed class StreamAssembler
                 case Kind.Thinking:
                     if (block.Text.Length > 0 || block.Opaque is not null)
                     {
-                        parts.Add(new ThinkingPart(block.Text.ToString(), block.Opaque));
+                        parts.Add(new ThinkingPart(block.Text.ToString(), block.Opaque, block.DurationMs(_clock)));
                     }
 
                     break;

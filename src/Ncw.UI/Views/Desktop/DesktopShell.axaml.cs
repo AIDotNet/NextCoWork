@@ -51,7 +51,7 @@ public partial class DesktopShell : UserControl
     /// </summary>
     private void WatchOverlays()
     {
-        _overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay or StartupOverlay).Append(DrawerScrim).ToList();
+        _overlays = Root.Children.OfType<Control>().Where(c => c is SettingsOverlay or DataGateOverlay or OnboardingOverlay or StartupOverlay or CommandPalette).Append(DrawerScrim).ToList();
         foreach (var overlay in _overlays)
         {
             overlay.PropertyChanged += (_, e) =>
@@ -100,12 +100,49 @@ public partial class DesktopShell : UserControl
     {
         base.OnAttachedToVisualTree(e);
         RecomputeAirspace();
+        AttachShortcuts();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ReleaseAirspace();
+        DetachShortcuts();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private NcwShortcutRouter? _shortcuts;
+
+    /// <summary>窗口上的快捷键路由(测试用)。</summary>
+    public NcwShortcutRouter? Shortcuts => _shortcuts;
+
+    /// <summary>快捷键挂在窗口上(隧道阶段,先于输入框),随外壳挂上 / 卸下;换 ViewModel 时重建。</summary>
+    private void AttachShortcuts()
+    {
+        DetachShortcuts();
+        if (_vm is not null && TopLevel.GetTopLevel(this) is { } top)
+        {
+            _shortcuts = new NcwShortcutRouter(top, _vm);
+        }
+    }
+
+    private void DetachShortcuts()
+    {
+        _shortcuts?.Dispose();
+        _shortcuts = null;
+    }
+
+    /// <summary>外壳请求把焦点放进某个输入框(⌘L)。</summary>
+    private void OnViewRequested(ShellViewRequest request)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            switch (request)
+            {
+                case ShellViewRequest.FocusComposer:
+                    this.GetVisualDescendants().OfType<Conversation.ComposerView>().FirstOrDefault(c => c.IsEffectivelyVisible)?.FocusInput();
+                    break;
+            }
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     public ShellBreakpoint Breakpoint { get; private set; } = ShellBreakpoint.Wide;
@@ -160,12 +197,17 @@ public partial class DesktopShell : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged -= OnViewModelChanged;
+            _vm.ViewRequested -= OnViewRequested;
         }
 
         _vm = DataContext as ShellViewModel;
         if (_vm is not null)
         {
             _vm.PropertyChanged += OnViewModelChanged;
+            _vm.ViewRequested += OnViewRequested;
+            _vm.Palette.CommandTitle = ShortcutText.Title;
+            _vm.Palette.SectionTitle = s => Localization.KeyText.Get("Settings", s.ToString());
+            _vm.Palette.SettingsPrefix = () => Localization.NcwTexts.Get(Localization.NcwTextKind.PaletteSettingsPrefix);
             // 弹窗盖在这个外壳所在的窗口上;Client 层的文字按当前语言提供。
             _vm.Dialogs = new NcwDialogService(this);
             _vm.Launcher = new NcwUrlLauncher(this);
@@ -174,6 +216,10 @@ public partial class DesktopShell : UserControl
         }
 
         ApplyLayout();
+        if (TopLevel.GetTopLevel(this) is not null)
+        {
+            AttachShortcuts();
+        }
     }
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)

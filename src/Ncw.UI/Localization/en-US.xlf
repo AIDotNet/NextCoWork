@@ -37,12 +37,35 @@
     <unit id="NewSession"><segment><source>New session</source><target state="final">New session</target></segment></unit>
     <unit id="TerminalsAndAgents"><segment><source>Terminals &amp; agents</source><target state="final">Terminals &amp; agents</target></segment></unit>
     <unit id="NewTerminal"><segment><source>New terminal</source><target state="final">New terminal</target></segment></unit>
-    <unit id="ProjectSection"><segment><source>Project</source><target state="final">Project</target></segment></unit>
+    <unit id="ProjectSection"><segment><source>Automation</source><target state="final">Automation</target></segment></unit>
     <unit id="GitChanges"><segment><source>Git changes</source><target state="final">Git changes</target></segment></unit>
     <unit id="ScheduledTasks"><segment><source>Scheduled tasks</source><target state="final">Scheduled tasks</target></segment></unit>
     <unit id="OpenASession"><segment><source>Open a session</source><target state="final">Open a session</target></segment></unit>
     <unit id="SessionContentPlaceholder"><segment><source>Session content appears once the device protocol is connected (M4).</source><target state="final">Session content appears once the device protocol is connected (M4).</target></segment></unit>
     <unit id="ContextUsage"><segment><source>Context usage</source><target state="final">Context usage</target></segment></unit>
+    <unit id="ContextCardRegion"><segment><source>Context window</source><target state="final">Context window</target></segment></unit>
+    <unit id="ContextCardOfTokens"><segment><source>of {0} tokens</source><target state="final">of {0} tokens</target></segment></unit>
+    <unit id="ContextCardUsed"><segment><source>used</source><target state="final">used</target></segment></unit>
+    <unit id="ContextCardFreeTokens"><segment><source>{0} free</source><target state="final">{0} free</target></segment></unit>
+    <unit id="ContextCardCellSize"><segment><source>Each cell is about {0} tokens</source><target state="final">Each cell is about {0} tokens</target></segment></unit>
+    <unit id="ContextCardCompactsAt"><segment><source>Compacts at {0}%</source><target state="final">Compacts at {0}%</target></segment></unit>
+    <unit id="ContextCardSystem"><segment><source>System prompt</source><target state="final">System prompt</target></segment></unit>
+    <unit id="ContextCardTools"><segment><source>Tool definitions</source><target state="final">Tool definitions</target></segment></unit>
+    <unit id="ContextCardInstructions"><segment><source>Instructions and reminders</source><target state="final">Instructions and reminders</target></segment></unit>
+    <unit id="ContextCardSummary"><segment><source>Summary</source><target state="final">Summary</target></segment></unit>
+    <unit id="ContextCardMessages"><segment><source>Conversation</source><target state="final">Conversation</target></segment></unit>
+    <unit id="ContextCardFree"><segment><source>Free</source><target state="final">Free</target></segment></unit>
+    <unit id="ContextCardReserve"><segment><source>Reserved for the reply</source><target state="final">Reserved for the reply</target></segment></unit>
+    <unit id="ContextCardNoSummary"><segment><source>None yet</source><target state="final">None yet</target></segment></unit>
+    <unit id="ContextCardLegend"><segment><source>Breakdown</source><target state="final">Breakdown</target></segment></unit>
+    <unit id="ContextCardLegendRow"><segment><source>{0}: {1} tokens {2}</source><target state="final">{0}: {1} tokens {2}</target></segment></unit>
+    <unit id="ContextCardModelPill"><segment><source>{0}, {1} context</source><target state="final">{0}, {1} context</target></segment></unit>
+    <unit id="ContextCardModelMenu"><segment><source>Model</source><target state="final">Model</target></segment></unit>
+    <unit id="ContextCardGridPart"><segment><source>{0} {1}</source><target state="final">{0} {1}</target></segment></unit>
+    <unit id="ContextCardGridDescription"><segment><source>{0}: {1} of {2} tokens used ({3}). Compacts at {4}%.</source><target state="final">{0}: {1} of {2} tokens used ({3}). Compacts at {4}%.</target></segment></unit>
+    <unit id="ContextCardIdle"><segment><source>The agent compacts the conversation on its own at {0}%.</source><target state="final">The agent compacts the conversation on its own at {0}%.</target></segment></unit>
+    <unit id="ContextCardCompact"><segment><source>Compact now</source><target state="final">Compact now</target></segment></unit>
+    <unit id="ContextCardNothingToFold"><segment><source>Only the newest messages are left; there is nothing to compact.</source><target state="final">Only the newest messages are left; there is nothing to compact.</target></segment></unit>
     <unit id="SplitRight"><segment><source>Split right</source><target state="final">Split right</target></segment></unit>
     <unit id="NewTab"><segment><source>New tab</source><target state="final">New tab</target></segment></unit>
     <unit id="CloseTab"><segment><source>Close tab</source><target state="final">Close tab</target></segment></unit>
@@ -111,6 +134,8 @@
     <unit id="MsgImageOpen"><segment><source>View image</source><target state="final">View image</target></segment></unit>
     <unit id="MsgImageClose"><segment><source>Close image</source><target state="final">Close image</target></segment></unit>
     <unit id="MsgRegenerate"><segment><source>Regenerate</source><target state="final">Regenerate</target></segment></unit>
+    <unit id="MsgDeleteReply"><segment><source>Delete this reply</source><target state="final">Delete this reply</target></segment></unit>
+    <unit id="MsgDeleteReplyConfirm"><segment><source>Delete the AI reply to this question? Your question stays.</source><target state="final">Delete the AI reply to this question? Your question stays.</target></segment></unit>
     <unit id="DataDoneTitle"><segment><source>Welcome to NextCoWork 3.0</source><target state="final">Welcome to NextCoWork 3.0</target></segment></unit>
     <unit id="DataDoneDetail"><segment><source>Moved {0} projects and {1} sessions from NextCoWork 2.x.</source><target state="final">Moved {0} projects and {1} sessions from NextCoWork 2.x.</target></segment></unit>
     <unit id="Continue"><segment><source>Continue</source><target state="final">Continue</target></segment></unit>
@@ -218,8 +243,10 @@
     <unit id="DeleteSessionMessage"><segment><source>Delete “{0}”? All its messages and sub-agent records will be removed. This cannot be undone.</source><target state="final">Delete “{0}”? All its messages and sub-agent records will be removed. This cannot be undone.</target></segment></unit>
     <unit id="DeleteSessionTitle"><segment><source>Delete session</source><target state="final">Delete session</target></segment></unit>
     <unit id="Dismiss"><segment><source>Dismiss</source><target state="final">Dismiss</target></segment></unit>
-    <unit id="EmptySessionHint"><segment><source>Type a message below. Use @ to reference files and / for commands.</source><target state="final">Type a message below. Use @ to reference files and / for commands.</target></segment></unit>
+    <unit id="EmptySessionHint"><segment><source>Use @ to reference files and / for commands.</source><target state="final">Use @ to reference files and / for commands.</target></segment></unit>
     <unit id="EmptySessionTitle"><segment><source>What should we work on?</source><target state="final">What should we work on?</target></segment></unit>
+    <unit id="EmptySessionTitleIn"><segment><source>What should we work on in {0}?</source><target state="final">What should we work on in {0}?</target></segment></unit>
+    <unit id="EmptySessionChanges"><segment><source>{0} uncommitted changes</source><target state="final">{0} uncommitted changes</target></segment></unit>
     <unit id="ErrorContextOverflow"><segment><source>The conversation no longer fits the model’s context window.</source><target state="final">The conversation no longer fits the model’s context window.</target></segment></unit>
     <unit id="ErrorGeneric"><segment><source>Something went wrong.</source><target state="final">Something went wrong.</target></segment></unit>
     <unit id="ErrorRateLimited"><segment><source>The provider is rate limiting requests. Try again shortly.</source><target state="final">The provider is rate limiting requests. Try again shortly.</target></segment></unit>
@@ -362,6 +389,9 @@
     <unit id="ThinkingAuto"><segment><source>Thinking: auto</source><target state="final">Thinking: auto</target></segment></unit>
     <unit id="ThinkingHigh"><segment><source>Thinking: high</source><target state="final">Thinking: high</target></segment></unit>
     <unit id="ThinkingLabel"><segment><source>Thinking</source><target state="final">Thinking</target></segment></unit>
+    <unit id="WorkGroupTitle"><segment><source>Work</source><target state="final">Work</target></segment></unit>
+    <unit id="WorkGroupActions"><segment><source>{0} actions</source><target state="final">{0} actions</target></segment></unit>
+    <unit id="WorkGroupFailed"><segment><source>{0} failed</source><target state="final">{0} failed</target></segment></unit>
     <unit id="ThinkingLow"><segment><source>Thinking: low</source><target state="final">Thinking: low</target></segment></unit>
     <unit id="ThinkingMax"><segment><source>Thinking: max</source><target state="final">Thinking: max</target></segment></unit>
     <unit id="ThinkingMedium"><segment><source>Thinking: medium</source><target state="final">Thinking: medium</target></segment></unit>
@@ -369,6 +399,14 @@
     <unit id="ThinkingOff"><segment><source>Thinking: off</source><target state="final">Thinking: off</target></segment></unit>
     <unit id="ThinkingPickerLabel"><segment><source>Thinking level</source><target state="final">Thinking level</target></segment></unit>
     <unit id="ThinkingXHigh"><segment><source>Thinking: extra high</source><target state="final">Thinking: extra high</target></segment></unit>
+    <unit id="ThinkingShortAuto"><segment><source>Auto</source><target state="final">Auto</target></segment></unit>
+    <unit id="ThinkingShortOff"><segment><source>Off</source><target state="final">Off</target></segment></unit>
+    <unit id="ThinkingShortMinimal"><segment><source>Minimal</source><target state="final">Minimal</target></segment></unit>
+    <unit id="ThinkingShortLow"><segment><source>Low</source><target state="final">Low</target></segment></unit>
+    <unit id="ThinkingShortMedium"><segment><source>Medium</source><target state="final">Medium</target></segment></unit>
+    <unit id="ThinkingShortHigh"><segment><source>High</source><target state="final">High</target></segment></unit>
+    <unit id="ThinkingShortXHigh"><segment><source>Extra high</source><target state="final">Extra high</target></segment></unit>
+    <unit id="ThinkingShortMax"><segment><source>Max</source><target state="final">Max</target></segment></unit>
     <unit id="ThoughtForSeconds"><segment><source>Thought for {0} s</source><target state="final">Thought for {0} s</target></segment></unit>
     <unit id="ToolInterrupted"><segment><source>Interrupted</source><target state="final">Interrupted</target></segment></unit>
     <unit id="ToolMoreLines"><segment><source>{0} more line(s)</source><target state="final">{0} more line(s)</target></segment></unit>
@@ -391,6 +429,7 @@
     <unit id="FilesNewFolder"><segment><source>New folder</source><target state="final">New folder</target></segment></unit>
     <unit id="FilesMoveToTrash"><segment><source>Move to trash</source><target state="final">Move to trash</target></segment></unit>
     <unit id="FilesCopyPath"><segment><source>Copy path</source><target state="final">Copy path</target></segment></unit>
+    <unit id="FilesCopyContent"><segment><source>Copy content</source><target state="final">Copy content</target></segment></unit>
     <unit id="FilesCopyRelativePath"><segment><source>Copy relative path</source><target state="final">Copy relative path</target></segment></unit>
     <unit id="FilesReveal"><segment><source>Show in file manager</source><target state="final">Show in file manager</target></segment></unit>
     <unit id="FilesOpenWith"><segment><source>Open with default app</source><target state="final">Open with default app</target></segment></unit>
@@ -409,6 +448,10 @@
     <unit id="FileChunked"><segment><source>Large file — read-only, loaded in parts.</source><target state="final">Large file — read-only, loaded in parts.</target></segment></unit>
     <unit id="FileReadOnly"><segment><source>Read-only</source><target state="final">Read-only</target></segment></unit>
     <unit id="FileLine"><segment><source>Line {0}</source><target state="final">Line {0}</target></segment></unit>
+    <unit id="FileViewRendered"><segment><source>Preview</source><target state="final">Preview</target></segment></unit>
+    <unit id="FileViewSource"><segment><source>Source</source><target state="final">Source</target></segment></unit>
+    <unit id="FileLineCount"><segment><source>{0} lines</source><target state="final">{0} lines</target></segment></unit>
+    <unit id="FileUnsaved"><segment><source>Unsaved changes</source><target state="final">Unsaved changes</target></segment></unit>
     <unit id="FileDiscardChanges"><segment><source>Discard changes</source><target state="final">Discard changes</target></segment></unit>
     <unit id="DialogNewFile"><segment><source>New file</source><target state="final">New file</target></segment></unit>
     <unit id="DialogNewFolder"><segment><source>New folder</source><target state="final">New folder</target></segment></unit>
@@ -1532,6 +1575,38 @@
     <unit id="MotionOff"><segment><source>Off</source><target state="final">Off</target></segment></unit>
     <unit id="AppearanceMotionEffective"><segment><source>In effect now: {0}</source><target state="final">In effect now: {0}</target></segment></unit>
     <unit id="AppearanceMotionSystemUnknown"><segment><source>This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</source><target state="final">This platform does not report the system “reduce motion” setting, so Full is used. Pick Reduced or Off to turn motion down.</target></segment></unit>
+    <unit id="NewProjectTitle"><segment><source>New project</source><target state="final">New project</target></segment></unit>
+    <unit id="NewProjectDescription"><segment><source>Register a folder on a connected device as a project.</source><target state="final">Register a folder on a connected device as a project.</target></segment></unit>
+    <unit id="NewProjectDevice"><segment><source>Device</source><target state="final">Device</target></segment></unit>
+    <unit id="NewProjectPath"><segment><source>Folder path</source><target state="final">Folder path</target></segment></unit>
+    <unit id="NewProjectPathPlaceholder"><segment><source>/path/to/project</source><target state="final">/path/to/project</target></segment></unit>
+    <unit id="NewProjectBrowse"><segment><source>Browse…</source><target state="final">Browse…</target></segment></unit>
+    <unit id="NewProjectRemotePathHint"><segment><source>Enter the absolute path of the folder on that device. The folder must already exist there.</source><target state="final">Enter the absolute path of the folder on that device. The folder must already exist there.</target></segment></unit>
+    <unit id="NewProjectName"><segment><source>Name (optional)</source><target state="final">Name (optional)</target></segment></unit>
+    <unit id="NewProjectNamePlaceholder"><segment><source>Defaults to the folder name</source><target state="final">Defaults to the folder name</target></segment></unit>
+    <unit id="NewProjectCreate"><segment><source>Add project</source><target state="final">Add project</target></segment></unit>
+    <unit id="NewProjectNoDevice"><segment><source>No connected device can add projects right now. Connect or pair a device first.</source><target state="final">No connected device can add projects right now. Connect or pair a device first.</target></segment></unit>
+    <unit id="NewProjectErrorPathRequired"><segment><source>Enter a folder path.</source><target state="final">Enter a folder path.</target></segment></unit>
+    <unit id="NewProjectErrorNotConnected"><segment><source>That device isn&#x27;t connected. Try again once it&#x27;s back.</source><target state="final">That device isn&#x27;t connected. Try again once it&#x27;s back.</target></segment></unit>
+    <unit id="NewProjectErrorNotFound"><segment><source>That folder doesn&#x27;t exist on the device.</source><target state="final">That folder doesn&#x27;t exist on the device.</target></segment></unit>
+    <unit id="NewProjectErrorForbidden"><segment><source>You don&#x27;t have permission to add projects on this device.</source><target state="final">You don&#x27;t have permission to add projects on this device.</target></segment></unit>
+    <unit id="NewProjectErrorFailed"><segment><source>Couldn&#x27;t add the project. Check the path and try again.</source><target state="final">Couldn&#x27;t add the project. Check the path and try again.</target></segment></unit>
+    <unit id="ChangeProjectIcon"><segment><source>Change icon…</source><target state="final">Change icon…</target></segment></unit>
+    <unit id="ProjectIconTitle"><segment><source>Project icon</source><target state="final">Project icon</target></segment></unit>
+    <unit id="ProjectIconDescription"><segment><source>How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</source><target state="final">How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</target></segment></unit>
+    <unit id="ProjectIconInitials"><segment><source>Initials</source><target state="final">Initials</target></segment></unit>
+    <unit id="ProjectIconText"><segment><source>Text</source><target state="final">Text</target></segment></unit>
+    <unit id="ProjectIconImage"><segment><source>Image</source><target state="final">Image</target></segment></unit>
+    <unit id="ProjectIconTextLabel"><segment><source>Text or emoji</source><target state="final">Text or emoji</target></segment></unit>
+    <unit id="ProjectIconTextPlaceholder"><segment><source>Up to 2 characters</source><target state="final">Up to 2 characters</target></segment></unit>
+    <unit id="ProjectIconColor"><segment><source>Background color</source><target state="final">Background color</target></segment></unit>
+    <unit id="ProjectIconPickImage"><segment><source>Choose image…</source><target state="final">Choose image…</target></segment></unit>
+    <unit id="ProjectIconImageHint"><segment><source>The image is center-cropped to a square and shrunk to 96 × 96, so it stays small.</source><target state="final">The image is center-cropped to a square and shrunk to 96 × 96, so it stays small.</target></segment></unit>
+    <unit id="ProjectIconErrorTooLarge"><segment><source>That image is too large (up to 20 MB; PNG, GIF and BMP up to 25 megapixels).</source><target state="final">That image is too large (up to 20 MB; PNG, GIF and BMP up to 25 megapixels).</target></segment></unit>
+    <unit id="ProjectIconErrorUnsupported"><segment><source>Couldn&#x27;t read that image. PNG, JPEG, WebP, GIF and BMP are supported.</source><target state="final">Couldn&#x27;t read that image. PNG, JPEG, WebP, GIF and BMP are supported.</target></segment></unit>
+    <unit id="ProjectIconReset"><segment><source>Reset to default</source><target state="final">Reset to default</target></segment></unit>
+    <unit id="FilePickIconImage"><segment><source>Choose an icon image</source><target state="final">Choose an icon image</target></segment></unit>
+    <unit id="FilePickIconImageType"><segment><source>Images</source><target state="final">Images</target></segment></unit>
     <unit id="StartupA11yName"><segment><source>Starting NextCoWork</source><target state="final">Starting NextCoWork</target></segment></unit>
     <unit id="StartupProgressLabel"><segment><source>Startup progress</source><target state="final">Startup progress</target></segment></unit>
     <unit id="StartupStageApp"><segment><source>Preparing the app</source><target state="final">Preparing the app</target></segment></unit>
@@ -1579,5 +1654,119 @@
     <unit id="StartupHideDiagnostics"><segment><source>Hide diagnostics</source><target state="final">Hide diagnostics</target></segment></unit>
     <unit id="StartupCopyDiagnostics"><segment><source>Copy diagnostics</source><target state="final">Copy diagnostics</target></segment></unit>
     <unit id="StartupQuit"><segment><source>Quit</source><target state="final">Quit</target></segment></unit>
+    <unit id="CmdCommandPalette"><segment><source>Command palette</source><target state="final">Command palette</target></segment></unit>
+    <unit id="CmdNewSession"><segment><source>New session</source><target state="final">New session</target></segment></unit>
+    <unit id="CmdSearchProject"><segment><source>Search sessions, files and commands</source><target state="final">Search sessions, files and commands</target></segment></unit>
+    <unit id="CmdCloseTab"><segment><source>Close tab</source><target state="final">Close tab</target></segment></unit>
+    <unit id="CmdStopRun"><segment><source>Stop the running task</source><target state="final">Stop the running task</target></segment></unit>
+    <unit id="CmdApproveFirst"><segment><source>Allow the first pending approval once</source><target state="final">Allow the first pending approval once</target></segment></unit>
+    <unit id="CmdNextAttention"><segment><source>Go to the next item waiting for you</source><target state="final">Go to the next item waiting for you</target></segment></unit>
+    <unit id="CmdFocusComposer"><segment><source>Focus the message box</source><target state="final">Focus the message box</target></segment></unit>
+    <unit id="CmdToggleSidebar"><segment><source>Show or hide the sidebar</source><target state="final">Show or hide the sidebar</target></segment></unit>
+    <unit id="CmdToggleInspector"><segment><source>Show or hide the right panel</source><target state="final">Show or hide the right panel</target></segment></unit>
+    <unit id="CmdOpenSettings"><segment><source>Open settings</source><target state="final">Open settings</target></segment></unit>
+    <unit id="CmdAddProject"><segment><source>Add project</source><target state="final">Add project</target></segment></unit>
+    <unit id="CmdRecentProject"><segment><source>Switch to the previous project</source><target state="final">Switch to the previous project</target></segment></unit>
+    <unit id="CmdOpenReview"><segment><source>Review changes</source><target state="final">Review changes</target></segment></unit>
+    <unit id="CmdOpenGit"><segment><source>Open Git</source><target state="final">Open Git</target></segment></unit>
+    <unit id="CmdOpenTerminal"><segment><source>Open terminal</source><target state="final">Open terminal</target></segment></unit>
+    <unit id="CmdSelectProject"><segment><source>Switch to project {0}</source><target state="final">Switch to project {0}</target></segment></unit>
+    <unit id="PalettePlaceholder"><segment><source>Type a command, session, project, file or setting…</source><target state="final">Type a command, session, project, file or setting…</target></segment></unit>
+    <unit id="PaletteNoMatch"><segment><source>Nothing matches</source><target state="final">Nothing matches</target></segment></unit>
+    <unit id="PaletteSearchingFiles"><segment><source>Searching files…</source><target state="final">Searching files…</target></segment></unit>
+    <unit id="PaletteSettingsPrefix"><segment><source>Settings:</source><target state="final">Settings:</target></segment></unit>
+    <unit id="PaletteKindCommand"><segment><source>Command</source><target state="final">Command</target></segment></unit>
+    <unit id="PaletteKindSession"><segment><source>Session</source><target state="final">Session</target></segment></unit>
+    <unit id="PaletteKindProject"><segment><source>Project</source><target state="final">Project</target></segment></unit>
+    <unit id="PaletteKindFile"><segment><source>File</source><target state="final">File</target></segment></unit>
+    <unit id="PaletteKindSettings"><segment><source>Settings</source><target state="final">Settings</target></segment></unit>
+    <unit id="PaletteHint"><segment><source>↑↓ to move · Enter to open · Esc to close</source><target state="final">↑↓ to move · Enter to open · Esc to close</target></segment></unit>
+    <unit id="SettingsShortcuts"><segment><source>Shortcuts</source><target state="final">Shortcuts</target></segment></unit>
+    <unit id="SettingsShortcutsHint"><segment><source>Keyboard shortcuts for this app. Click a shortcut to record a new one; press Esc to cancel.</source><target state="final">Keyboard shortcuts for this app. Click a shortcut to record a new one; press Esc to cancel.</target></segment></unit>
+    <unit id="ShortcutRecording"><segment><source>Press keys…</source><target state="final">Press keys…</target></segment></unit>
+    <unit id="ShortcutNone"><segment><source>None</source><target state="final">None</target></segment></unit>
+    <unit id="ShortcutReset"><segment><source>Reset</source><target state="final">Reset</target></segment></unit>
+    <unit id="ShortcutResetAll"><segment><source>Reset all</source><target state="final">Reset all</target></segment></unit>
+    <unit id="ShortcutClear"><segment><source>Remove</source><target state="final">Remove</target></segment></unit>
+    <unit id="ShortcutConflict"><segment><source>“{0}” used the same keys, so its shortcut was removed.</source><target state="final">“{0}” used the same keys, so its shortcut was removed.</target></segment></unit>
+    <unit id="ShortcutUnusable"><segment><source>Use a combination with ⌘, Ctrl or Alt, or a function key.</source><target state="final">Use a combination with ⌘, Ctrl or Alt, or a function key.</target></segment></unit>
+    <unit id="ShortcutCustom"><segment><source>Changed</source><target state="final">Changed</target></segment></unit>
+    <unit id="AttnToolApproval"><segment><source>Approval needed</source><target state="final">Approval needed</target></segment></unit>
+    <unit id="AttnToolApprovalDangerous"><segment><source>A risky action needs your approval</source><target state="final">A risky action needs your approval</target></segment></unit>
+    <unit id="AttnQuestion"><segment><source>The assistant has a question</source><target state="final">The assistant has a question</target></segment></unit>
+    <unit id="AttnPlan"><segment><source>A plan is waiting for your approval</source><target state="final">A plan is waiting for your approval</target></segment></unit>
+    <unit id="AttnGoal"><segment><source>The assistant suggests a goal</source><target state="final">The assistant suggests a goal</target></segment></unit>
+    <unit id="AttnWorkflow"><segment><source>A workflow is waiting for your approval</source><target state="final">A workflow is waiting for your approval</target></segment></unit>
+    <unit id="AttnDevice"><segment><source>A device needs your confirmation</source><target state="final">A device needs your confirmation</target></segment></unit>
+    <unit id="AttnCompleted"><segment><source>Task finished</source><target state="final">Task finished</target></segment></unit>
+    <unit id="AttnFailed"><segment><source>Task failed</source><target state="final">Task failed</target></segment></unit>
+    <unit id="TrayOpen"><segment><source>Open NextCoWork</source><target state="final">Open NextCoWork</target></segment></unit>
+    <unit id="TrayPending"><segment><source>{0} waiting for you</source><target state="final">{0} waiting for you</target></segment></unit>
+    <unit id="TrayNothingPending"><segment><source>Nothing is waiting for you</source><target state="final">Nothing is waiting for you</target></segment></unit>
+    <unit id="TrayRunning"><segment><source>{0} running</source><target state="final">{0} running</target></segment></unit>
+    <unit id="TrayUnknown"><segment><source>Some devices are offline</source><target state="final">Some devices are offline</target></segment></unit>
+    <unit id="TrayNewSession"><segment><source>New session</source><target state="final">New session</target></segment></unit>
+    <unit id="TraySettings"><segment><source>Notification settings…</source><target state="final">Notification settings…</target></segment></unit>
+    <unit id="TrayQuit"><segment><source>Quit NextCoWork</source><target state="final">Quit NextCoWork</target></segment></unit>
+    <unit id="TrayTooltip"><segment><source>NextCoWork: {0} waiting, {1} running</source><target state="final">NextCoWork: {0} waiting, {1} running</target></segment></unit>
+    <unit id="SettingsNotificationsHint"><segment><source>System notifications, the badge on the app icon, and the menu bar icon.</source><target state="final">System notifications, the badge on the app icon, and the menu bar icon.</target></segment></unit>
+    <unit id="NotifySystemTitle"><segment><source>System notifications</source><target state="final">System notifications</target></segment></unit>
+    <unit id="NotifySystemHint"><segment><source>No notification is shown while you are looking at that conversation.</source><target state="final">No notification is shown while you are looking at that conversation.</target></segment></unit>
+    <unit id="NotifyPendingLabel"><segment><source>Something needs you (approval, question, plan)</source><target state="final">Something needs you (approval, question, plan)</target></segment></unit>
+    <unit id="NotifyCompletedLabel"><segment><source>A task finished</source><target state="final">A task finished</target></segment></unit>
+    <unit id="NotifyFailedLabel"><segment><source>A task failed</source><target state="final">A task failed</target></segment></unit>
+    <unit id="NotifyUnsupported"><segment><source>This platform cannot show system notifications yet. The badge and the menu bar icon still work.</source><target state="final">This platform cannot show system notifications yet. The badge and the menu bar icon still work.</target></segment></unit>
+    <unit id="NotifyBadgeTitle"><segment><source>App icon badge</source><target state="final">App icon badge</target></segment></unit>
+    <unit id="NotifyBadgeLabel"><segment><source>Show how many items are waiting for you on the app icon</source><target state="final">Show how many items are waiting for you on the app icon</target></segment></unit>
+    <unit id="NotifyBadgeUnsupported"><segment><source>This platform has no app icon badge.</source><target state="final">This platform has no app icon badge.</target></segment></unit>
+    <unit id="NotifyTrayTitle"><segment><source>Menu bar / tray icon</source><target state="final">Menu bar / tray icon</target></segment></unit>
+    <unit id="NotifyTrayLabel"><segment><source>Keep running in the menu bar (system tray) when the window is closed</source><target state="final">Keep running in the menu bar (system tray) when the window is closed</target></segment></unit>
+    <unit id="NotifyTrayHint"><segment><source>The local Agent keeps working on running tasks. To quit completely, choose Quit from the icon’s menu.</source><target state="final">The local Agent keeps working on running tasks. To quit completely, choose Quit from the icon’s menu.</target></segment></unit>
+    <unit id="ApprovalAlwaysAllowIn"><segment><source>Always allow in {0}</source><target state="final">Always allow in {0}</target></segment></unit>
+    <unit id="ApprovalRuleHint"><segment><source>“Always allow” remembers this rule: {0}</source><target state="final">“Always allow” remembers this rule: {0}</target></segment></unit>
+    <unit id="PendingBarHere"><segment><source>{0} waiting for you in this session</source><target state="final">{0} waiting for you in this session</target></segment></unit>
+    <unit id="PendingBarBoth"><segment><source>{0} waiting here, {1} in other sessions</source><target state="final">{0} waiting here, {1} in other sessions</target></segment></unit>
+    <unit id="PendingBarElsewhereOnly"><segment><source>{0} waiting for you in other sessions</source><target state="final">{0} waiting for you in other sessions</target></segment></unit>
+    <unit id="PendingBarNext"><segment><source>Next</source><target state="final">Next</target></segment></unit>
+    <unit id="PendingBarElsewhere"><segment><source>Go there</source><target state="final">Go there</target></segment></unit>
+    <unit id="ErrorRunAbandoned"><segment><source>The task did not stop in time and was ended.</source><target state="final">The task did not stop in time and was ended.</target></segment></unit>
+    <unit id="ErrorRunInternal"><segment><source>The task stopped because of an internal error.</source><target state="final">The task stopped because of an internal error.</target></segment></unit>
+    <unit id="ErrorRunNotStarted"><segment><source>The task could not start.</source><target state="final">The task could not start.</target></segment></unit>
+    <unit id="ErrorAuth"><segment><source>The provider rejected the credentials. Check the key or sign in again.</source><target state="final">The provider rejected the credentials. Check the key or sign in again.</target></segment></unit>
+    <unit id="ErrorNetwork"><segment><source>Could not reach the provider. Check the network and try again.</source><target state="final">Could not reach the provider. Check the network and try again.</target></segment></unit>
+    <unit id="ErrorProvider"><segment><source>The provider is unavailable or sent a response that could not be used. Try again shortly.</source><target state="final">The provider is unavailable or sent a response that could not be used. Try again shortly.</target></segment></unit>
+    <unit id="ErrorCacheUnsupported"><segment><source>This provider does not support prompt caching. Turn it off in the provider settings.</source><target state="final">This provider does not support prompt caching. Turn it off in the provider settings.</target></segment></unit>
+    <unit id="ErrorNoHealthyProvider"><segment><source>No provider is available for this model right now.</source><target state="final">No provider is available for this model right now.</target></segment></unit>
+    <unit id="ErrorConflict"><segment><source>Another operation is using this conversation. Try again in a moment.</source><target state="final">Another operation is using this conversation. Try again in a moment.</target></segment></unit>
+    <unit id="ErrorToolFailed"><segment><source>A tool failed to run.</source><target state="final">A tool failed to run.</target></segment></unit>
+    <unit id="ErrorAborted"><segment><source>Stopped.</source><target state="final">Stopped.</target></segment></unit>
+    <unit id="ErrorDetails"><segment><source>Details</source><target state="final">Details</target></segment></unit>
+    <unit id="ErrorOpenProviders"><segment><source>Provider settings</source><target state="final">Provider settings</target></segment></unit>
+    <unit id="ComposerAddProvider"><segment><source>Add a provider</source><target state="final">Add a provider</target></segment></unit>
+    <unit id="StarterExplain"><segment><source>Explain how this project is structured</source><target state="final">Explain how this project is structured</target></segment></unit>
+    <unit id="StarterTests"><segment><source>Run the tests and fix whatever fails</source><target state="final">Run the tests and fix whatever fails</target></segment></unit>
+    <unit id="StarterReview"><segment><source>Review my uncommitted changes for problems</source><target state="final">Review my uncommitted changes for problems</target></segment></unit>
+    <unit id="StarterPlan"><segment><source>Make a plan first and wait for my go-ahead: </source><target state="final">Make a plan first and wait for my go-ahead: </target></segment></unit>
+    <unit id="StarterBug"><segment><source>Help me track down a problem: </source><target state="final">Help me track down a problem: </target></segment></unit>
+    <unit id="StarterExplainShort"><segment><source>Explain the structure</source><target state="final">Explain the structure</target></segment></unit>
+    <unit id="StarterTestsShort"><segment><source>Run and fix tests</source><target state="final">Run and fix tests</target></segment></unit>
+    <unit id="StarterReviewShort"><segment><source>Review uncommitted changes</source><target state="final">Review uncommitted changes</target></segment></unit>
+    <unit id="StarterPlanShort"><segment><source>Plan first</source><target state="final">Plan first</target></segment></unit>
+    <unit id="StarterBugShort"><segment><source>Track down a bug</source><target state="final">Track down a bug</target></segment></unit>
+    <unit id="ComposerThinkingLabel"><segment><source>Thinking: {0}</source><target state="final">Thinking: {0}</target></segment></unit>
+    <unit id="ComposerPermissionLabel"><segment><source>Permission: {0}</source><target state="final">Permission: {0}</target></segment></unit>
+    <unit id="GeneralCommonTitle"><segment><source>Common</source><target state="final">Common</target></segment></unit>
+    <unit id="GeneralAdvancedTitle"><segment><source>Advanced</source><target state="final">Advanced</target></segment></unit>
+    <unit id="GeneralAdvancedHint"><segment><source>Helper models, routing, compaction, limits, proxy</source><target state="final">Helper models, routing, compaction, limits, proxy</target></segment></unit>
+    <unit id="SettingsSearch"><segment><source>Search settings</source><target state="final">Search settings</target></segment></unit>
+    <unit id="SettingsSearchNoMatch"><segment><source>No setting matches</source><target state="final">No setting matches</target></segment></unit>
+    <unit id="SidebarProjects"><segment><source>Projects</source><target state="final">Projects</target></segment></unit>
+    <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="final">Show {0} more</target></segment></unit>
+    <unit id="SidebarShowLess"><segment><source>Show less</source><target state="final">Show less</target></segment></unit>
+    <unit id="SidebarNoSessions"><segment><source>No sessions yet</source><target state="final">No sessions yet</target></segment></unit>
+    <unit id="SidebarPending"><segment><source>{0} pending</source><target state="final">{0} pending</target></segment></unit>
+    <unit id="SidebarHideArchived"><segment><source>Hide archived</source><target state="final">Hide archived</target></segment></unit>
+    <unit id="SidebarSignedIn"><segment><source>Signed in</source><target state="final">Signed in</target></segment></unit>
+    <unit id="SidebarProjectMenu"><segment><source>Project actions</source><target state="final">Project actions</target></segment></unit>
   </file>
 </xliff>

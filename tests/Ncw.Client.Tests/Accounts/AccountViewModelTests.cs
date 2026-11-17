@@ -260,6 +260,30 @@ public class AccountViewModelTests
     }
 
     [Fact]
+    public async Task The_avatar_comes_from_the_account_and_only_web_addresses_count_as_a_photo()
+    {
+        var (rig, shell) = Make();
+        var account = shell.Account;
+        Assert.Equal(AccountPresence.None, account.Presence);
+        Assert.Null(account.AvatarUrl);
+
+        await rig.SignInAsync();
+        Assert.Equal(("Alice", AccountPresence.Active), (account.UserLabel, account.Presence));
+        Assert.Null(account.AvatarUrl); // 账户没给头像:界面显示首字母
+
+        void Avatar(string? url) => rig.Stores.Account.Update(s => s with { Session = s.Session! with { User = s.Session.User! with { AvatarUrl = url } } });
+        Avatar("https://cdn.example.com/a.png");
+        Assert.Equal("https://cdn.example.com/a.png", account.AvatarUrl);
+        Avatar("file:///etc/passwd");
+        Assert.Null(account.AvatarUrl);
+        Avatar("not a url");
+        Assert.Null(account.AvatarUrl);
+
+        rig.Stores.Account.Update(s => s with { Health = SessionHealth.Expired });
+        Assert.Equal(AccountPresence.NeedsAttention, account.Presence);
+    }
+
+    [Fact]
     public async Task Signing_out_needs_a_confirmation_and_then_returns_to_the_signed_out_page()
     {
         var (rig, shell) = Make();

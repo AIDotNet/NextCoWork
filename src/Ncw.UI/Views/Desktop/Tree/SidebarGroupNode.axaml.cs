@@ -5,17 +5,20 @@ using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using TKCode.Arc;
 
-namespace Ncw.UI.Views.Desktop.Rail;
+namespace Ncw.UI.Views.Desktop.Tree;
 
-/// <summary>项目组。右键菜单:展开 / 收起、更改颜色、解散项目组。</summary>
-public partial class RailGroupView : UserControl
+/// <summary>侧边栏里的一个项目组。右键菜单:重命名、展开 / 收起、更改颜色、解散项目组(都落在 <see cref="Ncw.Client.Actions.LayoutActions"/>)。</summary>
+public partial class SidebarGroupNode : UserControl
 {
-    public RailGroupView() => InitializeComponent();
+    public SidebarGroupNode() => InitializeComponent();
+
+    /// <summary>拖放命中用:组的标题行。</summary>
+    public Control HeaderRow => Header;
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (DataContext is not RailGroupViewModel vm)
+        if (DataContext is not SidebarGroupViewModel { Group: var vm })
         {
             return;
         }
@@ -23,7 +26,7 @@ public partial class RailGroupView : UserControl
         var colors = vm.Palette
             .Select(color => new NcwMenus.Item(color, vm.RecolorCommand, color)
             {
-                Icon = new Avalonia.Controls.Border
+                Icon = new Border
                 {
                     Width = 12,
                     Height = 12,
@@ -33,7 +36,7 @@ public partial class RailGroupView : UserControl
             })
             .ToList();
 
-        NcwMenus.Attach(this,
+        NcwMenus.Attach(Header,
         [
             new NcwMenus.Item(NcwTexts.Get(NcwTextKind.Rename), vm.RenameCommand) { Glyph = ArcIcons.Pencil },
             new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ToggleGroup), vm.ToggleCommand) { Glyph = ArcIcons.FolderOpen },

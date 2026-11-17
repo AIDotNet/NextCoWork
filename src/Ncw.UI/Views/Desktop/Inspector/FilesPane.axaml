@@ -10,12 +10,12 @@
              x:Class="Ncw.UI.Views.Desktop.Inspector.FilesPane"
              x:DataType="vm:FilesPanelViewModel">
   <!--
-    文件页签(默认):项目名 + 全部折叠 / 刷新 / 更多;搜索框(文件名 / 内容);惰性文件树;点开文件进入预览 / 简易编辑(替换整个面板,左上角返回)。
-    树、搜索结果、预览都是纯 UI 状态(文件在设备上,不进 Store);右键菜单、展开状态的恢复在 code-behind(只管树控件自己的展示)。
+    文件页签(默认):项目名 + 全部折叠 / 刷新 / 更多;搜索框(文件名 / 内容);惰性文件树;点开文件在主工作区打开它的标签页(预览 / 简易编辑在那里)。
+    树、搜索结果都是纯 UI 状态(文件在设备上,不进 Store);右键菜单、展开状态的恢复在 code-behind(只管树控件自己的展示)。
   -->
   <Grid RowDefinitions="Auto,Auto,Auto,*">
     <!-- 树的头:项目名 + 工具 -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,0,8,2" Height="32" IsVisible="{Binding !HasPreview}">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,0,8,2" Height="32">
       <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                  Text="{Binding ProjectName}" arc:Tooltip.Tip="{Binding ProjectPath}" />
       <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -36,7 +36,7 @@
     </Grid>
 
     <!-- 搜索:文件名 / 内容 -->
-    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6" IsVisible="{Binding !HasPreview}">
+    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6">
       <ui:NcwSearchField x:Name="SearchBox" Text="{Binding Search.Query, Mode=TwoWay}" PlaceholderText="{l:NcwText FilesSearchPlaceholder}" />
       <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Search.IsActive}">
         <ui:PlainButton Height="24" Padding="10,0" Click="OnNamesMode" Classes.active="{Binding Search.IsNamesMode}">
@@ -50,7 +50,7 @@
 
     <insp:ProblemBar Grid.Row="2" Margin="10,0,10,6" Problem="{Binding Failure}" />
 
-    <!-- 内容区:树 / 搜索结果 / 预览 -->
+    <!-- 内容区:树 / 搜索结果 -->
     <Panel Grid.Row="3">
       <!-- 文件树 -->
       <Grid IsVisible="{Binding ShowsTree}">
@@ -102,72 +102,6 @@
           <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding Search.Truncated}" Text="{l:NcwText FilesResultsTruncated}" />
         </StackPanel>
       </ScrollViewer>
-
-      <!-- 预览 / 简易编辑 -->
-      <Grid x:Name="PreviewHost" IsVisible="{Binding HasPreview}" RowDefinitions="Auto,Auto,*" DataContext="{Binding}">
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4" Margin="8,0,8,4" Height="32">
-          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ClosePreviewCommand}" AutomationProperties.Name="{l:NcwText FilesBack}" arc:Tooltip.Tip="{l:NcwText FilesBack}">
-            <lucide:LucideIcon Kind="ArrowLeft" Size="15" />
-          </ui:NcwButton>
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Preview.Name}" TextTrimming="CharacterEllipsis" arc:Tooltip.Tip="{Binding Preview.Path}" />
-          </StackPanel>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-            <Border Classes="chip" IsVisible="{Binding Preview.IsChunked}"><TextBlock Classes="hint" Text="{l:NcwText FileReadOnly}" /></Border>
-            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding Preview.JustSaved}" Text="{l:NcwText FileSaved}" />
-            <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding SavePreviewAsCommand}" AutomationProperties.Name="{l:NcwText FilesSaveAs}" arc:Tooltip.Tip="{l:NcwText FilesSaveAs}">
-              <lucide:LucideIcon Kind="Download" Size="14" />
-            </ui:NcwButton>
-            <ui:NcwButton Variant="Ghost" Command="{Binding Preview.EditCommand}" IsVisible="{Binding !Preview.IsEditing}" IsEnabled="{Binding Preview.CanEdit}" Content="{l:NcwText FileEdit}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding Preview.CancelEditCommand}" IsVisible="{Binding Preview.IsEditing}" Content="{l:NcwText Cancel}" />
-            <ui:NcwButton Variant="Primary" Command="{Binding Preview.SaveCommand}" IsVisible="{Binding Preview.IsEditing}" IsEnabled="{Binding Preview.CanSave}" Content="{l:NcwText Save}" />
-          </StackPanel>
-        </Grid>
-
-        <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6">
-          <insp:ProblemBar Problem="{Binding Preview.Failure}" />
-          <Border Classes="notice" IsVisible="{Binding Preview.HasConflict}">
-            <StackPanel Spacing="6">
-              <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{l:NcwText FileConflict}" />
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <ui:NcwButton Variant="Secondary" Command="{Binding Preview.ReloadCommand}" Content="{l:NcwText FileReload}" />
-                <ui:NcwButton Variant="Secondary" Command="{Binding Preview.KeepMineCommand}" Content="{l:NcwText FileKeepMine}" />
-              </StackPanel>
-            </StackPanel>
-          </Border>
-          <TextBlock Classes="hint" IsVisible="{Binding Preview.IsChunked}" Text="{l:NcwText FileChunked}" />
-        </StackPanel>
-
-        <Panel Grid.Row="2">
-          <!-- 加载中 -->
-          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsVisible="{Binding Preview.IsLoading}">
-            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-            <TextBlock Classes="hint" Text="{l:NcwText FileLoading}" />
-          </StackPanel>
-          <!-- 文本:只读用代码块(语法着色);编辑用多行输入 -->
-          <ScrollViewer IsVisible="{Binding Preview.IsText}" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="10,0,10,12" Spacing="8">
-              <ui:NcwCodeBlock Code="{Binding Preview.DisplayText}" Language="{Binding Preview.Language}" ShowLineNumbers="True" FileName="{Binding Preview.Path}" CopyLabel="{l:NcwText CodeCopy}"
-                               IsVisible="{Binding !Preview.IsEditing}" />
-              <ui:NcwTextArea x:Name="EditBox" Text="{Binding Preview.EditText, Mode=TwoWay}" FrameMinHeight="280" IsResizable="False"
-                              FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                              IsVisible="{Binding Preview.IsEditing}" />
-              <ui:NcwButton HorizontalAlignment="Center" Variant="Secondary" Command="{Binding Preview.LoadMoreCommand}" IsVisible="{Binding Preview.CanLoadMore}" Content="{l:NcwText FileShowMore}" />
-            </StackPanel>
-          </ScrollViewer>
-          <!-- 图片 -->
-          <ScrollViewer IsVisible="{Binding Preview.IsImage}">
-            <Image Margin="10,0,10,12" Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left"
-                   Source="{Binding Preview.ImageData, Converter={x:Static cv:BytesToBitmapConverter.Instance}}" />
-          </ScrollViewer>
-          <!-- 二进制 / 过大 -->
-          <StackPanel IsVisible="{Binding Preview.IsBinary}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="24" Spacing="8" MaxWidth="320">
-            <lucide:LucideIcon Kind="FileX" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-            <TextBlock Classes="hint" TextAlignment="Center" Text="{Binding Preview.Reason, Converter={x:Static cv:BinaryReasonTextConverter.Instance}}" />
-            <TextBlock Classes="hint" TextAlignment="Center" Text="{Binding Preview.Size, Converter={x:Static cv:FileSizeConverter.Instance}}" />
-          </StackPanel>
-        </Panel>
-      </Grid>
     </Panel>
   </Grid>
 </UserControl>

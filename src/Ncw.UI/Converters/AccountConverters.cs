@@ -46,6 +46,21 @@ public sealed class OnboardingStepTextConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>项目栏头像的角标:已登录可用 = 绿点;过期 / 还要选团队 = 提醒色点;没登录不显示。</summary>
+public sealed class AccountPresenceConverter : IValueConverter
+{
+    public static readonly AccountPresenceConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        Ncw.Client.ViewModels.AccountPresence.Active => TKCode.Arc.AvatarStatus.Online,
+        Ncw.Client.ViewModels.AccountPresence.NeedsAttention => TKCode.Arc.AvatarStatus.Away,
+        _ => TKCode.Arc.AvatarStatus.None,
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>状态条里登录进行中的文字:换令牌中 / 等浏览器。</summary>
 public sealed class AccountBarProgressTextConverter : IValueConverter
 {

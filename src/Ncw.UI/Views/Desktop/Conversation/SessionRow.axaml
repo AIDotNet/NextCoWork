@@ -8,8 +8,8 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.Conversation.SessionRow"
              x:DataType="vm:SessionItemViewModel">
-  <!-- 项目面板里的一行会话:状态点 · 标题 · 收藏星 · 时间。右键菜单:重命名 / 收藏 / 归档 / 删除(删除要二次确认)。 -->
-  <ui:PlainButton Padding="8,7" Command="{Binding OpenCommand}" Classes.active="{Binding IsSelected}" Opacity="{Binding IsArchived, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
+  <!-- 侧边栏里的一行会话:状态点 · 标题 · 收藏星 · 时间(有待处理时换成「n 待处理」)。右键菜单:重命名 / 收藏 / 归档 / 删除(删除要二次确认)。 -->
+  <ui:PlainButton Padding="8,6" Command="{Binding OpenCommand}" Classes.active="{Binding IsSelected}" Opacity="{Binding IsArchived, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
     <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
       <Panel Width="10" Height="10" VerticalAlignment="Center" arc:Tooltip.Tip="{Binding Activity, Converter={x:Static cv:ActivityTextConverter.Instance}}">
         <!-- 运行中:实心点;未知(设备断开):旋转的加载图标,既不当成结束也不当成还在跑 -->
@@ -26,8 +26,12 @@
       </Panel>
       <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
       <lucide:LucideIcon Grid.Column="2" Kind="Star" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsFavorite}" Foreground="{arc:ArcDesignTokenResource Warning}" />
-      <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center"
+      <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !HasPending}"
                  Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+      <!-- 等你处理的交互数(SessionActivityView.PendingOf;样式 Border.pendingPill 在侧边栏里) -->
+      <Border Grid.Column="3" Classes="pendingPill" IsVisible="{Binding HasPending}">
+        <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=SidebarPending}" />
+      </Border>
     </Grid>
   </ui:PlainButton>
 </UserControl>

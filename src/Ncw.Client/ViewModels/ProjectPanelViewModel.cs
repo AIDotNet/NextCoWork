@@ -17,6 +17,7 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
     private readonly SessionActions? _sessions;
     private readonly Func<IDialogService> _dialogs;
     private readonly Func<IClientText> _text;
+    private readonly SessionRowIntents _rows;
 
     public ProjectPanelViewModel(ClientStores stores, LayoutActions actions, ProjectActions? projects = null, SessionActions? sessions = null,
         Func<IDialogService>? dialogs = null, Func<IClientText>? text = null)
@@ -27,6 +28,7 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
         _sessions = sessions;
         _dialogs = dialogs ?? (() => NoDialogs.Instance);
         _text = text ?? (() => DefaultClientText.Instance);
+        _rows = new SessionRowIntents(sessions, _dialogs, _text);
         stores.Workspace.Changed += Refresh;
         stores.Selection.Changed += Refresh;
         Refresh();
@@ -39,6 +41,9 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
     [ObservableProperty] public partial DeviceKind DeviceKind { get; private set; }
     [ObservableProperty] public partial string? EnvironmentName { get; private set; }
     [ObservableProperty] public partial bool IsSsh { get; private set; }
+
+    /// <summary>头部要不要写「本机」这类设备名:只有一台本机、没有 SSH 时不写(03 §11.7)。</summary>
+    [ObservableProperty] public partial bool ShowsDevice { get; private set; } = true;
     [ObservableProperty] public partial string? Branch { get; private set; }
     [ObservableProperty] public partial bool WorkingTreeClean { get; private set; }
 
@@ -72,7 +77,7 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
 
     /// <summary>没有项目时空状态里的「添加文件夹」,与项目栏的「+」是同一个动作。</summary>
     [RelayCommand]
-    private Task AddProjectAsync() => _projects?.AddLocalProjectAsync() ?? Task.CompletedTask;
+    private Task AddProjectAsync() => _projects?.NewProjectAsync() ?? Task.CompletedTask;
 
     /// <summary>「新建会话」:在当前项目里建一个并打开(项目面板的 + 和空状态的按钮是同一个意图)。</summary>
     [RelayCommand]
@@ -111,6 +116,10 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
         DeviceName = device?.Name ?? project.DeviceId;
         DeviceKind = device?.Kind ?? DeviceKind.Remote;
         IsSsh = info.Environment == EnvironmentKind.Ssh;
+        ShowsDevice = DeviceDimension.Shows(
+            workspace.Devices.Values.Count(d => d.Connection != DeviceConnection.Revoked),
+            workspace.Devices.Values.Any(d => d.Kind != DeviceKind.Local && d.Connection != DeviceConnection.Revoked),
+            workspace.Projects.Values.Any(p => p.Environment == EnvironmentKind.Ssh));
         EnvironmentName = info.EnvironmentName;
         Branch = info.Branch;
         WorkingTreeClean = info.WorkingTreeClean;
@@ -120,7 +129,8 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
         var mine = workspace.Sessions.Where(s => s.Project == project).ToList();
         HasAnySession = mine.Count > 0;
         var items = SessionListQuery.Apply(mine, SearchText, ShowArchived)
-            .Select(s => new SessionItemViewModel(s, SessionActivityView.Of(s.Id, device?.Index, connection), s.Id == selection.SessionId, this))
+            .Select(s => new SessionItemViewModel(s, SessionActivityView.Of(s.Id, device?.Index, connection), s.Id == selection.SessionId, _rows,
+                SessionActivityView.PendingOf(s.Id, device?.Index, connection)))
             .ToList();
         Replace(Sessions, items);
         OnPropertyChanged(nameof(HasSessions));
@@ -134,71 +144,6 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
         Replace(Terminals, terminals);
     }
 
-    // ───────────────────────── 会话行的意图(都转给 SessionActions) ─────────────────────────
-
-    internal void Open(SessionItemViewModel item)
-    {
-        if (_stores.Selection.State.Project is { } project)
-        {
-            _sessions?.Open(project, item.Id);
-        }
-    }
-
-    /// <summary>停止这个会话正在跑的 Run(手机会话列表左滑的「停止」;桌面标签栏的停止在输入框上)。</summary>
-    internal async Task StopAsync(SessionItemViewModel item)
-    {
-        if (_sessions is not null && _stores.Selection.State.Project is { } project)
-        {
-            await _sessions.StopAsync(project, item.Id);
-        }
-    }
-
-    internal async Task RenameAsync(SessionItemViewModel item)
-    {
-        if (_sessions is null || _stores.Selection.State.Project is not { } project)
-        {
-            return;
-        }
-
-        var text = _text();
-        var title = await _dialogs().PromptTextAsync(text.RenameSessionTitle, text.RenameSessionDescription, text.NameLabel, item.Title);
-        if (!string.IsNullOrWhiteSpace(title) && title != item.Title)
-        {
-            await _sessions.RenameAsync(project, item.Id, title);
-        }
-    }
-
-    internal async Task SetFavoriteAsync(SessionItemViewModel item, bool favorited)
-    {
-        if (_sessions is not null && _stores.Selection.State.Project is { } project)
-        {
-            await _sessions.FavoriteAsync(project, item.Id, favorited);
-        }
-    }
-
-    internal async Task SetArchivedAsync(SessionItemViewModel item, bool archived)
-    {
-        if (_sessions is not null && _stores.Selection.State.Project is { } project)
-        {
-            await _sessions.ArchiveAsync(project, item.Id, archived);
-        }
-    }
-
-    /// <summary>删除会话:先二次确认,确认了才发(设备上有 Run 在跑会先中止)。</summary>
-    internal async Task DeleteAsync(SessionItemViewModel item)
-    {
-        if (_sessions is null || _stores.Selection.State.Project is not { } project)
-        {
-            return;
-        }
-
-        var text = _text();
-        if (await _dialogs().ConfirmAsync(text.DeleteSessionTitle, text.DeleteSessionMessage(item.Title), text.DeleteLabel))
-        {
-            await _sessions.DeleteAsync(project, item.Id);
-        }
-    }
-
     private static void Replace<T>(ObservableCollection<T> target, List<T> items)
     {
         target.Clear();
@@ -209,10 +154,15 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
     }
 }
 
-/// <summary>会话列表里的一行。运行状态是 <see cref="SessionActivity"/>(Core 的唯一派生函数),设备断开时为未知:既不显示运行也不显示结束。</summary>
-public sealed partial class SessionItemViewModel(SessionSummary session, SessionActivity activity, bool isSelected, ProjectPanelViewModel panel) : ObservableObject
+/// <summary>
+/// 会话列表里的一行(桌面侧边栏、手机项目会话页共用)。运行状态是 <see cref="SessionActivity"/>(Core 的唯一派生函数),设备断开时为未知:既不显示运行也不显示结束;
+/// 待处理数来自 <see cref="SessionActivityView.PendingOf"/>。意图按行自己的项目转给 <see cref="ISessionRowHost"/>。
+/// </summary>
+public sealed partial class SessionItemViewModel(SessionSummary session, SessionActivity activity, bool isSelected, ISessionRowHost host, int pendingCount = 0) : ObservableObject
 {
     public string Id => session.Id;
+
+    public ProjectRef Project => session.Project;
 
     public string Title => session.Title;
 
@@ -230,23 +180,28 @@ public sealed partial class SessionItemViewModel(SessionSummary session, Session
 
     public bool IsSelected { get; } = isSelected;
 
-    [RelayCommand]
-    private void Open() => panel.Open(this);
+    /// <summary>这个会话里等用户处理的交互数(0 = 没有;断线时也是 0)。</summary>
+    public int PendingCount { get; } = pendingCount;
+
+    public bool HasPending => PendingCount > 0;
 
     [RelayCommand]
-    private Task StopAsync() => panel.StopAsync(this);
+    private void Open() => host.Open(this);
 
     [RelayCommand]
-    private Task RenameAsync() => panel.RenameAsync(this);
+    private Task StopAsync() => host.StopAsync(this);
 
     [RelayCommand]
-    private Task ToggleFavoriteAsync() => panel.SetFavoriteAsync(this, !IsFavorite);
+    private Task RenameAsync() => host.RenameAsync(this);
 
     [RelayCommand]
-    private Task ToggleArchivedAsync() => panel.SetArchivedAsync(this, !IsArchived);
+    private Task ToggleFavoriteAsync() => host.SetFavoriteAsync(this, !IsFavorite);
 
     [RelayCommand]
-    private Task DeleteAsync() => panel.DeleteAsync(this);
+    private Task ToggleArchivedAsync() => host.SetArchivedAsync(this, !IsArchived);
+
+    [RelayCommand]
+    private Task DeleteAsync() => host.DeleteAsync(this);
 }
 
 public sealed class TerminalItemViewModel(TerminalSummary terminal)

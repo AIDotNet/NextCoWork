@@ -100,6 +100,48 @@ public static class ComposerLogic
         return levels.Contains(level) ? level : levels[0];
     }
 
+    /// <summary>
+    /// 草稿里应当画成 token 的片段:开头的 <c>/命令</c>(是已知命令、后面跟着空白)和每个已引用文件的 <c>@名字</c>
+    /// (前面是开头或空白,后面是结尾、空白或标点)。不重叠,按位置排序。输入框的 token 解析和「草稿里还有没有这个引用」都只看这一个函数。
+    /// </summary>
+    public static IReadOnlyList<MentionSpan> Mentions(string text, IEnumerable<FileRefChip> files, IEnumerable<string> commands)
+    {
+        var spans = new List<MentionSpan>();
+        if (text.Length > 1 && text[0] == '/')
+        {
+            var end = 1;
+            while (end < text.Length && !char.IsWhiteSpace(text[end]))
+            {
+                end++;
+            }
+
+            var name = text[1..end];
+            if (end < text.Length && commands.Any(c => string.Equals(c, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                spans.Add(new MentionSpan(MentionSpan.CommandKind, name, name, 0, end));
+            }
+        }
+
+        // 长的先占位:「@a.cs」不会抢走「@a.cs.bak」的前半段
+        foreach (var file in files.OrderByDescending(f => f.Mention.Length))
+        {
+            var mention = file.Mention;
+            for (var at = text.IndexOf(mention, StringComparison.Ordinal); at >= 0; at = text.IndexOf(mention, at + 1, StringComparison.Ordinal))
+            {
+                var end = at + mention.Length;
+                var startsWord = at == 0 || char.IsWhiteSpace(text[at - 1]);
+                var endsWord = end == text.Length || char.IsWhiteSpace(text[end]) || char.IsPunctuation(text[end]) && text[end] is not ('.' or '_' or '-' or '/');
+                if (startsWord && endsWord && spans.All(s => end <= s.Start || at >= s.End))
+                {
+                    spans.Add(new MentionSpan(MentionSpan.FileKind, file.Path, file.Label, at, end));
+                }
+            }
+        }
+
+        spans.Sort(static (a, b) => a.Start.CompareTo(b.Start));
+        return spans;
+    }
+
     /// <summary>上下文窗口的简写:200K、1M。</summary>
     public static string WindowText(int window) => window switch
     {
@@ -108,4 +150,11 @@ public static class ComposerLogic
         >= 1000 => $"{window / 1000}K",
         _ => window.ToString(System.Globalization.CultureInfo.InvariantCulture),
     };
+}
+
+/// <summary>草稿里画成 token 的一段(<see cref="ComposerLogic.Mentions"/>):种类、指向什么(文件路径 / 命令名)、符号后面的文字、范围(含符号,结尾不含)。</summary>
+public sealed record MentionSpan(string Kind, string Id, string Label, int Start, int End)
+{
+    public const string FileKind = "file";
+    public const string CommandKind = "command";
 }

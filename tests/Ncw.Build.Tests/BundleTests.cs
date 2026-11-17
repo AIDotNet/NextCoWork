@@ -48,6 +48,16 @@ public class InfoPlistTests
         Assert.Contains("<string>3.0.0</string>", text);
         Assert.Contains("<string>3.0.0-alpha.1</string>", text); // NCWFullVersion
         Assert.Contains("CFBundleExecutable", text);
+        Assert.DoesNotContain("CFBundleIconFile", text); // 没有图标就不写这个键(指向不存在的文件会让 Dock 退回默认图标)
+    }
+
+    [Fact]
+    public void Plist_names_the_icon_file_when_the_bundle_has_one()
+    {
+        var text = XDocument.Parse(InfoPlist.Render("3.0.0", BundleLayout.MacIconFileName)).ToString();
+
+        Assert.Contains("<key>CFBundleIconFile</key>", text);
+        Assert.Contains($"<string>{BundleLayout.MacIconFileName}</string>", text);
     }
 }
 
@@ -92,6 +102,41 @@ public class BundleBuilderTests
         {
             Assert.True(File.GetUnixFileMode(layout.AgentExe).HasFlag(UnixFileMode.UserExecute));
         }
+    }
+
+    [Fact]
+    public void The_macos_app_carries_the_icon_in_resources_and_the_plist_points_at_it()
+    {
+        using var dir = new TempDir();
+        var (desktop, agent) = FakePublishes(dir, TestKit.MacArm);
+        var layout = new BundleLayout(TestKit.MacArm, dir.Sub("out"));
+        var icon = dir.Write("AppIcon.icns", "icns-bytes");
+
+        BundleBuilder.Build(layout, desktop, agent, "3.0.0", new FixedClock(TestKit.Now), icon);
+
+        Assert.Equal("icns-bytes", File.ReadAllText(layout.MacIconPath));
+        Assert.Contains("<key>CFBundleIconFile</key>", File.ReadAllText(layout.InfoPlist));
+    }
+
+    [Fact]
+    public void A_missing_icon_file_fails_the_bundle_instead_of_shipping_a_blank_dock_icon()
+    {
+        using var dir = new TempDir();
+        var (desktop, agent) = FakePublishes(dir, TestKit.MacArm);
+
+        var e = Assert.Throws<BuildException>(() => BundleBuilder.Build(new BundleLayout(TestKit.MacArm, dir.Sub("out")), desktop, agent, "3.0.0", new FixedClock(TestKit.Now), dir.Sub("nope", "AppIcon.icns")));
+
+        Assert.Contains("icon", e.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_committed_icns_exists_and_is_a_real_icns_file()
+    {
+        var path = RepoLayout.Find().MacIcon;
+
+        Assert.True(File.Exists(path), path);
+        var head = File.ReadAllBytes(path).AsSpan(0, 4);
+        Assert.Equal("icns", System.Text.Encoding.ASCII.GetString(head));
     }
 
     [Fact]
@@ -151,8 +196,11 @@ public class BundleBuilderTests
         Directory.CreateDirectory(ctx.Repo.PublishDir(rid, "agent"));
         File.WriteAllText(Path.Combine(ctx.Repo.PublishDir(rid, "desktop"), "NextCoWork"), "d");
         File.WriteAllText(Path.Combine(ctx.Repo.PublishDir(rid, "agent"), "ncw-agent"), "a");
+        Directory.CreateDirectory(Path.GetDirectoryName(ctx.Repo.MacIcon)!);
+        File.WriteAllText(ctx.Repo.MacIcon, "icns"); // bundle 在 macOS 上要求仓库里有应用图标
 
         Assert.Equal(0, await Program.RunAsync(["bundle", "--rid", "osx-arm64"], ctx, default));
+        Assert.True(File.Exists(new BundleLayout(rid, ctx.Repo.BundleDir(rid)).MacIconPath));
         var manifest = BundleBuilder.Read(Path.Combine(ctx.Repo.BundleDir(rid), "bundle.json"));
         Assert.Equal("9.8.7-test.1", manifest.Version); // 来自 Directory.Build.props 的唯一版本号
     }

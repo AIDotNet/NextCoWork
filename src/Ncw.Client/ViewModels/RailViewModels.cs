@@ -33,9 +33,16 @@ public sealed partial class RailViewModel : ObservableObject
 
     public ObservableCollection<RailItemViewModel> Items { get; } = [];
 
-    /// <summary>项目栏底部的「+」。</summary>
+    /// <summary>项目栏底部的「+」:弹出「新建项目」窗口。</summary>
     [RelayCommand]
-    private Task AddProjectAsync() => _projects?.AddLocalProjectAsync() ?? Task.CompletedTask;
+    private Task AddProjectAsync() => _projects?.NewProjectAsync() ?? Task.CompletedTask;
+
+    /// <summary>右键「更改图标…」:弹出「项目图标」窗口,编辑的起点是 Store 里的当前外观。</summary>
+    private Task EditIconAsync(RailProjectViewModel tile)
+    {
+        var form = new ProjectIconViewModel(tile.Project, tile.Name, _stores.Layout.State.Appearance.GetValueOrDefault(tile.Project), _actions, _dialogs);
+        return _dialogs().ShowProjectIconAsync(form);
+    }
 
     /// <summary>当前布局(拖放规划用)。</summary>
     public RailLayout Layout => _stores.Layout.State.Rail;
@@ -84,7 +91,7 @@ public sealed partial class RailViewModel : ObservableObject
 
     private RailProjectViewModel ProjectTile(ProjectRef project, LayoutState layout, WorkspaceState workspace, ProjectRef? selected)
     {
-        var vm = FindProject(project) ?? new RailProjectViewModel(project, _actions);
+        var vm = FindProject(project) ?? new RailProjectViewModel(project, _actions, EditIconAsync);
         workspace.Projects.TryGetValue(project, out var info);
         workspace.Devices.TryGetValue(project.DeviceId, out var device);
         layout.Appearance.TryGetValue(project, out var appearance);
@@ -141,11 +148,13 @@ public abstract class RailItemViewModel : ObservableObject;
 public sealed partial class RailProjectViewModel : RailItemViewModel
 {
     private readonly LayoutActions _actions;
+    private readonly Func<RailProjectViewModel, Task>? _editIcon;
 
-    public RailProjectViewModel(ProjectRef project, LayoutActions actions)
+    public RailProjectViewModel(ProjectRef project, LayoutActions actions, Func<RailProjectViewModel, Task>? editIcon = null)
     {
         Project = project;
         _actions = actions;
+        _editIcon = editIcon;
     }
 
     public ProjectRef Project { get; }
@@ -153,6 +162,13 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     [ObservableProperty] public partial string Name { get; private set; } = "";
     [ObservableProperty] public partial string Glyph { get; private set; } = "";
     [ObservableProperty] public partial string Color { get; private set; } = "#64748B";
+
+    /// <summary>自定义图标图片(压缩好的 base64,<see cref="ProjectAppearance.Image"/>);有图片时界面画图片,没有画 <see cref="Glyph"/>。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImage))]
+    public partial string? Image { get; private set; }
+
+    public bool HasImage => Image is not null;
     [ObservableProperty] public partial bool IsSelected { get; private set; }
     [ObservableProperty] public partial bool IsRunning { get; private set; }
     [ObservableProperty] public partial int PendingCount { get; private set; }
@@ -188,11 +204,18 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     [RelayCommand]
     private void RemoveFromRail() => _actions.RemoveFromRail(Project);
 
+    /// <summary>右键「更改图标…」。</summary>
+    [RelayCommand]
+    private Task EditIconAsync() => _editIcon?.Invoke(this) ?? Task.CompletedTask;
+
+    public bool CanEditIcon => _editIcon is not null;
+
     internal void Update(ProjectInfo? info, DeviceInfo? device, ProjectAppearance? appearance, ProjectActivity activity, bool selected)
     {
         Name = info?.Name ?? Project.WorkspaceId;
         Glyph = appearance?.Glyph ?? Initials(Name);
         Color = appearance?.Color ?? DefaultColor(Project);
+        Image = appearance?.Image is { Length: > 0 and <= ProjectIconSpec.MaxStoredLength } image ? image : null;
         IsSelected = selected;
         IsRunning = activity.IsRunning;
         PendingCount = activity.PendingInteractions;
@@ -209,7 +232,8 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         EnvironmentName = info?.EnvironmentName;
     }
 
-    private static readonly string[] Palette = ["#0F766E", "#2563EB", "#7C3AED", "#DB2777", "#EA580C", "#059669", "#4F46E5", "#B45309"];
+    /// <summary>项目图标的底色(用户数据,不是主题色):默认色从这里按 id 选,「项目图标」窗口也从这里选。</summary>
+    public static IReadOnlyList<string> IconPalette { get; } = ["#0F766E", "#2563EB", "#7C3AED", "#DB2777", "#EA580C", "#059669", "#4F46E5", "#B45309"];
 
     /// <summary>没有自定义外观时,按项目 id 稳定地选一个颜色(同一个项目每次都一样)。</summary>
     internal static string DefaultColor(ProjectRef project)
@@ -220,11 +244,15 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
             hash = (hash ^ c) * 16777619u;
         }
 
-        return Palette[hash % (uint)Palette.Length];
+        return IconPalette[(int)(hash % (uint)IconPalette.Count)];
     }
 
-    /// <summary>项目名的首字母(中文取首字)。</summary>
-    internal static string Initials(string name)
+    /// <summary>
+    /// 默认图标上的字(docs/design/03 §11.8):一个字母分不开「Avalonia」和「Agent」,所以拉丁字母取两个——
+    /// 多个词取前两个词的首字母(<c>api-server</c> → AS),驼峰取首字母和下一个大写字母(<c>NextCoWork</c> → NC),否则首字母 + 第二个字母(<c>Agent</c> → Ag)。
+    /// 中日韩文字和 emoji 一个字已经够分辨,只取第一个。
+    /// </summary>
+    public static string Initials(string name)
     {
         var trimmed = name.Trim();
         if (trimmed.Length == 0)
@@ -233,7 +261,27 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         }
 
         var first = trimmed.EnumerateRunes().First();
-        return first.Utf16SequenceLength > 1 || first.Value > 0x2E80 ? first.ToString() : char.ToUpperInvariant(trimmed[0]).ToString();
+        if (first.Utf16SequenceLength > 1 || first.Value > 0x2E80)
+        {
+            return first.ToString();
+        }
+
+        var words = trimmed.Split([' ', '-', '_', '.', '/'], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length >= 2 && char.IsLetterOrDigit(words[1][0]) && words[1][0] < 0x2E80)
+        {
+            return string.Concat(char.ToUpperInvariant(words[0][0]), char.ToUpperInvariant(words[1][0]));
+        }
+
+        var word = words[0];
+        var upper = word.Skip(1).Where(char.IsUpper).Cast<char?>().FirstOrDefault();
+        if (upper is { } u)
+        {
+            return string.Concat(char.ToUpperInvariant(word[0]), u);
+        }
+
+        return word.Length > 1 && char.IsLetterOrDigit(word[1]) && word[1] < 0x2E80
+            ? string.Concat(char.ToUpperInvariant(word[0]), char.ToLowerInvariant(word[1]))
+            : char.ToUpperInvariant(word[0]).ToString();
     }
 }
 

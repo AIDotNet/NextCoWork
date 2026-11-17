@@ -21,10 +21,18 @@ public sealed partial class FileSuggestionRow(FileSuggestionItem item) : Communi
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] public partial bool IsActive { get; set; }
 }
 
-/// <summary>消息里的一个文件引用(输入框上方的 chip)。</summary>
+/// <summary>
+/// 消息里的一个文件引用。在草稿里写成 <see cref="Mention"/>(<c>@名字</c>),输入框把它画成一个整体的 token;
+/// 草稿里没有了这段文字,引用也就没了(<see cref="ComposerLogic.Mentions"/>)。
+/// </summary>
 public sealed record FileRefChip(string Path, string Name)
 {
     public string Directory => Path.LastIndexOf('/') is > 0 and var i ? Path[..i] : "";
+
+    /// <summary>草稿里 <c>@</c> 后面的文字:通常是文件名;和已引用的另一个文件重名时用项目相对路径区分。</summary>
+    public string Label { get; init; } = Name;
+
+    public string Mention => "@" + Label;
 }
 
 /// <summary>

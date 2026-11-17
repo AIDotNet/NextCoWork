@@ -4,6 +4,7 @@ using Ncw.Client.Stores;
 using Ncw.Client.Transcript;
 using Ncw.Client.Widgets;
 using Ncw.Core.Domain;
+using Ncw.Protocol.Methods;
 
 namespace Ncw.Client.ViewModels;
 
@@ -13,7 +14,16 @@ namespace Ncw.Client.ViewModels;
 /// </summary>
 public abstract class RowViewModel(string key) : ObservableObject
 {
+    private bool _inWorkGroup;
+
     public string Key { get; } = key;
+
+    /// <summary>这一行是某个展开着的「工作区」分组的成员(界面据此缩进)。位置决定,由 <see cref="ConversationViewModel"/> 在对齐行时标记,创建时就带上(容器准备时要读)。</summary>
+    public bool InWorkGroup
+    {
+        get => _inWorkGroup;
+        internal set => SetProperty(ref _inWorkGroup, value);
+    }
 
     /// <summary>用新派生出来的行更新自己;没有变化返回 false。</summary>
     public abstract bool Update(TranscriptRow row);
@@ -76,6 +86,28 @@ public sealed partial class AssistantRowViewModel(AssistantRow row) : RowViewMod
     /// <summary>这是最近一轮的最后一段回复、已经写完:可以「重新生成」。由 <see cref="ConversationViewModel"/> 在每次对齐行之后标记(取决于位置,不是行自己的数据)。</summary>
     [ObservableProperty] public partial bool CanRegenerate { get; set; }
 
+    /// <summary>这段回复之前有一条可见提问(它属于某一轮):可以「从这里分支」。位置决定,由 <see cref="ConversationViewModel"/> 在每次对齐行之后标记。</summary>
+    [ObservableProperty] public partial bool HasTurn { get; set; }
+
+    /// <summary>点了「删除回复」、等第二次确认(纯 UI 状态)。</summary>
+    [ObservableProperty] public partial bool IsConfirmingDelete { get; set; }
+
+    /// <summary>「重新生成」按钮显示:位置允许,且没在等删除确认(确认态只留确认文字和两个按钮)。</summary>
+    public bool ShowRegenerate => CanRegenerate && !IsConfirmingDelete;
+
+    /// <summary>「分支」按钮显示:属于某一轮,且没在等删除确认。</summary>
+    public bool ShowBranch => HasTurn && !IsConfirmingDelete;
+
+    partial void OnCanRegenerateChanged(bool value) => OnPropertyChanged(nameof(ShowRegenerate));
+
+    partial void OnHasTurnChanged(bool value) => OnPropertyChanged(nameof(ShowBranch));
+
+    partial void OnIsConfirmingDeleteChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowRegenerate));
+        OnPropertyChanged(nameof(ShowBranch));
+    }
+
     public string MessageId => Row.MessageId;
 
     public string Text => Row.Text;
@@ -83,7 +115,29 @@ public sealed partial class AssistantRowViewModel(AssistantRow row) : RowViewMod
     public bool IsStreaming => Row.IsStreaming;
 }
 
-/// <summary>思考块:默认折叠;展开与否是纯 UI 状态。</summary>
+/// <summary>
+/// 「工作区」分组表头(<see cref="WorkGroupRow"/>):默认收起,展开与否是纯 UI 状态。展开 / 收起由 <see cref="ConversationViewModel"/> 决定成员行在不在转录里,
+/// 所以 <see cref="IsExpanded"/> 变了要通知它(<paramref name="toggled"/>)。摘要的数字来自行,文字由界面拼。
+/// </summary>
+public sealed partial class WorkGroupRowViewModel(WorkGroupRow row, bool expanded, Action<WorkGroupRowViewModel> toggled) : RowViewModel<WorkGroupRow>(row)
+{
+    [ObservableProperty] public partial bool IsExpanded { get; set; } = expanded;
+
+    public int Actions => Row.Actions;
+
+    public int Failed => Row.Failed;
+
+    public bool HasActions => Row.Actions > 0;
+
+    public bool HasFailed => Row.Failed > 0;
+
+    partial void OnIsExpandedChanged(bool value) => toggled(this);
+}
+
+/// <summary>
+/// 思考块:默认折叠;展开与否是纯 UI 状态。标题三选一:流式中「思考中…」、有耗时「思考了 N 秒」、量不出耗时(旧消息 / 上游没给)只写「思考」——
+/// 不显示一个假的「0 秒」。
+/// </summary>
 public sealed partial class ThinkingRowViewModel(ThinkingRow row) : RowViewModel<ThinkingRow>(row)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
@@ -92,21 +146,113 @@ public sealed partial class ThinkingRowViewModel(ThinkingRow row) : RowViewModel
 
     public bool IsStreaming => Row.IsStreaming;
 
-    public int Seconds => Row.DurationMs is { } ms ? (int)Math.Max(1, Math.Round(ms / 1000.0)) : 0;
+    public bool HasDuration => Row.DurationMs is > 0;
 
-    public bool HasDuration => Row.DurationMs is not null;
+    public int Seconds => Row.DurationMs is { } ms and > 0 ? (int)Math.Max(1, Math.Round(ms / 1000.0)) : 0;
+
+    public bool ShowDuration => !Row.IsStreaming && HasDuration;
+
+    public bool ShowPlainLabel => !Row.IsStreaming && !HasDuration;
+
+    public bool CanExpand => Row.Text.Length > 0;
+}
+
+/// <summary>
+/// 执行环境标识(AGENTS.md §5)的显示规则,工具行和可视化卡片共用一份:文字是「设备 · 环境」(环境名为空就只写设备,不留一个悬空的「·」);
+/// 行上要不要画:本机环境不画(每行都写「本机 · local」是噪音,它在悬停提示里),SSH / 未知 / 其他环境一定画。
+/// </summary>
+public static class EnvBadge
+{
+    public static string? Label(EnvRefDto? env, Func<string, string> deviceName) =>
+        env is null ? null : env.Name.Length > 0 ? $"{deviceName(env.DeviceId)} · {env.Name}" : deviceName(env.DeviceId);
+
+    public static bool ShowsOnRow(EnvRefDto? env) => env is not null && env.Type != "local";
+
+    public static bool IsSsh(EnvRefDto? env) => env?.Type == "ssh";
 }
 
 public sealed record DiffLine(string Text, bool IsAdded, bool IsRemoved);
 
-/// <summary>工具卡片。展开看摘要(diff 行 / 命令输出前几行)是纯 UI 状态;状态、环境标识、统计来自派生行。</summary>
-public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName) : RowViewModel<ToolRow>(row)
+/// <summary>
+/// 一次工具调用(转录里的一行文字)。结果一律默认不展示(包括失败的:失败只用红色标出):
+/// 展开看摘要(diff 行 / 命令输出前几行)是纯 UI 状态,用户点开才看。状态、环境标识、统计来自派生行。
+/// </summary>
+public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName, Func<string?>? projectRoot = null) : RowViewModel<ToolRow>(row)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
 
     public string Name => Row.Name;
 
     public string Target => Row.Target;
+
+    /// <summary>读 / 改 / 写 / 搜索的目标是路径:单行显示时文件名在前、目录在后(目录淡色、放不下就截断),一眼能认出是哪个文件。</summary>
+    private bool TargetIsPath => Row.Kind is ToolKind.Read or ToolKind.Edit or ToolKind.Write && Row.Target.Contains('/', StringComparison.Ordinal);
+
+    /// <summary>单行显示的主文字:路径是文件名,其余是目标的第一行(命令可能多行)。</summary>
+    public string TargetName
+    {
+        get
+        {
+            var target = Row.Target.AsSpan().Trim();
+            if (TargetIsPath)
+            {
+                var trimmed = target.TrimEnd('/');
+                return trimmed[(trimmed.LastIndexOf('/') + 1)..].ToString();
+            }
+
+            var newline = target.IndexOf('\n');
+            return (newline >= 0 ? target[..newline] : target).ToString();
+        }
+    }
+
+    /// <summary>路径的目录部分(淡色);不是路径时为空。</summary>
+    public string TargetDir
+    {
+        get
+        {
+            if (!TargetIsPath)
+            {
+                return "";
+            }
+
+            var trimmed = Row.Target.Trim().TrimEnd('/');
+            var slash = trimmed.LastIndexOf('/');
+            return slash > 0 ? RelativeDir(trimmed[..slash], projectRoot?.Invoke()) : "";
+        }
+    }
+
+    /// <summary>
+    /// 项目里的目录按项目相对显示(<c>/Users/me/code/app/src/ui</c> → <c>src/ui</c>;项目根本身是空),项目外的照原样(那是该引起注意的)。
+    /// 完整路径在整行的提示里(<see cref="Tip"/>)。
+    /// </summary>
+    public static string RelativeDir(string dir, string? root)
+    {
+        if (string.IsNullOrEmpty(root))
+        {
+            return dir;
+        }
+
+        var r = root.TrimEnd('/');
+        if (string.Equals(dir, r, StringComparison.Ordinal))
+        {
+            return "";
+        }
+
+        return dir.StartsWith(r + "/", StringComparison.Ordinal) ? dir[(r.Length + 1)..] : dir;
+    }
+
+    /// <summary>失败的调用:输出(stderr / 错误信息)的第一行,行下面一行红字说明为什么失败,不用点开才知道(03 §11.5)。没有输出为空。</summary>
+    public string FailureLine => IsFailed && Row.Preview.Length > 0
+        ? Row.Preview.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => (l.Length > 1 ? l[1..] : "").Trim()).FirstOrDefault(l => l.Length > 0) ?? ""
+        : "";
+
+    public bool HasFailureLine => FailureLine.Length > 0;
+
+    /// <summary>
+    /// 目录接在文件名后面的那一段(带两个空格的间隔;不是路径为空)。文件名和目录画在同一个 TextBlock 的两个 Run 里,
+    /// 整体只占剩余宽度、放不下从末尾截断——分成两个控件时文件名列按内容宽度量,长命令会溢出到右侧的状态列上。
+    /// </summary>
+    public string TargetDirSuffix => TargetDir is { Length: > 0 } dir ? "  " + dir : "";
 
     public ToolKind Kind => Row.Kind;
 
@@ -135,9 +281,15 @@ public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> d
     public int QueuedAhead => Row.QueuedAhead ?? 0;
 
     /// <summary>「设备 · 环境」:在哪台设备的哪个环境里执行(AGENTS.md §5)。没有环境信息为 null。</summary>
-    public string? EnvLabel => Row.Env is { } env ? $"{deviceName(env.DeviceId)} · {env.Name}" : null;
+    public string? EnvLabel => EnvBadge.Label(Row.Env, deviceName);
 
-    public bool IsSsh => Row.Env?.Type == "ssh";
+    public bool IsSsh => EnvBadge.IsSsh(Row.Env);
+
+    /// <summary>行上要不要画「设备 · 环境」(<see cref="EnvBadge.ShowsOnRow"/>);本机环境的标识仍在整行的提示里(<see cref="Tip"/>)。</summary>
+    public bool ShowsEnv => EnvBadge.ShowsOnRow(Row.Env);
+
+    /// <summary>整行的悬停提示:完整目标 + 执行环境(设备 · 环境,本机的也有)。</summary>
+    public string Tip => EnvLabel is { } env ? $"{Row.Target}\n{env}" : Row.Target;
 
     public bool HasPreview => Row.Preview.Length > 0;
 
@@ -228,7 +380,11 @@ public sealed partial class CompactRowViewModel(CompactRow row) : RowViewModel<C
     public string PostText => ComposerLogic.WindowText(Row.PostTokens);
 }
 
-public sealed class ErrorRowViewModel(ErrorRow row, IAsyncRelayCommand retry) : RowViewModel<ErrorRow>(row)
+/// <summary>
+/// 一张错误卡片(docs/design/03 §11.4):一句当前语言的说明(界面按 <see cref="Code"/> / <see cref="MessageKey"/> 翻译,设备给的英文原文不直接给人看)、
+/// 能做的事(重试;凭据 / 供应商类的问题直接去「模型与供应商」设置),原文收在「详情」里(可选中复制,报问题时用)。
+/// </summary>
+public sealed partial class ErrorRowViewModel(ErrorRow row, IAsyncRelayCommand retry, IRelayCommand? openProviders = null) : RowViewModel<ErrorRow>(row)
 {
     public string Code => Row.Code;
 
@@ -239,6 +395,20 @@ public sealed class ErrorRowViewModel(ErrorRow row, IAsyncRelayCommand retry) : 
     public bool CanRetry => Row.CanRetry && Row.Retryable;
 
     public IAsyncRelayCommand RetryCommand { get; } = retry;
+
+    /// <summary>凭据无效、别名下没有可用的供应商、供应商不支持缓存:问题在供应商配置,给一个直达设置的按钮。</summary>
+    public bool CanOpenProviders => OpenProvidersCommand is not null && Row.Code is "auth" or "no_healthy_provider" or "cache_unsupported";
+
+    public IRelayCommand? OpenProvidersCommand { get; } = openProviders;
+
+    /// <summary>「详情」里的原文:错误码 + 设备给的诊断串。</summary>
+    public string Detail => Row.Message.Length > 0 ? $"{Row.Code} · {Row.Message}" : Row.Code;
+
+    /// <summary>展开「详情」(纯 UI 状态)。</summary>
+    [ObservableProperty] public partial bool IsDetailOpen { get; set; }
+
+    [RelayCommand]
+    private void ToggleDetail() => IsDetailOpen = !IsDetailOpen;
 }
 
 public sealed class GoalStatusRowViewModel(GoalStatusRow row) : RowViewModel<GoalStatusRow>(row)
@@ -385,9 +555,12 @@ public sealed class WidgetRowViewModel(WidgetRow row, Func<SessionRef> session, 
     public string? DataJson => Row.DataJson;
 
     /// <summary>「设备 · 环境」:在哪台设备的哪个环境里生成的(AGENTS.md §5)。</summary>
-    public string? EnvLabel => Row.Env is { } env ? $"{deviceName(env.DeviceId)} · {env.Name}" : null;
+    public string? EnvLabel => EnvBadge.Label(Row.Env, deviceName);
 
-    public bool IsSsh => Row.Env?.Type == "ssh";
+    public bool IsSsh => EnvBadge.IsSsh(Row.Env);
+
+    /// <summary>卡片头上要不要画环境标识:和工具行同一条规则(本机不画,别的环境一定画)。</summary>
+    public bool ShowsEnv => EnvBadge.ShowsOnRow(Row.Env);
 
     /// <summary>手机端 / WebView 不可用时的降级内容:从静态快照抽出来的文字。</summary>
     public string SnapshotText => WidgetSnapshotText.Extract(Row.Card?.Snapshot);

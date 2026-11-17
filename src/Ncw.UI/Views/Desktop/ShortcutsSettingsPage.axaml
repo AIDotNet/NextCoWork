@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.ShortcutsSettingsPage"
+             x:DataType="vm:ShortcutsSettingsViewModel">
+  <!--
+    设置 · 本应用 · 快捷键(docs/design/03 §11):每个意图一行,右边是生效的组合。点组合开始录制,下一次按键(带 ⌘ / Ctrl / Alt,或功能键)就是新的组合,Esc 取消;
+    冲突时被挤掉的那一条清空并提示一句。「已修改」的行可以恢复默认。真源是偏好 Store,改了立即生效(NcwShortcutRouter 重建手势表)。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.kbd">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+      <Setter Property="MinWidth" Value="64" />
+    </Style>
+    <Style Selector="Border.kbd.recording">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:NcwText SettingsShortcuts}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsShortcutsHint}" TextWrapping="Wrap" />
+      <WrapPanel Margin="0,8,0,0" ItemSpacing="8" LineSpacing="8">
+        <Border Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText ScopeApp}" /></Border>
+      </WrapPanel>
+    </StackPanel>
+
+    <Border Classes="notice" IsVisible="{Binding Displaced, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock x:Name="DisplacedText" Classes="hint" TextWrapping="Wrap" />
+    </Border>
+    <TextBlock Classes="hint failed" IsVisible="{Binding LastRejected}" Text="{l:NcwText ShortcutUnusable}" TextWrapping="Wrap" />
+
+    <Border Classes="card">
+      <StackPanel Spacing="2">
+        <ItemsControl ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:ShortcutRowViewModel">
+              <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Command, Converter={x:Static cv:AppCommandTitleConverter.Instance}}" TextTrimming="CharacterEllipsis" />
+                  <Border Classes="chip" IsVisible="{Binding IsCustom}"><TextBlock Classes="hint" Text="{l:NcwText ShortcutCustom}" /></Border>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="8,0" VerticalAlignment="Center">
+                  <ui:PlainButton Width="26" Height="26" IsVisible="{Binding IsCustom}" Click="OnResetClick"
+                                  AutomationProperties.Name="{l:NcwText ShortcutReset}" arc:Tooltip.Tip="{l:NcwText ShortcutReset}">
+                    <lucide:LucideIcon Kind="RotateCcw" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                  <ui:PlainButton Width="26" Height="26" IsVisible="{Binding HasGesture}" Click="OnClearClick"
+                                  AutomationProperties.Name="{l:NcwText ShortcutClear}" arc:Tooltip.Tip="{l:NcwText ShortcutClear}">
+                    <lucide:LucideIcon Kind="X" Size="13" HorizontalAlignment="Center" />
+                  </ui:PlainButton>
+                </StackPanel>
+                <ui:PlainButton Grid.Column="2" Padding="0" Click="OnRecordClick" AutomationProperties.Name="{Binding Command, Converter={x:Static cv:AppCommandTitleConverter.Instance}}">
+                  <Border Classes="kbd" Classes.recording="{Binding IsRecording}">
+                    <Panel>
+                      <TextBlock HorizontalAlignment="Center" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" IsVisible="{Binding !IsRecording}"
+                                 Text="{Binding Gesture, Converter={x:Static cv:GestureTextConverter.Instance}}" />
+                      <TextBlock Classes="hint" HorizontalAlignment="Center" Text="{l:NcwText ShortcutNone}">
+                        <TextBlock.IsVisible>
+                          <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!IsRecording" />
+                            <Binding Path="!HasGesture" />
+                          </MultiBinding>
+                        </TextBlock.IsVisible>
+                      </TextBlock>
+                      <TextBlock Classes="hint" HorizontalAlignment="Center" IsVisible="{Binding IsRecording}" Text="{l:NcwText ShortcutRecording}" />
+                    </Panel>
+                  </Border>
+                </ui:PlainButton>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    <ui:NcwButton HorizontalAlignment="Left" Variant="Ghost" Command="{Binding ResetAllCommand}" IsEnabled="{Binding HasCustom}" Content="{l:NcwText ShortcutResetAll}" />
+  </StackPanel>
+</UserControl>

@@ -5,9 +5,9 @@ namespace Ncw.Agent.Kernel.Loop;
 internal sealed partial class RunExecution
 {
     /// <summary>一次上游请求的累积状态。<see cref="Id"/> 在第一个内容事件到来时才分配并发 start。</summary>
-    private sealed class Streaming
+    private sealed class Streaming(TimeProvider clock)
     {
-        public StreamAssembler Asm { get; } = new();
+        public StreamAssembler Asm { get; } = new(clock);
 
         /// <summary>已分配的消息 id(第一个内容事件、或者最终提交时分配;空消息永远不会消耗一个 id)。</summary>
         public MessageId? Id { get; set; }
@@ -63,7 +63,7 @@ internal sealed partial class RunExecution
     /// </summary>
     private async Task<Streaming> StreamOnceAsync(LlmRequest request)
     {
-        var streaming = new Streaming();
+        var streaming = new Streaming(_clock);
         _pending = streaming;
         var asm = streaming.Asm;
         var context = new RequestContext(_input.WorkspaceId, _input.RunId.Value, _input.SessionId);

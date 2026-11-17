@@ -1,39 +1,41 @@
 using Ncw.Client.Devices;
 using Ncw.Client.Services;
 using Ncw.Client.Stores;
+using Ncw.Client.ViewModels;
+using Ncw.Core.Domain;
 using Ncw.Protocol.Wire;
 
 namespace Ncw.Client.Actions;
 
 /// <summary>
-/// 项目相关的用户意图。项目栏的「+」、空状态里的按钮都调这里(AGENTS.md §3 规则 4)。
+/// 项目相关的用户意图。项目栏的「+」、项目面板空状态里的按钮、首次引导都调 <see cref="NewProjectAsync"/>(AGENTS.md §3 规则 4)。
 /// </summary>
 public sealed class ProjectActions(ClientStores stores, DeviceRegistry devices, Func<IDialogService> dialogs, Func<IClientText> text)
 {
-    /// <summary>选一个本机文件夹,在本机设备上登记为项目,并选中它。</summary>
-    public async Task AddLocalProjectAsync()
+    /// <summary>「新建项目」:弹窗选设备、填文件夹路径(本机设备可以浏览),添加成功后选中新项目。</summary>
+    public async Task NewProjectAsync()
     {
-        var t = text();
-        var path = await dialogs().PickFolderAsync(t.AddProjectPickTitle);
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
+        using var form = new NewProjectViewModel(stores, this, dialogs, text, stores.Selection.State.Project?.DeviceId);
+        await dialogs().ShowNewProjectAsync(form);
+    }
 
-        if (devices.Local is not { IsConnected: true } link)
+    /// <summary>在 <paramref name="deviceId"/> 上把 <paramref name="path"/>(那台设备上的文件夹)登记为项目,并选中它。</summary>
+    public async Task<ActionResult<ProjectRef>> AddAsync(string deviceId, string path, string? name = null, CancellationToken ct = default)
+    {
+        if (devices.Find(deviceId) is not { IsConnected: true } link)
         {
-            await dialogs().ShowErrorAsync(t.AddProjectFailedTitle, t.DeviceNotConnected);
-            return;
+            return ActionResult<ProjectRef>.NotConnected();
         }
 
         try
         {
-            var project = await link.AddProjectAsync(path);
+            var project = await link.AddProjectAsync(path, name, ct);
             stores.Selection.Update(_ => new SelectionState(project, null));
+            return ActionResult<ProjectRef>.Success(project);
         }
         catch (ProtocolException e)
         {
-            await dialogs().ShowErrorAsync(t.AddProjectFailedTitle, e.Message);
+            return ActionResult<ProjectRef>.From(e);
         }
     }
 }

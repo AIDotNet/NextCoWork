@@ -189,31 +189,76 @@ public class InspectorScreenshotTests
         Snapshot(view, "files-search-contents", width, dark);
     }
 
+    /// <summary>文件标签页单独渲染(主工作区里它盖在会话上,大小就是工作区的大小)。</summary>
+    private static (Window Window, FileTabView Tab) RenderFileTab(FilePreviewViewModel file, double width, bool dark, double height = 700)
+    {
+        ArcTheme.Apply(t => t.Appearance(dark ? ArcAppearance.Dark : ArcAppearance.Light).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
+        var tab = new FileTabView { DataContext = file };
+        var window = new Window { Width = width, Height = height, Content = tab };
+        window.Show();
+        Dispatch(8);
+        return (window, tab);
+    }
+
+    private static void SnapshotWindow(Window window, string scenario, double width, bool dark, bool last = true)
+    {
+        Dispatch();
+        var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
+        Directory.CreateDirectory(dir);
+        window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-{scenario}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        if (last)
+        {
+            ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
+        }
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Matrix))]
-    public async Task File_preview_shows_highlighted_code_and_edit_mode_a_text_box(double width, bool dark)
+    public async Task File_tab_shows_highlighted_code_and_edit_mode_a_text_box(double width, bool dark)
     {
         var rig = FilesRig();
-        var view = Render(rig, width, dark);
-        var files = view.Inspector.Files;
+        var workspace = new WorkspaceViewModel(rig.Stores, null, rig.Services.Files);
+        rig.Stores.Selection.Update(_ => new SelectionState(InspectorRig.Project, null));
 
-        await files.OpenPathAsync("src/Ncw.UI/Views/Desktop/InspectorPanel.axaml.cs", null);
-        Dispatch(10);
+        await workspace.OpenAsync(InspectorRig.Project, "src/Ncw.UI/Views/Desktop/InspectorPanel.axaml.cs");
+        var file = workspace.ActiveFile!;
+        var (window, tab) = RenderFileTab(file, width, dark);
 
-        Assert.True(files.HasPreview);
-        Assert.False(files.ShowsTree);
-        Assert.Contains("class InspectorPanel", files.Preview!.DisplayText);
-        Assert.Equal("csharp", files.Preview.Language);
-        Assert.Contains(Find<NcwCodeBlock>(view), _ => true);
-        Snapshot(view, "file-preview", width, dark, last: false);
+        Assert.Equal("InspectorPanel.axaml.cs", workspace.ActiveTab!.Title);
+        Assert.Contains("class InspectorPanel", file.DisplayText);
+        Assert.Equal("csharp", file.Language);
+        Assert.Contains(tab.GetVisualDescendants().OfType<NcwCodeBlock>(), c => c.IsEffectivelyVisible);
+        SnapshotWindow(window, "file-tab", width, dark, last: false);
 
-        files.Preview.EditCommand.Execute(null);
-        files.Preview.EditText = files.Preview.EditText + "\n// edited\n";
+        file.EditCommand.Execute(null);
+        file.EditText += "\n// edited\n";
         Dispatch(8);
 
-        Assert.True(files.Preview.CanSave);
-        Assert.Contains(Find<NcwTextArea>(view), t => t.Name == "EditBox");
-        Snapshot(view, "file-edit", width, dark);
+        Assert.True(file.CanSave);
+        Assert.Contains(tab.GetVisualDescendants().OfType<NcwTextArea>(), t => t.Name == "EditBox" && t.IsEffectivelyVisible);
+        SnapshotWindow(window, "file-tab-edit", width, dark);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Matrix))]
+    public async Task File_tab_renders_markdown_and_switches_to_source(double width, bool dark)
+    {
+        var rig = FilesRig();
+        var workspace = new WorkspaceViewModel(rig.Stores, null, rig.Services.Files);
+        rig.Stores.Selection.Update(_ => new SelectionState(InspectorRig.Project, null));
+
+        await workspace.OpenAsync(InspectorRig.Project, "docs/design/03-ui-layout.md");
+        var file = workspace.ActiveFile!;
+        var (window, tab) = RenderFileTab(file, width, dark);
+
+        Assert.Contains(tab.GetVisualDescendants().OfType<NcwMarkdown>(), m => m.IsEffectivelyVisible);
+        Assert.DoesNotContain(tab.GetVisualDescendants().OfType<NcwCodeBlock>(), c => c.IsEffectivelyVisible);
+        SnapshotWindow(window, "file-tab-markdown", width, dark, last: false);
+
+        file.ToggleRenderedCommand.Execute(null);
+        Dispatch(8);
+        Assert.Contains(tab.GetVisualDescendants().OfType<NcwCodeBlock>(), c => c.IsEffectivelyVisible);
+        SnapshotWindow(window, "file-tab-markdown-source", width, dark);
     }
 
     // ───────────────────────── Git ─────────────────────────
@@ -578,7 +623,7 @@ public class InspectorScreenshotTests
 
         Assert.True(composer.ShowsSuggestions);
         Assert.Contains(composer.FileSuggestions, f => f.Name == "InspectorViewModel.cs");
-        Assert.Contains(window.GetVisualDescendants().OfType<Border>(), b => b.Name == "FilePopup" && b.IsEffectivelyVisible);
+        AssertFloatsAboveTheCard(window, "FilePopup");
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(dir);
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-composer-at-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
@@ -587,8 +632,12 @@ public class InspectorScreenshotTests
         composer.AcceptSuggestion();
         Dispatch(8);
 
-        Assert.Single(composer.FileRefs);
-        Assert.Equal("看一下 ", composer.Draft);
+        var chip = Assert.Single(composer.FileRefs);
+        Assert.Equal("看一下 " + chip.Mention + " ", composer.Draft); // 选中的文件写成草稿里的 @名字 token
+        var editor = ComposerOf(window).FindControl<Ncw.UI.Controls.NcwTokenEditor>("Input")!;
+        var token = Assert.Single(editor.Tokens);
+        Assert.Equal((chip.Path, chip.Label), (token.Id, token.Label));
+        Assert.False(ComposerOf(window).FindControl<Avalonia.Controls.Primitives.Popup>("FilePopup")!.IsOpen); // 选完就收起
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-composer-chip-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
     }
@@ -612,9 +661,31 @@ public class InspectorScreenshotTests
         Assert.True(composer.HasSlashQuery);
         Assert.Contains(composer.SlashCommands, c => c is { Command: "/review", IsAvailable: true });
         Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: false });
+        AssertFloatsAboveTheCard(window, "SlashPopup");
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(dir);
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, $"inspector-composer-slash-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
+    }
+    private static Ncw.UI.Views.Desktop.Conversation.ComposerView ComposerOf(Window window) =>
+        window.GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Conversation.ComposerView>().First(c => c.IsEffectivelyVisible);
+
+    /// <summary>
+    /// `/` 和 `@` 的候选浮在输入框卡片的上方(docs/design/03 §6「输入框版式」):弹层开着、和卡片左对齐、底边在卡片顶边之上,
+    /// 不再塞进卡片里把它撑高。
+    /// </summary>
+    private static void AssertFloatsAboveTheCard(Window window, string popupName)
+    {
+        var composer = ComposerOf(window);
+        var popup = composer.FindControl<Avalonia.Controls.Primitives.Popup>(popupName)!;
+        Assert.True(popup.IsOpen);
+        var card = composer.FindControl<Border>("Card")!;
+        var panel = Assert.IsType<Border>(popup.Child);
+        var cardTop = card.TranslatePoint(new Avalonia.Point(0, 0), window)!.Value;
+        var panelTopLeft = panel.TranslatePoint(new Avalonia.Point(0, 0), window)!.Value;
+        Assert.True(panel.Bounds.Height > 0);
+        Assert.True(panelTopLeft.Y + panel.Bounds.Height <= cardTop.Y, $"{popupName} 的底边 {panelTopLeft.Y + panel.Bounds.Height} 应在卡片顶边 {cardTop.Y} 之上");
+        Assert.Equal(cardTop.X, panelTopLeft.X, 1);
+        Assert.Equal(card.Bounds.Width, panel.Bounds.Width, 1);
     }
 }

@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧菜单重设计方案</title>
+<style>
+/* 颜色全部是 token,名字对齐 Arc(Surface / SurfaceMuted / Border / TextSecondary / Accent …),落地时一一映射 */
+:root, :root[data-theme="dark"] {
+  --Page: #0f0f0f;
+  --Surface: #171717;
+  --Side: #1c1c1c;
+  --SurfaceMuted: #242424;
+  --SurfaceRaised: #2a2a2a;
+  --SurfaceHover: #2a2a2a;
+  --Selected: #303030;
+  --Border: #303030;
+  --BorderSubtle: #262626;
+  --BorderStrong: #444;
+  --Text: #ececec;
+  --TextSecondary: #a8a8a8;
+  --TextMuted: #737373;
+  --Accent: #7c9cff;
+  --AccentSoft: rgba(124,156,255,.15);
+  --Primary: #ececec;
+  --OnPrimary: #121212;
+  --Warning: #e3a53c;
+  --WarningSoft: rgba(227,165,60,.14);
+  --OnWarning: #1a1300;
+  --Danger: #ef6363;
+  --DangerSoft: rgba(239,99,99,.14);
+  --Success: #4cc38a;
+  --SuccessSoft: rgba(76,195,138,.13);
+  --Shadow: 0 14px 36px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.05);
+}
+:root[data-theme="light"] {
+  --Page: #efefec;
+  --Surface: #ffffff;
+  --Side: #f6f6f4;
+  --SurfaceMuted: #ebebe8;
+  --SurfaceRaised: #ffffff;
+  --SurfaceHover: #e9e9e6;
+  --Selected: #e2e2de;
+  --Border: #deddd9;
+  --BorderSubtle: #e7e7e3;
+  --BorderStrong: #c8c7c2;
+  --Text: #1d1d1b;
+  --TextSecondary: #5d5d58;
+  --TextMuted: #93928d;
+  --Accent: #3d63dd;
+  --AccentSoft: rgba(61,99,221,.11);
+  --Primary: #1d1d1b;
+  --OnPrimary: #ffffff;
+  --Warning: #b4730d;
+  --WarningSoft: rgba(180,115,13,.12);
+  --OnWarning: #ffffff;
+  --Danger: #d23f3f;
+  --DangerSoft: rgba(210,63,63,.10);
+  --Success: #1f9460;
+  --SuccessSoft: rgba(31,148,96,.11);
+  --Shadow: 0 14px 36px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.06);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--Page); color: var(--Text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+input { font: inherit; color: inherit; }
+svg.i { width: var(--s, 14px); height: var(--s, 14px); flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+kbd { font: 10.5px ui-monospace, Menlo, monospace; color: var(--TextMuted); border: 1px solid var(--Border); border-radius: 4px; padding: 0 4px; line-height: 16px; }
+
+/* ---------- 页面框架 ---------- */
+.page { max-width: 1180px; margin: 0 auto; padding: 32px 16px 96px; }
+.hero h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; letter-spacing: -.01em; }
+.hero p { margin: 0; color: var(--TextSecondary); max-width: 820px; }
+.controls { position: sticky; top: 0; z-index: 60; margin: 20px -16px 8px; padding: 10px 16px; background: color-mix(in srgb, var(--Page) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--BorderSubtle); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.controls .lbl { color: var(--TextMuted); font-size: 12px; margin-right: 6px; }
+.seg { display: inline-flex; background: var(--SurfaceMuted); border: 1px solid var(--Border); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg button { padding: 3px 10px; border-radius: 7px; font-size: 12.5px; color: var(--TextSecondary); white-space: nowrap; }
+.seg button.on { background: var(--Surface); color: var(--Text); box-shadow: 0 0 0 1px var(--Border); }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav a { font-size: 12.5px; color: var(--TextSecondary); text-decoration: none; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--Border); }
+.nav a:hover { color: var(--Text); background: var(--SurfaceMuted); }
+
+h2.sec { font-size: 17px; margin: 40px 0 10px; font-weight: 650; }
+.audit { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.audit .it { background: var(--Surface); border: 1px solid var(--BorderSubtle); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--TextSecondary); display: flex; gap: 10px; }
+.audit .it b { color: var(--Text); font-weight: 600; }
+.sev { flex: none; font: 600 10.5px/1 ui-monospace, Menlo, monospace; padding: 4px 6px; border-radius: 5px; height: fit-content; margin-top: 2px; }
+.sev.h { background: var(--DangerSoft); color: var(--Danger); }
+.sev.m { background: var(--WarningSoft); color: var(--Warning); }
+.sev.l { background: var(--SurfaceMuted); color: var(--TextSecondary); }
+
+section.opt { margin-top: 52px; scroll-margin-top: 70px; }
+.opt-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.opt-head .tag { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--Accent); background: var(--AccentSoft); padding: 4px 7px; border-radius: 6px; }
+.opt-head h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.opt-head .sub { color: var(--TextSecondary); font-size: 13px; }
+.opt-head .rec { font-size: 11.5px; color: var(--Success); background: var(--SuccessSoft); padding: 2px 8px; border-radius: 10px; }
+.stagewrap { margin-top: 14px; overflow-x: auto; border-radius: 13px; }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 14px; font-size: 13px; color: var(--TextSecondary); }
+@media (max-width: 860px) { .notes { grid-template-columns: 1fr; } }
+.notes h4 { margin: 0 0 6px; font-size: 12px; color: var(--TextMuted); font-weight: 600; }
+.notes ul { margin: 0; padding-left: 18px; }
+.notes li { margin: 3px 0; }
+.notes li b { color: var(--Text); font-weight: 600; }
+.notes .pro li::marker { color: var(--Success); }
+.notes .con li::marker { color: var(--Warning); }
+.hint { font-size: 12px; color: var(--TextMuted); margin-top: 8px; }
+
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+table.cmp th, table.cmp td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--BorderSubtle); vertical-align: top; }
+table.cmp th { color: var(--TextMuted); font-weight: 600; font-size: 12px; }
+table.cmp td:first-child { color: var(--TextSecondary); white-space: nowrap; }
+.good { color: var(--Success); } .mid { color: var(--Warning); } .bad { color: var(--Danger); }
+.cmpwrap { overflow-x: auto; }
+.common { background: var(--Surface); border: 1px solid var(--BorderSubtle); border-radius: 12px; padding: 14px 18px; font-size: 13.5px; color: var(--TextSecondary); }
+.common li { margin: 4px 0; } .common b { color: var(--Text); }
+
+/* ---------- 模拟窗口 ---------- */
+.win { display: flex; height: 620px; min-width: 900px; border: 1px solid var(--Border); border-radius: 12px; overflow: hidden; background: var(--Surface); position: relative; font-size: 13px; }
+.side { display: flex; flex-direction: column; background: var(--Side); border-right: 1px solid var(--BorderSubtle); position: relative; flex: none; min-height: 0; }
+.cols { display: flex; flex: 1; min-height: 0; }
+.topbar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; flex: none; }
+.lights { display: flex; gap: 7px; margin-right: 10px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--BorderStrong); }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 650; font-size: 13px; }
+.logo { width: 18px; height: 18px; border-radius: 5px; background: var(--Text); color: var(--Side); display: inline-flex; align-items: center; justify-content: center; font: 800 10px/1 sans-serif; }
+.sp { flex: 1; }
+.ib { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: var(--TextSecondary); flex: none; position: relative; }
+.ib:hover, .ib.on { background: var(--SurfaceHover); color: var(--Text); }
+.ib.sm { width: 22px; height: 22px; border-radius: 6px; }
+.scroll { overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
+
+/* 项目图标(栏 1 的瓦片) */
+.tile { position: relative; width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font: 700 14px/1 -apple-system, sans-serif; color: #fff; flex: none; transition: transform .12s; }
+.tile:hover { transform: translateY(-1px); }
+.tile.sm { width: 18px; height: 18px; border-radius: 5px; font-size: 8.5px; }
+.tile.sm.e { font-size: 11px; }
+.tile.md { width: 22px; height: 22px; border-radius: 6px; font-size: 9.5px; }
+.tile.off { filter: grayscale(1); opacity: .45; }
+.tile.sel::after { content: ''; position: absolute; inset: -4px; border-radius: 15px; border: 2px solid var(--Text); opacity: .9; }
+.tile .bdg { position: absolute; top: -5px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--Warning); color: var(--OnWarning); font: 700 10px/13px -apple-system, sans-serif; text-align: center; border: 2px solid var(--Side); }
+.tile .runm { position: absolute; bottom: -3px; right: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--Accent); border: 2px solid var(--Side); animation: breathe 1.6s infinite; }
+.tile .offm { position: absolute; bottom: -4px; right: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--Side); color: var(--TextMuted); display: flex; align-items: center; justify-content: center; }
+@keyframes breathe { 50% { opacity: .35; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+.rail { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0 12px; flex: none; }
+.rail .list { display: flex; flex-direction: column; align-items: center; gap: 12px; overflow-y: auto; padding: 6px 0; scrollbar-width: none; }
+.cap { background: var(--SurfaceMuted); border-radius: 16px; padding: 6px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.cap .gh { color: var(--TextMuted); height: 16px; }
+.mini4 { position: relative; width: 40px; height: 40px; border-radius: 12px; background: var(--SurfaceMuted); display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 7px; }
+.mini4 i { border-radius: 3px; }
+.mini4 .bdg { position: absolute; top: -5px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--Warning); color: var(--OnWarning); font: 700 10px/13px -apple-system, sans-serif; text-align: center; border: 2px solid var(--Side); }
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--SurfaceMuted); color: var(--TextSecondary); display: inline-flex; align-items: center; justify-content: center; font: 600 11px/1 sans-serif; flex: none; position: relative; }
+.avatar .ok { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--Success); border: 2px solid var(--Side); }
+
+/* 行 */
+.row { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; color: var(--Text); min-width: 0; position: relative; }
+.row:hover { background: var(--SurfaceHover); }
+.row.sel { background: var(--Selected); }
+.row .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { font-size: 11.5px; color: var(--TextMuted); white-space: nowrap; }
+.row .ic { color: var(--TextSecondary); display: inline-flex; }
+.row.muted { color: var(--TextSecondary); }
+.row .hov { display: none; gap: 2px; }
+.row:hover .hov { display: inline-flex; }
+.row:hover .hidehov { display: none; }
+.st { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1.5px solid var(--TextMuted); }
+.st.run { background: var(--Accent); border-color: var(--Accent); animation: breathe 1.6s infinite; }
+.st.wait { background: var(--Warning); border-color: var(--Warning); }
+.st.fail { background: var(--Danger); border-color: var(--Danger); }
+.pill { font: 700 10.5px/1 -apple-system, sans-serif; padding: 3px 6px; border-radius: 9px; white-space: nowrap; }
+.pill.w { background: var(--WarningSoft); color: var(--Warning); }
+.pill.d { background: var(--DangerSoft); color: var(--Danger); }
+.pill.a { background: var(--AccentSoft); color: var(--Accent); }
+.pill.n { background: var(--SurfaceMuted); color: var(--TextSecondary); }
+.timer { font: 11.5px ui-monospace, Menlo, monospace; color: var(--Accent); }
+.sh { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px; font-size: 11.5px; color: var(--TextMuted); font-weight: 600; margin-top: 6px; }
+.sh .chev { transition: transform .15s; }
+.sh .chev.closed { transform: rotate(-90deg); }
+.sh button.t { display: inline-flex; align-items: center; gap: 4px; }
+.more { font-size: 12px; color: var(--TextMuted); padding: 0 8px 0 26px; height: 26px; display: flex; align-items: center; }
+.more:hover { color: var(--Text); }
+
+/* 按钮 */
+.newbtn { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; background: var(--SurfaceMuted); border: 1px solid var(--Border); flex: 1; font-weight: 550; }
+.newbtn:hover { background: var(--SurfaceHover); }
+.newbtn kbd { margin-left: auto; }
+.navrow { display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; color: var(--Text); }
+.navrow:hover { background: var(--SurfaceHover); }
+.navrow.on { background: var(--Selected); }
+.navrow .ic { color: var(--TextSecondary); display: inline-flex; }
+.navrow kbd, .navrow .pill { margin-left: auto; }
+
+/* 弹出层 */
+.pop { position: absolute; z-index: 30; background: var(--SurfaceRaised); border-radius: 10px; box-shadow: var(--Shadow); padding: 5px; min-width: 240px; }
+.pop .row { height: 30px; }
+.pop .sep { height: 1px; background: var(--BorderSubtle); margin: 5px 4px; }
+.pop .cap-t { font-size: 11px; color: var(--TextMuted); padding: 6px 8px 3px; font-weight: 600; }
+.pop input { width: 100%; height: 30px; border: 0; outline: 0; background: transparent; padding: 0 8px; font-size: 13px; }
+.pop input::placeholder { color: var(--TextMuted); }
+
+/* 工作区占位 */
+.ws { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--Surface); position: relative; }
+.ws .tabs { height: 40px; display: flex; align-items: center; gap: 4px; padding: 0 10px; border-bottom: 1px solid var(--BorderSubtle); flex: none; }
+.ws .tab { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--SurfaceMuted); max-width: 300px; font-size: 12.5px; }
+.ws .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws .body { flex: 1; padding: 28px 36px; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: hidden; }
+.ghost { height: 10px; border-radius: 5px; background: var(--SurfaceMuted); }
+.ws .where { font-size: 12px; color: var(--TextMuted); display: flex; align-items: center; gap: 6px; }
+.ws .composer { margin: 0 20px 18px; border: 1px solid var(--Border); border-radius: 14px; padding: 12px 14px; color: var(--TextMuted); font-size: 13px; display: flex; align-items: center; }
+.toast { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--Text); color: var(--Surface); font-size: 12.5px; padding: 7px 12px; border-radius: 8px; white-space: nowrap; box-shadow: var(--Shadow); z-index: 40; }
+
+/* 待处理卡片 */
+.attn { margin: 2px 10px 6px; border-radius: 9px; background: var(--WarningSoft); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+.attn .h { display: flex; align-items: center; gap: 6px; color: var(--Warning); font-weight: 600; font-size: 12.5px; }
+.attn .d { font-size: 12px; color: var(--TextSecondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn .d code { font: 11.5px ui-monospace, Menlo, monospace; color: var(--Text); }
+.attn .other { font-size: 11.5px; color: var(--TextMuted); }
+.attn .other:hover { color: var(--Text); }
+
+/* 收件箱卡片(方案 C) */
+.icard { border: 1px solid var(--BorderSubtle); background: var(--Surface); border-radius: 10px; padding: 9px 10px; margin: 0 10px 8px; display: flex; flex-direction: column; gap: 5px; }
+.icard .h { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--TextMuted); }
+.icard .w { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.icard code { display: block; font: 11.5px ui-monospace, Menlo, monospace; color: var(--TextSecondary); background: var(--SurfaceMuted); padding: 4px 6px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icard .btns { display: flex; gap: 6px; margin-top: 2px; }
+.btn { height: 26px; padding: 0 10px; border-radius: 7px; font-size: 12px; border: 1px solid var(--Border); }
+.btn:hover { background: var(--SurfaceHover); }
+.btn.p { background: var(--Primary); color: var(--OnPrimary); border-color: transparent; }
+
+/* 方案 C:活动栏 */
+.abar { width: 52px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0 12px; flex: none; border-right: 1px solid var(--BorderSubtle); }
+.abtn { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--TextMuted); position: relative; }
+.abtn:hover { color: var(--Text); background: var(--SurfaceHover); }
+.abtn.on { color: var(--Text); background: var(--Selected); }
+.abtn .bdg { position: absolute; top: 2px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--Warning); color: var(--OnWarning); font: 700 9.5px/16px -apple-system, sans-serif; text-align: center; }
+.abtn .bdg.a { background: var(--Accent); color: #fff; }
+.switcher { display: flex; align-items: center; gap: 8px; height: 40px; width: 100%; padding: 0 8px; border-radius: 9px; border: 1px solid var(--Border); background: var(--Surface); }
+.switcher:hover { border-color: var(--BorderStrong); }
+.switcher .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher .sub { font-size: 11px; color: var(--TextMuted); font-weight: 400; }
+
+/* 方案 D:筛选 chip */
+.chips { display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.chipf { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px 0 6px; border-radius: 13px; border: 1px solid var(--Border); font-size: 12px; white-space: nowrap; color: var(--TextSecondary); flex: none; }
+.chipf.on { background: var(--Text); color: var(--Surface); border-color: transparent; }
+.chipf .pill { padding: 2px 5px; }
+
+.foot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--BorderSubtle); flex: none; }
+.foot .who { flex: 1; min-width: 0; line-height: 1.25; }
+.foot .who b { display: block; font-weight: 600; font-size: 12.5px; }
+.foot .who span { font-size: 11px; color: var(--TextMuted); }
+.pfoot { display: flex; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--BorderSubtle); flex: none; }
+.pfoot button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12px; color: var(--TextSecondary); }
+.pfoot button:hover { background: var(--SurfaceHover); color: var(--Text); }
+.indent { padding-left: 18px; }
+.metaline { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--TextMuted); align-items: center; }
+.metaline span { display: inline-flex; align-items: center; gap: 4px; }
+.dotw { width: 6px; height: 6px; border-radius: 50%; background: var(--Warning); display: inline-block; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hero">
+    <h1>左侧菜单重设计 · 四个方案</h1>
+    <p>左侧区域现在由两栏组成:64px 的项目栏和 288px 的项目面板。下面先列出它现在的问题,再给出四个可以直接点的方案,每个都用同一份模拟数据(5 个项目、1 个项目组、3 项待处理、2 个运行中)。选定一个后告诉我,我会先改 <code>docs/design/03-ui-layout.md</code> §1,再动手实现。</p>
+  </div>
+
+  <div class="controls">
+    <div><span class="lbl">主题</span><span class="seg" id="theme"><button data-t="dark" class="on">深色</button><button data-t="light">浅色</button></span></div>
+    <nav class="nav"><a href="#audit">现状</a><a href="#A">A 精修两栏</a><a href="#B">B 单栏项目树</a><a href="#C">C 活动栏</a><a href="#D">D 会话时间线</a><a href="#cmp">对比</a></nav>
+  </div>
+
+  <h2 class="sec" id="audit">现状整理:左侧有哪些问题</h2>
+  <div class="audit">
+    <div class="it"><span class="sev h">坏</span><div><b>项目名旁的 ⌄ 点了没反应。</b>按钮没有绑定命令,像菜单却打不开。</div></div>
+    <div class="it"><span class="sev h">坏</span><div><b>「终端和智能体」的 + 和每一行点了都没反应。</b>同样没有绑定命令。</div></div>
+    <div class="it"><span class="sev m">中</span><div><b>别的项目在等你,只能看到一个数字角标。</b>看不出是哪个会话、要你做什么,只能一个个点进去找。</div></div>
+    <div class="it"><span class="sev m">中</span><div><b>最常用的「新会话」是分区标题后面一个 14px 的 +。</b>新用户很难找到。</div></div>
+    <div class="it"><span class="sev m">中</span><div><b>会话行信息太少。</b>只有状态点和时间,看不到运行了多久、有几项待批、是否失败;也没有「今天 / 更早」的分组,旧会话会把列表越拉越长。</div></div>
+    <div class="it"><span class="sev m">中</span><div><b>「当前在哪个项目」重复说了三遍。</b>项目栏的选中环、面板顶部的大字项目名、整行等宽字体的路径,占掉面板顶部约 110px。</div></div>
+    <div class="it"><span class="sev l">小</span><div><b>「在此项目中搜索」和 ⌘K 面板重复。</b>前者只筛选会话标题,名字却像全文搜索。</div></div>
+    <div class="it"><span class="sev l">小</span><div><b>「自动化」分区下只有一项「定时任务」。</b>一个分区标题加一行,比较浪费。</div></div>
+    <div class="it"><span class="sev l">小</span><div><b>「显示已归档」是一个没有文字的归档图标。</b>打开后状态不明显。</div></div>
+    <div class="it"><span class="sev l">小</span><div><b>账户和设置挤在 64px 项目栏底部,只有图标。</b>登录状态要靠头像上的小点判断。</div></div>
+  </div>
+
+  <section class="opt" id="A">
+    <div class="opt-head"><span class="tag">A</span><h2>精修两栏</h2><span class="sub">保留「项目栏 + 项目面板」的骨架,只修问题、补信息</span></div>
+    <div class="stagewrap"><div class="win" data-opt="A"></div></div>
+    <div class="hint">可以点:左边的项目图标、项目名(打开项目菜单)、会话、「更早」、终端分区的 +、待处理卡片里的「其他项目」。</div>
+    <div class="notes">
+      <div><h4>怎么变</h4><ul>
+        <li>项目名 ⌄ 变成真正的<b>项目菜单</b>:切换项目、在访达中显示、复制路径、更改图标、项目设置。路径从常驻行挪到菜单和悬停提示里。</li>
+        <li>「<b>新会话 ⌘N</b>」做成一整行按钮,旁边是 ⌘K 搜索。面板里的「在此项目中搜索」框去掉。</li>
+        <li>这个项目有待处理时,顶部出现<b>黄色卡片</b>;卡片底部写着「其他项目还有 N 项」,点一下跳过去。</li>
+        <li>会话按<b>置顶 / 今天 / 昨天 / 更早</b>分组,「更早」默认收起。行尾依次显示待处理数 → 运行计时 → 时间。</li>
+        <li>「定时任务」和「已归档」挪到面板底栏。</li>
+      </ul></div>
+      <div class="pro"><h4>好处</h4><ul>
+        <li><b>改动最小</b>:项目栏、项目组、拖放全部不动,用户不用重新学习。</li>
+        <li>修掉三个点了没反应的按钮。</li>
+        <li>面板顶部从约 110px 缩到 70px,会话能多显示 2–3 行。</li>
+      </ul></div>
+      <div class="con"><h4>代价</h4><ul>
+        <li>跨项目的情况仍然只有角标和一行提示,在多个项目之间来回处理审批还是要多点几下。</li>
+        <li>左侧总宽仍是 64 + 288px。</li>
+        <li>工作量:2–3 天。主要改 ProjectPanel.axaml、SessionRow 和 ProjectPanelViewModel 的分组逻辑。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="opt" id="B">
+    <div class="opt-head"><span class="tag">B</span><h2>单栏项目树</h2><span class="rec">推荐</span><span class="sub">去掉两栏,合成一栏:顶部放全局入口,下面所有项目可以就地展开看会话</span></div>
+    <div class="stagewrap"><div class="win" data-opt="B"></div></div>
+    <div class="hint">可以点:项目行(展开 / 收起)、「工作」组标题、会话、「显示更多」、悬停项目时出现的 + 和 ⋯、左上角的 ◧(⌘B 收起后变成现在的图标栏)。</div>
+    <div class="notes">
+      <div><h4>怎么变</h4><ul>
+        <li>顶部 4 个<b>全局入口</b>:新会话 ⌘N、搜索 ⌘K、收件箱(角标 = 所有项目的待处理数,等同 ⌘J)、定时任务。</li>
+        <li>下面是<b>项目树</b>:项目组 → 项目 → 会话和终端。收起的项目在行尾汇总状态(待处理数 / 运行中 / 离线);展开的项目先列需要你处理和运行中的会话,其余按时间排列,最多显示 4 条,多的收进「显示更多」。</li>
+        <li>设备只在非本机时写在项目名后面(和刚做的「单设备不显示设备」一致)。</li>
+        <li>底部:头像、名字、登录状态、设置。</li>
+        <li><b>⌘B 收起后变成 60px 的图标栏</b>,就是现在的项目栏(带角标和项目组胶囊),原有代码可以复用。</li>
+      </ul></div>
+      <div class="pro"><h4>好处</h4><ul>
+        <li><b>一眼看到所有项目的状态</b>:哪个会话在等你、哪个在跑,不用逐个切换。</li>
+        <li>切换会话(包括跨项目)只要点一下;现在跨项目要先点项目再点会话。</li>
+        <li>左侧总宽从 352px 降到约 280px,工作区更宽。</li>
+        <li>和 Codex、Claude 桌面版、Cursor 的心智一致,上手快。</li>
+      </ul></div>
+      <div class="con"><h4>代价</h4><ul>
+        <li>项目一多(20+)时树会变长,靠「收起的项目只占一行」和项目组折叠来控制。</li>
+        <li>拖放规则要从图标栏搬到树里(RailDropPlanner 的纯函数可以复用,命中区域要重算)。</li>
+        <li>03 §1 的「三栏」描述要重写;项目面板头部的分支、工作区状态挪到会话标签栏或右侧 Git 页签。</li>
+        <li>工作量:5–7 天。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="opt" id="C">
+    <div class="opt-head"><span class="tag">C</span><h2>活动栏 + 面板</h2><span class="sub">左边窄栏不再放项目,改成「模式」切换(类似 VS Code / Slack)</span></div>
+    <div class="stagewrap"><div class="win" data-opt="C"></div></div>
+    <div class="hint">可以点:左侧四个模式、顶部的项目切换框、收件箱里的允许 / 拒绝、运行中的停止。</div>
+    <div class="notes">
+      <div><h4>怎么变</h4><ul>
+        <li>52px 活动栏放四个模式:<b>会话</b>、<b>收件箱</b>(黄色角标)、<b>运行中</b>(蓝色角标)、<b>自动化</b>。头像和设置在底部。</li>
+        <li>「会话」模式:顶部一个<b>项目切换框</b>(可搜索、按组列出、带状态),下面是这个项目的会话和终端。</li>
+        <li>「收件箱」模式:跨项目的审批和问题卡片,<b>可以直接允许或拒绝</b>,不用进会话。</li>
+        <li>「运行中」:所有在跑的 Run,带计时和停止按钮。「自动化」:定时任务列表。</li>
+      </ul></div>
+      <div class="pro"><h4>好处</h4><ul>
+        <li>处理审批最快:在收件箱里一屏处理完,适合同时开很多 Agent 的重度用户。</li>
+        <li>每个模式有专属的空间,以后加「插件」「设备」等模式不会挤。</li>
+      </ul></div>
+      <div class="con"><h4>代价</h4><ul>
+        <li><b>项目图标不再常驻</b>,切换项目要两次点击(⌘1–9 和 ⌘K 仍可用)。项目组的 2×2 网格、拖放排序只能放进切换框里,存在感变弱。</li>
+        <li>直接在列表里点「允许」,看不到上下文,只适合低风险操作;高风险的仍要跳进会话。</li>
+        <li>工作量:6–8 天。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="opt" id="D">
+    <div class="opt-head"><span class="tag">D</span><h2>会话时间线</h2><span class="sub">以会话为中心:所有项目的会话混在一条时间线里,项目只是一个筛选条件</span></div>
+    <div class="stagewrap"><div class="win" data-opt="D"></div></div>
+    <div class="hint">可以点:顶部的项目筛选 chip、会话、「新会话 ▾」(会先问在哪个项目里新建)。</div>
+    <div class="notes">
+      <div><h4>怎么变</h4><ul>
+        <li>一列会话,分成<b>需要你 / 运行中 / 今天 / 昨天 / 更早</b>五组;每行前面有一个很小的项目图标。</li>
+        <li>顶部的 chip 按项目筛选,chip 上有这个项目的待处理数。</li>
+        <li>新建会话时选择项目,默认是当前筛选的项目。</li>
+        <li>项目管理(添加、分组、图标)挪到设置里,或者放进 chip 的右键菜单。</li>
+      </ul></div>
+      <div class="pro"><h4>好处</h4><ul>
+        <li>最简洁:一个列表,最重要的永远在最上面。</li>
+        <li>适合「项目少、会话多」的用户,以及跨项目干活的人。</li>
+      </ul></div>
+      <div class="con"><h4>代价</h4><ul>
+        <li><b>项目、项目组这一层几乎消失</b>,和 03 里花了很多设计的项目栏、分组、拖放、项目图标相冲突。</li>
+        <li>终端、定时任务这些按项目归属的东西没有自然的位置。</li>
+        <li>项目多了,chip 一行放不下。</li>
+        <li>工作量:4–5 天,但要删掉 / 搬走的现有功能最多。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <h2 class="sec" id="cmp">对比</h2>
+  <div class="cmpwrap">
+  <table class="cmp">
+    <tr><th></th><th>A 精修两栏</th><th>B 单栏项目树</th><th>C 活动栏</th><th>D 会话时间线</th></tr>
+    <tr><td>左侧宽度</td><td>352px</td><td class="good">280px(收起 60)</td><td>52 + 272 = 324px</td><td class="good">280px</td></tr>
+    <tr><td>看到别的项目在等什么</td><td class="mid">角标 + 一行提示</td><td class="good">树里直接看到会话</td><td class="good">收件箱模式</td><td class="good">「需要你」组置顶</td></tr>
+    <tr><td>跨项目切到某个会话</td><td class="mid">2 次点击</td><td class="good">1 次(展开着)</td><td class="mid">2–3 次</td><td class="good">1 次</td></tr>
+    <tr><td>项目多(20+)时</td><td class="good">图标栏很紧凑</td><td class="mid">靠折叠控制</td><td class="good">切换框里搜索</td><td class="bad">chip 放不下</td></tr>
+    <tr><td>项目组 / 拖放 / 项目图标</td><td class="good">原样保留</td><td class="good">保留,搬进树里</td><td class="mid">藏进切换框</td><td class="bad">基本放弃</td></tr>
+    <tr><td>和现有设计(03 §1)的距离</td><td class="good">很小</td><td class="mid">中等,要重写 §1</td><td class="mid">中等</td><td class="bad">大</td></tr>
+    <tr><td>工作量</td><td class="good">2–3 天</td><td class="mid">5–7 天</td><td class="mid">6–8 天</td><td class="mid">4–5 天</td></tr>
+  </table>
+  </div>
+
+  <h2 class="sec">不管选哪个都要做的</h2>
+  <div class="common"><ul>
+    <li><b>修好点了没反应的按钮</b>:项目名 ⌄、终端分区的 +、终端行。</li>
+    <li><b>会话行补全状态</b>:行尾显示待处理数(黄)、运行计时(蓝)、失败(红),优先级依次降低,只显示一个。数据来自已有的 <code>ActivityInboxView</code> 和 <code>SessionActivityView</code>,不新增真源。</li>
+    <li><b>会话按时间分组</b>:分组逻辑写成 <code>Ncw.Core/Domain</code> 里的纯函数,手机端的会话列表一起用。</li>
+    <li><b>「新会话」做成显眼的按钮</b>。项目内搜索并入 ⌘K。</li>
+    <li>所有新文字走 <code>NcwTextKind</code> + 两份 xlf;颜色全用 Arc token(这个页面里的颜色也都是按 token 名写的)。</li>
+  </ul></div>
+  <p class="hint">我的推荐是 <b>B</b>:它把「左侧最该回答的问题」——<i>哪里在等我、哪里在跑</i>——直接摆在眼前,而且 ⌘B 收起后就是现在的图标栏,老用户的习惯没有丢。如果想尽快见效、风险最低,选 <b>A</b>。回复「选 A / B / C / D」即可,也可以组合,比如「B,但收件箱用 C 的卡片样式」。</p>
+</div>
+
+<script>
+/* ---------- 图标(Lucide 路径) ---------- */
+const ICONS = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  cal: '<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  updown: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+  term: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  dots: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  star: '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  q: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  activity: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  stop: '<rect width="12" height="12" x="6" y="6" rx="2"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  wifioff: '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="m2 2 20 20"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  folderplus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+};
+const I = (n, s = 14, cls = '') => `<svg class="i ${cls}" style="--s:${s}px" viewBox="0 0 24 24">${ICONS[n]}</svg>`;
+
+/* ---------- 模拟数据(所有方案共用) ---------- */
+const P = {
+  ncw: { name: 'NextCoWork', glyph: '🐙', color: '#0f766e', path: '~/code/NextCoWork', branch: 'v3/avalonia', dirty: true, tasks: 2,
+    sessions: [
+      { id: 's1', title: '设计 Agent Runtime 并实现回合循环', st: 'run', el: '2:31', pend: 1, day: 0, pin: true, t: '刚刚' },
+      { id: 's2', title: 'Avalonia 三栏外壳', day: 0, t: '2 小时前' },
+      { id: 's3', title: '修复 CI 里的 headless 截图', st: 'fail', day: 1, t: '昨天' },
+      { id: 's4', title: '整理 parity.md 的未覆盖项', day: 2, t: '周一' },
+      { id: 's5', title: '写周报', day: 2, t: '上周' },
+      { id: 's6', title: '调研 WebView 内联可视化', day: 2, t: '11月2日' },
+    ],
+    terms: [{ id: 't1', t: 'Claude Code', agent: 1 }, { id: 't2', t: 'zsh' }] },
+  oc: { name: 'Octopus', ini: 'Oc', color: '#ea580c', path: '~/code/octopus', branch: 'main', tasks: 0,
+    sessions: [
+      { id: 'o1', title: '重构登录流程', st: 'wait', pend: 2, day: 0, t: '5 分钟前' },
+      { id: 'o2', title: '迁移到 .NET 10', day: 1, t: '昨天' },
+    ], terms: [{ id: 't3', t: 'zsh' }] },
+  ag: { name: 'Agent', ini: 'Ag', color: '#16a34a', path: '/srv/agent', branch: 'dev', remote: 'devbox', tasks: 1,
+    sessions: [{ id: 'a1', title: '压测回合循环', day: 1, t: '昨天' }], terms: [] },
+  as: { name: 'AvaloniaStudio', ini: 'AS', color: '#2563eb', path: '~/work/studio', branch: 'release/1.4', remote: 'Mac mini', tasks: 0,
+    sessions: [
+      { id: 'x1', title: '生成发布清单并签名', st: 'run', el: '12:04', day: 0, t: '刚刚' },
+      { id: 'x2', title: '修复 macOS 公证失败', day: 2, t: '周一' },
+    ], terms: [{ id: 't4', t: 'Codex', agent: 1 }] },
+  av: { name: 'Avalonia', ini: 'Av', color: '#9333ea', path: '~/oss/Avalonia', branch: 'master', remote: '旧笔记本', offline: true, tasks: 0,
+    sessions: [{ id: 'v1', title: 'TextLayout 性能回归', day: 2, t: '10月28日' }], terms: [] },
+};
+const RAIL = ['ncw', { group: 'g1', name: '工作', items: ['oc', 'ag'] }, 'as', 'av'];
+const ORDER = ['ncw', 'oc', 'ag', 'as', 'av'];
+const INBOX = [
+  { p: 'oc', s: 'o1', kind: 'approve', what: '运行命令', detail: 'rm -rf node_modules && npm ci', ago: '5 分钟前' },
+  { p: 'oc', s: 'o1', kind: 'question', what: '在问你', detail: '登录态放 Cookie 还是 LocalStorage?', ago: '4 分钟前' },
+  { p: 'ncw', s: 's1', kind: 'approve', what: '写入文件', detail: 'src/Ncw.Agent.Kernel/Loop/RunLoop.cs  +48 −12', ago: '刚刚' },
+];
+const TASKS = [
+  { p: 'ncw', name: '每日依赖巡检', when: '每天 09:00', next: '明天 09:00' },
+  { p: 'ncw', name: '周五写周报草稿', when: '每周五 17:30', next: '周五 17:30' },
+  { p: 'ag', name: '夜间压测', when: '每天 02:00', next: '今晚 02:00' },
+];
+const DAYS = ['今天', '昨天', '更早'];
+
+const pend = id => P[id].sessions.reduce((n, s) => n + (s.pend || 0), 0);
+const running = id => P[id].sessions.some(s => s.st === 'run');
+const totalPend = () => ORDER.reduce((n, id) => n + pend(id), 0);
+const allRunning = () => ORDER.flatMap(id => P[id].sessions.filter(s => s.st === 'run').map(s => ({ p: id, s })));
+const findSess = sid => { for (const id of ORDER) { const s = P[id].sessions.find(x => x.id === sid); if (s) return { p: id, s }; } return null; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* 项目图标 */
+function tile(id, { size = '', sel = false, badges = true } = {}) {
+  const p = P[id];
+  const txt = p.glyph || p.ini;
+  const n = pend(id);
+  let b = '';
+  if (badges) {
+    if (n) b += `<span class="bdg">${n}</span>`;
+    if (p.offline) b += `<span class="offm">${I('wifioff', 9)}</span>`;
+    else if (running(id)) b += `<span class="runm"></span>`;
+  }
+  return `<span class="tile ${size} ${p.glyph ? 'e' : ''} ${sel ? 'sel' : ''} ${p.offline ? 'off' : ''}" style="background:${p.glyph ? 'var(--SurfaceMuted)' : p.color}">${txt}${b}</span>`;
+}
+function mini4(ids) {
+  const n = ids.reduce((a, id) => a + pend(id), 0);
+  const cells = [0, 1, 2, 3].map(i => ids[i] ? `<i style="background:${P[ids[i]].color}"></i>` : '<i></i>').join('');
+  return `<span class="mini4">${cells}${n ? `<span class="bdg">${n}</span>` : ''}</span>`;
+}
+/* 会话行:行尾按优先级只显示一个——待处理 > 运行计时 > 失败 > 时间 */
+function sessRow(pid, s, sel, { tag = false, indent = false } = {}) {
+  let right;
+  if (s.pend) right = `<span class="pill w">${s.pend} 待处理</span>`;
+  else if (s.st === 'run') right = `<span class="timer">${s.el}</span>`;
+  else if (s.st === 'fail') right = `<span class="pill d">失败</span>`;
+  else right = `<span class="meta">${s.t}</span>`;
+  const lead = tag ? tile(pid, { size: 'sm', badges: false }) : `<span class="st ${s.st || ''}"></span>`;
+  return `<button class="row ${sel ? 'sel' : ''} ${indent ? 'indent' : ''}" data-act="sess" data-p="${pid}" data-s="${s.id}" title="${esc(s.title)}">
+    ${lead}<span class="tt">${esc(s.title)}</span>${s.pin && !tag ? `<span class="ic" style="color:var(--TextMuted)">${I('pin', 11)}</span>` : ''}${right}</button>`;
+}
+function termRow(t, indent) {
+  return `<button class="row ${indent ? 'indent' : ''}" data-act="term" data-t="${esc(t.t)}"><span class="ic" style="${t.agent ? 'color:var(--Accent)' : ''}">${I(t.agent ? 'bot' : 'term', 14)}</span><span class="tt">${esc(t.t)}</span></button>`;
+}
+const lights = '<span class="lights"><i></i><i></i><i></i></span>';
+
+/* 工作区占位 */
+function workspace(opt, st) {
+  const f = findSess(st.sess);
+  const title = st.wsTitle || (f ? f.s.title : '新会话');
+  const pname = f ? P[f.p].name : '';
+  return `<div class="ws">
+    <div class="tabs"><span class="tab">${I(st.wsIcon || 'msg', 13)}<span>${esc(title)}</span></span><span class="ib sm">${I('plus', 13)}</span></div>
+    <div class="body">
+      <div class="where">${I('folder', 12)} ${esc(pname)} ${pname ? '›' : ''} ${esc(title)}</div>
+      <div class="ghost" style="width:62%"></div><div class="ghost" style="width:78%"></div><div class="ghost" style="width:44%"></div>
+      <div class="ghost" style="width:70%;margin-top:18px"></div><div class="ghost" style="width:52%"></div>
+    </div>
+    <div class="composer">输入消息,@ 引用文件,/ 使用命令</div>
+    ${st.toast ? `<div class="toast">${esc(st.toast)}</div>` : ''}
+  </div>`;
+}
+
+/* ---------- 每个方案的界面状态(纯 UI 状态) ---------- */
+const S = {
+  A: { proj: 'ncw', sess: 's1', menu: false, olderOpen: false, termOpen: true, groupOpen: true },
+  B: { sess: 's1', exp: { ncw: true, oc: true }, groupOpen: true, collapsed: false, more: {}, nav: null, pmenu: null },
+  C: { mode: 'sessions', proj: 'ncw', sess: 's1', sw: false, swq: '', handled: {}, stopped: {} },
+  D: { filter: 'all', sess: 's1', newpop: false, earlierOpen: false },
+};
+
+/* ---------- 方案 A:精修两栏 ---------- */
+function renderA(st) {
+  const p = P[st.proj];
+  const railItems = RAIL.map(it => {
+    if (typeof it === 'string') return `<button data-act="proj" data-p="${it}" title="${P[it].name}">${tile(it, { sel: it === st.proj })}</button>`;
+    if (!st.groupOpen) return `<button data-act="group" title="${it.name}">${mini4(it.items)}</button>`;
+    return `<div class="cap"><button class="gh" data-act="group" title="收起 ${it.name}">${I('folder', 13)}</button>${it.items.map(id => `<button data-act="proj" data-p="${id}" title="${P[id].name}">${tile(id, { sel: id === st.proj })}</button>`).join('')}</div>`;
+  }).join('');
+
+  const here = INBOX.filter(x => x.p === st.proj);
+  const otherN = INBOX.filter(x => x.p !== st.proj).length;
+  const firstOther = INBOX.find(x => x.p !== st.proj);
+  let attn = '';
+  if (here.length || otherN) {
+    attn = `<div class="attn">
+      ${here.length ? `<div class="h">${I('shield', 13)} ${here.length} 项等你处理</div><div class="d">${here[0].what} · <code>${esc(here[0].detail)}</code></div>` : ''}
+      ${otherN ? `<button class="other" data-act="jump" data-p="${firstOther.p}" data-s="${firstOther.s}">其他项目还有 ${otherN} 项 · ${P[firstOther.p].name} →</button>` : ''}
+    </div>`;
+  }
+
+  const groups = [];
+  const pinned = p.sessions.filter(s => s.pin);
+  if (pinned.length) groups.push(['置顶', pinned, true]);
+  [0, 1, 2].forEach(d => {
+    const list = p.sessions.filter(s => !s.pin && s.day === d);
+    if (list.length) groups.push([DAYS[d], list, d < 2 || st.olderOpen, d === 2]);
+  });
+  const sessHtml = groups.map(([name, list, open, foldable]) => `
+    <div class="sh">${foldable ? `<button class="t" data-act="older">${I('down', 11, 'chev ' + (open ? '' : 'closed'))}${name} · ${list.length}</button>` : name}</div>
+    ${open ? list.map(s => sessRow(st.proj, s, s.id === st.sess)).join('') : ''}`).join('');
+
+  const menu = st.menu ? `<div class="pop" style="left:76px;top:78px;width:260px">
+      <div class="cap-t">切换项目</div>
+      ${ORDER.map(id => `<button class="row ${id === st.proj ? 'sel' : ''}" data-act="proj" data-p="${id}">${tile(id, { size: 'sm', badges: false })}<span class="tt">${P[id].name}</span>${pend(id) ? `<span class="pill w">${pend(id)}</span>` : running(id) ? `<span class="st run"></span>` : ''}<kbd>⌘${ORDER.indexOf(id) + 1}</kbd></button>`).join('')}
+      <div class="sep"></div>
+      <div class="cap-t" style="font-family:ui-monospace,Menlo,monospace;font-weight:400">${esc(p.path)}</div>
+      <button class="row" data-act="toast" data-m="在访达中显示">${I('folder', 14)}<span class="tt">在访达中显示</span></button>
+      <button class="row" data-act="toast" data-m="已复制路径">${I('copy', 14)}<span class="tt">复制路径</span></button>
+      <button class="row" data-act="toast" data-m="打开「项目图标」窗口">${I('image', 14)}<span class="tt">更改图标…</span></button>
+      <button class="row" data-act="toast" data-m="打开设置 · 项目">${I('gear', 14)}<span class="tt">项目设置</span></button>
+      <div class="sep"></div>
+      <button class="row" data-act="toast" data-m="从项目栏移除(不删文件)" style="color:var(--Danger)">${I('trash', 14)}<span class="tt">从项目栏移除</span></button>
+    </div>` : '';
+
+  return `<div class="side" style="width:352px">
+      <div class="topbar">${lights}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><span class="ib">${I('panel', 15)}</span></div>
+      <div class="cols">
+        <div class="rail">
+          <div class="list">${railItems}<button class="ib" data-act="toast" data-m="打开「新建项目」窗口" title="添加项目">${I('plus', 16)}</button></div>
+          <span class="sp"></span>
+          <span class="avatar">T<span class="ok"></span></span>
+          <button class="ib" data-act="toast" data-m="打开设置">${I('gear', 16)}</button>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+          <div style="padding:6px 12px 8px">
+            <button class="row" data-act="menu" style="height:32px;margin-left:-4px;width:auto;padding:0 6px;font-size:15px;font-weight:650" title="${esc(p.path)}">${esc(p.name)} ${I('down', 14)}</button>
+            <div class="metaline" style="padding-left:2px">
+              ${p.remote ? `<span>${I('monitor', 11)} ${p.remote}</span>` : ''}
+              <span>${I('branch', 11)} ${p.branch} ${p.dirty ? '<i class="dotw"></i>' : ''}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;padding:0 10px 8px">
+            <button class="newbtn" data-act="new">${I('pen', 14)} 新会话 <kbd>⌘N</kbd></button>
+            <button class="ib" style="width:32px;height:32px;border:1px solid var(--Border)" data-act="toast" data-m="打开命令面板 ⌘K" title="搜索 ⌘K">${I('search', 14)}</button>
+          </div>
+          ${attn}
+          <div class="scroll" style="padding:0 8px 8px">
+            ${sessHtml}
+            <div class="sh"><button class="t" data-act="terms">${I('down', 11, 'chev ' + (st.termOpen ? '' : 'closed'))}终端和智能体 · ${p.terms.length}</button><span class="sp"></span><button class="ib sm" data-act="toast" data-m="新建终端(选 shell 或外部 Agent)" title="新建终端">${I('plus', 13)}</button></div>
+            ${st.termOpen ? p.terms.map(t => termRow(t)).join('') || '<div class="more">还没有终端</div>' : ''}
+          </div>
+          <div class="pfoot">
+            <button data-act="toast" data-m="打开定时任务标签页">${I('cal', 13)} 定时任务${p.tasks ? ` <span class="pill n">${p.tasks}</span>` : ''}</button>
+            <button data-act="toast" data-m="显示已归档的会话">${I('archive', 13)} 已归档</button>
+          </div>
+        </div>
+      </div>
+      ${menu}
+    </div>${workspace('A', st)}`;
+}
+
+/* ---------- 方案 B:单栏项目树 ---------- */
+function renderB(st) {
+  const tp = totalPend();
+  if (st.collapsed) {
+    const items = RAIL.map(it => {
+      if (typeof it === 'string') return `<button data-act="bproj" data-p="${it}" title="${P[it].name}">${tile(it, { sel: findSess(st.sess)?.p === it })}</button>`;
+      return `<div class="cap"><span class="gh">${I('folder', 13)}</span>${it.items.map(id => `<button data-act="bproj" data-p="${id}" title="${P[id].name}">${tile(id, { sel: findSess(st.sess)?.p === id })}</button>`).join('')}</div>`;
+    }).join('');
+    return `<div class="side" style="width:60px;align-items:center">
+        <div class="topbar" style="padding:0;justify-content:center"><button class="ib" data-act="collapse" title="展开 ⌘B">${I('panel', 15)}</button></div>
+        <button class="ib" data-act="new" title="新会话 ⌘N">${I('pen', 15)}</button>
+        <button class="ib" data-act="toast" data-m="打开命令面板 ⌘K" title="搜索 ⌘K">${I('search', 15)}</button>
+        <button class="ib" data-act="toast" data-m="打开收件箱 ⌘J" title="收件箱">${I('inbox', 15)}${tp ? `<span class="pill w" style="position:absolute;top:-4px;right:-6px;padding:2px 4px">${tp}</span>` : ''}</button>
+        <div style="height:1px;width:28px;background:var(--BorderSubtle);margin:6px 0"></div>
+        <div class="rail" style="width:60px;padding-top:2px;flex:1;min-height:0"><div class="list">${items}<button class="ib" data-act="toast" data-m="打开「新建项目」窗口">${I('plus', 16)}</button></div></div>
+        <div style="padding:8px 0 12px;display:flex;flex-direction:column;gap:10px;align-items:center"><span class="avatar">T<span class="ok"></span></span><span class="ib">${I('gear', 16)}</span></div>
+      </div>${workspace('B', st)}`;
+  }
+
+  const sel = findSess(st.sess);
+  const projBlock = id => {
+    const p = P[id];
+    const open = !!st.exp[id];
+    const n = pend(id);
+    let right = '';
+    if (p.offline) right = `<span class="ic" style="color:var(--TextMuted)" title="设备离线">${I('wifioff', 12)}</span>`;
+    else if (!open && n) right = `<span class="pill w">${n}</span>`;
+    else if (!open && running(id)) right = `<span class="st run"></span>`;
+    const head = `<div class="row ${!open && sel?.p === id ? 'sel' : ''}" style="padding:0 4px 0 6px">
+        <button data-act="bexp" data-p="${id}" style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;height:100%">
+          <span style="display:inline-flex;color:var(--TextMuted);transform:rotate(${open ? 90 : 0}deg);transition:transform .15s">${I('right', 11)}</span>${tile(id, { size: 'sm', badges: false })}<span class="tt" style="font-weight:550">${p.name}${p.remote ? ` <span class="meta">· ${p.remote}</span>` : ''}</span>
+        </button>
+        <span class="hidehov">${right}</span>
+        <span class="hov"><button class="ib sm" data-act="newin" data-p="${id}" title="在 ${p.name} 新建会话">${I('plus', 13)}</button><button class="ib sm" data-act="pmenu" data-p="${id}" title="更多">${I('dots', 13)}</button></span>
+      </div>`;
+    let body = '';
+    if (open) {
+      const sorted = [...p.sessions].sort((a, b) => ((b.pend ? 4 : 0) + (b.st === 'run' ? 2 : 0) + (b.pin ? 1 : 0)) - ((a.pend ? 4 : 0) + (a.st === 'run' ? 2 : 0) + (a.pin ? 1 : 0)) || a.day - b.day);
+      const limit = st.more[id] ? 99 : 4;
+      body = sorted.slice(0, limit).map(s => sessRow(id, s, s.id === st.sess, { indent: true })).join('');
+      if (sorted.length > limit) body += `<button class="more" data-act="bmore" data-p="${id}">显示更多 (${sorted.length - limit})</button>`;
+      body += p.terms.map(t => termRow(t, true)).join('');
+      if (!p.sessions.length && !p.terms.length) body += '<div class="more">还没有会话</div>';
+    }
+    return head + body;
+  };
+  const tree = RAIL.map(it => {
+    if (typeof it === 'string') return projBlock(it);
+    const n = it.items.reduce((a, id) => a + pend(id), 0);
+    return `<div class="sh" style="margin-top:8px"><button class="t" data-act="bgroup">${I('down', 11, 'chev ' + (st.groupOpen ? '' : 'closed'))}${it.name}</button><span class="sp"></span>${!st.groupOpen && n ? `<span class="pill w" style="margin-right:6px">${n}</span>` : ''}</div>
+      ${st.groupOpen ? `<div style="padding-left:8px">${it.items.map(projBlock).join('')}</div>` : ''}`;
+  }).join('');
+
+  const pm = st.pmenu ? `<div class="pop" style="left:200px;top:${st.pmenuY || 220}px;width:220px">
+      <div class="cap-t" style="font-family:ui-monospace,Menlo,monospace;font-weight:400">${esc(P[st.pmenu].path)}</div>
+      <button class="row" data-act="toast" data-m="在访达中显示">${I('folder', 14)}<span class="tt">在访达中显示</span></button>
+      <button class="row" data-act="toast" data-m="已复制路径">${I('copy', 14)}<span class="tt">复制路径</span></button>
+      <button class="row" data-act="toast" data-m="新建终端">${I('term', 14)}<span class="tt">新建终端</span></button>
+      <button class="row" data-act="toast" data-m="打开「项目图标」窗口">${I('image', 14)}<span class="tt">更改图标…</span></button>
+      <button class="row" data-act="toast" data-m="打开设置 · 项目">${I('gear', 14)}<span class="tt">项目设置</span></button>
+      <div class="sep"></div>
+      <button class="row" data-act="toast" data-m="移出项目组">${I('folder', 14)}<span class="tt">移出 / 加入项目组</span></button>
+      <button class="row" data-act="toast" data-m="从列表移除(不删文件)" style="color:var(--Danger)">${I('trash', 14)}<span class="tt">从列表移除</span></button>
+    </div>` : '';
+
+  return `<div class="side" style="width:280px">
+      <div class="topbar">${lights}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><button class="ib" data-act="collapse" title="收起 ⌘B">${I('panel', 15)}</button></div>
+      <div style="padding:4px 8px 6px;display:flex;flex-direction:column;gap:1px">
+        <button class="navrow" data-act="new">${I('pen', 15, '')}<span>新会话</span><kbd>⌘N</kbd></button>
+        <button class="navrow" data-act="toast" data-m="打开命令面板 ⌘K"><span class="ic">${I('search', 15)}</span><span>搜索</span><kbd>⌘K</kbd></button>
+        <button class="navrow ${st.nav === 'inbox' ? 'on' : ''}" data-act="bnav" data-n="inbox"><span class="ic">${I('inbox', 15)}</span><span>收件箱</span>${tp ? `<span class="pill w">${tp}</span>` : ''}</button>
+        <button class="navrow ${st.nav === 'tasks' ? 'on' : ''}" data-act="bnav" data-n="tasks"><span class="ic">${I('cal', 15)}</span><span>定时任务</span><span class="meta" style="margin-left:auto;font-size:11.5px;color:var(--TextMuted)">${TASKS.length}</span></button>
+      </div>
+      <div class="sh" style="margin:6px 8px 0 8px;padding-left:8px">项目<span class="sp"></span><button class="ib sm" data-act="toast" data-m="打开「新建项目」窗口" title="添加项目">${I('plus', 13)}</button></div>
+      <div class="scroll" style="padding:0 8px 10px">${tree}</div>
+      <div class="foot"><span class="avatar">T<span class="ok"></span></span><div class="who"><b>token</b><span>已登录 · 个人</span></div><button class="ib" data-act="toast" data-m="打开设置 ⌘,">${I('gear', 15)}</button></div>
+      ${pm}
+    </div>${workspace('B', st)}`;
+}
+
+/* ---------- 方案 C:活动栏 + 面板 ---------- */
+function renderC(st) {
+  const p = P[st.proj];
+  const open = INBOX.filter((x, i) => !st.handled[i]);
+  const runs = allRunning().filter(r => !st.stopped[r.s.id]);
+  const modes = [
+    ['sessions', 'msg', '会话', ''],
+    ['inbox', 'inbox', '收件箱', open.length ? `<span class="bdg">${open.length}</span>` : ''],
+    ['running', 'activity', '运行中', runs.length ? `<span class="bdg a">${runs.length}</span>` : ''],
+    ['auto', 'cal', '自动化', ''],
+  ];
+  const abar = `<div class="abar">${modes.map(([k, ic, t, b]) => `<button class="abtn ${st.mode === k ? 'on' : ''}" data-act="cmode" data-m="${k}" title="${t}">${I(ic, 18)}${b}</button>`).join('')}
+      <span class="sp"></span><span class="avatar" style="margin-bottom:8px">T<span class="ok"></span></span><button class="abtn" data-act="toast" data-m="打开设置">${I('gear', 17)}</button></div>`;
+
+  let panel = '';
+  if (st.mode === 'sessions') {
+    const q = st.swq.trim().toLowerCase();
+    const list = ORDER.filter(id => !q || P[id].name.toLowerCase().includes(q));
+    const sw = st.sw ? `<div class="pop" style="left:8px;right:8px;top:52px">
+        <input placeholder="搜索项目…" data-act="swq" value="${esc(st.swq)}" autofocus>
+        <div class="sep"></div>
+        ${list.map(id => `<button class="row ${id === st.proj ? 'sel' : ''}" data-act="cproj" data-p="${id}">${tile(id, { size: 'md', badges: false })}<span class="tt">${P[id].name}${P[id].remote ? ` <span class="meta">· ${P[id].remote}</span>` : ''}</span>${pend(id) ? `<span class="pill w">${pend(id)}</span>` : running(id) ? '<span class="st run"></span>' : P[id].offline ? `<span class="ic" style="color:var(--TextMuted)">${I('wifioff', 12)}</span>` : ''}</button>`).join('') || '<div class="more">没有匹配的项目</div>'}
+        <div class="sep"></div>
+        <button class="row" data-act="toast" data-m="打开「新建项目」窗口">${I('folderplus', 14)}<span class="tt">添加项目…</span></button>
+      </div>` : '';
+    const byDay = [0, 1, 2].map(d => [DAYS[d], p.sessions.filter(s => s.day === d)]).filter(x => x[1].length);
+    panel = `<div style="padding:8px 10px 6px;position:relative">
+        <button class="switcher" data-act="csw">${tile(st.proj, { size: 'md', badges: false })}<span class="nm">${p.name}<div class="sub">${p.remote ? p.remote + ' · ' : ''}${p.branch}${p.dirty ? ' ·  有改动' : ''}</div></span>${I('updown', 14)}</button>
+      </div>
+      <div style="display:flex;gap:6px;padding:0 10px 6px"><button class="newbtn" data-act="new">${I('pen', 14)} 新会话 <kbd>⌘N</kbd></button><button class="ib" style="width:32px;height:32px;border:1px solid var(--Border)" data-act="toast" data-m="打开命令面板 ⌘K">${I('search', 14)}</button></div>
+      <div class="scroll" style="padding:0 8px 8px">
+        ${byDay.map(([n, l]) => `<div class="sh">${n}</div>${l.map(s => sessRow(st.proj, s, s.id === st.sess)).join('')}`).join('')}
+        <div class="sh">终端和智能体<span class="sp"></span><button class="ib sm" data-act="toast" data-m="新建终端">${I('plus', 13)}</button></div>
+        ${p.terms.map(t => termRow(t)).join('') || '<div class="more" style="padding-left:8px">还没有终端</div>'}
+      </div>${sw}`;
+  } else if (st.mode === 'inbox') {
+    panel = `<div class="sh" style="margin:10px 8px 6px;font-size:13px;color:var(--Text)">收件箱<span class="sp"></span><span class="meta" style="font-weight:400">${open.length} 项</span></div>
+      <div class="scroll">${INBOX.map((x, i) => st.handled[i] ? '' : `
+        <div class="icard">
+          <div class="h">${tile(x.p, { size: 'sm', badges: false })} ${P[x.p].name} · ${esc(findSess(x.s).s.title)}<span class="sp"></span>${x.ago}</div>
+          <div class="w" style="color:${x.kind === 'question' ? 'var(--Accent)' : 'var(--Warning)'}">${I(x.kind === 'question' ? 'q' : 'shield', 13)} ${x.what}</div>
+          <code>${esc(x.detail)}</code>
+          <div class="btns">${x.kind === 'question'
+            ? `<button class="btn p" data-act="cgo" data-p="${x.p}" data-s="${x.s}">去回答</button>`
+            : `<button class="btn p" data-act="chandle" data-i="${i}" data-m="已允许一次">允许一次</button><button class="btn" data-act="chandle" data-i="${i}" data-m="已拒绝">拒绝</button><span class="sp"></span><button class="btn" data-act="cgo" data-p="${x.p}" data-s="${x.s}">查看</button>`}</div>
+        </div>`).join('') || '<div class="more" style="padding-left:18px">全部处理完了</div>'}</div>`;
+  } else if (st.mode === 'running') {
+    panel = `<div class="sh" style="margin:10px 8px 6px;font-size:13px;color:var(--Text)">运行中<span class="sp"></span><span class="meta" style="font-weight:400">${runs.length} 个</span></div>
+      <div class="scroll" style="padding:0 8px">${runs.map(r => `
+        <div class="row" style="height:46px">${tile(r.p, { size: 'md', badges: false })}
+          <button data-act="cgo" data-p="${r.p}" data-s="${r.s.id}" style="flex:1;min-width:0;line-height:1.3"><div class="tt">${esc(r.s.title)}</div><div class="meta">${P[r.p].name}${P[r.p].remote ? ' · ' + P[r.p].remote : ''}</div></button>
+          <span class="timer">${r.s.el}</span><button class="ib sm" data-act="cstop" data-s="${r.s.id}" title="停止 ⌘.">${I('stop', 12)}</button></div>`).join('') || '<div class="more" style="padding-left:8px">没有在运行的任务</div>'}</div>`;
+  } else {
+    panel = `<div class="sh" style="margin:10px 8px 6px;font-size:13px;color:var(--Text)">定时任务<span class="sp"></span><button class="ib sm" data-act="toast" data-m="新建定时任务">${I('plus', 13)}</button></div>
+      <div class="scroll" style="padding:0 8px">${TASKS.map(t => `
+        <button class="row" style="height:46px" data-act="toast" data-m="打开定时任务:${t.name}">${tile(t.p, { size: 'md', badges: false })}
+          <span style="flex:1;min-width:0;line-height:1.3"><div class="tt">${t.name}</div><div class="meta">${t.when} · ${P[t.p].name}</div></span><span class="meta">下次 ${t.next}</span></button>`).join('')}</div>`;
+  }
+
+  return `<div class="side" style="width:324px">
+      <div class="topbar">${lights}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><span class="ib">${I('panel', 15)}</span></div>
+      <div class="cols">${abar}<div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative">${panel}</div></div>
+    </div>${workspace('C', st)}`;
+}
+
+/* ---------- 方案 D:会话时间线 ---------- */
+function renderD(st) {
+  const ids = st.filter === 'all' ? ORDER : [st.filter];
+  const all = ids.flatMap(id => P[id].sessions.map(s => ({ p: id, s })));
+  const need = all.filter(x => x.s.pend);
+  const run = all.filter(x => !x.s.pend && x.s.st === 'run');
+  const rest = all.filter(x => !x.s.pend && x.s.st !== 'run');
+  const groups = [['需要你', need, true], ['运行中', run, true], ...[0, 1, 2].map(d => [DAYS[d], rest.filter(x => x.s.day === d), d < 2 || st.earlierOpen, d === 2])];
+  const chips = `<div class="chips">
+      <button class="chipf ${st.filter === 'all' ? 'on' : ''}" data-act="dfilter" data-p="all" style="padding-left:9px">全部${totalPend() ? ` <span class="pill w">${totalPend()}</span>` : ''}</button>
+      ${ORDER.map(id => `<button class="chipf ${st.filter === id ? 'on' : ''}" data-act="dfilter" data-p="${id}">${tile(id, { size: 'sm', badges: false })}${P[id].name}${pend(id) ? ` <span class="pill w">${pend(id)}</span>` : ''}</button>`).join('')}
+    </div>`;
+  const pop = st.newpop ? `<div class="pop" style="left:10px;top:84px;width:250px">
+      <div class="cap-t">在哪个项目里新建?</div>
+      ${ORDER.map(id => `<button class="row ${(st.filter === id || (st.filter === 'all' && id === 'ncw')) ? 'sel' : ''}" data-act="dnew" data-p="${id}" ${P[id].offline ? 'disabled style="opacity:.45"' : ''}>${tile(id, { size: 'sm', badges: false })}<span class="tt">${P[id].name}</span>${P[id].offline ? '<span class="meta">离线</span>' : ''}</button>`).join('')}
+    </div>` : '';
+  return `<div class="side" style="width:280px">
+      <div class="topbar">${lights}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><span class="ib">${I('panel', 15)}</span></div>
+      <div style="display:flex;gap:6px;padding:4px 10px 8px"><button class="newbtn" data-act="dnewpop">${I('pen', 14)} 新会话 ${I('down', 12)}<kbd>⌘N</kbd></button><button class="ib" style="width:32px;height:32px;border:1px solid var(--Border)" data-act="toast" data-m="打开命令面板 ⌘K">${I('search', 14)}</button></div>
+      ${chips}
+      <div class="scroll" style="padding:0 8px 8px">
+        ${groups.map(([n, l, open, fold]) => l.length ? `<div class="sh" style="${n === '需要你' ? 'color:var(--Warning)' : n === '运行中' ? 'color:var(--Accent)' : ''}">${fold ? `<button class="t" data-act="dearlier">${I('down', 11, 'chev ' + (open ? '' : 'closed'))}${n} · ${l.length}</button>` : `${n} · ${l.length}`}</div>${open ? l.map(x => sessRow(x.p, x.s, x.s.id === st.sess, { tag: st.filter === 'all' })).join('') : ''}` : '').join('')}
+      </div>
+      <div class="foot"><span class="avatar">T<span class="ok"></span></span><div class="who"><b>token</b><span>已登录 · 个人</span></div><button class="ib" data-act="toast" data-m="打开定时任务">${I('cal', 15)}</button><button class="ib" data-act="toast" data-m="打开设置">${I('gear', 15)}</button></div>
+      ${pop}
+    </div>${workspace('D', st)}`;
+}
+
+const RENDER = { A: renderA, B: renderB, C: renderC, D: renderD };
+const timers = {};
+function render(opt) {
+  const el = document.querySelector(`.win[data-opt="${opt}"]`);
+  el.innerHTML = RENDER[opt](S[opt]);
+  if (opt === 'C' && S.C.sw) { const q = el.querySelector('input[data-act="swq"]'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+}
+function toast(opt, msg) {
+  S[opt].toast = msg; render(opt);
+  clearTimeout(timers[opt]);
+  timers[opt] = setTimeout(() => { S[opt].toast = null; render(opt); }, 1800);
+}
+function openSess(opt, pid, sid) {
+  const st = S[opt];
+  st.sess = sid; st.wsTitle = null; st.wsIcon = null;
+  if ('proj' in st) st.proj = pid;
+}
+
+document.addEventListener('click', e => {
+  const win = e.target.closest('.win'); if (!win) return;
+  const opt = win.dataset.opt; const st = S[opt];
+  const b = e.target.closest('[data-act]');
+  const closePops = () => { st.menu = false; st.pmenu = null; st.sw = false; st.newpop = false; };
+  if (!b) { if (st.menu || st.pmenu || st.sw || st.newpop) { closePops(); render(opt); } return; }
+  const a = b.dataset.act, p = b.dataset.p, s = b.dataset.s;
+  if (a === 'swq') return;
+  switch (a) {
+    case 'proj': closePops(); st.proj = p; st.sess = (P[p].sessions[0] || {}).id; st.wsTitle = null; break;
+    case 'group': st.groupOpen = !st.groupOpen; break;
+    case 'menu': st.menu = !st.menu; break;
+    case 'sess': openSess(opt, p, s); st.nav = null; break;
+    case 'older': st.olderOpen = !st.olderOpen; break;
+    case 'terms': st.termOpen = !st.termOpen; break;
+    case 'jump': openSess(opt, p, s); break;
+    case 'new': closePops(); st.sess = null; st.wsTitle = '新会话'; st.wsIcon = 'pen'; break;
+    case 'term': st.wsTitle = b.dataset.t; st.wsIcon = 'term'; break;
+    case 'toast': closePops(); toast(opt, b.dataset.m); return;
+    /* B */
+    case 'collapse': st.collapsed = !st.collapsed; closePops(); break;
+    case 'bexp': st.exp[p] = !st.exp[p]; break;
+    case 'bgroup': st.groupOpen = !st.groupOpen; break;
+    case 'bmore': st.more[p] = !st.more[p]; break;
+    case 'bproj': { const f = P[p].sessions[0]; if (f) openSess(opt, p, f.id); break; }
+    case 'newin': st.sess = null; st.wsTitle = `新会话 · ${P[p].name}`; st.wsIcon = 'pen'; break;
+    case 'pmenu': {
+      const r = b.getBoundingClientRect(), w = win.getBoundingClientRect();
+      st.pmenu = st.pmenu === p ? null : p; st.pmenuY = Math.min(r.bottom - w.top + 4, 300); break;
+    }
+    case 'bnav': st.nav = b.dataset.n; st.wsTitle = b.dataset.n === 'inbox' ? '收件箱' : '定时任务'; st.wsIcon = b.dataset.n === 'inbox' ? 'inbox' : 'cal'; break;
+    /* C */
+    case 'cmode': st.mode = b.dataset.m; st.sw = false; break;
+    case 'csw': st.sw = !st.sw; st.swq = ''; break;
+    case 'cproj': st.proj = p; st.sw = false; st.sess = (P[p].sessions[0] || {}).id; st.wsTitle = null; break;
+    case 'chandle': st.handled[b.dataset.i] = true; toast(opt, b.dataset.m); return;
+    case 'cgo': openSess(opt, p, s); st.mode = 'sessions'; break;
+    case 'cstop': st.stopped[s] = true; toast(opt, '已停止'); return;
+    /* D */
+    case 'dfilter': st.filter = p; break;
+    case 'dearlier': st.earlierOpen = !st.earlierOpen; break;
+    case 'dnewpop': st.newpop = !st.newpop; break;
+    case 'dnew': st.newpop = false; st.sess = null; st.wsTitle = `新会话 · ${P[p].name}`; st.wsIcon = 'pen'; break;
+  }
+  render(opt);
+});
+document.addEventListener('input', e => {
+  if (e.target.dataset.act === 'swq') { S.C.swq = e.target.value; render('C'); }
+});
+
+/* 主题 */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+}
+document.getElementById('theme').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTheme(b.dataset.t); });
+try { if (window.matchMedia('(prefers-color-scheme: light)').matches) setTheme('light'); } catch {}
+
+['A', 'B', 'C', 'D'].forEach(render);
+</script>
+</body>
+</html>

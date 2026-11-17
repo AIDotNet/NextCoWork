@@ -26,10 +26,18 @@ public static class InspectorTabs
     public static readonly IReadOnlyList<InspectorTabKind> Addable =
         [InspectorTabKind.Git, InspectorTabKind.Review, InspectorTabKind.Terminal, InspectorTabKind.Context, InspectorTabKind.History];
 
-    /// <summary>显示顺序:文件 → 用户添加的(按添加顺序)→ 子代理(有才显示)。</summary>
-    public static IReadOnlyList<InspectorTabKind> Compose(IEnumerable<InspectorTabKind> added, bool hasSubagents)
+    /// <summary>
+    /// 显示顺序:文件 →(当前会话改过文件、用户又没加过「审查」时自动出现的)审查 → 用户添加的(按添加顺序)→ 子代理(有才显示)。
+    /// Agent 改代码时用户最想看的是「改了什么」,不该藏在「+」里(docs/design/03 §11.5)。
+    /// </summary>
+    public static IReadOnlyList<InspectorTabKind> Compose(IEnumerable<InspectorTabKind> added, bool hasSubagents, bool hasChanges = false)
     {
         var tabs = new List<InspectorTabKind> { InspectorTabKind.Files };
+        if (hasChanges && !added.Contains(InspectorTabKind.Review))
+        {
+            tabs.Add(InspectorTabKind.Review);
+        }
+
         foreach (var kind in added)
         {
             if (Addable.Contains(kind) && !tabs.Contains(kind))

@@ -9,6 +9,7 @@
     <PackageReference Include="TKCode.Arc.Fonts" />
     <PackageReference Include="TKCode.Arc.Icons.Lucide" />
     <PackageReference Include="TKCode.Arc.Mobile" />
+    <PackageReference Include="TKCode.Arc.Special" />
     <PackageReference Include="TKCode.Arc.Terminal" />
   </ItemGroup>
   <ItemGroup>

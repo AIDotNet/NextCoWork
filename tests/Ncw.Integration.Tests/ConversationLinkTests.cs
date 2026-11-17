@@ -548,4 +548,62 @@ public sealed class ConversationLinkTests : IAsyncLifetime
 
         await WaitUntil(() => c.State.Sessions[session].Messages is { Length: 2 } m && TextOf(m[0]) == "tell me a joke" && TextOf(m[1]) == "joke number two", "reply replaced, question kept");
     }
+
+    /// <summary>一轮带工具调用的对话:提问 → 助手(调用 Write)→ 工具回执 → 助手(最终回复)= 4 条消息。</summary>
+    private async Task<(Controller C, ProjectRef Project, SessionRef Session, MessageDto[] History)> ToolTurnAsync()
+    {
+        var c = await StartControllerAsync("ctrl-reply");
+        var project = await c.Link.AddProjectAsync(_workspace);
+        var projectPath = (await c.Link.CallAsync(DeviceMethods.ProjectsList, Unit.Value)).Projects.Single().Path;
+        _llm.Then(CallWrite("c1", Path.Combine(projectPath, "reply.txt"))).Then(Say("all done"));
+        var session = (await c.Actions.CreateSessionAsync(project, "sonnet"))!.Value;
+        var sent = await c.Actions.SendAsync(session, "write the file", Options);
+        await WaitUntil(() => c.State.InteractionsOf(sent.Run!.Value.DeviceId).Pending.Length == 1, "approval pending");
+        var pending = c.State.InteractionsOf(sent.Run!.Value.DeviceId).Pending[0];
+        await c.Actions.RespondAsync(sent.Run!.Value.DeviceId, pending, new ToolPermissionResponseDto(PermissionChoices.AllowOnce));
+        await WaitUntil(() => c.State.Runs[sent.Run!.Value] is { Phase: RunPhase.Done, Settled: true } && c.State.Sessions[session].Messages.Length == 4, "tool turn done");
+        return (c, project, session, [.. c.State.Sessions[session].Messages]);
+    }
+
+    [Fact]
+    public async Task Deleting_a_reply_removes_every_assistant_message_of_the_turn_and_its_receipts_but_keeps_the_question()
+    {
+        var (c, _, session, history) = await ToolTurnAsync();
+        Assert.Equal(["user", "assistant", "user", "assistant"], history.Select(m => m.Role)); // 工具回执是「user」角色、只含 tool_result 块
+
+        // 和界面一样:点最后一段(「all done」),范围取这一轮 AI 的全部回复(第一条到最后一条助手消息)
+        var range = MessageTurns.ReplyOf(history, history[3].Id);
+        Assert.Equal((history[1].Id, history[3].Id), range);
+        Assert.True((await MessagesOf(c).DeleteReplyAsync(session, range!.Value.From, range.Value.To)).IsOk);
+
+        await WaitUntil(() => c.State.Sessions[session].Messages.Length == 1, "reply removed from the mirror");
+        var left = Assert.Single(c.State.Sessions[session].Messages);
+        Assert.Equal(history[0].Id, left.Id); // 提问留着
+        Assert.Equal("write the file", TextOf(left));
+    }
+
+    [Fact]
+    public async Task Deleting_only_the_last_assistant_message_leaves_a_consistent_tool_pair()
+    {
+        var (c, _, session, history) = await ToolTurnAsync();
+        // 直接删最后一条助手消息(不是界面的做法,但协议允许):留下 提问 + 助手(调用)+ 回执,配对仍然完整
+        Assert.True((await MessagesOf(c).DeleteReplyAsync(session, history[3].Id, history[3].Id)).IsOk);
+        await WaitUntil(() => c.State.Sessions[session].Messages.Length == 3, "last reply removed");
+        Assert.Equal(["user", "assistant", "user"], c.State.Sessions[session].Messages.Select(m => m.Role)); // 提问 + 助手(调用)+ 回执
+    }
+
+    [Fact]
+    public async Task Branching_from_an_assistant_reply_takes_the_whole_turn_it_belongs_to()
+    {
+        var (c, project, session, history) = await ToolTurnAsync();
+        var question = MessageTurns.QuestionOf(history, history[1].Id); // 点的是调用工具的那一段,不是最后一段
+        Assert.Equal(history[0].Id, question);
+
+        var branch = await MessagesOf(c).BranchAsync(project, session.SessionId, question!);
+        Assert.True(branch.IsOk);
+        var branchRef = new SessionRef(session.DeviceId, branch.Value!);
+        await WaitUntil(() => c.State.Sessions.TryGetValue(branchRef, out var view) && view.Messages.Length == 4, "the whole turn is in the branch");
+        Assert.Equal(["user", "assistant", "user", "assistant"], c.State.Sessions[branchRef].Messages.Select(m => m.Role)); // 不会在一轮中间被切断
+        Assert.Equal(4, c.State.Sessions[session].Messages.Length); // 原会话不变
+    }
 }

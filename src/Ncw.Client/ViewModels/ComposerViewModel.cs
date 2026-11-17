@@ -51,6 +51,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     private CancellationTokenSource? _suggesting;
     private (string Device, string Workspace)? _commandsFor;
     private IReadOnlyList<CommandDto> _projectCommands = [];
+    private bool _restoring;
 
     public ComposerViewModel(IConversationCommands commands, IComposerLookups? lookups = null, TimeSpan? suggestDelay = null, AttachmentTrayViewModel? attachments = null)
     {
@@ -152,6 +153,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         OnPropertyChanged(nameof(PrimaryIsQueue));
         OnPropertyChanged(nameof(PrimaryIsSend));
         OnPropertyChanged(nameof(HasBlock));
+        OnPropertyChanged(nameof(NeedsProvider));
     }
 
     partial void OnLastFailureChanged(SendOutcome? value) => OnPropertyChanged(nameof(HasFailure));
@@ -176,8 +178,53 @@ public sealed partial class ComposerViewModel : ObservableObject
             _drafts[session] = value;
         }
 
+        if (!_restoring)
+        {
+            PruneRefs(value);
+        }
+
         RefreshState();
         UpdateTriggers(value);
+    }
+
+    /// <summary>
+    /// 用户选中了候选(文件 / 命令),草稿被程序改写:输入框据此把光标放到末尾并取回焦点。打字、换会话不触发。
+    /// </summary>
+    public event EventHandler? DraftReplaced;
+
+    /// <summary>已知命令名(不含 <c>/</c>):设备上的命令清单。草稿开头的 <c>/命令 </c> 据此画成 token。</summary>
+    public IEnumerable<string> CommandNames => _projectCommands.Select(static c => c.Name);
+
+    /// <summary>草稿里应当画成 token 的片段(只有 <see cref="ComposerLogic.Mentions"/> 一处规则)。</summary>
+    public IReadOnlyList<MentionSpan> Mentions(string text) => ComposerLogic.Mentions(text, FileRefs, CommandNames);
+
+    /// <summary>草稿里已经没有 <c>@名字</c> 的引用跟着去掉(删掉 token = 删掉引用)。</summary>
+    private void PruneRefs(string draft)
+    {
+        if (FileRefs.Count == 0)
+        {
+            return;
+        }
+
+        var alive = ComposerLogic.Mentions(draft, FileRefs, []).Where(m => m.Kind == MentionSpan.FileKind).Select(m => m.Id).ToHashSet();
+        var gone = FileRefs.Where(r => !alive.Contains(r.Path)).ToList();
+        if (gone.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var chip in gone)
+        {
+            FileRefs.Remove(chip);
+        }
+
+        Remember();
+    }
+
+    private void ReplaceDraft(string text)
+    {
+        Draft = text;
+        DraftReplaced?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>把 Store 里的事实推进来(会话换了、模型候选变了、设备断开……)。</summary>
@@ -190,6 +237,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         _activity = activity;
         _connection = connection;
         _role = role;
+        var rememberedChanged = changedSession || (meta?.Model ?? "") != _rememberedModel || meta?.ModelProviderId != _rememberedProvider;
         _rememberedModel = meta?.Model ?? "";
         _rememberedProvider = meta?.ModelProviderId;
         _workspaceId = meta?.WorkspaceId ?? _workspaceId;
@@ -197,16 +245,19 @@ public sealed partial class ComposerViewModel : ObservableObject
 
         if (changedSession)
         {
-            Draft = session is { } s && _drafts.TryGetValue(s, out var draft) ? draft : "";
-            LastFailure = null;
+            // 换会话:先换回这个会话的引用,再换草稿(草稿里的 @名字 要对得上引用);换的过程中不按草稿删引用
+            _restoring = true;
             Sync(FileRefs, session is { } rs && _refs.TryGetValue(rs, out var chips) ? chips : []);
+            Draft = session is { } s && _drafts.TryGetValue(s, out var draft) ? draft : "";
+            _restoring = false;
+            LastFailure = null;
             Attachments.SetSession(session);
             OnPropertyChanged(nameof(HasFileRefs));
             CancelSuggestions();
             _commandsFor = null;
         }
 
-        SyncModels();
+        SyncModels(changedSession, rememberedChanged);
         Permission = ComposerLogic.ClampPermission(Permission, role);
         Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
         Sync(PermissionChoices, ComposerLogic.PermissionModesFor(role));
@@ -218,15 +269,19 @@ public sealed partial class ComposerViewModel : ObservableObject
         RefreshState();
     }
 
-    private void SyncModels()
+    /// <summary>
+    /// 选中哪个模型:会话上记住的(设备真源)变了就跟它走——换了会话、快照刚到、选完之后设备推回来、别的控制端改了;
+    /// 没变就保留刚才的选择(写回还在路上,或者写回失败了也不把用户的选择撤掉);都没有才兜底成第一个可用的。
+    /// ★ 兜底结果不写回(2.x 同样):用户没选过,会话就该继续跟着默认走。
+    /// </summary>
+    private void SyncModels(bool changedSession, bool rememberedChanged)
     {
         var choices = _options.Select(ModelChoice.Of).ToList();
         Sync(Models, choices);
-        var current = SelectedModel is { } picked && choices.Any(c => c.Key == picked.Key)
-            ? choices.First(c => c.Key == picked.Key)
-            : choices.FirstOrDefault(c => c.Alias == _rememberedModel && (_rememberedProvider is null || c.ProviderId == _rememberedProvider) && c.IsAvailable)
-              ?? choices.FirstOrDefault(c => c.IsAvailable);
-        SelectedModel = current;
+        var remembered = choices.FirstOrDefault(c => c.Alias == _rememberedModel && (_rememberedProvider is null || c.ProviderId == _rememberedProvider) && c.IsAvailable);
+        // 上一个会话的选择不带到这个会话来
+        var picked = !changedSession && SelectedModel is { } p ? choices.FirstOrDefault(c => c.Key == p.Key) : null;
+        SelectedModel = (rememberedChanged ? remembered : null) ?? picked ?? remembered ?? choices.FirstOrDefault(c => c.IsAvailable);
     }
 
     private ModelOptionDto? CurrentOption() =>
@@ -405,30 +460,42 @@ public sealed partial class ComposerViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>选中一个候选:草稿末尾的 <c>@查询</c> 换成输入框上方的一个文件引用 chip。</summary>
+    /// <summary>
+    /// 选中一个候选:草稿末尾的 <c>@查询</c> 换成 <c>@名字 </c>(输入框把它画成一个 token),同时记下这个文件引用。
+    /// 和已引用的另一个文件重名时,<c>@</c> 后面写项目相对路径以示区分。
+    /// </summary>
     [RelayCommand]
     private void PickFile(FileSuggestionItem item)
     {
-        var at = Draft.LastIndexOf('@');
-        if (at >= 0)
+        var chip = FileRefs.FirstOrDefault(r => r.Path == item.Path);
+        if (chip is null)
         {
-            Draft = Draft[..at].TrimEnd(' ') is { Length: > 0 } head ? head + " " : "";
-        }
-
-        if (FileRefs.All(r => r.Path != item.Path))
-        {
-            FileRefs.Add(new FileRefChip(item.Path, item.Name));
+            chip = new FileRefChip(item.Path, item.Name)
+            {
+                Label = FileRefs.Any(r => r.Label == item.Name) ? item.Path : item.Name,
+            };
+            FileRefs.Add(chip);
             Remember();
         }
 
+        var at = FileQuery is not null ? Draft.LastIndexOf('@') : -1;
+        var head = at >= 0 ? Draft[..at] : Draft.Length > 0 && !char.IsWhiteSpace(Draft[^1]) ? Draft + " " : Draft;
+        ReplaceDraft(head + chip.Mention + " ");
         CancelSuggestions();
     }
 
+    /// <summary>去掉一个文件引用:草稿里它的 <c>@名字</c>(连同后面一个空格)一起删掉。</summary>
     [RelayCommand]
     private void RemoveFile(FileRefChip chip)
     {
+        var span = ComposerLogic.Mentions(Draft, [chip], []).FirstOrDefault();
         FileRefs.Remove(chip);
         Remember();
+        if (span is not null)
+        {
+            var end = span.End < Draft.Length && Draft[span.End] == ' ' ? span.End + 1 : span.End;
+            Draft = Draft[..span.Start] + Draft[end..];
+        }
     }
 
     private void Remember()
@@ -475,7 +542,17 @@ public sealed partial class ComposerViewModel : ObservableObject
         Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
         RefreshState();
+        if (_session is { } session && (choice.Alias != _rememberedModel || choice.ProviderId != _rememberedProvider))
+        {
+            // 记在会话上;owner 还顺带写成这个项目新会话的默认模型(2.x 的写回)。结果经会话主题推回来,SyncModels 跟着它走
+            _modelWrite = _commands.SetModelAsync(session, choice.Alias, choice.ProviderId, _role == "owner" ? _workspaceId : null);
+        }
     }
+
+    /// <summary>最近一次模型写回(测试用:等到它落定)。</summary>
+    public Task WhenModelSaved => _modelWrite;
+
+    private Task _modelWrite = Task.CompletedTask;
 
     [RelayCommand]
     private void SetPermission(string mode) => Permission = ComposerLogic.ClampPermission(mode, _role);
@@ -484,7 +561,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     private void SetThinking(string level) => Thinking = ComposerLogic.ClampThinking(level, CurrentOption());
 
     [RelayCommand]
-    private void InsertSlash(SlashCommandItem item) => Draft = item.Command + " ";
+    private void InsertSlash(SlashCommandItem item) => ReplaceDraft(item.Command + " ");
 
     /// <summary>这一条的发送档位(逐条冻结:排队 5 分钟里改两次模型,三条消息就是三份档位)。</summary>
     public SendOptionsDto Options() => new(
@@ -531,6 +608,11 @@ public sealed partial class ComposerViewModel : ObservableObject
             {
                 LastFailure = null;
                 ClearRefs();
+                if (_rememberedModel.Length == 0 && options.Model.Length > 0 && _session == session)
+                {
+                    // 会话上还没记模型(老会话、设备上没配默认模型):这一条真的用了它,记在会话上,重开时还是它。只写会话,不写项目默认值
+                    _modelWrite = _commands.SetModelAsync(session, options.Model, options.ModelProviderId);
+                }
             }
             else
             {
@@ -582,6 +664,15 @@ public sealed partial class ComposerViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>没有可用的模型(没配供应商):输入框里给「添加供应商」按钮。</summary>
+    public bool NeedsProvider => State.Block == ComposerBlock.NoModel;
+
+    /// <summary>「添加供应商」:交给上层打开设置的「模型与供应商」。</summary>
+    public event Action? ProviderSettingsRequested;
+
+    [RelayCommand]
+    private void OpenProviderSettings() => ProviderSettingsRequested?.Invoke();
 
     [RelayCommand]
     private async Task StopAsync()

@@ -44,6 +44,41 @@ public interface IDialogService
 
     /// <summary>让用户选一个保存位置并返回可写的流;取消返回 null。调用方负责关闭流。</summary>
     Task<Stream?> PickSaveStreamAsync(FilePickKind kind, string suggestedName) => Task.FromResult<Stream?>(null);
+
+    /// <summary>
+    /// 弹出「新建项目」窗口(选设备、填路径);添加成功后由 <paramref name="form"/> 的 <see cref="ViewModels.NewProjectViewModel.Completed"/> 关闭,返回是否添加了项目。
+    /// 没有界面的实现(测试替身)默认走「直接选本机文件夹并提交」:设备选不了本机文件夹时当作取消。
+    /// </summary>
+    async Task<bool> ShowNewProjectAsync(ViewModels.NewProjectViewModel form)
+    {
+        if (!form.CanBrowse)
+        {
+            return false;
+        }
+
+        await form.BrowseCommand.ExecuteAsync(null);
+        if (string.IsNullOrWhiteSpace(form.Path))
+        {
+            return false;
+        }
+
+        if (await form.SubmitAsync())
+        {
+            return true;
+        }
+
+        await ShowErrorAsync(form.FailureTitle, form.ErrorDetail ?? form.Error?.ToString() ?? "");
+        return false;
+    }
+
+    /// <summary>弹出「项目图标」窗口;保存 / 恢复默认后由 <paramref name="form"/> 的 <see cref="ViewModels.ProjectIconViewModel.Completed"/> 关闭。没有界面的实现当作取消。</summary>
+    Task<bool> ShowProjectIconAsync(ViewModels.ProjectIconViewModel form) => Task.FromResult(false);
+
+    /// <summary>
+    /// 让用户选一张图片做项目图标,并压缩成 <see cref="ProjectIconSpec.PixelSize"/> 见方的小图(界面层解码,按缩小后的尺寸解码以省内存)。
+    /// 取消返回 null;没有界面的实现当作取消。
+    /// </summary>
+    Task<PickedIcon?> PickIconImageAsync() => Task.FromResult<PickedIcon?>(null);
 }
 
 /// <summary>没有界面时(未接入 UI 的测试)的默认实现:一律当作取消。</summary>

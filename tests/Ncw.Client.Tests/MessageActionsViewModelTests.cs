@@ -70,6 +70,12 @@ public class MessageActionsViewModelTests
             return Task.FromResult(Result);
         }
 
+        public Task<ActionResult<Unit>> DeleteReplyAsync(SessionRef session, string fromAssistantId, string toAssistantId, CancellationToken ct = default)
+        {
+            Calls.Add($"deleteReply:{fromAssistantId}..{toAssistantId}");
+            return Task.FromResult(Result);
+        }
+
         public Task<ActionResult<string>> BranchAsync(ProjectRef project, string sessionId, string userMessageId, CancellationToken ct = default)
         {
             Calls.Add($"branch:{sessionId}:{userMessageId}");
@@ -394,5 +400,99 @@ public class MessageActionsViewModelTests
         Assert.Equal([("a.txt", null), ("data:image/png;base64,AAAA", "image/png")], files.Select(f => (f.Path, f.Mime)));
         Assert.Empty(MessageInputs.FilesOf(new MessageDto("i", "user", 1, true, parts)));
         Assert.Empty(MessageInputs.FilesOf(new MessageDto("a", "assistant", 1, false, parts)));
+    }
+
+    // ───────────────────────── AI 回复:删除 / 分支 ─────────────────────────
+
+    private static string Call(string callId) => $"{{\"type\":\"tool_call\",\"callId\":\"{callId}\",\"name\":\"Write\",\"input\":{{}}}}";
+
+    private static MessageDto Asst(string id, long at, params string[] parts) => new(id, "assistant", at, false, "[" + string.Join(",", parts) + "]");
+
+    private static MessageDto Receipt(string id, long at) => new(id, "user", at, false, "[{\"type\":\"tool_result\",\"callId\":\"c1\",\"output\":{\"content\":\"ok\"},\"isError\":false}]");
+
+    private static MessageDto[] TwoTurns() =>
+    [
+        U("u1", T0, T("one")), A("a1", T0 + 1, "first"),
+        U("u2", T0 + 2, T("two")), Asst("a2", T0 + 3, T("let me look"), Call("c1")), Receipt("t2", T0 + 4), A("a3", T0 + 5, "done"),
+    ];
+
+    [Fact]
+    public void Every_reply_after_a_question_can_branch_but_only_the_last_can_regenerate()
+    {
+        var (conversation, _, _) = Rig(Stores(history: TwoTurns()));
+        List<(string, bool, bool)> Flags() => conversation.Rows.OfType<AssistantRowViewModel>().Select(r => (r.MessageId, r.HasTurn, r.CanRegenerate)).ToList();
+
+        // 第二轮已经完成:中间那段文字(a2)收在「工作区」里,收起时只看得到 a1 和最后一段 a3
+        Assert.Equal([("a1", true, false), ("a3", true, true)], Flags());
+
+        conversation.Rows.OfType<WorkGroupRowViewModel>().Single().IsExpanded = true;
+
+        Assert.Equal([("a1", true, false), ("a2", true, false), ("a3", true, true)], Flags());
+    }
+
+    [Fact]
+    public async Task Deleting_a_reply_asks_twice_and_removes_the_whole_ai_reply_of_that_turn_keeping_the_question()
+    {
+        var (conversation, messages, _) = Rig(Stores(history: TwoTurns()));
+        conversation.Rows.OfType<WorkGroupRowViewModel>().Single().IsExpanded = true; // 中间那段(a2)在「工作区」里,先展开
+        var row = conversation.Rows.OfType<AssistantRowViewModel>().First(r => r.MessageId == "a2");
+
+        conversation.AskDeleteReplyCommand.Execute(row);
+        Assert.True(row.IsConfirmingDelete);
+        Assert.Empty(messages.Calls); // 第一次点击什么都不删
+
+        conversation.CancelDeleteReplyCommand.Execute(row);
+        Assert.False(row.IsConfirmingDelete);
+
+        conversation.AskDeleteReplyCommand.Execute(row);
+        await conversation.DeleteReplyCommand.ExecuteAsync(row);
+
+        Assert.Equal(["deleteReply:a2..a3"], messages.Calls); // 第二轮 AI 的全部回复(第一条到最后一条助手消息),不是点到的那一段
+        Assert.False(row.IsConfirmingDelete);
+        Assert.Null(conversation.MessageError);
+    }
+
+    [Fact]
+    public void Asking_to_delete_a_reply_is_ignored_while_history_is_locked()
+    {
+        var (conversation, _, _) = Rig(Stores(running: true));
+        var row = new AssistantRowViewModel(new AssistantRow("x", "a1", "t", false));
+        conversation.AskDeleteReplyCommand.Execute(row);
+        Assert.False(row.IsConfirmingDelete);
+    }
+
+    [Fact]
+    public async Task Branching_from_a_reply_uses_the_question_of_its_turn()
+    {
+        var (conversation, messages, _) = Rig(Stores(history: TwoTurns()));
+
+        await conversation.BranchReplyCommand.ExecuteAsync(conversation.Rows.OfType<AssistantRowViewModel>().First(r => r.MessageId == "a1"));
+        await conversation.BranchReplyCommand.ExecuteAsync(conversation.Rows.OfType<AssistantRowViewModel>().Last());
+
+        Assert.Equal(["branch:s-ncw-1:u1", "branch:s-ncw-1:u2"], messages.Calls);
+    }
+
+    [Fact]
+    public async Task Reply_actions_report_failures_with_stable_keys_and_a_vanished_reply_is_gone()
+    {
+        var (conversation, messages, _) = Rig(Stores(history: TwoTurns()));
+        var row = conversation.Rows.OfType<AssistantRowViewModel>().Last();
+
+        messages.Result = new ActionResult<Unit>(ActionOutcome.Conflict, default, MessageActions.BusyKey);
+        conversation.AskDeleteReplyCommand.Execute(row);
+        await conversation.DeleteReplyCommand.ExecuteAsync(row);
+        Assert.Equal(MessageErrorKeys.Busy, conversation.MessageError);
+        Assert.False(row.IsConfirmingDelete);
+
+        messages.BranchResult = new ActionResult<string>(ActionOutcome.Unavailable);
+        await conversation.BranchReplyCommand.ExecuteAsync(row);
+        Assert.Equal(MessageErrorKeys.Unavailable, conversation.MessageError);
+
+        // 别的控制端先把它删了:镜像里已经没有这条消息 → 「已经不在了」,不去调设备
+        var ghost = new AssistantRowViewModel(new AssistantRow("g", "ghost", "t", false));
+        messages.Calls.Clear();
+        await conversation.DeleteReplyCommand.ExecuteAsync(ghost);
+        Assert.Equal(MessageErrorKeys.Gone, conversation.MessageError);
+        Assert.Empty(messages.Calls);
     }
 }

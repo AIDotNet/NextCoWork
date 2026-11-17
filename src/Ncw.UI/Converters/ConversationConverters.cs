@@ -48,7 +48,44 @@ public sealed class ThinkingLevelTextConverter : IValueConverter
         _ => NcwTextKind.ThinkingAuto,
     });
 
+    /// <summary>不带「思考:」前缀的短名(输入框里思考按钮的图标后面、菜单行)。</summary>
+    public static string ShortText(string? level) => NcwTexts.Get(level switch
+    {
+        "off" => NcwTextKind.ThinkingShortOff,
+        "minimal" => NcwTextKind.ThinkingShortMinimal,
+        "low" => NcwTextKind.ThinkingShortLow,
+        "medium" => NcwTextKind.ThinkingShortMedium,
+        "high" => NcwTextKind.ThinkingShortHigh,
+        "xhigh" => NcwTextKind.ThinkingShortXHigh,
+        "max" => NcwTextKind.ThinkingShortMax,
+        _ => NcwTextKind.ThinkingShortAuto,
+    });
+
+    /// <summary>刻度条点亮几格(0–6):关 = 0、最大 = 6;「自动」画在中间(3 格,用强调色区分)。</summary>
+    public static int MeterLevel(string? level) => level switch
+    {
+        "off" => 0,
+        "minimal" => 1,
+        "low" => 2,
+        "medium" => 3,
+        "high" => 4,
+        "xhigh" => 5,
+        "max" => 6,
+        _ => 3,
+    };
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>百分比(0–100)→ 圆环的扫过角度(0–360°,输入框里的上下文占用环)。</summary>
+public sealed class PercentSweepConverter : IValueConverter
+{
+    public static readonly PercentSweepConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int percent ? Math.Clamp(percent, 0, 100) * 3.6 : 0.0;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
@@ -171,13 +208,33 @@ public sealed class ErrorTextConverter : IValueConverter
 {
     public static readonly ErrorTextConverter Instance = new();
 
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is Ncw.Client.Transcript.ErrorRow row ? Text(row.Code, row.MessageKey) : null;
+
+    /// <summary>
+    /// 错误码 / 消息 key → 一句人话(docs/design/03 §11.4)。码是 Agent 写进消息和 Run 终态的那一套(<c>MessageCodec.CodeName</c>:auth、rate_limit、context_length、network……);
+    /// 早期的别名(rate_limited、context_overflow、upstream_unavailable)也认。认不出来的给通用说明——设备的英文诊断只在「详情」里。
+    /// </summary>
+    public static string Text(string code, string? messageKey) => NcwTexts.Get(messageKey switch
     {
-        Ncw.Client.Transcript.ErrorRow { Code: "rate_limited" } => NcwTexts.Get(NcwTextKind.ErrorRateLimited),
-        Ncw.Client.Transcript.ErrorRow { Code: "context_overflow" } => NcwTexts.Get(NcwTextKind.ErrorContextOverflow),
-        Ncw.Client.Transcript.ErrorRow row => row.Message.Length > 0 ? row.Message : NcwTexts.Get(NcwTextKind.ErrorGeneric),
-        _ => null,
-    };
+        "run.abandoned" => NcwTextKind.ErrorRunAbandoned,
+        "run.internal" => NcwTextKind.ErrorRunInternal,
+        "run.notStarted" => NcwTextKind.ErrorRunNotStarted,
+        _ => code switch
+        {
+            "rate_limit" or "rate_limited" => NcwTextKind.ErrorRateLimited,
+            "context_length" or "context_overflow" => NcwTextKind.ErrorContextOverflow,
+            "auth" => NcwTextKind.ErrorAuth,
+            "network" => NcwTextKind.ErrorNetwork,
+            "provider" or "upstream_unavailable" => NcwTextKind.ErrorProvider,
+            "cache_unsupported" => NcwTextKind.ErrorCacheUnsupported,
+            "no_healthy_provider" => NcwTextKind.ErrorNoHealthyProvider,
+            "conflict" => NcwTextKind.ErrorConflict,
+            "tool_failed" => NcwTextKind.ErrorToolFailed,
+            "aborted" => NcwTextKind.ErrorAborted,
+            _ => NcwTextKind.ErrorGeneric,
+        },
+    });
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }

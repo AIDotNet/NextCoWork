@@ -12,6 +12,7 @@ using Ncw.UI.Views.Desktop;
 using Ncw.UI.Views.Desktop.Conversation;
 using Ncw.UI.Views;
 using TKCode.Arc;
+using ToolCallStatus = Ncw.Client.Stores.ToolCallStatus; // TKCode.Arc.Special 里也有同名类型
 using TKCode.Arc.Motion;
 using static Ncw.UI.Tests.ConversationFixtures;
 
@@ -141,7 +142,10 @@ public class WidgetScreenshotTests
         var texts = Texts(window).ToList();
         Assert.Contains(texts, t => t is not null && t.Contains("Quarterly revenue", StringComparison.Ordinal));   // 快照里的文字
         Assert.Contains(texts, t => t is not null && t.Contains("Q2 growth +8%", StringComparison.Ordinal));
-        Assert.Contains("本机 · local", texts);                                                                      // 执行环境标识
+        // 执行环境标识:和工具行同一条规则,本机环境不在卡片头上画(完整的「设备 · 环境」在标题的悬停提示里)
+        Assert.Equal("本机 · local", row.EnvLabel);
+        Assert.False(row.ShowsEnv);
+        Assert.DoesNotContain("本机 · local", texts);
         Assert.Contains("revenue_by_region", texts);
         Assert.Contains(texts, t => t is not null && t.Contains("2 处不安全的内容已被移除", StringComparison.Ordinal));   // 消毒提示
         Assert.DoesNotContain(texts, t => t is not null && t.Contains("<script", StringComparison.Ordinal));          // 快照只当文字显示,不当标记

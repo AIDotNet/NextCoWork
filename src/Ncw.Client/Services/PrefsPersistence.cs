@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ncw.Client.Shortcuts;
 using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 
@@ -125,7 +126,8 @@ public sealed class JsonFilePrefsRepository(string path) : IPrefsRepository
     }
 }
 
-/// <summary>文件里的形状。字段名固定,和 <see cref="UiPrefs"/> 解耦,以后改记录不会破坏旧文件;新增字段只追加成可空项(<c>Motion</c> 缺失 = 跟随系统),版本号不动。</summary>
+/// <summary>文件里的形状。字段名固定,和 <see cref="UiPrefs"/> 解耦,以后改记录不会破坏旧文件;新增字段只追加成可空项(<c>Motion</c> 缺失 = 跟随系统;
+/// <c>Shortcuts</c> 缺失 = 全用默认,键是 <see cref="AppCommand"/> 的成员名,不认识的键丢掉;<c>Attention</c> 缺失 = 通知全开),版本号不动。</summary>
 public sealed record UiPrefsDto(
     int Version,
     double SidebarWidth,
@@ -133,18 +135,30 @@ public sealed record UiPrefsDto(
     bool IsSidebarOpen,
     bool IsInspectorOpen,
     string[]? InspectorTabs,
-    string? Motion = null)
+    string? Motion = null,
+    Dictionary<string, string>? Shortcuts = null,
+    AttentionPrefsDto? Attention = null)
 {
     public static UiPrefsDto From(UiPrefs prefs) => new(
         1, prefs.SidebarWidth, prefs.InspectorWidth, prefs.IsSidebarOpen, prefs.IsInspectorOpen,
-        [.. prefs.InspectorTabs.Select(t => t.ToString())], prefs.Motion.ToString());
+        [.. prefs.InspectorTabs.Select(t => t.ToString())], prefs.Motion.ToString(),
+        prefs.ShortcutOverrides.Count == 0 ? null : prefs.ShortcutOverrides.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+        prefs.Attention is { } a ? new AttentionPrefsDto(a.NotifyPending, a.NotifyCompleted, a.NotifyFailed, a.Badge, a.Tray) : null);
 
     public UiPrefs ToPrefs() => new(
         SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen,
         [.. (InspectorTabs ?? []).Select(t => Enum.TryParse<InspectorTabKind>(t, out var kind) ? kind : (InspectorTabKind?)null)
             .Where(k => k is not null).Select(k => k!.Value)],
-        Enum.TryParse<UiMotionPreference>(Motion, out var motion) && Enum.IsDefined(motion) ? motion : UiMotionPreference.System);
+        Enum.TryParse<UiMotionPreference>(Motion, out var motion) && Enum.IsDefined(motion) ? motion : UiMotionPreference.System,
+        Shortcuts is null ? null : Shortcuts
+            .Select(kv => (Ok: Enum.TryParse<AppCommand>(kv.Key, out var command) && Enum.IsDefined(command), Command: command, kv.Value))
+            .Where(x => x.Ok && x.Value is not null)
+            .ToImmutableDictionary(x => x.Command, x => x.Value),
+        Attention is { } a ? new AttentionPrefs(a.NotifyPending ?? true, a.NotifyCompleted ?? true, a.NotifyFailed ?? true, a.Badge ?? true, a.Tray ?? true) : null);
 }
+
+/// <summary>通知偏好在文件里的形状:每项可空(缺失 = 默认开)。</summary>
+public sealed record AttentionPrefsDto(bool? NotifyPending, bool? NotifyCompleted, bool? NotifyFailed, bool? Badge, bool? Tray);
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(UiPrefsDto))]

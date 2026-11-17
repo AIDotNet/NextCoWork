@@ -141,6 +141,22 @@ public sealed partial class InspectorViewModel : ObservableObject
         _ = Terminals.SetVisibleAsync(value == InspectorTabKind.Terminal);
     }
 
+    /// <summary>当前会话里有已完成的写 / 改文件(外壳从对话转录派生后填进来):审查页签自动出现(docs/design/03 §11.5)。</summary>
+    public bool SessionHasChanges
+    {
+        get => _sessionHasChanges;
+        set
+        {
+            if (_sessionHasChanges != value)
+            {
+                _sessionHasChanges = value;
+                Refresh();
+            }
+        }
+    }
+
+    private bool _sessionHasChanges;
+
     [RelayCommand]
     private void Activate(InspectorTabKind kind)
     {
@@ -268,7 +284,7 @@ public sealed partial class InspectorViewModel : ObservableObject
             }
         }
 
-        var kinds = InspectorTabs.Compose(Added, items.Count > 0);
+        var kinds = InspectorTabs.Compose(Added, items.Count > 0, SessionHasChanges);
         if (!kinds.Contains(Active))
         {
             // 子代理页签随会话消失时回到文件管理器。
@@ -276,13 +292,13 @@ public sealed partial class InspectorViewModel : ObservableObject
         }
 
         var running = items.Count(x => !SubagentView.IsTerminal(x.Record.Status));
-        var tabs = kinds.Select(kind => (Kind: kind, Count: kind == InspectorTabKind.Subagents ? running : 0)).ToList();
-        if (!Tabs.Select(t => (t.Kind, t.Count)).SequenceEqual(tabs.Select(t => (t.Kind, t.Count))))
+        var tabs = kinds.Select(kind => (Kind: kind, Count: kind == InspectorTabKind.Subagents ? running : 0, Auto: kind == InspectorTabKind.Review && !Added.Contains(kind))).ToList();
+        if (!Tabs.Select(t => (t.Kind, t.Count, t.IsAuto)).SequenceEqual(tabs.Select(t => (t.Kind, t.Count, t.Auto))))
         {
             Tabs.Clear();
-            foreach (var (kind, count) in tabs)
+            foreach (var (kind, count, auto) in tabs)
             {
-                Tabs.Add(new InspectorTabViewModel(kind, count));
+                Tabs.Add(new InspectorTabViewModel(kind, count) { IsAuto = auto });
             }
 
             Addable.Clear();
@@ -402,8 +418,11 @@ public sealed partial class InspectorTabViewModel(InspectorTabKind kind, int cou
 {
     public InspectorTabKind Kind { get; } = kind;
 
-    /// <summary>文件页签不能关;子代理页签随会话自动出现和消失,也不能手动关。</summary>
-    public bool IsClosable { get; } = kind is not (InspectorTabKind.Files or InspectorTabKind.Subagents);
+    /// <summary>文件页签不能关;子代理页签随会话自动出现和消失,也不能手动关。审查页签:用户加的能关;自动出现的不能关(<see cref="IsAuto"/>)。</summary>
+    public bool IsClosable => !IsAuto && Kind is not (InspectorTabKind.Files or InspectorTabKind.Subagents);
+
+    /// <summary>随会话自动出现的页签(子代理、改过文件时的审查)。</summary>
+    public bool IsAuto { get; init; }
 
     public int Count { get; } = count;
 

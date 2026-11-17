@@ -7,6 +7,7 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              xmlns:conv="using:Ncw.UI.Views.Desktop.Conversation"
              xmlns:mgmt="using:Ncw.UI.Views.Desktop.Management"
+             xmlns:desk="using:Ncw.UI.Views.Desktop"
              x:Class="Ncw.UI.Views.Desktop.WorkspaceArea"
              x:DataType="vm:ShellViewModel">
   <!-- 栏 3:主工作区。标签栏 + 会话内容(转录、待办、目标条、输入框)。 -->
@@ -28,12 +29,16 @@
                                 Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.ActivateCommand}"
                                 CommandParameter="{Binding}">
                   <StackPanel Orientation="Horizontal" Spacing="7">
-                    <!-- 状态点:运行中(权威广播)/ 设备断开时未知 / 空闲时是会话图标 -->
+                    <!-- 会话标签:运行中(权威广播)/ 设备断开时未知 / 空闲时是会话图标;文件标签:文件图标 -->
                     <Panel Width="14" VerticalAlignment="Center">
-                      <lucide:LucideIcon Kind="MessageSquare" Size="13" IsVisible="{Binding !IsRunning}" />
+                      <lucide:LucideIcon Kind="MessageSquare" Size="13" IsVisible="{Binding IsSession}" />
+                      <lucide:LucideIcon Kind="File" Size="13" IsVisible="{Binding IsFile}" />
                       <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
                     </Panel>
                     <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <!-- 文件标签:有未保存的修改 -->
+                    <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource TextMuted}"
+                            IsVisible="{Binding File.IsDirty}" arc:Tooltip.Tip="{l:NcwText FileUnsaved}" />
                     <ui:PlainButton Width="18" Height="18" CornerRadius="5"
                                     Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.CloseCommand}"
                                     CommandParameter="{Binding}"
@@ -53,14 +58,7 @@
           <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
             <lucide:LucideIcon Kind="Ellipsis" Size="16" />
           </ui:NcwButton>
-          <!-- 上下文占用:最近一次 context_usage 事件;没有数据时不显示 -->
-          <StackPanel Orientation="Horizontal" Spacing="5" Margin="8,0" VerticalAlignment="Center"
-                      IsVisible="{Binding Conversation.HasContext}" arc:Tooltip.Tip="{l:NcwText ContextUsage}">
-            <lucide:LucideIcon Kind="Gauge" Size="14" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <TextBlock Classes="caption">
-              <Run Text="{Binding Conversation.ContextPercent}" /><Run Text="%" />
-            </TextBlock>
-          </StackPanel>
+          <!-- 上下文占用环在输入框的工具行里(docs/design/03 §6「输入框版式」),这里不再重复 -->
           <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText SplitRight}" arc:Tooltip.Tip="{l:NcwText SplitRight}">
             <lucide:LucideIcon Kind="Columns2" Size="16" />
           </ui:NcwButton>
@@ -77,6 +75,10 @@
                  Text="{l:NcwText OpenASession}" />
       <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding Panel.NewSessionCommand}" IsVisible="{Binding Panel.HasProject}" Content="{l:NcwText NewSession}" />
     </StackPanel>
+    <!-- 文件标签页:盖在会话上(当前标签是文件时) -->
+    <desk:FileTabView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Workspace.ActiveFile}"
+                      IsVisible="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Workspace.ActiveFile, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      ui:NcwMotion.ShowMotion="Fade" />
     <!-- 侧栏「定时任务」页:盖在内容区上(选了别的会话就让位) -->
     <mgmt:SchedulesPage Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding ScheduledTasks}" IsVisible="{Binding IsOpen}" ui:NcwMotion.ShowMotion="Fade" />
   </Grid>

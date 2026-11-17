@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:tree="using:Ncw.UI.Views.Desktop.Tree"
+             x:Class="Ncw.UI.Views.Desktop.Tree.SidebarGroupNode"
+             x:DataType="vm:SidebarGroupViewModel">
+  <!-- 侧边栏里的一个项目组:一行可折叠的标题(组色的小方块 + 名字;折叠时右侧是组内待处理数之和),展开后是组内项目。右键:重命名 / 展开收起 / 改色 / 解散。 -->
+  <StackPanel Margin="0,6,0,0">
+    <ui:PlainButton x:Name="Header" Height="28" Padding="4,0,8,0" CornerRadius="7" Command="{Binding Group.ToggleCommand}"
+                    AutomationProperties.Name="{Binding Group.Name}">
+      <Grid ColumnDefinitions="18,Auto,*,Auto" ColumnSpacing="6">
+        <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsOpen}" Kind="ChevronRight" Size="12"
+                           HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        <Border Grid.Column="1" Width="8" Height="8" CornerRadius="2" VerticalAlignment="Center"
+                Background="{Binding Group.Color, Converter={x:Static cv:HexBrushConverter.Instance}}" />
+        <TextBlock Grid.Column="2" Classes="section" Text="{Binding Group.Name}" TextTrimming="CharacterEllipsis" />
+        <Border Grid.Column="3" Classes="pendingPill" IsVisible="{Binding ShowsPending}" ui:NcwMotion.ShowMotion="Fade">
+          <TextBlock Text="{Binding Group.PendingCount, Converter={x:Static cv:CountConverter.Instance}}" />
+        </Border>
+      </Grid>
+    </ui:PlainButton>
+    <ui:NcwCollapsible IsOpen="{Binding IsOpen}">
+      <ItemsControl ItemsSource="{Binding Members}" Margin="10,0,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:SidebarProjectViewModel">
+            <tree:SidebarProjectNode />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ui:NcwCollapsible>
+  </StackPanel>
+</UserControl>

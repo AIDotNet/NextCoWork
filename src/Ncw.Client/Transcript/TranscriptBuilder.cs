@@ -21,7 +21,8 @@ public static class TranscriptBuilder
 
     /// <param name="fallbackEnv">落库的旧调用没带环境标识时,用项目所在的环境兜底(设备 + 环境)。</param>
     /// <param name="deviceUnknown">设备断开:转录末尾加「状态未知」,运行中的东西不再当成还在跑(规则 7)。</param>
-    public static ImmutableArray<TranscriptRow> Build(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, DateTimeOffset now, bool deviceUnknown = false)
+    /// <param name="groupFinishedWork">已完成的一轮把最后一段文字以外的操作收成「工作区」分组(<see cref="WorkGroupRow"/>)。主对话打开;子代理转录不分组。</param>
+    public static ImmutableArray<TranscriptRow> Build(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, DateTimeOffset now, bool deviceUnknown = false, bool groupFinishedWork = false)
     {
         if (!state.Sessions.TryGetValue(session, out var view))
         {
@@ -59,7 +60,10 @@ public static class TranscriptBuilder
             deviceUnknown);
 
         var subagentByCall = subagents.ToDictionary(e => e.Ref.CallId, StringComparer.Ordinal);
-        var anyRunActive = view.ActiveRunId is not null || runs.Any(r => r.Phase == RunPhase.Running);
+        // 快照里的 ActiveRunId 只在拿到快照那一刻对:它指的 Run 在 Store 里已经是终态,就不再算「还在跑」(否则这一轮永远收不成分组、工具永远显示运行中)
+        var snapshotRunLive = view.ActiveRunId is { } snapshotRun
+            && !runs.Any(r => r.Ref.RunId == snapshotRun && r.Phase is not (RunPhase.Running or RunPhase.Unknown));
+        var anyRunActive = snapshotRunLive || runs.Any(r => r.Phase == RunPhase.Running);
         var rows = new List<TranscriptRow>();
         var emittedCalls = new HashSet<string>(StringComparer.Ordinal);
         var committed = view.Messages.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
@@ -89,7 +93,13 @@ public static class TranscriptBuilder
                         rows.Add(new AssistantRow($"{message.Id}:t{texts++}", message.Id, part.Text!, false));
                         break;
                     case "thinking" when !user:
-                        rows.Add(new ThinkingRow($"{message.Id}:k{thoughts++}", part.Text ?? "", part.DurationMs, false));
+                        // 下标照样前进(key 与流式时对齐);只有透传载体、没有文字的思考块(redacted / 加密推理条目)不画:没有任何可看的,只会多出一行「思考了」
+                        var thinkingKey = $"{message.Id}:k{thoughts++}";
+                        if (!string.IsNullOrWhiteSpace(part.Text))
+                        {
+                            rows.Add(new ThinkingRow(thinkingKey, part.Text, part.DurationMs, false));
+                        }
+
                         break;
                     case "tool_call" when part.CallId is { } callId:
                         emittedCalls.Add(callId);
@@ -121,7 +131,7 @@ public static class TranscriptBuilder
         // 还没落库的:流式文字 / 思考、已开始的工具
         foreach (var run in runs.OrderBy(r => r.Ref.RunId, StringComparer.Ordinal))
         {
-            foreach (var (messageId, text) in run.Thinking.Where(kv => !committed.Contains(kv.Key)))
+            foreach (var (messageId, text) in run.Thinking.Where(kv => !committed.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
             {
                 rows.Add(new ThinkingRow($"{messageId}:k0", text, null, true));
             }
@@ -140,11 +150,23 @@ public static class TranscriptBuilder
             }
         }
 
+        if (groupFinishedWork && !anyRunActive && !deviceUnknown && pending.Count == 0)
+        {
+            rows = GroupFinishedWork(rows);
+        }
+
         // 运行状态与失败的 Run
         var last = runs.OrderByDescending(r => r.Ref.RunId, StringComparer.Ordinal).FirstOrDefault();
         foreach (var run in runs.Where(r => r.Phase == RunPhase.Error && r.Error is not null))
         {
             var error = run.Error!;
+            // 同一次失败会落两份:Agent 把错误写进最后一条助手消息(持久化的 error 块),Run 的终态也带着它。
+            // 转录末尾紧挨着的那条消息错误就是这一次失败:只留 Run 的这一张(它能重试),不画两张一样的卡片(03 §11.4)
+            if (rows.Count > 0 && rows[^1] is ErrorRow { Key: var previous } && !previous.StartsWith("run:", StringComparison.Ordinal))
+            {
+                rows.RemoveAt(rows.Count - 1);
+            }
+
             rows.Add(new ErrorRow($"run:{run.Ref.RunId}", error.Code, error.Message, error.MessageKey, error.Retryable, run.Ref == last?.Ref));
         }
 
@@ -167,6 +189,134 @@ public static class TranscriptBuilder
         }
 
         return [.. rows];
+    }
+
+    /// <summary>
+    /// 一轮(从一条用户消息到下一条)已经全部完成时,把最后一段回复文字之前的操作挪到一个 <see cref="WorkGroupRow"/> 表头后面。
+    /// 只在这一轮「以一段写完的回复文字收尾」时收:最后一个可收的行必须是它,否则(中止了、停在工具调用上、还在流)原样保留,什么都不藏。
+    /// 还在跑 / 等审批的工具、还在跑的子代理也不收。成员以外的行(可视化卡片、错误、目标状态、压缩边界)保持原有的相对顺序,排在这一组后面。
+    /// </summary>
+    private static List<TranscriptRow> GroupFinishedWork(List<TranscriptRow> rows)
+    {
+        var result = new List<TranscriptRow>(rows.Count);
+        var start = 0;
+        for (var i = 0; i <= rows.Count; i++)
+        {
+            if (i < rows.Count && rows[i] is not UserRow)
+            {
+                continue;
+            }
+
+            // [start, i) 是一轮(开头可能带着前一条用户消息),下一轮从 i 开始
+            GroupTurn(rows, start, i, result);
+            start = i;
+        }
+
+        return result;
+    }
+
+    private static void GroupTurn(List<TranscriptRow> rows, int from, int to, List<TranscriptRow> output)
+    {
+        var lastWork = -1;
+        for (var i = to - 1; i >= from; i--)
+        {
+            if (rows[i] is AssistantRow or ThinkingRow or ToolRow or SubagentRow or SubagentReportRow)
+            {
+                lastWork = i;
+                break;
+            }
+        }
+
+        if (lastWork < 0 || rows[lastWork] is not AssistantRow { IsStreaming: false })
+        {
+            output.AddRange(rows.Skip(from).Take(to - from));
+            return;
+        }
+
+        var members = new List<TranscriptRow>();
+        var rest = new List<TranscriptRow>();
+        var firstMember = -1;
+        for (var i = from; i < to; i++)
+        {
+            var row = rows[i];
+            var inGroup = i < lastWork && row is ThinkingRow or ToolRow or SubagentRow or SubagentReportRow or AssistantRow;
+            if (inGroup && row is ThinkingRow { IsStreaming: true } or AssistantRow { IsStreaming: true }
+                or ToolRow { Status: ToolRowStatus.Running or ToolRowStatus.WaitingApproval }
+                or SubagentRow { Unknown: true } or SubagentRow { View.IsActive: true })
+            {
+                // 这一轮里还有没收口的东西:整轮不收(收一半比不收更糟)
+                output.AddRange(rows.Skip(from).Take(to - from));
+                return;
+            }
+
+            if (inGroup)
+            {
+                firstMember = firstMember < 0 ? rest.Count : firstMember;
+                members.Add(row);
+            }
+            else
+            {
+                rest.Add(row);
+            }
+        }
+
+        if (members.Count == 0)
+        {
+            output.AddRange(rows.Skip(from).Take(to - from));
+            return;
+        }
+
+        var actions = members.Count(static m => m is ToolRow or SubagentRow);
+        var failed = members.Count(static m => m is ToolRow { Status: ToolRowStatus.Failed });
+        rest.InsertRange(firstMember, members.Prepend(new WorkGroupRow($"work:{members[0].Key}", members.Count, actions, failed)));
+        output.AddRange(rest);
+    }
+
+    /// <summary>
+    /// <see cref="Build"/> 读到的全部输入的「指纹」:这个会话的镜像、它的各个 Run、子代理表、这台设备的交互、兜底环境、断线标记——全部按引用比较
+    /// (Store 是不可变记录,没变就是同一个实例)。指纹相同,派生结果一定相同,视图模型可以跳过整份重新派生:
+    /// 别的会话在流式、会话列表 / 设备 / 模型候选变了,这些都会触发刷新,但和这一份转录无关。
+    /// 例外是随时间变化的子代理计时(<c>now</c>):调用方在计时刷新时强制重新派生。
+    /// </summary>
+    public sealed class Inputs
+    {
+        private readonly SessionView? _view;
+        private readonly RunView[] _runs;
+        private readonly ImmutableDictionary<SubagentRef, SubagentEntry> _subagents;
+        private readonly DeviceInteractions? _interactions;
+        private readonly EnvRefDto? _fallback;
+        private readonly bool _unknown;
+
+        private Inputs(SessionView? view, RunView[] runs, ImmutableDictionary<SubagentRef, SubagentEntry> subagents, DeviceInteractions? interactions, EnvRefDto? fallback, bool unknown) =>
+            (_view, _runs, _subagents, _interactions, _fallback, _unknown) = (view, runs, subagents, interactions, fallback, unknown);
+
+        public static Inputs Of(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, bool deviceUnknown) => new(
+            state.Sessions.GetValueOrDefault(session),
+            [.. state.Runs.Values.Where(r => r.Ref.DeviceId == session.DeviceId && r.SessionId == session.SessionId)],
+            state.Subagents,
+            state.Interactions.GetValueOrDefault(session.DeviceId),
+            fallbackEnv,
+            deviceUnknown);
+
+        public bool SameAs(Inputs? other)
+        {
+            if (other is null || !ReferenceEquals(_view, other._view) || !ReferenceEquals(_subagents, other._subagents)
+                || !ReferenceEquals(_interactions, other._interactions) || _unknown != other._unknown || !Equals(_fallback, other._fallback)
+                || _runs.Length != other._runs.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < _runs.Length; i++)
+            {
+                if (!ReferenceEquals(_runs[i], other._runs[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     /// <summary>属于这个会话的挂起交互:顶层 Run 的、以及它派出的子代理 Run 的。按登记时间排。</summary>
@@ -260,11 +410,38 @@ public static class TranscriptBuilder
         var (title, loading) = InputHints(input);
         title = card is { Title.Length: > 0 } ? card.Title : title;
         var data = widgets.Data.GetValueOrDefault(title);
-        return new WidgetRow($"call:{callId}", callId, name, title, card, WidgetView.Phase(facts), facts, loading, data, live?.Environment ?? card?.Environment ?? fallbackEnv);
+        return new WidgetRow($"call:{callId}", callId, name, title, card, WidgetView.Phase(facts), facts, loading, data, ResolveEnv(live?.Environment ?? card?.Environment, fallbackEnv));
+    }
+
+    /// <summary>
+    /// 补齐执行环境标识。<c>tool_start</c> 只带 id(设备 + 环境),名字和类型是空的:是项目所在的那个环境就用项目环境(名字、类型都全),
+    /// 别的环境用 id 当名字、类型保持未知——照样画出来,离开项目环境的执行必须看得见(AGENTS.md §5)。
+    /// </summary>
+    public static EnvRefDto? ResolveEnv(EnvRefDto? env, EnvRefDto? fallback)
+    {
+        if (env is null || env is { Name.Length: > 0, Type.Length: > 0 })
+        {
+            return env ?? fallback;
+        }
+
+        if (fallback is not null && fallback.DeviceId == env.DeviceId && (env.Environment.Length == 0 || env.Environment == fallback.Environment))
+        {
+            return fallback;
+        }
+
+        return env with { Name = env.Name.Length > 0 ? env.Name : env.Environment };
     }
 
     /// <summary>工具入参里的标题和加载提示(<c>loading_messages</c>,1–4 条,模型写的;每条截到 80 字符,用换行拼成一个字符串,让行记录保持值相等)。</summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<string, Tuple<string, string>> Hints = [];
+
     private static (string Title, string Loading) InputHints(string inputJson)
+    {
+        var hints = Hints.GetValue(inputJson, static json => ParseHints(json).ToTuple());
+        return (hints.Item1, hints.Item2);
+    }
+
+    private static (string Title, string Loading) ParseHints(string inputJson)
     {
         using var doc = TryParse(inputJson);
         var root = doc?.RootElement ?? default;
@@ -282,8 +459,7 @@ public static class TranscriptBuilder
         var name = call.Name ?? live?.Name ?? "";
         var input = call.InputJson ?? live?.InputJson ?? "{}";
         var output = result?.Content ?? live?.Output;
-        var (kind, target) = Classify(name, input);
-        var (preview, more, added, removed) = Summarize(kind, input, output);
+        var (kind, target, preview, more, added, removed) = Digest(name, input, output);
 
         var callId = call.CallId!;
         ToolRowStatus status;
@@ -307,8 +483,47 @@ public static class TranscriptBuilder
             env ??= approvalEnv;
         }
 
-        return new ToolRow($"call:{callId}", callId, name, kind, target, status, env ?? fallbackEnv, preview, more, added, removed,
+        return new ToolRow($"call:{callId}", callId, name, kind, target, status, ResolveEnv(env, fallbackEnv), preview, more, added, removed,
             Truncated: false, live?.QueuedAhead);
+    }
+
+    /// <summary>一次工具调用解析过的结果(按入参 JSON 字符串实例缓存;摘要另按输出字符串缓存,命令在跑时输出会变)。</summary>
+    private sealed class ToolDigest
+    {
+        public string? Name;
+        public ToolKind Kind;
+        public string Target = "";
+        public bool HasSummary;
+        public string? Output;
+        public (string Preview, int More, int Added, int Removed) Summary;
+    }
+
+    // 入参 / 输出都是不可变字符串:同一个实例跨多次派生(流式时每个增量都重新派生一遍)只解析一次——否则每个增量都要把整个会话里每一次工具调用的
+    // 入参 JSON 重新解析、命令输出重新切行。键是字符串实例,字符串不再被引用时缓存随之回收。
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<string, ToolDigest> Digests = [];
+
+    private static (ToolKind Kind, string Target, string Preview, int More, int Added, int Removed) Digest(string name, string input, string? output)
+    {
+        var digest = Digests.GetValue(input, static _ => new ToolDigest());
+        lock (digest)
+        {
+            if (!string.Equals(digest.Name, name, StringComparison.Ordinal))
+            {
+                digest.Name = name;
+                (digest.Kind, digest.Target) = Classify(name, input);
+                digest.HasSummary = false;
+            }
+
+            if (!digest.HasSummary || !(ReferenceEquals(digest.Output, output) || string.Equals(digest.Output, output, StringComparison.Ordinal)))
+            {
+                digest.Summary = Summarize(digest.Kind, input, output);
+                digest.Output = output;
+                digest.HasSummary = true;
+            }
+
+            var (preview, more, added, removed) = digest.Summary;
+            return (digest.Kind, digest.Target, preview, more, added, removed);
+        }
     }
 
     /// <summary>工具参数的一行摘要(命令 / 路径 / 模式)。审批卡片和工具卡片共用,不各写一份。</summary>
@@ -351,7 +566,24 @@ public static class TranscriptBuilder
         return (kind, Clip(target));
     }
 
-    private static (string Preview, int More, int Added, int Removed) Summarize(ToolKind kind, string inputJson, string? output)
+    /// <summary>审批卡片上「要做什么」的预览:写 / 改是 diff 行(前缀 <c>+</c> / <c>-</c>),命令是完整的命令文本(多行照原样)。规则和工具行的摘要是同一份,只是行数上限更大。</summary>
+    public const int ApprovalPreviewLineLimit = 14;
+
+    public static (string Preview, int More, int Added, int Removed) ApprovalPreview(string toolName, string inputJson)
+    {
+        var (kind, _) = Classify(toolName, inputJson);
+        if (kind == ToolKind.Command)
+        {
+            using var doc = TryParse(inputJson);
+            var command = doc is null ? null : SubagentReceipts.Str(doc.RootElement, "command");
+            var lines = Split(command).ToList();
+            return (string.Join('\n', lines.Take(ApprovalPreviewLineLimit).Select(l => " " + Clip(l))), Math.Max(0, lines.Count - ApprovalPreviewLineLimit), 0, 0);
+        }
+
+        return Summarize(kind, inputJson, null, ApprovalPreviewLineLimit);
+    }
+
+    private static (string Preview, int More, int Added, int Removed) Summarize(ToolKind kind, string inputJson, string? output, int limit = PreviewLineLimit)
     {
         switch (kind)
         {
@@ -393,13 +625,13 @@ public static class TranscriptBuilder
                     Pair(SubagentReceipts.Str(root, "old_string"), SubagentReceipts.Str(root, "new_string"));
                 }
 
-                return (string.Join('\n', lines.Take(PreviewLineLimit)), Math.Max(0, lines.Count - PreviewLineLimit), added, removed);
+                return (string.Join('\n', lines.Take(limit)), Math.Max(0, lines.Count - limit), added, removed);
             }
 
             case ToolKind.Command when !string.IsNullOrWhiteSpace(output):
             {
                 var lines = Split(output).Where(l => l.Length > 0).ToList();
-                return (string.Join('\n', lines.Take(PreviewLineLimit).Select(l => " " + Clip(l))), Math.Max(0, lines.Count - PreviewLineLimit), 0, 0);
+                return (string.Join('\n', lines.Take(limit).Select(l => " " + Clip(l))), Math.Max(0, lines.Count - limit), 0, 0);
             }
 
             default:

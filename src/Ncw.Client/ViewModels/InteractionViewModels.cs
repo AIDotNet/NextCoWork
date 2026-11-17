@@ -133,6 +133,31 @@ public sealed partial class InteractionRowViewModel : RowViewModel<InteractionRo
 
     public string? SuggestedRule => (Row.Interaction as ToolPermissionInteractionDto)?.SuggestedRule;
 
+    // ── 审批预览:要写 / 改的内容(diff 行)、要跑的完整命令。和工具行的摘要同一份规则(TranscriptBuilder.ApprovalPreview)──
+
+    /// <summary>预览的行(写 / 改是 diff,命令是原文);没有可预览的为空。</summary>
+    public IReadOnlyList<DiffLine> PreviewLines { get; private set; } = [];
+
+    public bool HasPreview => PreviewLines.Count > 0;
+
+    /// <summary>预览放不下的行数。</summary>
+    public int PreviewMore { get; private set; }
+
+    public bool HasPreviewMore => PreviewMore > 0;
+
+    public int PreviewAdded { get; private set; }
+
+    public int PreviewRemoved { get; private set; }
+
+    public bool HasPreviewStats => PreviewAdded > 0 || PreviewRemoved > 0;
+
+    public string PreviewAddedText => $"+{PreviewAdded}";
+
+    public string PreviewRemovedText => $"−{PreviewRemoved}";
+
+    /// <summary>预览是命令(而不是 diff):单色显示,不画增删底色。</summary>
+    public bool IsCommandPreview { get; private set; }
+
     public bool HasSuggestedRule => !string.IsNullOrWhiteSpace(SuggestedRule);
 
     /// <summary>「总是允许」能记住的范围(设备给的)。</summary>
@@ -174,6 +199,26 @@ public sealed partial class InteractionRowViewModel : RowViewModel<InteractionRo
             }
 
             Target = TranscriptBuilder.TargetOf(tool.ToolName, tool.InputJson);
+            var (preview, more, added, removed) = TranscriptBuilder.ApprovalPreview(tool.ToolName, tool.InputJson);
+            PreviewLines = [.. preview.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => new DiffLine(l.Length > 1 ? l[1..] : "", l[0] == '+', l[0] == '-'))];
+            PreviewMore = more;
+            PreviewAdded = added;
+            PreviewRemoved = removed;
+            IsCommandPreview = PreviewLines.Count > 0 && added == 0 && removed == 0;
+            // 命令只有一行时,上面的「目标」已经是它了:不再重复一块
+            if (IsCommandPreview && PreviewLines.Count == 1 && more == 0)
+            {
+                PreviewLines = [];
+            }
+
+            OnPropertyChanged(nameof(PreviewLines));
+            OnPropertyChanged(nameof(HasPreview));
+            OnPropertyChanged(nameof(PreviewMore));
+            OnPropertyChanged(nameof(HasPreviewMore));
+            OnPropertyChanged(nameof(HasPreviewStats));
+            OnPropertyChanged(nameof(PreviewAddedText));
+            OnPropertyChanged(nameof(PreviewRemovedText));
+            OnPropertyChanged(nameof(IsCommandPreview));
         }
 
         SelectedScope = Scopes.Contains(SelectedScope ?? "") ? SelectedScope : Scopes.FirstOrDefault();
@@ -204,6 +249,19 @@ public sealed partial class InteractionRowViewModel : RowViewModel<InteractionRo
 
     [RelayCommand]
     private Task AlwaysAllowAsync() => RespondAsync(new ToolPermissionResponseDto(PermissionChoices.AllowAlways, SelectedScope));
+
+    /// <summary>「总是允许 ▾」菜单里的一项:按这个范围记住并允许(范围是设备给的 <see cref="Scopes"/> 之一)。</summary>
+    [RelayCommand]
+    private Task AlwaysAllowInAsync(string scope)
+    {
+        if (!Scopes.Contains(scope))
+        {
+            return Task.CompletedTask;
+        }
+
+        SelectedScope = scope;
+        return RespondAsync(new ToolPermissionResponseDto(PermissionChoices.AllowAlways, scope));
+    }
 
     [RelayCommand]
     private Task DenyAsync() => RespondAsync(new ToolPermissionResponseDto(PermissionChoices.Deny, Reason: Feedback.Length > 0 ? Feedback : null));

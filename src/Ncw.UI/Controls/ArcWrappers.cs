@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 
 namespace Ncw.UI.Controls;
@@ -23,10 +24,31 @@ public class NcwTextArea : TKCode.Arc.Textarea
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.Textarea);
 }
 
-/// <summary>Arc 头像。</summary>
+/// <summary>
+/// Arc 头像。<see cref="PhotoUrl"/> 是照片地址(业务视图只给字符串,不碰 Arc 的 <c>ImageSource</c>):Arc 负责下载、缓存、淡入,
+/// 加载失败或没有地址时显示 <c>DisplayName</c> 的首字母。只认 http / https 的绝对地址,别的当作没有。
+/// </summary>
 public class NcwAvatar : TKCode.Arc.Avatar
 {
+    public static readonly StyledProperty<string?> PhotoUrlProperty = AvaloniaProperty.Register<NcwAvatar, string?>(nameof(PhotoUrl));
+
+    static NcwAvatar()
+    {
+        PhotoUrlProperty.Changed.AddClassHandler<NcwAvatar>((avatar, e) => avatar.Source = SourceOf(e.NewValue as string));
+    }
+
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.Avatar);
+
+    public string? PhotoUrl
+    {
+        get => GetValue(PhotoUrlProperty);
+        set => SetValue(PhotoUrlProperty, value);
+    }
+
+    internal static TKCode.Arc.ImageSource? SourceOf(string? url) =>
+        url is { Length: > 0 } && Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            ? TKCode.Arc.ImageSource.FromUri(uri)
+            : null;
 }
 
 /// <summary>Arc 状态标签。</summary>
@@ -68,6 +90,24 @@ public class NcwTreeView : TKCode.Arc.TreeView
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.TreeView);
 }
 
+/// <summary>
+/// 竖向的分区导航(Arc 的 <c>FluidTabControl</c>):左边是导航,右边一个滚动区按顺序放着所有分区;
+/// 点导航滚到对应分区,滚动时导航跟着当前分区走。设置页用它(docs/design/07 §172)。
+/// </summary>
+public class NcwSideNav : TKCode.Arc.FluidTabControl
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.FluidTabControl);
+}
+
+/// <summary>
+/// <see cref="NcwSideNav"/> 的一项:导航里的图标 + 文字,和它在滚动区里的那一段内容。
+/// 加 <c>group</c> 类、设为不可用,就是一个分组标题(导航里一行小字,内容里一段标题;键盘跳过、不能选中)。
+/// </summary>
+public class NcwSideNavItem : TKCode.Arc.FluidTabItem
+{
+    protected override Type StyleKeyOverride => typeof(TKCode.Arc.FluidTabItem);
+}
+
 /// <summary>Arc 下拉菜单(右侧面板的「+」)。</summary>
 public class NcwDropdownMenu : TKCode.Arc.DropdownMenu
 {
@@ -104,8 +144,4 @@ public class NcwCheckbox : TKCode.Arc.Checkbox
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.Checkbox);
 }
 
-/// <summary>Arc 代码块(只读,带语法着色和复制按钮):文件预览。</summary>
-public class NcwCodeBlock : TKCode.Arc.CodeBlock
-{
-    protected override Type StyleKeyOverride => typeof(TKCode.Arc.CodeBlock);
-}
+// NcwCodeBlock(Arc 代码块,文件预览用)在 NcwCodeBlock.cs:它多了「无外框」「在可视区内滚动」两个选项,不只是薄封装。

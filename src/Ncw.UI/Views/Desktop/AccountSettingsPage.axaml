@@ -83,9 +83,7 @@
     <Border Classes="card" IsVisible="{Binding IsSignedIn}">
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-          <Border Width="40" Height="40" CornerRadius="20" Background="{arc:ArcDesignTokenResource SurfaceRaised}" VerticalAlignment="Top">
-            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}" Text="{Binding Initial}" />
-          </Border>
+          <ui:NcwAvatar VerticalAlignment="Top" DisplayName="{Binding UserLabel}" PhotoUrl="{Binding AvatarUrl}" />
           <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
             <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding UserLabel}" />
             <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding Email}" IsVisible="{Binding Email, Converter={x:Static ObjectConverters.IsNotNull}}" />

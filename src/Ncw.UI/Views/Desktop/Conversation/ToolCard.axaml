@@ -9,60 +9,69 @@
              x:Class="Ncw.UI.Views.Desktop.Conversation.ToolCard"
              x:DataType="vm:ToolRowViewModel">
   <!--
-    一次工具调用的卡片:工具名 + 目标(命令 / 路径)+ 执行环境标识(设备 · 环境,AGENTS.md §5)+ 状态。
-    展开后是摘要:Edit / Write 的 diff 行,命令的输出前几行。完整内容不在转录里画(太长),按需在以后的详情页看。
+    一次工具调用:不是卡片,是一行文字(和思考块同一档):图标 + 工具名 + 目标(命令 / 路径)+ 执行环境标识(设备 · 环境,AGENTS.md §5)+ 状态。
+    结果默认不展示(失败的也是):有摘要(Edit / Write 的 diff 行、命令输出前几行)的才有展开箭头,点开才看;失败用红色标出,并在行下面一行写出输出的第一行(03 §11.5)。
+    项目里的路径显示成项目相对的(完整路径在提示里)。
+    完整内容不在转录里画(太长),按需在以后的详情页看。
   -->
-  <Border Classes="card" Padding="0" Margin="0,3"
-          Classes.attention="{Binding IsWaiting}" Classes.danger="{Binding IsFailed}">
-    <StackPanel>
-      <ui:PlainButton Padding="12,8" CornerRadius="12" Click="OnToggle" IsEnabled="{Binding CanExpand}">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8">
-          <Panel Width="16" Height="16" VerticalAlignment="Center">
-            <lucide:LucideIcon Kind="Terminal" Size="15" IsVisible="{Binding IsCommand}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <lucide:LucideIcon Kind="FilePen" Size="15" IsVisible="{Binding IsEdit}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <lucide:LucideIcon Kind="FileText" Size="15" IsVisible="{Binding IsRead}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <lucide:LucideIcon Kind="Search" Size="15" IsVisible="{Binding IsSearch}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <lucide:LucideIcon Kind="Wrench" Size="15" IsVisible="{Binding IsOther}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+  <StackPanel Margin="0,1">
+    <ui:PlainButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,3" CornerRadius="8" Click="OnToggle" IsEnabled="{Binding CanExpand}"
+                    arc:Tooltip.Tip="{Binding Tip}">
+      <!-- 严格单行:图标 | 工具名(至少 44、至多 160:常见的短名各行对齐,长名如 visualize_read_me / MCP 工具不被截成「visuali…」)|
+           目标(只吃剩余宽度,放不下从末尾截断)| 改动量 · 状态 · 设备·环境 · 箭头(靠右)。
+           目标必须是 * 列里的一个 TextBlock:放成 Auto 列时按内容宽度量,长命令会画到右侧的状态 / 环境标识上面(两段文字叠在一起)。
+           TextBlock.hint 默认会换行,这里每个文字都显式 NoWrap -->
+      <Grid ColumnDefinitions="14,Auto,*,Auto" ColumnSpacing="8">
+        <Panel Width="14" Height="14" VerticalAlignment="Center">
+          <lucide:LucideIcon Kind="Terminal" Size="13" IsVisible="{Binding IsCommand}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <lucide:LucideIcon Kind="FilePen" Size="13" IsVisible="{Binding IsEdit}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <lucide:LucideIcon Kind="FileText" Size="13" IsVisible="{Binding IsRead}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <lucide:LucideIcon Kind="Search" Size="13" IsVisible="{Binding IsSearch}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <lucide:LucideIcon Kind="Wrench" Size="13" IsVisible="{Binding IsOther}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        </Panel>
+        <TextBlock Grid.Column="1" Classes="hint toolName" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"
+                   MinWidth="44" MaxWidth="160" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Classes.failed="{Binding IsFailed}" />
+        <!-- 目标:路径 = 文件名 + 淡色目录;命令 / 其他 = 第一行。同一个 TextBlock 的两个 Run,整体截断 -->
+        <TextBlock Grid.Column="2" Classes="hint mono toolTarget" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                   Classes.failed="{Binding IsFailed}">
+          <Run Text="{Binding TargetName}" /><Run Text="{Binding TargetDirSuffix}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+        </TextBlock>
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <!-- 改动量 -->
+          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasStats}">
+            <TextBlock Classes="hint mono" Text="{Binding AddedText}" TextWrapping="NoWrap" IsVisible="{Binding HasAdded}" Foreground="{arc:ArcDesignTokenResource Success}" />
+            <TextBlock Classes="hint mono" Text="{Binding RemovedText}" TextWrapping="NoWrap" IsVisible="{Binding HasRemoved}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+          </StackPanel>
+          <!-- 状态:只有「不是平常」的才出声;成功不画对勾(一行行对勾是噪音) -->
+          <TextBlock Classes="hint" TextWrapping="NoWrap" IsVisible="{Binding IsWaiting}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ToolWaitingApproval}" />
+          <TextBlock Classes="hint" TextWrapping="NoWrap" IsVisible="{Binding IsInterrupted}" Text="{l:NcwText ToolInterrupted}" />
+          <TextBlock Classes="hint" TextWrapping="NoWrap" IsVisible="{Binding IsQueued}"
+                     Text="{Binding QueuedAhead, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolQueuedAhead}" />
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" IsVisible="{Binding IsRunning}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <lucide:LucideIcon Kind="CircleX" Size="12" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+          <lucide:LucideIcon Kind="ShieldAlert" Size="12" IsVisible="{Binding IsWaiting}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <!-- 执行环境标识:设备 · 环境(AGENTS.md §5)。默认的本机环境不画,SSH / 其他环境必画(很淡、不换行、固定在右侧);本机的在整行提示里 -->
+          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowsEnv}" Opacity="0.75">
+            <lucide:LucideIcon Kind="Monitor" Size="11" IsVisible="{Binding !IsSsh}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <lucide:LucideIcon Kind="Link" Size="11" IsVisible="{Binding IsSsh}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Classes="hint" Text="{Binding EnvLabel}" TextWrapping="NoWrap" />
+          </StackPanel>
+          <!-- 箭头占位:没有摘要的行也占着宽度,各行的环境标识才对得齐 -->
+          <Panel Width="12">
+            <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="11"
+                               IsVisible="{Binding CanExpand}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
           </Panel>
-          <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Target}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                     Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasStats}">
-              <TextBlock Classes="mono" Text="{Binding AddedText}" IsVisible="{Binding HasAdded}" Foreground="{arc:ArcDesignTokenResource Success}" />
-              <TextBlock Classes="mono" Text="{Binding RemovedText}" IsVisible="{Binding HasRemoved}" Foreground="{arc:ArcDesignTokenResource Danger}" />
-            </StackPanel>
-            <!-- 状态 -->
-            <Panel Width="16" Height="16">
-              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" IsVisible="{Binding IsRunning}" Foreground="{arc:ArcDesignTokenResource Accent}" />
-              <lucide:LucideIcon Kind="Check" Size="14" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" />
-              <lucide:LucideIcon Kind="CircleX" Size="14" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
-              <lucide:LucideIcon Kind="ShieldAlert" Size="14" IsVisible="{Binding IsWaiting}" Foreground="{arc:ArcDesignTokenResource Warning}" />
-              <lucide:LucideIcon Kind="CircleSlash" Size="14" IsVisible="{Binding IsInterrupted}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-            </Panel>
-            <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center"
-                               Foreground="{arc:ArcDesignTokenResource TextMuted}" Opacity="{Binding CanExpand, Converter={x:Static cv:BoolOpacityConverter.Instance}}" />
-          </StackPanel>
-          <!-- 第二行:执行环境标识 + 状态说明 -->
-          <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-            <Border Classes="chip" IsVisible="{Binding EnvLabel, Converter={x:Static ObjectConverters.IsNotNull}}">
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <lucide:LucideIcon Kind="Monitor" Size="11" VerticalAlignment="Center" IsVisible="{Binding !IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-                <lucide:LucideIcon Kind="Link" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsSsh}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-                <TextBlock Classes="hint" Text="{Binding EnvLabel}" TextWrapping="NoWrap" />
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsWaiting}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ToolWaitingApproval}" />
-            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsInterrupted}" Text="{l:NcwText ToolInterrupted}" />
-            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsQueued}"
-                       Text="{Binding QueuedAhead, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolQueuedAhead}" />
-          </StackPanel>
-        </Grid>
-      </ui:PlainButton>
-      <!-- 摘要:统一的展开 / 收起容器(高度弹簧 + 淡入淡出,docs/design/03 §9) -->
-      <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
-      <Border Padding="12,0,12,10" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-        <StackPanel Margin="0,8,0,0" Spacing="1">
+        </StackPanel>
+      </Grid>
+    </ui:PlainButton>
+    <!-- 失败的调用:输出的第一行(为什么失败),一行红字,不用点开才知道 -->
+    <TextBlock Classes="hint mono failed" Margin="28,0,0,2" IsVisible="{Binding HasFailureLine}" Text="{Binding FailureLine}"
+               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+    <!-- 结果摘要:统一的展开 / 收起容器(高度弹簧 + 淡入淡出,docs/design/03 §9),缩进一档、左侧一条线,不是卡片 -->
+    <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+      <Border Margin="12,0,0,2" Padding="12,2,0,2" BorderThickness="2,0,0,0"
+              BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <StackPanel Spacing="1">
           <ItemsControl ItemsSource="{Binding PreviewLines}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:DiffLine">
@@ -78,7 +87,6 @@
                      Text="{Binding MoreLines, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolMoreLines}" />
         </StackPanel>
       </Border>
-      </ui:NcwCollapsible>
-    </StackPanel>
-  </Border>
+    </ui:NcwCollapsible>
+  </StackPanel>
 </UserControl>

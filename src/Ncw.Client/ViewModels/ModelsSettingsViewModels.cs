@@ -369,6 +369,9 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
     public bool HasDevices => DeviceChoices.Count > 0;
 
+    /// <summary>设备切换器:只有一台本机、没有 SSH 时不画(只有一项的切换器是噪音;Core 的 <see cref="Ncw.Core.Domain.DeviceDimension"/>,03 §11.7)。</summary>
+    [ObservableProperty] public partial bool ShowsDeviceSwitcher { get; private set; }
+
     partial void OnDeviceIdChanged(string? value)
     {
         _credentialsRequested.Clear();
@@ -394,6 +397,11 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
             OnPropertyChanged(nameof(HasDevices));
         }
+
+        ShowsDeviceSwitcher = HasDevices && DeviceDimension.Shows(
+            workspace.Devices.Values.Count(d => d.Connection != DeviceConnection.Revoked),
+            workspace.Devices.Values.Any(d => d.Kind != DeviceKind.Local && d.Connection != DeviceConnection.Revoked),
+            workspace.Projects.Values.Any(p => p.Environment == EnvironmentKind.Ssh));
 
         if (DeviceId is null || !workspace.Devices.ContainsKey(DeviceId))
         {

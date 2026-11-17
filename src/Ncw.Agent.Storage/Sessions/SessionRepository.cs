@@ -269,6 +269,37 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
             UpdatedAt = Now(),
         }));
 
+    /// <summary>
+    /// 自动标题的第一步(2.x <c>SessionTitleGenerator.start</c> 里的预览写入):仍是「还没起名」(来源 default,或没记来源且标题是占位)的会话,
+    /// 标题换成 <paramref name="preview"/>、来源记为 generated。已经是 manual / generated 的返回 null(不覆盖用户起的名字,也不重复生成)。
+    /// <b>不动 <c>UpdatedAt</c></b>:自动起名不该把会话顶到侧边栏最上面。
+    /// </summary>
+    public SessionRecord? BeginGeneratedTitle(string id, string preview) => database.InTransaction(() =>
+    {
+        if (Get(id) is not { } current || !(current.TitleSource == "default" || (current.TitleSource is null && IsDefaultTitle(current.Title))))
+        {
+            return null;
+        }
+
+        return Put(current with { Title = preview.Trim() is { Length: > 0 } t ? t : current.Title, TitleSource = "generated" });
+    });
+
+    /// <summary>
+    /// 自动标题的第二步(模型的回答迟到之后):只有会话<b>仍是</b>第一步写下的那一条(来源 generated、标题 = 预览、创建时间与工作区没变)才写。
+    /// 期间被手动改名 / 被删除 / 删了又以同 id 重建的,一律返回 null,让更新的事实赢。其余元数据(归档、收藏、模型、更新时间)原样保留。
+    /// </summary>
+    public SessionRecord? FinishGeneratedTitle(SessionRecord preview, string title) => database.InTransaction(() =>
+    {
+        if (Get(preview.Id) is not { } current
+            || current.TitleSource != "generated" || current.Title != preview.Title
+            || current.CreatedAt != preview.CreatedAt || current.WorkspaceId != preview.WorkspaceId)
+        {
+            return null;
+        }
+
+        return Put(current with { Title = title });
+    });
+
     public void SetArchived(string id, bool archived) => database.InTransaction(() => Put(Require(id) with { Archived = archived, UpdatedAt = Now() }));
 
     public void SetFavorited(string id, bool favorited) => database.InTransaction(() => Put(Require(id) with { Favorited = favorited, UpdatedAt = Now() }));

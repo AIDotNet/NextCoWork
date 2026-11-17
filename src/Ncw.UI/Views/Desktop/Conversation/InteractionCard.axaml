@@ -53,8 +53,36 @@
             <TextBlock Classes="hint" Text="{l:NcwText ApprovalReadOnly}" />
           </Border>
         </WrapPanel>
+        <!-- 目标(路径 / 命令第一行)+ 增删统计;下面是要做什么的预览:写 / 改的 diff、多行命令的全文(和工具行的摘要同一份规则,行数更多)。
+             看得到内容才能做决定,不必先拒绝再去问。 -->
         <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}" IsVisible="{Binding Target, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-          <SelectableTextBlock Classes="mono" Text="{Binding Target}" TextWrapping="Wrap" />
+          <StackPanel Spacing="6">
+            <Grid ColumnDefinitions="*,Auto">
+              <SelectableTextBlock Classes="mono" Text="{Binding Target}" TextWrapping="Wrap" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="8,0,0,0" IsVisible="{Binding HasPreviewStats}" VerticalAlignment="Top">
+                <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource Success}" Text="{Binding PreviewAddedText}" />
+                <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{Binding PreviewRemovedText}" />
+              </StackPanel>
+            </Grid>
+            <StackPanel Spacing="1" IsVisible="{Binding HasPreview}">
+              <Border Height="1" Margin="0,0,0,5" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+              <ScrollViewer MaxHeight="240" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding PreviewLines}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DiffLine">
+                      <Grid ColumnDefinitions="14,*">
+                        <TextBlock Classes="mono" HorizontalAlignment="Center" Text="+" IsVisible="{Binding IsAdded}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                        <TextBlock Classes="mono" HorizontalAlignment="Center" Text="−" IsVisible="{Binding IsRemoved}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+                        <SelectableTextBlock Grid.Column="1" Classes="mono" Text="{Binding Text}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <TextBlock Classes="hint" IsVisible="{Binding HasPreviewMore}"
+                         Text="{Binding PreviewMore, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolMoreLines}" />
+            </StackPanel>
+          </StackPanel>
         </Border>
         <!-- 手机:拒绝(点按)+ 长按允许(防误触:按满才算,移出 / 松手 / 卡片更新即取消) -->
         <StackPanel Classes="touchOnly" Spacing="8">
@@ -73,14 +101,29 @@
           </Grid>
           <TextBlock Classes="hint" Text="{l:NcwText ApprovalHoldHint}" />
         </StackPanel>
+        <!-- 桌面:允许一次(⌘↵ 允许当前会话里的第一张审批)/ 总是允许 ▾(菜单里选记住的范围,一步完成)/ 拒绝 -->
         <WrapPanel Classes="pointerOnly" Orientation="Horizontal">
-          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding AllowOnceCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalAllowOnce}" />
-          <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Command="{Binding AlwaysAllowCommand}" IsEnabled="{Binding !IsBusy}" IsVisible="{Binding CanAlwaysAllow}"
-                        Content="{l:NcwText ApprovalAlwaysAllow}" />
-          <ui:NcwSelect x:Name="ScopeSelect" Margin="0,0,8,6" Width="160" IsVisible="{Binding CanAlwaysAllow}" ItemsSource="{Binding Scopes}"
-                        SelectedValue="{Binding SelectedScope, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText ApprovalRememberScope}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding AllowOnceCommand}" IsEnabled="{Binding !IsBusy}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{l:NcwText ApprovalAllowOnce}" />
+              <TextBlock x:Name="AllowGesture" Opacity="0.7" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwDropdownMenu x:Name="AlwaysMenu" Margin="0,0,8,6" IsVisible="{Binding CanAlwaysAllow}" IsEnabled="{Binding !IsBusy}">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:NcwButton Variant="Secondary" AutomationProperties.Name="{l:NcwText ApprovalAlwaysAllow}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="{l:NcwText ApprovalAlwaysAllow}" />
+                  <lucide:LucideIcon Kind="ChevronDown" Size="13" VerticalAlignment="Center" />
+                </StackPanel>
+              </ui:NcwButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
           <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding DenyCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalDeny}" />
         </WrapPanel>
+        <!-- 「总是允许」会记下的规则(设备算好的):让人知道记住的是什么,而不是一个笼统的「总是」 -->
+        <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding HasSuggestedRule}"
+                   Text="{Binding SuggestedRule, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ApprovalRuleHint}" />
       </StackPanel>
 
       <!-- 提问 -->

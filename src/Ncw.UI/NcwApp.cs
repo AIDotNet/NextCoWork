@@ -23,9 +23,16 @@ public sealed record NcwUpdateContext(ClientStores Stores, IUiDispatcher Ui, Act
 public class NcwApp : Application
 {
     private PrefsPersistence? _prefs;
+    private LayoutPersistence? _layout;
     private IDisposable? _motion;
     private INcwBackend? _backend;
     private IUpdateService? _updates;
+    private NcwAttention? _attention;
+
+    /// <summary>
+    /// 宿主在启动前设置:操作系统的提醒能力(系统通知、Dock 角标、请求注意,docs/design/03 §11.2)。为 null 时没有系统通知和角标,托盘照常。
+    /// </summary>
+    public static Func<INativeAttention?>? NativeAttentionFactory { get; set; }
 
     /// <summary>宿主在启动前设置:创建连接设备的后端。为 null 时没有设备(只用于预览)。</summary>
     public static Func<INcwBackend>? BackendFactory { get; set; }
@@ -86,6 +93,7 @@ public class NcwApp : Application
             }
 
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
+            _layout = new LayoutPersistence(stores, new JsonFileLayoutRepository(Path.Combine(ClientDirectory, "layout.json")));   // 项目外观(自定义图标)
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
             stores.Startup.Reach(StartupMilestone.PlatformReady);
             ShellViewModel? shell = null;
@@ -135,6 +143,19 @@ public class NcwApp : Application
                 window.Opened += (_, _) => stores.Startup.Reach(StartupMilestone.WindowShown);
             }
 
+            // 提醒:系统通知、角标、托盘(菜单栏)图标;托盘开着时关窗只是藏起窗口,本机 Agent 继续运行(docs/design/03 §11.2)
+            _attention = new NcwAttention(shell, window, desktop, NativeAttentionFactory?.Invoke());
+            if (this.TryGetFeature<IActivatableLifetime>() is { } reopen)
+            {
+                reopen.Activated += (_, e) =>
+                {
+                    if (e.Kind == ActivationKind.Reopen)
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => _attention?.ShowWindow());   // 点 Dock 图标:藏起来的窗口回来
+                    }
+                };
+            }
+
             if (_updates is not null)
             {
                 _ = _updates.InitializeAsync();
@@ -149,10 +170,12 @@ public class NcwApp : Application
             desktop.Exit += (_, _) =>
             {
                 NcwLinkInbox.Detach();
+                _attention?.Dispose();
                 _updates?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
                 _account?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
                 _motion?.Dispose();
                 _prefs?.Dispose();
+                _layout?.Dispose();
                 // 退出时让 Agent 收尾;最多等 3 秒,不能卡住退出。
                 _backend?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
             };
@@ -176,6 +199,7 @@ public class NcwApp : Application
             _backend = BackendFactory?.Invoke();
             _backend?.Start(stores, devices, AvaloniaUiDispatcher.Instance, NcwClientText.Instance);
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
+            _layout = new LayoutPersistence(stores, new JsonFileLayoutRepository(Path.Combine(ClientDirectory, "layout.json")));   // 项目外观(自定义图标)
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
             stores.Startup.Reach(StartupMilestone.PlatformReady);
             var mobileShell = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke());
@@ -222,7 +246,11 @@ public class NcwApp : Application
             raw => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = router.HandleAsync(raw)),
             () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (desktop.MainWindow is { } window)
+                if (_attention is not null)
+                {
+                    _attention.ShowWindow();   // 也处理「关窗后藏在菜单栏」的窗口
+                }
+                else if (desktop.MainWindow is { } window)
                 {
                     if (window.WindowState == Avalonia.Controls.WindowState.Minimized)
                     {

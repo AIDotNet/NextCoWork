@@ -3,6 +3,7 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
+using Ncw.Client.Services;
 using Ncw.Core.Domain;
 using Ncw.Protocol.Methods;
 
@@ -68,16 +69,46 @@ public sealed partial class FilePreviewViewModel : ObservableObject
     private string? _chunkRevision;
     private int _lineLimit = LinesPerPage;
     private int _totalLines;
+    private readonly Func<ILocalFiles>? _local;
+    private readonly string? _localRoot;
 
-    public FilePreviewViewModel(IFilesCommands files, ProjectRef project, string path, bool canWrite, int? line = null)
+    /// <param name="local">客户端本机的文件动作(另存为 / 显示 / 打开 / 复制路径);没有就不开放这些动作。</param>
+    /// <param name="localRoot">项目在本机上的根目录。只有「本机设备 + 本机环境」的项目才给,「显示 / 用默认程序打开」据此开放。</param>
+    public FilePreviewViewModel(IFilesCommands files, ProjectRef project, string path, bool canWrite, int? line = null, Func<ILocalFiles>? local = null, string? localRoot = null)
     {
         _files = files;
         _project = project;
         _canWrite = canWrite;
+        _local = local;
+        _localRoot = string.IsNullOrEmpty(localRoot) ? null : localRoot;
         Path = path;
         Line = line;
         Language = FileLanguages.Of(path);
     }
+
+    public ProjectRef Project => _project;
+
+    /// <summary>项目在本机设备的本机环境里:「在文件管理器中显示 / 用默认程序打开」才有意义。</summary>
+    public bool CanOpenLocally => _local is not null && _localRoot is not null;
+
+    /// <summary>Markdown 文件:默认显示渲染后的样子,可以切到源码(编辑时一定是源码)。</summary>
+    public bool IsMarkdown => Language == "markdown";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsRendered), nameof(ShowsSource))]
+    public partial bool ShowRendered { get; set; } = true;
+
+    /// <summary>显示渲染后的 Markdown(只读文本、Markdown 文件、选了「预览」、不在编辑)。</summary>
+    public bool ShowsRendered => IsText && IsMarkdown && ShowRendered && !IsEditing;
+
+    /// <summary>显示源码(代码块着色)。</summary>
+    public bool ShowsSource => IsText && !IsEditing && !(IsMarkdown && ShowRendered);
+
+    /// <summary>已读到的内容共多少行(大文件分块读时,是目前读到的行数)。</summary>
+    [ObservableProperty] public partial int TotalLines { get; private set; } = 1;
+
+    [RelayCommand]
+    private void ToggleRendered() => ShowRendered = !ShowRendered;
 
     public string Path { get; }
 
@@ -91,7 +122,7 @@ public sealed partial class FilePreviewViewModel : ObservableObject
     public string? Language { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsText), nameof(IsImage), nameof(IsBinary), nameof(IsFailed), nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsText), nameof(IsImage), nameof(IsBinary), nameof(IsFailed), nameof(CanEdit), nameof(ShowsRendered), nameof(ShowsSource))]
     public partial FilePreviewKind Kind { get; private set; } = FilePreviewKind.Loading;
 
     public bool IsLoading => Kind == FilePreviewKind.Loading;
@@ -127,7 +158,7 @@ public sealed partial class FilePreviewViewModel : ObservableObject
     [ObservableProperty] public partial bool CanLoadMore { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDirty), nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(IsDirty), nameof(CanSave), nameof(ShowsRendered), nameof(ShowsSource))]
     public partial bool IsEditing { get; private set; }
 
     [ObservableProperty]
@@ -332,6 +363,7 @@ public sealed partial class FilePreviewViewModel : ObservableObject
         }
 
         _totalLines = total;
+        TotalLines = total;
         DisplayText = cut < all.Length ? all[..cut] : all;
         CanLoadMore = _lineLimit < total || (IsChunked && !ChunkEof);
     }
@@ -466,6 +498,55 @@ public sealed partial class FilePreviewViewModel : ObservableObject
                 Reason = "tooLarge";
                 return null;
             }
+        }
+    }
+
+    // ───────────────────────── 本机动作 ─────────────────────────
+
+    /// <summary>项目相对路径 → 本机绝对路径(只对本机项目有意义)。</summary>
+    public string AbsolutePath => System.IO.Path.GetFullPath(System.IO.Path.Combine(_localRoot ?? "", Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+
+    [RelayCommand]
+    private Task CopyPathAsync() => _local?.Invoke().CopyTextAsync(_localRoot is null ? Path : AbsolutePath) ?? Task.CompletedTask;
+
+    /// <summary>复制已加载的文本(编辑中复制编辑框里的内容)。</summary>
+    [RelayCommand]
+    private Task CopyContentAsync() => _local?.Invoke().CopyTextAsync(IsEditing ? EditText : DisplayText) ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task CopyRelativePathAsync() => _local?.Invoke().CopyTextAsync(Path) ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private async Task RevealAsync()
+    {
+        if (CanOpenLocally)
+        {
+            await _local!().RevealAsync(AbsolutePath).ConfigureAwait(true);
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenExternallyAsync()
+    {
+        if (CanOpenLocally)
+        {
+            await _local!().OpenAsync(AbsolutePath).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>另存为:内容从设备读来(文本 / 图片 / 二进制按块读完),存到用户选的本机位置。</summary>
+    [RelayCommand]
+    private async Task SaveAsAsync()
+    {
+        if (_local is null)
+        {
+            return;
+        }
+
+        var bytes = await ReadAllBytesAsync().ConfigureAwait(true);
+        if (bytes is not null)
+        {
+            await _local().SaveAsync(Name, bytes).ConfigureAwait(true);
         }
     }
 }

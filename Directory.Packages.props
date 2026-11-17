@@ -20,6 +20,8 @@
     <PackageVersion Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
     <!-- 手机壳的触控组件(NavigationStack / Page / Navbar / Tabbar / Sheet / PullToRefresh)。文档注明「尚未在真机上验证」,业务视图只经 Ncw.UI.Controls 的封装使用。 -->
     <PackageVersion Include="TKCode.Arc.Mobile" Version="1.1.0" />
+    <!-- AI 专用组件(上下文窗口卡片 ContextWindow);和 TKCode.Arc 同版本、同一个 StreamMark 0.1.2 -->
+    <PackageVersion Include="TKCode.Arc.Special" Version="1.1.0" />
     <!-- 终端页签:TerminalView + libghostty-vt 状态机(原生库随包带,各平台同一份;只在桌面 UI 里用)。 -->
     <PackageVersion Include="TKCode.Arc.Terminal" Version="1.1.0" />
     <!--

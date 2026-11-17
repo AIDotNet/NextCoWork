@@ -255,6 +255,25 @@ public class ConversationViewModelTests
     }
 
     [Fact]
+    public async Task Stop_targets_the_live_run_not_the_one_in_the_stale_session_snapshot()
+    {
+        // 快照拿到的时候 run-1 在跑;之后 run-1 收口、会话又自己起了 run-2(排队续跑 / 目标续跑)。停止必须打在 run-2 上:
+        // 打在已结束的 run-1 上,设备静默成功,界面不报错,run-2 照常跑——「取消了但 Agent 没停」。
+        var commands = new FakeCommands();
+        var stores = Stores(running: true);
+        var run1 = new RunRef("local", "run-1");
+        var run2 = new RunRef("local", "run-2");
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunStarted(c, run1, "s-ncw-1", 1));
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunStarted(c, run2, "s-ncw-1", 2));
+        stores.Conversations.Update(c => c with { Runs = c.Runs.SetItem(run1, c.Runs[run1] with { Phase = RunPhase.Done, Settled = true }) });
+        var convo = Conversation(stores, commands);
+
+        await convo.Composer.SubmitCommand.ExecuteAsync(null);
+
+        Assert.Equal(["abort:run-2"], commands.Calls);
+    }
+
+    [Fact]
     public async Task Queued_items_can_be_promoted_and_removed()
     {
         var commands = new FakeCommands();
@@ -317,6 +336,171 @@ public class ConversationViewModelTests
         Assert.Equal("Hello world", text.Text);
         Assert.False(text.IsStreaming);
         Assert.Equal(2, thinking.Seconds);
+    }
+
+    [Fact]
+    public void The_transcript_is_only_rederived_when_its_own_inputs_change()
+    {
+        var stores = Stores(running: true);
+        var run = new RunRef("local", "run-1");
+        stores.Conversations.Update(c => c with { Runs = c.Runs.SetItem(run, RunView.New(run, "s-ncw-1", 1) with { Phase = RunPhase.Running }) });
+        var state = stores.Conversations.State;
+        var before = TranscriptBuilder.Inputs.Of(state, Session, null, false);
+
+        // 另一个会话的 Run 在流式:和这份转录无关
+        var other = new RunRef("local", "run-other");
+        var unrelated = state with { Runs = state.Runs.SetItem(other, RunView.New(other, "s-other", 1) with { Phase = RunPhase.Running }) };
+        Assert.True(TranscriptBuilder.Inputs.Of(unrelated, Session, null, false).SameAs(before));
+
+        // 自己的 Run 来了增量:要重新派生
+        var own = ConversationReducer.ApplyRunEvent(state, "local", "run-1", 1, new MessageDeltaEventDto("m1", 0, "text", "hi"));
+        Assert.False(TranscriptBuilder.Inputs.Of(own, Session, null, false).SameAs(before));
+        Assert.False(TranscriptBuilder.Inputs.Of(state, Session, null, true).SameAs(before)); // 断线
+    }
+
+    [Fact]
+    public void Removing_a_row_in_the_middle_is_one_removal_not_a_cascade_of_moves()
+    {
+        var stores = Stores();
+        var convo = Conversation(stores, new FakeCommands());
+        MessageDto User(string id, string text) => new(id, "user", 1, false, $"[{{\"type\":\"text\",\"text\":\"{text}\"}}]");
+        var messages = Enumerable.Range(0, 20).SelectMany(i => new[] { User($"u{i}", $"q{i}"), Assistant($"a{i}", $"{{\"type\":\"text\",\"text\":\"a{i}\"}}") }).ToList();
+        void Load(IEnumerable<MessageDto> list)
+        {
+            var meta = new SessionDto("s-ncw-1", "nextcowork", null, "user", "t", null, "opus", null, "code", "auto", false, false, 1, 2);
+            stores.Conversations.Update(c => ConversationReducer.ApplySession(c, "local",
+                new SessionTopicState(new SessionPageDto(meta, [.. list], false, [], [], []), new QueueDto("s-ncw-1", 1, []), null)));
+        }
+
+        Load(messages);
+        Assert.Equal(40, convo.Rows.Count);
+        var changes = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
+        convo.Rows.CollectionChanged += (_, e) => changes.Add(e.Action);
+
+        Load(messages.Where(m => m.Id != "a3"));
+
+        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Remove], changes);
+        Assert.Equal(39, convo.Rows.Count);
+    }
+
+    [Fact]
+    public void Thinking_blocks_without_text_are_not_rows_and_unknown_durations_are_not_zero_seconds()
+    {
+        var stores = Stores();
+        var convo = Conversation(stores, new FakeCommands());
+        var run = new RunRef("local", "run-1");
+        stores.Conversations.Update(c => c with { Runs = c.Runs.SetItem(run, RunView.New(run, "s-ncw-1", 1) with { Phase = RunPhase.Running }) });
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, "local", "run-1", 1,
+            new MessageEndEventDto(Assistant("m1",
+                "{\"type\":\"thinking\",\"text\":\"\",\"opaque\":{\"provider\":\"x\",\"data\":{}}}", // 只有透传载体(加密推理 / redacted)
+                "{\"type\":\"thinking\",\"text\":\"plan the change\"}", // 上游没给耗时
+                "{\"type\":\"thinking\",\"text\":\"check again\",\"durationMs\":0}",
+                "{\"type\":\"thinking\",\"text\":\"done\",\"durationMs\":3400}",
+                "{\"type\":\"text\",\"text\":\"ok\"}"))));
+
+        var thoughts = convo.Rows.OfType<ThinkingRowViewModel>().ToList();
+        Assert.Equal(["plan the change", "check again", "done"], thoughts.Select(t => t.Text));
+        Assert.Equal(["m1:k1", "m1:k2", "m1:k3"], thoughts.Select(t => t.Key)); // 下标照旧前进,和流式时的 key 对得上
+        Assert.All(thoughts.Take(2), t => Assert.True(t.ShowPlainLabel && !t.ShowDuration && t.Seconds == 0));
+        Assert.True(thoughts[2].ShowDuration && !thoughts[2].ShowPlainLabel);
+        Assert.Equal(3, thoughts[2].Seconds);
+    }
+
+    [Fact]
+    public void A_live_tool_whose_environment_carries_only_ids_is_labelled_like_the_project_environment()
+    {
+        var stores = Stores(running: true);
+        var convo = Conversation(stores, new FakeCommands());
+        var run = new RunRef("local", "run-1");
+        stores.Conversations.Update(c => c with { Runs = c.Runs.SetItem(run, RunView.New(run, "s-ncw-1", 1) with { Phase = RunPhase.Running }) });
+        // tool_start 只带 id(设备 + 环境),名字和类型是空的
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, "local", "run-1", 1, new ToolStartEventDto("c1", "Bash", "{\"command\":\"ls\"}", new EnvRefDto("local", "local", "", ""))));
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, "local", "run-1", 2, new ToolStartEventDto("c2", "Bash", "{\"command\":\"ls\"}", new EnvRefDto("local", "dev-box", "", ""))));
+
+        var tools = convo.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
+        Assert.Equal("本机 · local", tools["c1"].EnvLabel);
+        Assert.False(tools["c1"].ShowsEnv); // 项目所在的本机环境:不在行上画
+        // 不是项目环境:id 当名字,照样画出来(离开项目环境的执行必须看得见)
+        Assert.Equal("本机 · dev-box", tools["c2"].EnvLabel);
+        Assert.True(tools["c2"].ShowsEnv);
+        Assert.Equal("本机", EnvBadge.Label(new EnvRefDto("local", "", "", "ssh"), id => id == "local" ? "本机" : id)); // 名字为空不留悬空的「·」
+    }
+
+    // ───────────────────────── 「工作区」分组 ─────────────────────────
+
+    private static MessageDto UserMsg(string id, string text) => new(id, "user", 1, false, "[{\"type\":\"text\",\"text\":\"" + text + "\"}]");
+
+    private static MessageDto ToolResults(string id, params (string CallId, bool Error)[] results) =>
+        new(id, "user", 2, true, "[" + string.Join(",", results.Select(r => $"{{\"type\":\"tool_result\",\"callId\":\"{r.CallId}\",\"output\":{{\"content\":\"ok\"}},\"isError\":{(r.Error ? "true" : "false")}}}")) + "]");
+
+    private static ClientStores FinishedTurn(bool running = false, bool withFinalText = true)
+    {
+        var stores = Stores(running: running);
+        stores.Conversations.Update(c =>
+        {
+            c = ConversationReducer.ApplyMessage(c, Session, UserMsg("u1", "fix it"));
+            c = ConversationReducer.ApplyMessage(c, Session, Assistant("a1",
+                "{\"type\":\"text\",\"text\":\"let me look\"}",
+                "{\"type\":\"tool_call\",\"callId\":\"c1\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/a.cs\",\"old_string\":\"x\",\"new_string\":\"y\"}}",
+                "{\"type\":\"tool_call\",\"callId\":\"c2\",\"name\":\"Bash\",\"input\":{\"command\":\"false\"}}"));
+            c = ConversationReducer.ApplyMessage(c, Session, ToolResults("r1", ("c1", false), ("c2", true)));
+            return withFinalText ? ConversationReducer.ApplyMessage(c, Session, Assistant("a2", "{\"type\":\"text\",\"text\":\"all done\"}")) : c;
+        });
+        return stores;
+    }
+
+    [Fact]
+    public void A_finished_turn_folds_everything_but_the_final_text_into_a_work_group()
+    {
+        var rows = TranscriptBuilder.Build(FinishedTurn().Conversations.State, Session, null, Now, groupFinishedWork: true);
+
+        // 用户消息 → 工作区表头 → 3 个成员(中间的文字、Edit、Bash)→ 最后一段文字
+        Assert.Equal(["UserRow", "WorkGroupRow", "AssistantRow", "ToolRow", "ToolRow", "AssistantRow"], rows.Select(r => r.GetType().Name));
+        var group = Assert.IsType<WorkGroupRow>(rows[1]);
+        Assert.Equal((3, 2, 1), (group.Members, group.Actions, group.Failed));
+        Assert.Equal("all done", ((AssistantRow)rows[^1]).Text);
+    }
+
+    [Fact]
+    public void Grouping_is_opt_in_and_never_hides_unfinished_work()
+    {
+        // 默认(子代理转录等)不分组
+        Assert.DoesNotContain(TranscriptBuilder.Build(FinishedTurn().Conversations.State, Session, null, Now), r => r is WorkGroupRow);
+        // 还在跑:不收
+        Assert.DoesNotContain(TranscriptBuilder.Build(FinishedTurn(running: true).Conversations.State, Session, null, Now, groupFinishedWork: true), r => r is WorkGroupRow);
+        // 没有最后一段文字(停在工具调用上 / 被中止):什么都不藏
+        Assert.DoesNotContain(TranscriptBuilder.Build(FinishedTurn(withFinalText: false).Conversations.State, Session, null, Now, groupFinishedWork: true), r => r is WorkGroupRow);
+        // 设备断开(状态未知):不收
+        Assert.DoesNotContain(TranscriptBuilder.Build(FinishedTurn().Conversations.State, Session, null, Now, deviceUnknown: true, groupFinishedWork: true), r => r is WorkGroupRow);
+    }
+
+    [Fact]
+    public void A_stale_snapshot_run_id_does_not_keep_a_finished_turn_from_folding()
+    {
+        // 快照里的 run-1 早就收口了(Store 里是终态):不能再把这一轮当成「还在跑」
+        var stores = FinishedTurn(running: true);
+        var run = new RunRef("local", "run-1");
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunStarted(c, run, "s-ncw-1", 1));
+        stores.Conversations.Update(c => c with { Runs = c.Runs.SetItem(run, c.Runs[run] with { Phase = RunPhase.Done, Settled = true }) });
+
+        Assert.Contains(TranscriptBuilder.Build(stores.Conversations.State, Session, null, Now, groupFinishedWork: true), r => r is WorkGroupRow);
+    }
+
+    [Fact]
+    public void The_conversation_hides_group_members_until_expanded_and_keeps_the_review_tab()
+    {
+        var convo = Conversation(FinishedTurn(), new FakeCommands());
+
+        Assert.Equal(["UserRowViewModel", "WorkGroupRowViewModel", "AssistantRowViewModel"], convo.Rows.Select(r => r.GetType().Name));
+        Assert.True(convo.HasFileChanges); // 改文件的工具行被收起了,「审查」页签不能跟着消失
+
+        var group = Assert.IsType<WorkGroupRowViewModel>(convo.Rows[1]);
+        group.IsExpanded = true;
+
+        Assert.Equal(6, convo.Rows.Count);
+        Assert.Equal([false, false, true, true, true, false], convo.Rows.Select(r => r.InWorkGroup));
+        group.IsExpanded = false;
+        Assert.Equal(3, convo.Rows.Count);
     }
 
     [Fact]

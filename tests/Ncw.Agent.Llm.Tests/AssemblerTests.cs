@@ -27,6 +27,70 @@ public sealed class AssemblerTests
         Assert.Equal("second text more", Assert.IsType<TextPart>(parts[2]).Text);
     }
 
+    /// <summary>手动拨的时钟:时间戳就是毫秒数。</summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        public long Now { get; set; }
+
+        public override long TimestampFrequency => 1000;
+
+        public override long GetTimestamp() => Now;
+    }
+
+    private static StreamAssembler FoldAt(ManualClock clock, params (long At, LlmEvent Event)[] events)
+    {
+        var assembler = new StreamAssembler(clock);
+        foreach (var (at, ev) in events)
+        {
+            clock.Now = at;
+            assembler.Apply(ev);
+        }
+
+        return assembler;
+    }
+
+    [Fact]
+    public void A_thinking_block_lasts_from_its_first_delta_until_other_content_starts()
+    {
+        var clock = new ManualClock();
+        var parts = FoldAt(clock,
+            (1_000, new MessageStart("m")),
+            (1_200, new ThinkingDelta(0, "let me ")),
+            (2_500, new ThinkingDelta(0, "think")),
+            (4_200, new TextDelta(1, "answer")),
+            (9_000, new MessageEnd(StopReason.EndTurn, new TokenUsage(1, 2)))).Parts();
+
+        Assert.Equal(3_000, Assert.IsType<ThinkingPart>(parts[0]).DurationMs);
+    }
+
+    [Fact]
+    public void A_thinking_block_followed_by_a_tool_call_or_the_end_is_closed_there()
+    {
+        var clock = new ManualClock();
+        var beforeTool = FoldAt(clock,
+            (0, new ThinkingDelta(0, "plan")),
+            (700, new ToolCallStart(1, "c1", "Bash")),
+            (5_000, new ToolCallEnd(1, "c1"))).Parts();
+        Assert.Equal(700, Assert.IsType<ThinkingPart>(beforeTool[0]).DurationMs);
+
+        var thinkingOnly = FoldAt(new ManualClock(),
+            (100, new ThinkingDelta(0, "a")),
+            (1_600, new ThinkingDelta(0, "b")),
+            (2_000, new MessageEnd(StopReason.EndTurn, new TokenUsage(1, 2)))).Parts();
+        Assert.Equal(1_900, Assert.IsType<ThinkingPart>(Assert.Single(thinkingOnly)).DurationMs);
+    }
+
+    [Fact]
+    public void A_thinking_block_without_measurable_time_has_no_duration_instead_of_zero()
+    {
+        // 时钟没走(假时钟)/ 只有透传载体(redacted):不写一个假的 0,界面就不显示「思考了 0 秒」
+        var frozen = FoldAt(new ManualClock(), (5, new ThinkingDelta(0, "t")), (5, new TextDelta(1, "x"))).Parts();
+        Assert.Null(Assert.IsType<ThinkingPart>(frozen[0]).DurationMs);
+
+        var redacted = FoldAt(new ManualClock(), (0, new BlockOpaque(0, Msg.Opaque("anthropic", """{"redacted":"X"}"""))), (900, new TextDelta(1, "x"))).Parts();
+        Assert.Null(Assert.IsType<ThinkingPart>(redacted[0]).DurationMs);
+    }
+
     [Fact]
     public void An_opaque_with_the_same_index_merges_into_the_thinking_block()
     {

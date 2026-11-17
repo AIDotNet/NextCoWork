@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Ncw.Client.Widgets;
 
 namespace Ncw.UI.Controls;
@@ -26,6 +27,10 @@ public enum WidgetSurfaceFailure
 /// <b>不含任何业务判断</b>:消息校验和限速在 Client 层的 <see cref="WidgetBridge"/>,导航决策在 <see cref="WidgetNavigationPolicy"/>——这样业务逻辑不依赖 WebView,可以在没有 WebView 的环境里单测。</para>
 /// <para>安全默认值:每个 WebView 一个<b>非持久</b>数据存储(WKWebView 的 <c>NonPersistentDataStore</c>、WebView2 的 InPrivate、WebKitGTK 的 ephemeral),没有 cookie / 缓存 / localStorage 落盘;
 /// 关掉开发者工具;背景透明(widget 长在对话里)。</para>
+/// <para><b>裁剪</b>(docs/design/03 §8.5):<see cref="NativeWebView"/> 在 macOS / Linux 上是 <c>NativeControlHost</c>,原生视图按控件的<b>完整</b>绝对边界摆放,
+/// 不认任何祖先的裁剪——放在转录的 <c>ScrollViewer</c> 里时,滚出视口的部分会盖在输入框、标签栏、「回到最新」上。所以本控件在布局里占完整高度(列表的高度 / 滚动都按它算),
+/// 但只把 WebView 摆在<b>可见的那一段</b>(和所有裁剪祖先的交集,减去祖先声明的 <see cref="NcwWidgetClip.BottomInsetProperty"/>),再让页面滚到这一段的起点
+/// (<see cref="WidgetPush.Viewport"/>),内容看起来钉在卡片里。完全看不见、或横向被裁(侧栏滑动时;横向裁会让页面按更窄的宽度重排)就整个隐藏(页面不销毁)。</para>
 /// </summary>
 public sealed class NcwWidgetSurface : Decorator, IDisposable
 {
@@ -35,6 +40,13 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
     private DispatcherTimer? _adapterTimer;
     private bool _adapterReady;
     private bool _disposed;
+    private bool _pageReady;
+
+    /// <summary>WebView 当前摆放的区域(本控件坐标);空 = 隐藏。</summary>
+    private Rect _visible;
+
+    /// <summary>上一次推给页面的可见段起点;-1 = 还没推过(页面就绪后必推一次)。</summary>
+    private double _pushedTop = -1;
 
     /// <summary>WebView 适配器多久建不起来就当「没有可用的 WebView」(没有原生窗口句柄的环境——Headless、远程桌面的某些会话——适配器永远不会建好)。</summary>
     public static TimeSpan AdapterTimeout { get; set; } = TimeSpan.FromSeconds(5);
@@ -54,6 +66,106 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
         _web.NewWindowRequested += OnNewWindow;
         _web.WebMessageReceived += OnMessage;
         _web.ProcessTerminated += OnTerminated;
+        // 滚动只改祖先的排布,不会重新排布本控件:每一轮布局之后重算可见段(滚动、窗口缩放、上方的行变高都会触发布局)。
+        // 在布局结束、渲染之前把 WebView 挪到新区域,NativeControlHost 在 AfterRender 读到的就是新位置,和这一帧的内容一致
+        LayoutUpdated += (_, _) => UpdateVisible(Bounds.Size);
+    }
+
+    /// <summary>WebView 当前可见的那一段(本控件坐标,测试 / 诊断用);空 = 整个隐藏。</summary>
+    public Rect VisibleRect => _visible;
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        _visible = Visible(finalSize);
+        PlaceWeb();
+        return finalSize;
+    }
+
+    private void UpdateVisible(Size size)
+    {
+        if (_disposed || VisualRoot is null)
+        {
+            return;
+        }
+
+        var visible = Visible(size);
+        if (visible != _visible)
+        {
+            _visible = visible;
+            PlaceWeb();
+        }
+    }
+
+    /// <summary>
+    /// 本控件和所有裁剪祖先(<c>ClipToBounds</c>,如 <c>ScrollContentPresenter</c>;以及窗口本身)的交集。祖先上的 <see cref="NcwWidgetClip.BottomInsetProperty"/>
+    /// 把它的底边再往上收(盖在内容上的浮层,如「回到最新」)。横向被裁一点就当看不见:页面宽度跟着 WebView 走,横向裁剪会让内容重排。
+    /// </summary>
+    private Rect Visible(Size size)
+    {
+        var rect = new Rect(size);
+        if (size.Width < 1 || size.Height < 1 || VisualRoot is null)
+        {
+            return default;
+        }
+
+        foreach (var ancestor in this.GetVisualAncestors())
+        {
+            var inset = NcwWidgetClip.GetBottomInset(ancestor);
+            if (!ancestor.ClipToBounds && ancestor is not TopLevel && inset <= 0)
+            {
+                continue;
+            }
+
+            if (ancestor.TransformToVisual(this) is not { } toLocal)
+            {
+                return default;
+            }
+
+            var clip = new Rect(ancestor.Bounds.Size).TransformToAABB(toLocal);
+            if (inset > 0)
+            {
+                clip = new Rect(clip.X, clip.Y, clip.Width, Math.Max(0, clip.Height - inset));
+            }
+
+            rect = rect.Intersect(clip);
+            if (rect.Width < 1 || rect.Height < 1)
+            {
+                return default;
+            }
+        }
+
+        if (rect.Width < size.Width - 0.5)
+        {
+            return default;
+        }
+
+        // 摆到整像素上(NativeControlHost 也会取整),避免亚像素的反复挪动
+        var top = Math.Floor(rect.Y);
+        var bottom = Math.Ceiling(rect.Bottom);
+        return new Rect(0, top, size.Width, Math.Max(0, bottom - top));
+    }
+
+    private void PlaceWeb()
+    {
+        var show = _visible.Height >= 1;
+        _web.IsVisible = show;
+        if (!show)
+        {
+            return;
+        }
+
+        // 直接排布子控件(可能在布局轮之外,从 LayoutUpdated 里调):边界变了,NativeControlHost 随之挪动原生视图
+        _web.Arrange(_visible);
+        PushViewport();
+    }
+
+    private void PushViewport()
+    {
+        if (_pageReady && Math.Abs(_visible.Y - _pushedTop) >= 0.5)
+        {
+            _pushedTop = _visible.Y;
+            Post(WidgetPush.Viewport(_visible.Y));
+        }
     }
 
     /// <summary>页面经 <c>invokeCSharpAction</c> 发来的原始字符串(不可信,交给 <see cref="WidgetBridge.HandleAsync"/>)。</summary>
@@ -103,8 +215,17 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
         return timer;
     }
 
-    /// <summary>页面发出「就绪」:外壳加载阶段结束,从此 widget 的代码在跑,任何导航都不许。</summary>
-    public void MarkReady() => _policy.MarkReady();
+    /// <summary>页面发出「就绪」:外壳加载阶段结束,从此 widget 的代码在跑,任何导航都不许。页面(含重载后)从顶上开始,把当前的可见段起点推一次。</summary>
+    public void MarkReady()
+    {
+        _policy.MarkReady();
+        _pageReady = true;
+        _pushedTop = -1;
+        if (_visible.Height >= 1)
+        {
+            PushViewport();
+        }
+    }
 
     /// <summary>把一条宿主消息(JSON)推进页面。失败只记诊断,不抛(页面可能正在重载)。</summary>
     public void Post(string messageJson)
@@ -144,6 +265,7 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
 
     private void Navigate(string html)
     {
+        _pageReady = false;
         _policy.ExpectShellLoad();
         try
         {

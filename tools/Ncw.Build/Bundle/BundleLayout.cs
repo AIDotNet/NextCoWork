@@ -34,6 +34,11 @@ internal sealed record BundleLayout(Rid Rid, string OutputDir)
 
     public string InfoPlist => Path.Combine(AppRoot, "Contents", "Info.plist");
 
+    /// <summary>.app 里的图标文件名(Info.plist 的 <c>CFBundleIconFile</c> 写不带扩展名的名字)。</summary>
+    public const string MacIconFileName = "AppIcon.icns";
+
+    public string MacIconPath => Path.Combine(ResourcesDir, MacIconFileName);
+
     public string ResourcesDir => Path.Combine(AppRoot, "Contents", "Resources");
 
     public string ManifestPath => Path.Combine(OutputDir, ManifestFileName);

@@ -4,6 +4,7 @@ using Ncw.Agent.Kernel;
 using Ncw.Agent.Kernel.Runs;
 using Ncw.Agent.Kernel.Session;
 using Ncw.Agent.Llm;
+using Ncw.Agent.Services.Settings;
 using Ncw.Agent.Storage;
 using Ncw.Agent.Storage.Sessions;
 using Ncw.Protocol.Methods;
@@ -94,9 +95,15 @@ internal static class ConversationHandlers
     private static SessionDto SessionsCreate(ConversationService s, SessionsCreateParams p)
     {
         var project = s.RequireProject(p.WorkspaceId);
+        // 没指定模型:落到项目的默认模型,再落到设备的默认模型(和定时任务同一条规则);都没配就留空,由控制端在候选里兜底。
+        // 别名和供应商整对地取,不各挑各的(否则拼出「新别名 + 旧供应商」这个谁也没配过的组合)。
+        var pick = p.Model is { Length: > 0 } model
+            ? new ModelPick(model, p.ModelProviderId)
+            : new ProjectSettingsService(s.Workspaces).Get(project.Id)?.DefaultModel is { IsSet: true } projectModel ? projectModel : s.DeviceSettings.Current().DefaultModel;
         // 给了 id 用 Ensure:同 id 已存在就返回现有的,不整行覆盖(控制端生成 id 的重试 / 重复创建是安全的)。
         var input = new SessionCreate(
-            project.Id, p.Id, Title: p.Title, Model: p.Model, ModelProviderId: p.ModelProviderId, Mode: p.Mode, Thinking: p.Thinking, RootPathAtCreation: project.RootPath);
+            project.Id, p.Id, Title: p.Title, Model: pick.IsSet ? pick.Model : null, ModelProviderId: pick.IsSet ? pick.ProviderId : null, Mode: p.Mode, Thinking: p.Thinking,
+            RootPathAtCreation: project.RootPath);
         var created = p.Id is null ? s.Sessions.Create(input) : s.Sessions.Ensure(input);
         return Mapping.ToDto(created);
     }

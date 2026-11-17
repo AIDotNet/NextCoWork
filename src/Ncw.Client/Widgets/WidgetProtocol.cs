@@ -22,8 +22,14 @@ public static class WidgetMessages
     public const string Env = "ncw:widget:env";
     public const string Reply = "ncw:widget:reply";
 
+    /// <summary>
+    /// 3.0 新增(2.x 没有):原生 WebView 不受 Avalonia 的裁剪约束,宿主只把它摆在卡片的<b>可见那一段</b>上(滚出转录视口的部分不画),
+    /// 页面据此把自己滚到这一段的起点(<c>top</c>,CSS 像素),内容看起来就是钉在卡片里不动。见 docs/design/03 §8.5。
+    /// </summary>
+    public const string Viewport = "ncw:widget:viewport";
+
     /// <summary>外壳脚本必须出现的全部消息名(核对用)。</summary>
-    public static IReadOnlyList<string> All { get; } = [Ready, Height, Call, Content, Theme, Loading, Env, Reply];
+    public static IReadOnlyList<string> All { get; } = [Ready, Height, Call, Content, Theme, Loading, Env, Reply, Viewport];
 }
 
 /// <summary>桥上各通道的长度上限(字符)。超了直接拒绝、不截断:截断后的 JSON 是坏的。数值取自 2.x 的 <c>WIDGET_LIMITS</c>。</summary>
@@ -51,10 +57,13 @@ public static class WidgetLimits
     /// <summary>JSON 嵌套深度上限(<c>setState</c> 的状态是模型写的代码给的,不可信)。</summary>
     public const int MaxDepth = 32;
 
-    /// <summary>外壳报高的钳制区间(2.x:下限很小,上限 1400 只为挡住失控的上报)。</summary>
+    /// <summary>
+    /// 外壳报高的钳制区间。下限同 2.x;上限 2.x 是 1400(超出部分在 WebView 里滚动)。3.0 的页面自己不滚(WebView 只摆在卡片的可见段上,
+    /// 页面跟着宿主滚,见 <see cref="WidgetMessages.Viewport"/>),所以上限放宽到 4000,只为挡住失控的上报;超出的部分不显示。
+    /// </summary>
     public const double MinHeight = 24;
 
-    public const double MaxHeight = 1400;
+    public const double MaxHeight = 4000;
 
     public static double ClampHeight(double reported) =>
         double.IsFinite(reported) ? Math.Max(MinHeight, Math.Min(MaxHeight, Math.Round(reported))) : MinHeight;
@@ -327,6 +336,14 @@ public static class WidgetPush
         {
             w.WriteString("type", WidgetMessages.Loading);
             w.WriteString("message", message);
+        });
+
+    /// <summary>可见段的起点(卡片内容区坐标,CSS 像素;非有限值当 0)。</summary>
+    public static string Viewport(double top) =>
+        Write(w =>
+        {
+            w.WriteString("type", WidgetMessages.Viewport);
+            w.WriteNumber("top", double.IsFinite(top) ? Math.Max(0, Math.Round(top)) : 0);
         });
 
     public static string Theme(WidgetTheme theme) =>

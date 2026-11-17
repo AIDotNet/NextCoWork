@@ -109,3 +109,28 @@ public sealed class NoLocalFiles : ILocalFiles
 
     public Task<bool> SaveAsync(string suggestedName, byte[] data) => Task.FromResult(false);
 }
+
+/// <summary>
+/// 文件在主工作区里作为标签页打开。文件页签(树 / 搜索结果)只负责「点了哪个文件」,预览和编辑在标签页里。
+/// 由 <see cref="Ncw.Client.ViewModels.WorkspaceViewModel"/> 实现。
+/// </summary>
+public interface IFileTabHost
+{
+    /// <summary>打开(已打开就切过去)项目里的一个文件。<paramref name="line"/> 是内容搜索命中的行。</summary>
+    Task OpenAsync(Ncw.Core.Domain.ProjectRef project, string path, int? line = null);
+
+    /// <summary>文件被重命名 / 删除了:它(以及它下面的文件)的标签关掉。</summary>
+    void CloseInside(Ncw.Core.Domain.ProjectRef project, string path);
+}
+
+/// <summary>没有工作区时的默认实现:什么也不做。</summary>
+public sealed class NoFileTabs : IFileTabHost
+{
+    public static readonly NoFileTabs Instance = new();
+
+    public Task OpenAsync(Ncw.Core.Domain.ProjectRef project, string path, int? line = null) => Task.CompletedTask;
+
+    public void CloseInside(Ncw.Core.Domain.ProjectRef project, string path)
+    {
+    }
+}

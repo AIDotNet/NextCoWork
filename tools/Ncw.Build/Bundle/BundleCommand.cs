@@ -21,7 +21,7 @@ internal sealed class BundleCommand : IBuildCommand
         var agentDir = args.Get("agent-dir") ?? ctx.Repo.PublishDir(rid, "agent");
 
         ctx.Log.Step($"bundle {version} for {rid}");
-        var manifest = BundleBuilder.Build(layout, desktopDir, agentDir, version, ctx.Clock);
+        var manifest = BundleBuilder.Build(layout, desktopDir, agentDir, version, ctx.Clock, layout.IsMacBundle ? ctx.Repo.MacIcon : null);
         var agent = manifest.Files.Where(f => f.Path.Contains("/agent/", StringComparison.Ordinal) || f.Path.StartsWith("agent/", StringComparison.Ordinal)).ToArray();
         ctx.Log.Info($"app:      {layout.AppRoot}");
         ctx.Log.Info($"sidecar:  {layout.AgentExe} ({agent.Length} files, {agent.Sum(f => f.Size) / 1024.0 / 1024.0:F1} MiB)");

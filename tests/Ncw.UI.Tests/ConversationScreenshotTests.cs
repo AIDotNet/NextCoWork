@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -11,6 +12,7 @@ using Ncw.UI.Chrome;
 using Ncw.UI.Views.Desktop;
 using Ncw.UI.Views.Desktop.Conversation;
 using TKCode.Arc;
+using ToolCallStatus = Ncw.Client.Stores.ToolCallStatus; // TKCode.Arc.Special 里也有同名类型
 using static Ncw.UI.Tests.ConversationFixtures;
 
 namespace Ncw.UI.Tests;
@@ -82,7 +84,16 @@ public class ConversationScreenshotTests
 
     // ───────────────────────── 场景数据 ─────────────────────────
 
-    private static ClientStores EmptySession() => Base("s-ncw-3").Also(s => Session(s, "s-ncw-3", []));
+    /// <summary>空会话;git 概览已知(分支 + 两个未提交的改动),上下文胶囊都能画出来。</summary>
+    private static ClientStores EmptySession() => Base("s-ncw-3").Also(s =>
+    {
+        Session(s, "s-ncw-3", []);
+        s.Git.Update(m => GitReducer.Apply(m, Project, new GitOverviewDto(true, null, "/Users/token/code/NextCoWork", "v3/avalonia", Files:
+        [
+            new GitFileChangeDto("src/Ncw.UI/Views/Desktop/Conversation/ConversationView.axaml", ".", "M", false, true, false, false, null),
+            new GitFileChangeDto("docs/design/03-ui-layout.md", ".", "M", false, true, false, false, null),
+        ]), 1));
+    });
 
     internal static ClientStores Streaming()
     {
@@ -215,10 +226,14 @@ public class ConversationScreenshotTests
         var (window, _, vm) = Render(Errors(), width, dark);
 
         Assert.Contains(vm.Conversation.Rows, r => r is CompactRowViewModel { IsAuto: true, PreTokens: 182000 });
-        var errors = vm.Conversation.Rows.OfType<ErrorRowViewModel>().ToList();
-        Assert.Equal(2, errors.Count);
-        Assert.False(errors[0].CanRetry); // 消息里的错误行不重试
-        Assert.True(errors[1].CanRetry);  // 失败的 Run 的错误:最后一条可以重试
+        // 同一次失败落了两份(消息里的 error 块 + Run 的终态):只画 Run 的那一张,它能重试(03 §11.4)
+        var error = Assert.Single(vm.Conversation.Rows.OfType<ErrorRowViewModel>());
+        Assert.True(error.CanRetry);
+        Assert.Equal("upstream_unavailable", error.Code);
+        Assert.Equal(Ncw.UI.Localization.NcwTexts.Get(Ncw.UI.Localization.NcwTextKind.ErrorProvider), Ncw.UI.Converters.ErrorTextConverter.Text(error.Code, error.MessageKey));
+        // 设备的英文原文不在卡片正文里,收在「详情」里
+        error.ToggleDetailCommand.Execute(null);
+        Assert.Contains("529 overloaded", error.Detail);
         Snapshot(window, "errors", width, dark);
     }
 
@@ -266,7 +281,8 @@ public class ConversationScreenshotTests
     [MemberData(nameof(Matrix))]
     public void Empty_session_shows_the_empty_state_and_an_idle_composer(int width, bool dark)
     {
-        var (window, shell, vm) = Render(EmptySession(), width, dark);
+        var stores = EmptySession();
+        var (window, shell, vm) = Render(stores, width, dark);
 
         Assert.True(vm.Conversation.HasSession);
         Assert.True(vm.Conversation.IsEmpty);
@@ -274,7 +290,27 @@ public class ConversationScreenshotTests
         Assert.Equal(ComposerPrimary.Disabled, vm.Conversation.Composer.State.Primary); // 空草稿:发送按钮灰着
         Assert.NotNull(vm.Conversation.Composer.SelectedModel);
         Assert.Equal("Claude Opus 5.5", vm.Conversation.Composer.SelectedModel!.DisplayName);
-        Snapshot(window, "empty", width, dark);
+        // 上下文胶囊(03 §11.4):项目名进标题,分支和改动数来自 git 镜像
+        Assert.Equal("NextCoWork", vm.Conversation.EmptyProjectName);
+        Assert.Equal("v3/avalonia", vm.Conversation.EmptyBranch);
+        Assert.Equal(2, vm.Conversation.EmptyChanges);
+
+        // 输入框居中:落在对话区中间那一段(偏上一点),不在底部
+        var view = window.GetVisualDescendants().OfType<ConversationView>().First(v => v.IsEffectivelyVisible);
+        var composer = view.GetVisualDescendants().OfType<ComposerView>().First(c => c.IsEffectivelyVisible);
+        Assert.True(view.IsCenteredLayout);
+        var mid = composer.TranslatePoint(new Point(0, composer.Bounds.Height / 2), view)!.Value.Y / view.Bounds.Height;
+        Assert.InRange(mid, 0.3, 0.6);
+        Snapshot(window, "empty", width, dark, last: false);
+
+        // 发出第一条消息:建议收起,输入框回到底部(滑动只动 RenderTransform,结束后不留位移)
+        Session(stores, "s-ncw-3", [User("u1", "解释一下这个项目的结构和主要模块")]);
+        Dispatch();
+        Settle(() => !Ncw.UI.Controls.NcwMotion.IsGliding(composer.GetVisualAncestors().OfType<StackPanel>().First(p => p.Name == "BottomArea")), 60);
+        Assert.False(view.IsCenteredLayout);
+        var bottom = composer.TranslatePoint(new Point(0, composer.Bounds.Height), view)!.Value.Y;
+        Assert.InRange(view.Bounds.Height - bottom, 0, 40);
+        Snapshot(window, "empty-sent", width, dark);
     }
 
     [AvaloniaTheory]
@@ -301,6 +337,88 @@ public class ConversationScreenshotTests
         Snapshot(window, "streaming", width, dark);
     }
 
+    /// <summary>
+    /// 输入框版式(docs/design/03 §6「输入框版式」):模型菜单按供应商分组、行尾带上下文窗口和能力;权限按档位着色;
+    /// 上下文占用环只在输入框里显示;不支持思考的模型让思考按钮灰掉。
+    /// </summary>
+    [AvaloniaTheory]
+    [MemberData(nameof(Matrix))]
+    public void Composer_toolbar_groups_models_colors_the_permission_and_shows_the_context_ring(int width, bool dark)
+    {
+        var stores = Streaming();
+        // 正在跑的 run-1 收到过一次 context_usage:84K / 200K
+        stores.Conversations.Update(c =>
+        {
+            var run = c.Runs.Keys.Single();
+            return c with { Runs = c.Runs.SetItem(run, c.Runs[run] with
+            {
+                Context = new ContextUsageEventDto(84_000, 200_000, false,
+                    [new("system", 12_000), new("tools", 18_000), new("instructions", 6_000), new("messages", 48_000)]),
+            }) };
+        });
+        var (window, _, vm) = Render(stores, width, dark);
+        var composerVm = vm.Conversation.Composer;
+        composerVm.SetPermissionCommand.Execute("full"); // 本机是 owner,可以选「完全访问」
+        Dispatch();
+
+        var composer = window.GetVisualDescendants().OfType<ComposerView>().First(c => c.IsEffectivelyVisible);
+
+        // 模型菜单:组标签 = 供应商名(按候选里出现的顺序),组下面是这个供应商的模型,行尾是「窗口 · 能力」
+        var rows = composer.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("ModelMenu")!.ItemsSource!.Cast<object>().ToList();
+        Assert.Equal(["Anthropic", "My Gateway"], rows.OfType<MenuEntryLabel>().Select(l => l.Text));
+        Assert.IsType<MenuEntryLabel>(rows[0]);
+        var entries = rows.OfType<MenuEntry>().ToList();
+        Assert.Equal(["Claude Opus 5.5", "Claude Haiku 5", "GPT-5 mini"], entries.Select(e => e.Header as string));
+        Assert.StartsWith("200K", entries[0].InputGestureText);
+        Assert.True(entries[0].IsChecked);
+
+        // 权限:完全访问 → 警告色 + ShieldAlert
+        var permission = composer.FindControl<Ncw.UI.Controls.PlainButton>("PermissionButton")!;
+        Assert.Contains("perm-full", permission.Classes);
+        Assert.DoesNotContain("perm-ask", permission.Classes);
+        Assert.Equal(TKCode.Arc.Icons.Lucide.LucideIconKind.ShieldAlert, composer.FindControl<TKCode.Arc.Icons.Lucide.LucideIcon>("PermissionIcon")!.Kind);
+
+        // 上下文占用:84K / 200K = 42%,只在输入框里显示
+        Assert.Equal(42, vm.Conversation.ContextPercent);
+        Assert.True(composer.FindControl<Ncw.UI.Controls.PlainButton>("ContextMeter")!.IsEffectivelyVisible);
+
+        // 版式:文字上方和工具行下方的留白一样大(弹层不能挤进卡片的 StackPanel,否则每个都多出一份间距)
+        var cardBorder = composer.FindControl<Border>("Card")!;
+        var editor = composer.FindControl<Ncw.UI.Controls.NcwTokenEditor>("Input")!;
+        var primary = new[] { "SendButton", "QueueButton", "StopButton" }.Select(n => composer.FindControl<Control>(n)!).Single(c => c.IsVisible);
+        var topGap = Avalonia.VisualExtensions.TranslatePoint(editor, new Avalonia.Point(0, 0), cardBorder)!.Value.Y;
+        var bottomGap = cardBorder.Bounds.Height - Avalonia.VisualExtensions.TranslatePoint(primary, new Avalonia.Point(0, primary.Bounds.Height), cardBorder)!.Value.Y;
+        Assert.InRange(bottomGap - topGap, -4, 4);
+
+        Snapshot(window, "composer", width, dark, last: false);
+
+        // 点开上下文环:Arc 的上下文窗口卡片,只展示——四个分段、当前模型的窗口、虚线在 Agent 的自动压缩阈值上
+        composer.FindControl<Ncw.UI.Controls.PlainButton>("ContextMeter")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        var popover = composer.FindControl<Avalonia.Controls.Primitives.Popup>("ContextPopup")!;
+        Assert.True(popover.IsOpen);
+        Dispatch();
+        var card = composer.FindControl<Ncw.UI.Controls.NcwContextCard>("ContextCard")!;
+        Assert.Equal(84_000, card.UsedTokens);
+        Assert.Equal(
+            [TKCode.Arc.ContextWindowCategory.System, TKCode.Arc.ContextWindowCategory.Tools, TKCode.Arc.ContextWindowCategory.Files, TKCode.Arc.ContextWindowCategory.Messages],
+            card.Items.Select(i => i.Category));
+        Assert.Equal(200_000, card.SelectedModel!.Window);
+        Assert.Equal("Claude Opus 5.5", card.SelectedModel.Name);
+        Assert.Equal((double)ContextWindows.AutoCompactThreshold(200_000, ContextWindows.ResolveMaxOutputTokens(null, 200_000)) / 200_000, card.Threshold, 3);
+        Assert.False(card.AutoCompact);
+        Assert.False(card.CanCompact); // 不在客户端里假装压缩
+        Snapshot(window, "composer-context", width, dark, last: false);
+        popover.IsOpen = false;
+        Dispatch();
+
+        // 不支持思考的模型(Claude Haiku 5 没有 ThinkingMode)只有「关」一档:思考按钮灰掉,刻度为 0
+        composerVm.PickModelCommand.Execute(composerVm.Models.Single(m => m.DisplayName == "Claude Haiku 5"));
+        Dispatch();
+        Assert.False(composer.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("ThinkingMenu")!.IsEnabled);
+        Assert.Equal(0, composer.FindControl<Ncw.UI.Controls.NcwLevelMeter>("ThinkingMeter")!.Level);
+        Snapshot(window, "composer-nothink", width, dark);
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Matrix))]
     public void Tool_cards_show_done_failed_and_waiting_for_approval_with_environment_labels(int width, bool dark)
@@ -314,6 +432,10 @@ public class ConversationScreenshotTests
         Assert.True(tools["c3"].IsDone && tools["c3"].HasPreview);
         Assert.True(tools["c4"].IsFailed);
         Assert.True(tools["c5"].IsWaiting);
+        // 默认的本机环境不在行上画标识(提示里仍有);SSH 环境必须画
+        Assert.False(tools["c1"].ShowsEnv);
+        Assert.Contains("本机 · local", tools["c1"].Tip);
+        Assert.True(tools["c5"].ShowsEnv && tools["c5"].IsSsh);
         // 等待审批的是 SSH 环境里的 Write:卡片上要说清是哪台设备的哪个环境
         Assert.Equal("本机 · local", tools["c1"].EnvLabel); // 落库的旧调用用项目环境兜底
         var approval = vm.Conversation.Rows.OfType<InteractionRowViewModel>().Single();
@@ -342,6 +464,15 @@ public class ConversationScreenshotTests
         Assert.Equal(3, cards.Single(c => c.IsAskUser).Questions[0].Options.Count);
         Assert.Contains("发布", cards.Single(c => c.IsPlan).Plan);
         Assert.Contains("60MB", cards.Single(c => c.IsGoalProposal).Condition);
+
+        // 待处理条(03 §11.3):这个会话里 4 张;「下一项」依次定位、高亮,到底绕回
+        Assert.Equal(4, vm.Conversation.PendingHere);
+        Assert.True(vm.Conversation.ShowsPendingBar);
+        vm.Conversation.FocusNextPendingCommand.Execute(null);
+        Assert.True(cards[0].IsHighlighted);
+        vm.Conversation.FocusNextPendingCommand.Execute(null);
+        Assert.False(cards[0].IsHighlighted);
+        Assert.True(cards[1].IsHighlighted);
         Snapshot(window, "approvals", width, dark);
     }
 
@@ -426,6 +557,67 @@ public class ConversationScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Tool_rows_hide_their_result_by_default_and_failed_ones_are_only_marked_red()
+    {
+        var (window, _, vm) = Render(Tools(), 1200, true);
+
+        var tools = vm.Conversation.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
+        Assert.All(tools.Values, t => Assert.False(t.IsExpanded)); // 一律默认收起,包括失败的
+        Assert.True(tools["c4"].IsFailed && tools["c4"].HasPreview && !tools["c4"].IsExpanded);
+        // 一行文字,不是卡片
+        var card = window.GetVisualDescendants().OfType<ToolCard>().First(c => ReferenceEquals(c.DataContext, tools["c4"]));
+        Assert.DoesNotContain(card.GetVisualDescendants().OfType<Border>(), b => b.Classes.Contains("card"));
+        Assert.Contains(card.GetVisualDescendants().OfType<TextBlock>(), t => t.Classes.Contains("failed") && t.IsEffectivelyVisible);
+        Assert.DoesNotContain(tools.Values.Where(t => !t.IsFailed), t => card.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Classes.Contains("failed") && ReferenceEquals(x.DataContext, t)));
+    }
+
+    [AvaloniaFact]
+    public void Expanding_a_tool_while_following_does_not_yank_the_view_to_the_bottom()
+    {
+        var stores = Base("s-ncw-1");
+        var longOutput = string.Join('\n', Enumerable.Range(0, 40).Select(i => $"line {i}: 一些很长的命令输出内容,用来把展开后的高度撑起来"));
+        var rows = Enumerable.Range(0, 30).SelectMany(i => new[]
+        {
+            User($"u{i}", $"第 {i} 个问题"),
+            Assistant($"a{i}", 60 - i, Text($"第 {i} 个回答。" + string.Concat(Enumerable.Repeat("这是一段比较长的说明文字。", 8)))),
+        }).Concat(
+        [
+            User("u-last", "跑一下测试"),
+            Assistant("a-last", 1, Text("好的。"), Call("c-last", "Bash", "{\"command\":\"dotnet test\"}")),
+            ToolResults("r-last", 0, Result("c-last", longOutput)),
+        ]).ToList();
+        Session(stores, "s-ncw-1", rows);
+        ArcTheme.Apply(t => t.MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off)); // 和整套测试一起跑时,前面的截图测试把动效关了:展开是瞬间的
+        var (window, shell, vm) = Render(stores, 1200, true);
+
+        var view = shell.GetVisualDescendants().OfType<ConversationView>().Single();
+        var scroller = view.Scroller!;
+        bool AtBottom() => scroller.Offset.Y >= scroller.Extent.Height - scroller.Viewport.Height - 16;
+        Settle(() => view.IsFollowing && AtBottom(), rounds: 20);
+        Assert.True(view.IsFollowing && AtBottom(), "starts following at the bottom");
+        // 虚拟化列表按估算高度贴底,要几轮布局才收敛:等偏移连续几轮不再变化,再当作「点击之前」的基线
+        for (var stable = 0; stable < 4;)
+        {
+            var offset = scroller.Offset.Y;
+            Dispatch();
+            stable = Math.Abs(scroller.Offset.Y - offset) < 0.5 ? stable + 1 : 0;
+        }
+
+        var tool = vm.Conversation.Rows.OfType<ToolRowViewModel>().Single();
+        var card = window.GetVisualDescendants().OfType<ToolCard>().First(c => ReferenceEquals(c.DataContext, tool));
+        card.GetVisualDescendants().OfType<Ncw.UI.Controls.PlainButton>().First()
+            .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        Settle(() => false, rounds: 10);
+
+        Assert.True(tool.IsExpanded);
+        Assert.False(view.IsFollowing); // 用户在翻看:不再跟随
+        // 之后继续布局(展开动画起步时那一点点高度变化仍在贴底容差内、虚拟化重估高度造成的偏移)也不能把跟随恢复。
+        // 注意不断言滚动偏移:虚拟化列表在重新布局时会修正估算高度,偏移因此漂移(甚至落到列表底部),与「跟随最新」无关
+        Settle(() => false, rounds: 10);
+        Assert.False(view.IsFollowing);
+    }
+
+    [AvaloniaFact]
     public void Transcript_follows_the_latest_message_until_the_user_scrolls_up()
     {
         var stores = Base("s-ncw-1");
@@ -444,8 +636,20 @@ public class ConversationScreenshotTests
         Assert.True(view.IsFollowing);
         Assert.True(AtBottom(), "starts at the bottom");
 
-        // 往上滚:停止跟随;新消息到达不再把视图拽回底部
+        // 程序 / 布局造成的偏移变化不是用户意图:不停止跟随,下一轮布局又贴回底部
         scroller.Offset = new Avalonia.Vector(0, 200);
+        Settle(() => AtBottom());
+        Assert.True(view.IsFollowing);
+        Assert.True(AtBottom(), "a programmatic offset change is not the user scrolling up");
+
+        // 用户往上滚(滚轮):停止跟随;新消息到达不再把视图拽回底部
+        var center = scroller.TranslatePoint(new Avalonia.Point(scroller.Bounds.Width / 2, scroller.Bounds.Height / 2), window)!.Value;
+        for (var i = 0; i < 8; i++)
+        {
+            window.MouseWheel(center, new Avalonia.Vector(0, 5));
+            Dispatch();
+        }
+
         Settle(() => !view.IsFollowing);
         Assert.False(view.IsFollowing);
         Session(stores, "s-ncw-1", many.Append(Assistant("a-new", 0, Text("新的回复"))));
@@ -453,10 +657,50 @@ public class ConversationScreenshotTests
         Assert.False(view.IsFollowing);
         Assert.True(scroller.Offset.Y < scroller.Extent.Height - scroller.Viewport.Height - 100);
 
+        // 程序把偏移挪到底也不算「用户回到底部」(先等上一次滚轮操作的时间窗口过去,窗口内到底确实算用户滚回来的)
+        Thread.Sleep(TimeSpan.FromMilliseconds(TranscriptFollow.UserWindowMs + 50));
+        scroller.ScrollToEnd();
+        Settle(() => false, rounds: 4);
+        Assert.False(view.IsFollowing);
+
         // 回到最新:恢复跟随
-        Settle(() => { scroller.ScrollToEnd(); return view.IsFollowing && AtBottom(); }, rounds: 20);
+        view.ScrollToLatest();
+        Settle(() => view.IsFollowing && AtBottom(), rounds: 20);
         Assert.True(view.IsFollowing);
+        Assert.True(AtBottom());
         Snapshot(window, "follow", 1200, true);
+    }
+
+    [AvaloniaFact]
+    public void Scrolling_back_down_to_the_bottom_with_the_wheel_resumes_following()
+    {
+        var stores = Base("s-ncw-1");
+        var many = Enumerable.Range(0, 40).SelectMany(i => new[]
+        {
+            User($"u{i}", $"第 {i} 个问题"),
+            Assistant($"a{i}", 40 - i, Text($"第 {i} 个回答。" + string.Concat(Enumerable.Repeat("这是一段比较长的说明文字。", 6)))),
+        }).ToList();
+        Session(stores, "s-ncw-1", many);
+        var (window, shell, _) = Render(stores, 1200, true);
+        var view = shell.GetVisualDescendants().OfType<ConversationView>().Single();
+        var scroller = view.Scroller!;
+        bool AtBottom() => scroller.Offset.Y >= scroller.Extent.Height - scroller.Viewport.Height - 16;
+        Settle(() => view.IsFollowing && AtBottom(), rounds: 20);
+
+        var center = scroller.TranslatePoint(new Avalonia.Point(scroller.Bounds.Width / 2, scroller.Bounds.Height / 2), window)!.Value;
+        window.MouseWheel(center, new Avalonia.Vector(0, 6));
+        Settle(() => !view.IsFollowing);
+        Assert.False(view.IsFollowing);
+        Assert.True(view.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwButton>().Single(b => b.Name == "JumpButton").IsVisible, "jump-to-latest shows while not following");
+
+        // 用户自己用滚轮往下滚回底部:恢复跟随
+        for (var i = 0; i < 40 && !view.IsFollowing; i++)
+        {
+            window.MouseWheel(center, new Avalonia.Vector(0, -6));
+            Dispatch();
+        }
+
+        Assert.True(view.IsFollowing);
     }
 }
 
