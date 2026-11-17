@@ -146,6 +146,9 @@ public sealed class RealBrowserTests : IAsyncLifetime
         return await impl.ExecuteAsync(new ToolInvocation("c", tool, impl, check.Input), ctx, CancellationToken.None);
     }
 
+    /// <summary>工具调用成功;失败时把工具给模型的错误文本带进断言信息(CI 上偶发失败时要知道是哪一种错)。</summary>
+    private static void Ok(ToolResult result) => Assert.False(result.IsError, Harness.Text(result));
+
     private async Task<string> Open(string workspace, string path)
     {
         var result = await Run("browser_open", workspace, ("url", _origin + path));
@@ -174,7 +177,7 @@ public sealed class RealBrowserTests : IAsyncLifetime
         RefOf(snapshot, "combobox", "Color");
 
         // 点击:页面里的计数从 0 变 1
-        Assert.False((await Run("browser_click", "ws-a", ("tabId", tab), ("ref", button))).IsError);
+        Ok(await Run("browser_click", "ws-a", ("tabId", tab), ("ref", button)));
         Assert.Contains(" 1 ", Harness.Text(await Run("browser_text", "ws-a", ("tabId", tab))).Replace("\n", " ") + " ");
 
         // 点击消费了快照:同一个 ref 不能再用
@@ -184,19 +187,19 @@ public sealed class RealBrowserTests : IAsyncLifetime
 
         // 输入:替换输入框的值并触发 input 事件
         snapshot = Harness.Text(await Run("browser_snapshot", "ws-a", ("tabId", tab)));
-        Assert.False((await Run("browser_type", "ws-a", ("tabId", tab), ("ref", RefOf(snapshot, "textbox", "Name")), ("text", "Ada"))).IsError);
+        Ok(await Run("browser_type", "ws-a", ("tabId", tab), ("ref", RefOf(snapshot, "textbox", "Name")), ("text", "Ada")));
         var waited = await Run("browser_wait", "ws-a", ("tabId", tab), ("text", "hello Ada"), ("timeoutMs", 5000));
         Assert.False(waited.IsError, Harness.Text(waited));
 
         // 下拉:change 事件改了标题
         snapshot = Harness.Text(await Run("browser_snapshot", "ws-a", ("tabId", tab)));
-        Assert.False((await Run("browser_select", "ws-a", ("tabId", tab), ("ref", RefOf(snapshot, "combobox", "Color")), ("values", new System.Text.Json.Nodes.JsonArray("g")))).IsError);
+        Ok(await Run("browser_select", "ws-a", ("tabId", tab), ("ref", RefOf(snapshot, "combobox", "Color")), ("values", new System.Text.Json.Nodes.JsonArray("g"))));
         Assert.Contains("Page: color=g", Harness.Text(await Run("browser_snapshot", "ws-a", ("tabId", tab))));
 
         // 按键:聚焦输入框后按 Enter,keydown 监听把 [enter] 追加到回显
         snapshot = Harness.Text(await Run("browser_snapshot", "ws-a", ("tabId", tab)));
-        Assert.False((await Run("browser_press", "ws-a", ("tabId", tab), ("keys", new System.Text.Json.Nodes.JsonArray("Enter")), ("ref", RefOf(snapshot, "textbox", "Name")))).IsError);
-        Assert.False((await Run("browser_wait", "ws-a", ("tabId", tab), ("text", "[enter]"), ("timeoutMs", 5000))).IsError);
+        Ok(await Run("browser_press", "ws-a", ("tabId", tab), ("keys", new System.Text.Json.Nodes.JsonArray("Enter")), ("ref", RefOf(snapshot, "textbox", "Name"))));
+        Ok(await Run("browser_wait", "ws-a", ("tabId", tab), ("text", "[enter]"), ("timeoutMs", 5000)));
 
         // 截图:真 PNG,尺寸等于视口
         var shot = await Run("browser_screenshot", "ws-a", ("tabId", tab));
@@ -205,13 +208,13 @@ public sealed class RealBrowserTests : IAsyncLifetime
         Assert.Equal((1280, 720), PageSize(png));
 
         // 坐标点击:截图之后可用
-        Assert.False((await Run("browser_cua_click", "ws-a", ("tabId", tab), ("x", 5), ("y", 5))).IsError);
+        Ok(await Run("browser_cua_click", "ws-a", ("tabId", tab), ("x", 5), ("y", 5)));
 
         // 导航 + 标签清单 + 关闭
-        Assert.False((await Run("browser_navigate", "ws-a", ("tabId", tab), ("url", _origin + "/second"))).IsError);
+        Ok(await Run("browser_navigate", "ws-a", ("tabId", tab), ("url", _origin + "/second")));
         Assert.Contains("second page", Harness.Text(await Run("browser_text", "ws-a", ("tabId", tab))));
         Assert.Contains(tab, Harness.Text(await Run("browser_tabs", "ws-a")));
-        Assert.False((await Run("browser_close", "ws-a", ("tabId", tab))).IsError);
+        Ok(await Run("browser_close", "ws-a", ("tabId", tab)));
         Assert.Contains("No controlled", Harness.Text(await Run("browser_tabs", "ws-a")));
     }
 
