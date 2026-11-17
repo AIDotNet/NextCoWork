@@ -43,6 +43,7 @@ import { updateErrorKey } from '../lib/update-error'
 import { updateDownload, updateGetState, updateInstall } from '../services/app'
 import { on } from '../services/ipc'
 import { motionScale, useMotionLevel } from '../theme/useMotionLevel'
+import { V3UpgradeIndicator } from './V3UpgradeIndicator'
 
 /** 卡片与触发器之间的空隙 */
 const GAP = 8
@@ -155,7 +156,8 @@ export function UpdateIndicator(): ReactNode {
     setPos({ left, top: anchor.bottom + GAP })
   }, [open])
 
-  if (info === null || !isActive(state)) return null
+  // 2.9:没有 2.x 自己的更新时,这个位置留给「升级到 3.0」(有就显示,没有就什么都不占)
+  if (info === null || !isActive(state)) return <V3UpgradeIndicator />
 
   const downloading = state.state === 'downloading'
   const installing = state.state === 'installing'

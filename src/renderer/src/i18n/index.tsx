@@ -36,6 +36,7 @@ import { widgetZh, widgetEn } from './widget';
 import { workflowZh, workflowEn } from './workflow';
 import { experimentalZh, experimentalEn } from './experimental';
 import { migrationZh, migrationEn } from './migration';
+import { v3UpgradeZh, v3UpgradeEn } from './v3-upgrade';
 import { accountMenuZh, accountMenuEn } from './account-menu';
 import { rewardsZh, rewardsEn } from './rewards';
 import { walletZh, walletEn } from './wallet';
@@ -93,6 +94,7 @@ const ZH: Messages = {
   ...workflowZh,
   ...experimentalZh,
   ...migrationZh,
+  ...v3UpgradeZh,
   ...themesZh,
   ...agentZh,
   ...toolPresenterZh,
@@ -2151,6 +2153,7 @@ const EN: Messages = {
   ...workflowEn,
   ...experimentalEn,
   ...migrationEn,
+  ...v3UpgradeEn,
   ...accountMenuEn,
   ...rewardsEn,
   ...walletEn,

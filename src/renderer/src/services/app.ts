@@ -9,6 +9,7 @@ import type { DirListing, FileSuggestion } from '../../../shared/domain/file-tre
 import type { SessionInputState } from '../../../shared/domain/queued-input'
 import type { AppSettings, AppSettingsPatch } from '../../../shared/domain/settings'
 import type { UpdateState } from '../../../shared/domain/update'
+import type { V3OfferState } from '../../../shared/domain/v3-upgrade'
 import type { InnerTabState, WindowKind, WindowTabState } from '../../../shared/domain/tab'
 import type { Workspace, WorkspaceSettings } from '../../../shared/domain/workspace'
 import { invoke, send } from './ipc'
@@ -45,6 +46,24 @@ export function updateInstall(): Promise<void> {
 
 export function updateGetState(): Promise<UpdateState> {
   return invoke('app:updateGetState', undefined)
+}
+
+// ─── 2.9:升级到 NextCoWork 3.0 ───
+
+export function v3OfferGetState(): Promise<V3OfferState> {
+  return invoke('app:v3OfferGetState', undefined)
+}
+
+export function v3OfferRefresh(): Promise<V3OfferState> {
+  return invoke('app:v3OfferRefresh', undefined)
+}
+
+export function v3Upgrade(): Promise<void> {
+  return invoke('app:v3Upgrade', undefined)
+}
+
+export function v3OpenDownload(): Promise<void> {
+  return invoke('app:v3OpenDownload', undefined)
 }
 
 export function copyText(text: string): Promise<void> {

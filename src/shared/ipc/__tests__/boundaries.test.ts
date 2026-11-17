@@ -34,6 +34,10 @@ const CONTROLLER_LOCAL_INVOKE = [
   'app:updateDownload',
   'app:updateInstall',
   'app:updateGetState',
+  'app:v3OfferGetState',
+  'app:v3OfferRefresh',
+  'app:v3Upgrade',
+  'app:v3OpenDownload',
   'app:copyText',
   'app:copyImage',
   'app:openSessionWindow',
@@ -83,7 +87,8 @@ const CONTROLLER_LOCAL_SEND = ['window:ready', 'window:control', 'app:quitConfir
 const CONTROLLER_LOCAL_EVENT = [
   'window:maximized',
   'window:visibility',
-  'app:updateChanged'
+  'app:updateChanged',
+  'app:v3OfferChanged'
 ] as const
 
 const COMPOSED_EVENT = [

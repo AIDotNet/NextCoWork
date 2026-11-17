@@ -210,6 +210,7 @@ import {
   unstageGitPaths
 } from './git'
 import { updateService } from '../update/update-service'
+import { openV3DownloadPage, upgradeToV3, v3Offer } from '../update/v3'
 import { activateWrittenSkills, installMarketSkill, installZip, listMarketCategories, listMarketSkills, listSkills, marketSkillDetail, setSkillGlobalEnabled, setSkillWorkspaceActive, uninstallSkill, skillDiagnostics } from './skills'
 import { pickSkillZip } from './skills-dialog'
 import { commandDiagnostics, listAllCommands, listCommands, setCommandEnabled } from './commands'
@@ -350,6 +351,10 @@ const handlers: HandlerMap = {
   'app:updateDownload': () => updateService.download(),
   'app:updateInstall': () => updateService.install(),
   'app:updateGetState': () => updateService.getState(),
+  'app:v3OfferGetState': () => v3Offer.getState(),
+  'app:v3OfferRefresh': () => v3Offer.refresh(),
+  'app:v3Upgrade': () => upgradeToV3(),
+  'app:v3OpenDownload': () => openV3DownloadPage(),
   'app:copyText': ({ text }) => copyText(text),
   'device:getState': () => getDevicesState(),
   'device:inspectInvitation': (req) => inspectDeviceInvitation(req),

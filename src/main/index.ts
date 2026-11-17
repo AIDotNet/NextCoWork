@@ -2,6 +2,7 @@
  * KernelHost 之外唯一允许 import electron 的地方之一(窗口/生命周期)。
  * 内核代码永远不从这里 import —— 依赖方向是单向的:main → kernel,不反向。
  */
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { copyFileSync, cpSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { app, shell, BrowserWindow, dialog, nativeImage, powerMonitor } from 'electron'
@@ -81,6 +82,11 @@ import { documentEngineMessage } from '../shared/i18n/document-engine'
 import { titleBarOptions, watchMaximized } from './window/title-bar'
 import { applyThemePreference, resolveTheme, setQuitRequester, setSessionWindowOpener } from './ipc/app'
 import { updateService } from './update/update-service'
+import { v3Offer } from './update/v3'
+import { findV3App } from './update/v3-locate'
+import { detectNewerOwner } from './db/v3-ownership'
+import { V3_DOWNLOAD_PAGE } from '../shared/domain/v3-upgrade'
+import { v3UpgradeMessage } from '../shared/i18n/v3-upgrade'
 import { reconcileScheduler, startScheduler, stopScheduler } from './scheduled/scheduler'
 import { reconcileGateway, shutdownGateway } from './ipc/gateway'
 import type { WindowKind } from '../shared/domain/tab'
@@ -675,6 +681,13 @@ void app
     app.dock?.setIcon(nativeImage.createFromPath(appIconPath))
   }
 
+  /*
+    ★ 2.9:**数据已经被 NextCoWork 3.0 接管 → 不建窗、不开库**,弹一个系统对话框(打开 3.0 / 下载 3.0 / 退出)就退出。
+    位置必须在建窗之前:建窗时就会去读库里的主题设置,而闸门和 `openDatabase()` 更不能碰一份已经属于 3.0 的库
+    (2.x 的迁移执行器会跳过它不认识的 3.0 迁移、照样往里写)。判据见 `db/v3-ownership.ts`。
+  */
+  if (await explainDataOwnedByV3()) return
+
   app.on('browser-window-created', (_, window) => {
     // dev 下 F12 开 devtools、生产下屏蔽 CommandOrControl+R
     optimizer.watchWindowShortcuts(window)
@@ -921,6 +934,9 @@ void app
   if (app.isPackaged) {
     setTimeout(() => { void updateService.check() }, 30_000)
     setInterval(() => { void updateService.check() }, 24 * 60 * 60 * 1000)
+    // 2.9:同一个节奏问一次「有没有 3.0」。问不到就不显示,不打扰。
+    setTimeout(() => { void v3Offer.refresh() }, 30_000)
+    setInterval(() => { void v3Offer.refresh() }, 24 * 60 * 60 * 1000)
   }
   })
   .catch((err: unknown) => {
@@ -980,6 +996,43 @@ async function startMigrationGate(): Promise<void> {
   } catch (err) {
     console.warn('[migration] 闸门未能启动,跳过本次数据整理:', err)
   }
+}
+
+/**
+ * 数据已经被 NextCoWork 3.0 接管时,说明情况并退出。返回 true = 已经处理(调用方不要再往下启动)。
+ *
+ * ★ 用 `app.exit(0)` 而不是 `app.quit()`:这时什么都还没打开(没有窗口、没有库、没有子进程),
+ *   不需要也不能走退出流程 —— 那条流程假设库是开着的。
+ * ★ 语言取系统 locale:设置在库里,而这份库不能再读。
+ */
+async function explainDataOwnedByV3(): Promise<boolean> {
+  const owner = detectNewerOwner(resolveDataRoot())
+  if (owner === null) return false
+  console.warn(`[v3] 数据根已被更新的版本接管(${owner.reason}),2.x 不打开它`)
+  const locale = app.getLocale()
+  const text = (key: Parameters<typeof v3UpgradeMessage>[1]): string => v3UpgradeMessage(locale, key)
+  const target = findV3App({ platform: process.platform, home: homedir(), localAppData: process.env.LOCALAPPDATA, execPath: process.execPath, exists: existsSync })
+  const actions: Array<{ label: string; run: () => Promise<unknown> }> = [
+    ...(target ? [{ label: text('v3.owned.open'), run: () => shell.openPath(target.path) }] : []),
+    { label: text('v3.owned.download'), run: () => shell.openExternal(V3_DOWNLOAD_PAGE) },
+    { label: text('v3.owned.quit'), run: async () => undefined }
+  ]
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    buttons: actions.map((a) => a.label),
+    defaultId: 0,
+    cancelId: actions.length - 1,
+    noLink: true,
+    message: text('v3.owned.message'),
+    detail: text('v3.owned.detail')
+  })
+  try {
+    await actions[response]?.run()
+  } catch (err) {
+    console.warn('[v3] 打开 3.0 / 下载页失败:', err)
+  }
+  app.exit(0)
+  return true
 }
 
 /** 从托盘/dock/第二实例唤起:已有窗口就还原、显示并聚焦,一个都没有就新建一个。 */
