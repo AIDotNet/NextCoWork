@@ -82,6 +82,8 @@ public sealed class GitLinkTests : IAsyncLifetime
         Assert.Equal(GitUnavailableReasons.NotRepository, State(c, project).Overview!.Reason);
 
         Git(path, "init", "-q", "-b", "main");
+        Git(path, "config", "user.name", "Test"); // 仓库级身份:产品代码自己 commit,CI 上没有全局身份
+        Git(path, "config", "user.email", "t@example.com");
         File.WriteAllText(Path.Combine(path, "a.txt"), "one\n");
         Assert.True((await git.RefreshAsync(project)).IsOk);
         await WaitUntil(() => State(c, project).Available, "the repository to be available");
@@ -115,6 +117,8 @@ public sealed class GitLinkTests : IAsyncLifetime
     {
         var (_, git, project, path) = await StartAsync();
         Git(path, "init", "-q", "-b", "main");
+        Git(path, "config", "user.name", "Test"); // 仓库级身份:产品代码自己 commit,CI 上没有全局身份
+        Git(path, "config", "user.email", "t@example.com");
         File.WriteAllText(Path.Combine(path, "a.txt"), "one\n");
         Git(path, "add", "-A");
         Git(path, "commit", "-q", "-m", "initial");
@@ -143,6 +147,8 @@ public sealed class GitLinkTests : IAsyncLifetime
     {
         var (c, git, project, path) = await StartAsync();
         Git(path, "init", "-q", "-b", "main");
+        Git(path, "config", "user.name", "Test"); // 仓库级身份:产品代码自己 commit,CI 上没有全局身份
+        Git(path, "config", "user.email", "t@example.com");
         File.WriteAllText(Path.Combine(path, "a.txt"), "one\n");
         Assert.True((await git.RefreshAsync(project)).IsOk);
         await WaitUntil(() => State(c, project) is { Known: true, Summary.Untracked: 1 }, "the overview");

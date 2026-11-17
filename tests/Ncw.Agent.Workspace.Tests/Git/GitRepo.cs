@@ -14,6 +14,9 @@ public sealed class GitRepo : IDisposable
         if (init)
         {
             Git("init", "-q", "-b", "main");
+            // 仓库级身份:被测的产品代码自己跑 git commit,拿不到上面给测试命令设的 GIT_AUTHOR_*;CI 机器上又没有全局身份(Linux CI 首跑时 commit 失败)
+            Git("config", "user.name", "Test");
+            Git("config", "user.email", "t@example.com");
         }
     }
 
