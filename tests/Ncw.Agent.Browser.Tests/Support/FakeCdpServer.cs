@@ -110,6 +110,7 @@ public sealed class FakeCdpServer : IAsyncDisposable
         Handle("Browser.setDownloadBehavior", "{}");
         Handle("Page.enable", "{}");
         Handle("Emulation.setDeviceMetricsOverride", "{}");
+        Handle("Emulation.setFocusEmulationEnabled", "{}");
         Handle("Page.getFrameTree", "{\"frameTree\":{\"frame\":{\"id\":\"F1\"}}}");
         Handle("Page.createIsolatedWorld", _ => $"{{\"executionContextId\":{Interlocked.Increment(ref _worlds)}}}");
         Handle("Page.handleJavaScriptDialog", "{}");
