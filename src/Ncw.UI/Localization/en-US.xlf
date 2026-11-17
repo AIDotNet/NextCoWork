@@ -937,14 +937,7 @@
     <unit id="UsageByProvider"><segment><source>By provider</source><target state="final">By provider</target></segment></unit>
     <unit id="UsageByModel"><segment><source>By model</source><target state="final">By model</target></segment></unit>
     <unit id="UsageRequestsCount"><segment><source>{0} requests</source><target state="final">{0} requests</target></segment></unit>
-    <unit id="UsageLogsTitle"><segment><source>Request log</source><target state="final">Request log</target></segment></unit>
-    <unit id="UsageLogsSearch"><segment><source>Search provider, model or run</source><target state="final">Search provider, model or run</target></segment></unit>
-    <unit id="UsageLogsStatus"><segment><source>Result</source><target state="final">Result</target></segment></unit>
-    <unit id="UsageLogAll"><segment><source>All</source><target state="final">All</target></segment></unit>
-    <unit id="UsageLogSuccess"><segment><source>Succeeded</source><target state="final">Succeeded</target></segment></unit>
-    <unit id="UsageLogFailed"><segment><source>Failed</source><target state="final">Failed</target></segment></unit>
-    <unit id="UsageLogsEmpty"><segment><source>No requests match.</source><target state="final">No requests match.</target></segment></unit>
-    <unit id="UsageLogsMore"><segment><source>Load more</source><target state="final">Load more</target></segment></unit>
+    <unit id="LoadMore"><segment><source>Load more</source><target state="final">Load more</target></segment></unit>
     <unit id="StorageStatsTitle"><segment><source>Data</source><target state="final">Data</target></segment></unit>
     <unit id="StorageDatabase"><segment><source>Database</source><target state="final">Database</target></segment></unit>
     <unit id="StorageConversations"><segment><source>Conversations</source><target state="final">Conversations</target></segment></unit>
@@ -1765,6 +1758,11 @@
     <unit id="GeneralAdvancedHint"><segment><source>Helper models, routing, compaction, limits, proxy</source><target state="final">Helper models, routing, compaction, limits, proxy</target></segment></unit>
     <unit id="SettingsSearch"><segment><source>Search settings</source><target state="final">Search settings</target></segment></unit>
     <unit id="SettingsSearchNoMatch"><segment><source>No setting matches</source><target state="final">No setting matches</target></segment></unit>
+    <unit id="SettingsExtensions"><segment><source>Extensions</source><target state="final">Extensions</target></segment></unit>
+    <unit id="SettingsConnection"><segment><source>Connection</source><target state="final">Connection</target></segment></unit>
+    <unit id="SettingsData"><segment><source>Data</source><target state="final">Data</target></segment></unit>
+    <unit id="SettingsProvidersCatalogHint"><segment><source>Sources and automatic updates</source><target state="final">Sources and automatic updates</target></segment></unit>
+    <unit id="ProviderDisabledShort"><segment><source>Disabled</source><target state="final">Disabled</target></segment></unit>
     <unit id="SidebarProjects"><segment><source>Projects</source><target state="final">Projects</target></segment></unit>
     <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="final">Show {0} more</target></segment></unit>
     <unit id="SidebarShowLess"><segment><source>Show less</source><target state="final">Show less</target></segment></unit>

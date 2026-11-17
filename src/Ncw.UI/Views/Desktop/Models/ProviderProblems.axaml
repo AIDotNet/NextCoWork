@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ProviderProblems"
+             x:DataType="vm:ModelsSettingsViewModel">
+  <!-- providers.json 里被跳过的坏条目 -->
+  <StackPanel IsVisible="{Binding HasProblems}" ui:NcwMotion.ShowMotion="Fade" Spacing="2">
+    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderProblems}" />
+    <ItemsControl ItemsSource="{Binding Problems}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ProviderProblemRow">
+          <TextBlock Classes="hint" Text="{Binding Detail}" TextWrapping="Wrap" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

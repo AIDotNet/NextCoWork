@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ProviderSummary"
+             x:DataType="vm:ProviderItemViewModel">
+  <!-- 一个供应商的摘要:名字和标签、地址、凭据(只有「有没有」和后四位)、模型数、上次连通性测试。手机卡片和桌面详情的页头共用 -->
+  <StackPanel Spacing="3">
+    <WrapPanel Orientation="Horizontal">
+      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0" />
+      <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" /></Border>
+      <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsOAuth}"><TextBlock Classes="hint" Text="{l:NcwText ProviderAccountLogin}" /></Border>
+      <Border Classes="chip" IsVisible="{Binding NeedsReauth}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderNeedsReauth}" /></Border>
+    </WrapPanel>
+    <TextBlock Classes="mono" Text="{Binding BaseUrl}" TextTrimming="CharacterEllipsis" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+    <WrapPanel Orientation="Horizontal">
+      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding HasLast4}"
+                 Text="{Binding Last4, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderKeyLast4}" />
+      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding AccountLabel, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding AccountLabel}" />
+      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding !HasCredential}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderNoKey}" />
+      <TextBlock Classes="hint"
+                 Text="{Binding ModelCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderModelCount}" />
+    </WrapPanel>
+    <TextBlock Classes="hint" IsVisible="{Binding HasTest}"
+               Text="{Binding TestInfo, Converter={x:Static cv:TestResultTextConverter.Instance}}" />
+  </StackPanel>
+</UserControl>

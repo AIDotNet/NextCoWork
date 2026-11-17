@@ -214,7 +214,7 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding MoreRunsCommand}" IsVisible="{Binding HasMoreRuns}" Content="{l:NcwText UsageLogsMore}" />
+              <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding MoreRunsCommand}" IsVisible="{Binding HasMoreRuns}" Content="{l:NcwText LoadMore}" />
               <!-- 详情 -->
               <Border Classes="notice" IsVisible="{Binding RunDetail, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
                 <StackPanel Spacing="4">

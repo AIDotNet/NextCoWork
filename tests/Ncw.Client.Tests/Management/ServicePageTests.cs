@@ -65,16 +65,11 @@ public sealed class UsagePageTests
         kit.Usage.Buckets.AddRange([FakeUsage.Bucket("2026-11-13"), FakeUsage.Bucket("2026-11-14", requests: 5)]);
         kit.Usage.Providers.Add(new UsageDimensionStatDto("anthropic", "Anthropic", 10, 9, 1000, 500, 0, 0, 0, 800, 300, 0, 0, [new UsageCostTotalDto("USD", 1_500_000)]));
         kit.Usage.Models.Add(new UsageDimensionStatDto("sonnet", "sonnet", 10, 9, 1000, 500, 0, 0, 0, 800, 300, 0, 0, []));
-        for (var i = 0; i < 60; i++)
-        {
-            kit.Usage.Logs.Add(FakeUsage.Attempt("a" + i, ok: i % 5 != 0));
-        }
-
         return kit;
     }
 
     [Fact]
-    public async Task A_viewer_can_read_summary_providers_models_series_and_the_first_page_of_logs()
+    public async Task A_viewer_can_read_summary_providers_models_and_series()
     {
         var kit = Seeded();
         await kit.Pages.Usage.ActivateAsync();
@@ -88,8 +83,6 @@ public sealed class UsagePageTests
         Assert.Equal("$1.50", page.Providers[0].Cost);
         Assert.Null(page.Models[0].Cost); // 查不到价格 = 未知,不是 $0
         Assert.Equal(30, page.Series.Count);
-        Assert.Equal(UsageViewModel.LogPageSize, page.Logs.Count);
-        Assert.True(page.HasMoreLogs);
         Assert.True(page.IsReadOnly == false);
     }
 
@@ -130,25 +123,6 @@ public sealed class UsagePageTests
         offline.Rig.SetConnection(DeviceConnection.Offline);
         Assert.Equal(PageState.Unknown, offline.Pages.Usage.State);
         Assert.Null(offline.Pages.Usage.Summary);
-    }
-
-    [Fact]
-    public async Task Log_paging_appends_and_search_or_status_resets_the_page()
-    {
-        var kit = Seeded();
-        await kit.Pages.Usage.ActivateAsync();
-        await Task.Delay(30);
-        var page = kit.Pages.Usage;
-
-        await page.MoreLogsCommand.ExecuteAsync(null);
-        Assert.Equal(60, page.Logs.Count);
-        Assert.False(page.HasMoreLogs);
-        Assert.Equal(UsageViewModel.LogPageSize, kit.Usage.LogQueries.Last().Offset);
-
-        page.LogStatus = "failed";
-        await Task.Delay(30);
-        Assert.All(page.Logs, l => Assert.False(l.Ok));
-        Assert.Equal(0, kit.Usage.LogQueries.Last().Offset);
     }
 }
 

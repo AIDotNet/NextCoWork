@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
 using Ncw.Protocol.Methods;
 
@@ -116,21 +115,15 @@ public static class UsageView
 /// <summary>供应商 / 模型的一行统计。</summary>
 public sealed record UsageStatRow(string Id, string Label, long Requests, double? SuccessRate, long Tokens, string? Cost, double? AverageLatencyMs, double Share);
 
-/// <summary>请求日志的一行。</summary>
-public sealed record UsageLogRow(string Id, DateTimeOffset At, string Provider, string Model, bool Ok, string? ErrorKind, int? HttpStatus, long InputTokens, long OutputTokens, int LatencyMs, string? Cost, bool ThinkingEstimated);
-
 /// <summary>
-/// 设置 · 设备 · 用量(<c>usage.*</c>,只读,viewer 起):汇总、按供应商 / 模型、日序列图、请求日志(分页 + 搜索 + 成败过滤)。
+/// 设置 · 设备 · 用量(<c>usage.*</c>,只读,viewer 起):汇总、按供应商 / 模型、日序列图(只做用量统计,没有逐条的请求日志)。
 /// 数据来自设备上的库,不进 Store:这一页自己的状态。切换范围 / 设备时迟到的旧结果被丢弃。设备断开 = 未知。
 /// </summary>
 public sealed partial class UsageViewModel : ManagementPageViewModel
 {
-    public const int LogPageSize = 50;
-
     private readonly IUsageCommands _commands;
     private readonly TimeProvider _clock;
     private long _version;
-    private long _logsVersion;
 
     public UsageViewModel(SettingsScope scope, IUsageCommands commands, TimeProvider clock) : base(scope, Need.Viewer)
     {
@@ -180,7 +173,6 @@ public sealed partial class UsageViewModel : ManagementPageViewModel
         Providers.Clear();
         Models.Clear();
         Series = [];
-        Logs.Clear();
     }
 
     protected override async Task LoadAsync()
@@ -227,7 +219,6 @@ public sealed partial class UsageViewModel : ManagementPageViewModel
         RebuildSeries();
         Ready();
         OnPropertyChanged(string.Empty);
-        _ = LoadLogsAsync(reset: true);
     }
 
     private static void Fill(ObservableCollection<UsageStatRow> target, UsageDimensionStatDto[] stats)
@@ -251,73 +242,4 @@ public sealed partial class UsageViewModel : ManagementPageViewModel
 
     /// <summary>费用图且有多个币种:出币种选择(币种不相加)。</summary>
     public bool ShowsCostPicker => Metric == UsageMetric.Cost && Currencies.Count > 1;
-
-    // ───────────────────────── 请求日志 ─────────────────────────
-
-    public ObservableCollection<UsageLogRow> Logs { get; } = [];
-
-    [ObservableProperty] public partial string LogQuery { get; set; } = "";
-
-    /// <summary><c>all</c> / <c>success</c> / <c>failed</c>。</summary>
-    [ObservableProperty] public partial string LogStatus { get; set; } = "all";
-
-    [ObservableProperty] public partial long LogsTotal { get; private set; }
-
-    [ObservableProperty] public partial bool LogsLoading { get; private set; }
-
-    [ObservableProperty] public partial Failure? LogsFailure { get; private set; }
-
-    public bool HasMoreLogs => Logs.Count < LogsTotal;
-
-    public bool LogsEmpty => !LogsLoading && LogsFailure is null && Logs.Count == 0;
-
-    partial void OnLogStatusChanged(string value) => _ = LoadLogsAsync(reset: true);
-
-    [RelayCommand]
-    private Task SearchLogsAsync() => LoadLogsAsync(reset: true);
-
-    [RelayCommand]
-    private Task MoreLogsAsync() => LoadLogsAsync(reset: false);
-
-    private async Task LoadLogsAsync(bool reset)
-    {
-        if (Scope.DeviceId is not { } device || !Scope.IsConnected)
-        {
-            return;
-        }
-
-        var version = Interlocked.Increment(ref _logsVersion);
-        if (reset)
-        {
-            Logs.Clear();
-        }
-
-        LogsLoading = true;
-        LogsFailure = null;
-        var window = UsageView.Window(Range, _clock.GetUtcNow(), TimeZoneInfo.Local);
-        var query = LogQuery.Trim();
-        var result = await _commands.GetRequestLogsAsync(device, new UsageLogsQuery(window.From, window.To, query.Length == 0 ? null : query, LogStatus, Logs.Count, LogPageSize));
-        if (version != _logsVersion || !IsCurrent(device))
-        {
-            return;
-        }
-
-        LogsLoading = false;
-        if (!result.IsOk)
-        {
-            LogsFailure = Failure.Of(result);
-        }
-        else
-        {
-            LogsTotal = result.Value!.Total;
-            foreach (var a in result.Value.Items)
-            {
-                Logs.Add(new UsageLogRow(a.Id, DateTimeOffset.FromUnixTimeMilliseconds(a.At), a.ProviderName, a.Alias, a.Ok, a.ErrorKind, a.HttpStatus, a.InputTokens, a.OutputTokens,
-                    a.LatencyMs, a.CostMicros is { } m && a.Currency is { Length: > 0 } c ? UsageView.Money(c, m) : null, a.ThinkingTokensEstimated));
-            }
-        }
-
-        OnPropertyChanged(nameof(HasMoreLogs));
-        OnPropertyChanged(nameof(LogsEmpty));
-    }
 }

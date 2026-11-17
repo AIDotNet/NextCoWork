@@ -4,9 +4,10 @@ using Ncw.Core.Domain;
 namespace Ncw.Agent.Storage.Tests;
 
 /// <summary>
-/// 用量查询与按日汇总。移植自 2.x 的 <c>db/__tests__/usage.test.ts</c>(明细日志、会话逐次账目、汇总与供应商 / 模型统计、工具计数回写)
+/// 用量查询与按日汇总。移植自 2.x 的 <c>db/__tests__/usage.test.ts</c>(明细落库、会话逐次账目、汇总与供应商 / 模型统计、工具计数回写)
 /// 和 <c>usage-rollup.test.ts</c>(汇总 = 直查原表、幂等、乱序到达、分桶、NULL 与 0 分得开、币种不相加、回写之后仍一致、日桶 / 活跃度)。
-/// 差异:时区由测试注入(<see cref="TimeZoneInfo"/>),不依赖机器本地时区,所以这些用例在任何机器上结果一样。
+/// 差异:3.0 不做逐条的请求日志(只做用量统计),2.x 里针对日志查询的分页 / 搜索 / 成败过滤用例不移植,落库与窗口的断言改走会话逐次账目和汇总。
+/// 时区由测试注入(<see cref="TimeZoneInfo"/>),不依赖机器本地时区,所以这些用例在任何机器上结果一样。
 /// </summary>
 public sealed class UsageTests : IDisposable
 {
@@ -53,7 +54,7 @@ public sealed class UsageTests : IDisposable
     // ───────────────────────── usage.test.ts ─────────────────────────
 
     [Fact]
-    public void Stores_detailed_attempt_metadata_and_returns_filtered_paged_logs()
+    public void Stores_detailed_attempt_metadata_including_failures()
     {
         Put("a", 1_000);
         Put("b", 2_000, r => r with
@@ -63,10 +64,7 @@ public sealed class UsageTests : IDisposable
             TimeToFirstTokenMs = null, CostMicros = null, Currency = null,
         });
 
-        var page = _usage.Logs(new UsageLogsQuery(new UsageWindow(500, 3_000), "fallback", "failed", Limit: 10));
-
-        Assert.Equal(1, page.Total);
-        var item = Assert.Single(page.Items);
+        var item = _usage.SessionAttempts("session-1").Single(r => !r.Ok);
         Assert.Equal(("b", "Fallback Cloud", 429, "rate_limit", "too many requests"), (item.Id, item.ProviderName, item.HttpStatus, item.ErrorKind, item.ErrorMessage));
     }
 
@@ -117,37 +115,20 @@ public sealed class UsageTests : IDisposable
         Assert.True(_usage.UpdateToolsForRun("shared-run", 2, 1));
         Assert.False(_usage.UpdateToolsForRun("missing-run", 1, 1));
 
-        var items = _usage.Logs(new UsageLogsQuery(new UsageWindow(0, 4_000), Limit: 10)).Items;
+        var items = _usage.SessionAttempts("session-1");
         Assert.Equal((2, 1), (items.Single(r => r.Id == "tool-turn").ToolCalls, items.Single(r => r.Id == "tool-turn").ToolErrors));
         Assert.Equal((0, 0), (items.Single(r => r.Id == "final-turn").ToolCalls, items.Single(r => r.Id == "final-turn").ToolErrors));
     }
 
     [Fact]
-    public void Log_paging_is_a_total_order_even_for_attempts_in_the_same_millisecond()
+    public void The_window_includes_its_start_and_excludes_its_end()
     {
-        for (var i = 0; i < 5; i++)
-        {
-            Put($"id{i}", 1_000);
-        }
-
-        var first = _usage.Logs(new UsageLogsQuery(new UsageWindow(null, 2_000), Offset: 0, Limit: 2));
-        var second = _usage.Logs(new UsageLogsQuery(new UsageWindow(null, 2_000), Offset: 2, Limit: 2));
-        var third = _usage.Logs(new UsageLogsQuery(new UsageWindow(null, 2_000), Offset: 4, Limit: 2));
-
-        Assert.Equal(5, first.Total);
-        Assert.Equal(["id4", "id3", "id2", "id1", "id0"], first.Items.Concat(second.Items).Concat(third.Items).Select(r => r.Id));
-    }
-
-    [Fact]
-    public void The_window_includes_its_start_and_excludes_its_end_and_the_search_is_a_literal_substring()
-    {
+        Put("before", 999);
         Put("in", 1_000);
         Put("end", 2_000);
-        Put("percent", 1_500, r => r with { Alias = "100%_cheap" });
 
-        Assert.Equal(["percent", "in"], _usage.Logs(new UsageLogsQuery(new UsageWindow(1_000, 2_000))).Items.Select(r => r.Id));
-        // % 和 _ 在 LIKE 里是通配符;这里是字面子串:搜 "0%_" 只命中带这串字符的那一条
-        Assert.Equal(["percent"], _usage.Logs(new UsageLogsQuery(new UsageWindow(null, 3_000), "0%_")).Items.Select(r => r.Id));
+        Assert.Equal(1, _usage.Summary(new UsageWindow(1_000, 2_000)).RequestCount);
+        Assert.Equal(2, _usage.Summary(new UsageWindow(null, 2_000)).RequestCount);
     }
 
     [Fact]
@@ -159,7 +140,7 @@ public sealed class UsageTests : IDisposable
 
         var summary = _usage.Summary(new UsageWindow(null, 2_000));
         Assert.Equal([new UsageCostTotal("CNY", 7_000_000), new UsageCostTotal("USD", 1_000_000)], summary.Costs);
-        Assert.Null(_usage.Logs(new UsageLogsQuery(new UsageWindow(null, 2_000), "unknown")).Items.Single().CostMicros);
+        Assert.Null(_usage.SessionAttempts("session-1").Single(r => r.Id == "unknown").CostMicros);
     }
 
     // ───────────────────────── usage-rollup.test.ts ─────────────────────────

@@ -107,6 +107,12 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
 
     [ObservableProperty] public partial bool IsExpanded { get; set; }
 
+    /// <summary>在桌面设置页的列表栏里被选中(从 <see cref="ModelsSettingsViewModel.SelectedProviderId"/> 派生)。</summary>
+    [ObservableProperty] public partial bool IsSelected { get; set; }
+
+    [RelayCommand]
+    private void Select() => owner.SelectedProviderId = Id;
+
     [ObservableProperty] public partial TestResult TestInfo { get; private set; } = new(TestState.None, null, null);
 
     public bool HasTest => TestInfo.State != TestState.None;
@@ -376,7 +382,40 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     {
         _credentialsRequested.Clear();
         _settingsFor = null;
+        SelectedProviderId = null;
         Refresh();
+    }
+
+    /// <summary>桌面设置页列表栏里选中的供应商(纯 UI 状态);null = 「模型目录」。供应商没了就回到模型目录。</summary>
+    [ObservableProperty] public partial string? SelectedProviderId { get; set; }
+
+    /// <summary>选中的供应商(详情区显示它)。</summary>
+    public ProviderItemViewModel? SelectedProvider => SelectedProviderId is { } id ? Providers.FirstOrDefault(p => p.Id == id) : null;
+
+    /// <summary>详情区显示模型目录(没选供应商)。</summary>
+    public bool ShowsCatalog => SelectedProvider is null;
+
+    partial void OnSelectedProviderIdChanged(string? value) => SyncSelection();
+
+    /// <summary>列表栏的「模型目录」项。</summary>
+    [RelayCommand]
+    private void SelectCatalog() => SelectedProviderId = null;
+
+    private void SyncSelection()
+    {
+        if (SelectedProviderId is { } id && Providers.All(p => p.Id != id))
+        {
+            SelectedProviderId = null; // 再进来一次
+            return;
+        }
+
+        foreach (var provider in Providers)
+        {
+            provider.IsSelected = provider.Id == SelectedProviderId;
+        }
+
+        OnPropertyChanged(nameof(SelectedProvider));
+        OnPropertyChanged(nameof(ShowsCatalog));
     }
 
     private void Refresh()
@@ -454,6 +493,7 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasProviders));
+        SyncSelection();
         Problems.Clear();
         foreach (var problem in mirror.Problems)
         {
@@ -643,6 +683,11 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
                 _credentialsRequested.Remove(id);
                 Providers.FirstOrDefault(p => p.Id == id)?.Let(p => p.Last4 = set.Value?.Last4);
+            }
+
+            if (Editor.IsNew && Providers.Any(p => p.Id == id))
+            {
+                SelectedProviderId = id; // 新建的供应商:直接选中它(列表栏)
             }
 
             Editor.IsOpen = false;

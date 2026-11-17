@@ -434,7 +434,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `settings.project.get` / `settings.project.update` | query / command | member / owner | 项目设置(执行环境、权限规则、指令、激活的 Skill 等) |
 | `settings.proxy.setPassword` | command | owner,**仅本机** | 代理密码存 NCK1,`DeviceSettingsDto` 里只有 `HasPassword` |
 
-**用量**(只读,viewer):`usage.getSummary`、`getRequestLogs`(分页、搜索、成败过滤)、`getSessionAttempts`、`getProviderStats`、`getModelStats`、`getDailySeries`、`getActivityStats`。费用 `null` = 未知,**永不当 0**,币种之间不相加;日汇总 `usage_daily` 按整天重算、按写入顺序的水位线增量刷新,查询前先刷一次(没有定时刷新)。
+**用量**(只读,viewer):`usage.getSummary`、`getSessionAttempts`、`getProviderStats`、`getModelStats`、`getDailySeries`、`getActivityStats`。费用 `null` = 未知,**永不当 0**,币种之间不相加;日汇总 `usage_daily` 按整天重算、按写入顺序的水位线增量刷新,查询前先刷一次(没有定时刷新)。**不提供逐条的请求日志**(只做用量统计):`usage_records` 只作为汇总、统计和会话费用核算的原始数据,不对控制端分页列出。
 
 **定时任务**。规则沿用 2.x:`once` / `daily` / `weekly` + 重复窗口(不是 cron),IANA 时区,时钟可注入。运行经 `RunRegistry`,`RunOrigin.Scheduled`,权限 `full`,所以**所有写方法都是 owner**。目标(goal)不进定时任务。
 

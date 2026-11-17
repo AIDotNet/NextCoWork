@@ -97,11 +97,6 @@ public class ManagementScreenshotTests
             new UsageDimensionStatDto("haiku", "claude-haiku", 40, 38, 300_000, 100_000, 100_000, 10_000, 5_000, 900, 300, 50, 2, [new UsageCostTotalDto("USD", 2_200_000)]),
             new UsageDimensionStatDto("gpt", "gpt", 54, 50, 420_000, 112_000, 180_000, 14_000, 11_000, 2_200, 700, 88, 4, []),
         ]);
-        for (var i = 0; i < 12; i++)
-        {
-            kit.Usage.Logs.Add(FakeUsage.Attempt("log" + i, ok: i != 3, alias: i % 3 == 0 ? "haiku" : "sonnet", at: Now.AddMinutes(-7 * i).ToUnixTimeMilliseconds()));
-        }
-
         kit.Gateway.Status = new GatewayStatusDto(true, 19836, "127.0.0.1", false, false,
             [new GatewayHealthDto("anthropic", true, 0.99, 0, null, 840, null, 0), new GatewayHealthDto("openai", false, 0.4, 3, null, null, "HTTP 429", 0)], null);
         kit.Settings.Push(kit.Stores.Settings.State.Of(ManagementRig.Device).Settings! with { Gateway = new GatewaySettingsDto(true, false, 19836) }, 2);
@@ -476,20 +471,34 @@ public class ManagementScreenshotTests
         Assert.True(Overlay(host).IsCompact);
         host.Shell.Settings.ShowCommand.Execute(SettingsSection.Hooks);
         Dispatch(8);
-        // 所有分区排在一个滚动区里:选中「Hooks」= 导航选中它、滚动区滚到它(它的顶边在可见区域里),其他分区仍在,只是滚出去了
+        // 一次只显示一个分区(07 §3 方案 D):Hooks 在「扩展」下,列表栏列出扩展的五个子分区,内容区只有 Hooks
         Assert.Equal(SettingsSection.Hooks, Overlay(host).SelectedSection);
+        Assert.Equal(SettingsPage.Extensions, host.Shell.Settings.Page);
+        Assert.Equal([SettingsSection.Skills, SettingsSection.Commands, SettingsSection.Hooks, SettingsSection.Mcp, SettingsSection.Plugins],
+            host.Shell.Settings.SubSections.Select(s => s.Section));
         var hooks = Assert.Single(Find<HooksPage>(host));
-        var top = hooks.TranslatePoint(new Avalonia.Point(0, 0), host.Window)!.Value.Y;
-        Assert.InRange(top, 0, host.Window.Bounds.Height / 2);
-        Assert.NotEmpty(Find<GeneralSettingsPage>(host));
+        Assert.InRange(hooks.TranslatePoint(new Avalonia.Point(0, 0), host.Window)!.Value.Y, 0, host.Window.Bounds.Height / 2);
+        Assert.Empty(Find<GeneralSettingsPage>(host));
 
-        // 靠后的分区(插件)也滚得到:分区内容刚排好时导航会按位置选到别的分区,要被拨回来
+        // 点导航「数据」再点回「扩展」:回到扩展里上次看的 Hooks
+        host.Shell.Settings.ShowPageCommand.Execute(SettingsPage.Data);
+        Dispatch(4);
+        Assert.Equal(SettingsSection.Usage, Overlay(host).SelectedSection);
+        host.Shell.Settings.ShowPageCommand.Execute(SettingsPage.Extensions);
+        Dispatch(4);
+        Assert.Equal(SettingsSection.Hooks, Overlay(host).SelectedSection);
+
         host.Shell.Settings.ShowCommand.Execute(SettingsSection.Plugins);
         Dispatch(10);
         Assert.Equal(SettingsSection.Plugins, Overlay(host).SelectedSection);
-        Assert.Equal(SettingsSection.Plugins, host.Shell.Settings.Section);
-        var plugins = Assert.Single(Find<PluginsPage>(host));
-        Assert.InRange(plugins.TranslatePoint(new Avalonia.Point(0, 0), host.Window)!.Value.Y, -plugins.Bounds.Height + 1, host.Window.Bounds.Height - 1);
+        Assert.Single(Find<PluginsPage>(host));
+        Assert.Empty(Find<HooksPage>(host));
+
+        // 只有一个分区的导航项(通用)没有列表栏
+        host.Shell.Settings.ShowPageCommand.Execute(SettingsPage.General);
+        Dispatch(4);
+        Assert.False(host.Shell.Settings.ShowsList);
+        Assert.False(host.Window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "ListColumn").IsEffectivelyVisible);
 
         var wide = Render(Typical[0], 1500, true);
         Assert.False(Overlay(wide).IsCompact);

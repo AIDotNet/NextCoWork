@@ -937,14 +937,7 @@
     <unit id="UsageByProvider"><segment><source>By provider</source><target state="translated">按供应商</target></segment></unit>
     <unit id="UsageByModel"><segment><source>By model</source><target state="translated">按模型</target></segment></unit>
     <unit id="UsageRequestsCount"><segment><source>{0} requests</source><target state="translated">{0} 次请求</target></segment></unit>
-    <unit id="UsageLogsTitle"><segment><source>Request log</source><target state="translated">请求日志</target></segment></unit>
-    <unit id="UsageLogsSearch"><segment><source>Search provider, model or run</source><target state="translated">搜索供应商、模型或 Run</target></segment></unit>
-    <unit id="UsageLogsStatus"><segment><source>Result</source><target state="translated">结果</target></segment></unit>
-    <unit id="UsageLogAll"><segment><source>All</source><target state="translated">全部</target></segment></unit>
-    <unit id="UsageLogSuccess"><segment><source>Succeeded</source><target state="translated">成功</target></segment></unit>
-    <unit id="UsageLogFailed"><segment><source>Failed</source><target state="translated">失败</target></segment></unit>
-    <unit id="UsageLogsEmpty"><segment><source>No requests match.</source><target state="translated">没有符合的请求。</target></segment></unit>
-    <unit id="UsageLogsMore"><segment><source>Load more</source><target state="translated">加载更多</target></segment></unit>
+    <unit id="LoadMore"><segment><source>Load more</source><target state="translated">加载更多</target></segment></unit>
     <unit id="StorageStatsTitle"><segment><source>Data</source><target state="translated">数据</target></segment></unit>
     <unit id="StorageDatabase"><segment><source>Database</source><target state="translated">数据库</target></segment></unit>
     <unit id="StorageConversations"><segment><source>Conversations</source><target state="translated">会话</target></segment></unit>
@@ -1765,6 +1758,11 @@
     <unit id="GeneralAdvancedHint"><segment><source>Helper models, routing, compaction, limits, proxy</source><target state="translated">辅助模型、路由、压缩、上限、代理</target></segment></unit>
     <unit id="SettingsSearch"><segment><source>Search settings</source><target state="translated">搜索设置</target></segment></unit>
     <unit id="SettingsSearchNoMatch"><segment><source>No setting matches</source><target state="translated">没有匹配的设置</target></segment></unit>
+    <unit id="SettingsExtensions"><segment><source>Extensions</source><target state="translated">扩展</target></segment></unit>
+    <unit id="SettingsConnection"><segment><source>Connection</source><target state="translated">连接</target></segment></unit>
+    <unit id="SettingsData"><segment><source>Data</source><target state="translated">数据</target></segment></unit>
+    <unit id="SettingsProvidersCatalogHint"><segment><source>Sources and automatic updates</source><target state="translated">来源与自动更新</target></segment></unit>
+    <unit id="ProviderDisabledShort"><segment><source>Disabled</source><target state="translated">已停用</target></segment></unit>
     <unit id="SidebarProjects"><segment><source>Projects</source><target state="translated">项目</target></segment></unit>
     <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="translated">显示更多 ({0})</target></segment></unit>
     <unit id="SidebarShowLess"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>

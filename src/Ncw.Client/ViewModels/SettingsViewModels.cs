@@ -67,7 +67,10 @@ public enum SettingsSection
     Notifications,
 }
 
-/// <summary>设置页:整窗覆盖在外壳上,左侧导航 + 内容区。打开与否、当前分组是纯 UI 状态。</summary>
+/// <summary>
+/// 设置页:整窗覆盖在外壳上,三栏「导航 → 列表栏 → 内容」(docs/design/07 §3,方案 D)。打开与否、当前分区是纯 UI 状态;
+/// 当前导航项、列表栏里的子分区都从 <see cref="Section"/> 派生(<see cref="SettingsNav"/>)。
+/// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     public SettingsViewModel(ClientStores stores, DeviceRegistry devices, DeviceActions actions, ModelsSettingsViewModel models, ManagementPages pages, AccountViewModel? account = null, AboutViewModel? about = null)
@@ -81,6 +84,20 @@ public sealed partial class SettingsViewModel : ObservableObject
         Remote = new RemoteSettingsViewModel(stores, devices, actions);
         Models = models;
         Pages = pages;
+        // 设备切换器只有一份(导航「设备」分组下):模型页跟随它
+        Pages.Scope.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SettingsScope.DeviceId) && Pages.Scope.DeviceId is { } device)
+            {
+                Models.DeviceId = device;
+            }
+        };
+        if (Pages.Scope.DeviceId is { } initial)
+        {
+            Models.DeviceId = initial;
+        }
+
+        RebuildSubSections();
     }
 
     /// <summary>设备 / 项目作用域的管理页(通用、项目、技能、命令、Hooks、MCP、用量、存储、网关)。</summary>
@@ -123,8 +140,45 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public bool IsAppearanceSection => Section == SettingsSection.Appearance;
 
+    /// <summary>当前导航项(从 <see cref="Section"/> 派生)。</summary>
+    public SettingsPage Page => SettingsNav.PageOf(Section);
+
+    /// <summary>列表栏里的子分区;只有一个分区的导航项为空。</summary>
+    public ObservableCollection<SettingsSubItem> SubSections { get; } = [];
+
+    /// <summary>当前导航项有列表栏(子分区,或模型与供应商的供应商列表)。</summary>
+    public bool ShowsList => SettingsNav.HasList(Page);
+
+    /// <summary>列表栏是子分区列表。</summary>
+    public bool ShowsSubSections => SubSections.Count > 1;
+
+    /// <summary>列表栏是供应商列表(模型与供应商)。</summary>
+    public bool ShowsProviderList => Page == SettingsPage.Models;
+
+    /// <summary>每个导航项这次打开设置以后最后看的分区(点导航项回到那里;纯 UI 状态)。</summary>
+    private readonly Dictionary<SettingsPage, SettingsSection> _lastSection = [];
+
+    private void RebuildSubSections()
+    {
+        var sections = SettingsNav.SectionsOf(Page);
+        SubSections.Clear();
+        if (sections.Count > 1)
+        {
+            foreach (var section in sections)
+            {
+                SubSections.Add(new SettingsSubItem(section, section == Section));
+            }
+        }
+    }
+
     partial void OnSectionChanged(SettingsSection value)
     {
+        _lastSection[SettingsNav.PageOf(value)] = value;
+        RebuildSubSections();
+        OnPropertyChanged(nameof(Page));
+        OnPropertyChanged(nameof(ShowsList));
+        OnPropertyChanged(nameof(ShowsSubSections));
+        OnPropertyChanged(nameof(ShowsProviderList));
         OnPropertyChanged(nameof(IsAboutSection));
         OnPropertyChanged(nameof(IsAppearanceSection));
         OnPropertyChanged(nameof(IsDevicesSection));
@@ -141,8 +195,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly HashSet<SettingsSection> _activated = [];
 
     /// <summary>
-    /// 分区成为当前分区时读它的数据——每次打开设置只读一次。设置页把所有分区排在一个滚动区里(docs/design/07),
-    /// 滚动途中「当前分区」会来回经过同一个分区,不能每经过一次就重读(会把刚出的结果、包括失败的提示,换成又一次读取)。
+    /// 分区成为当前分区时读它的数据——每次打开设置只读一次(来回切换分区不重读,不会把刚出的结果、包括失败的提示,换成又一次读取)。
     /// 网关的密钥照旧在离开网关时收起。重新打开设置会全部重读。
     /// </summary>
     private void Activate(SettingsSection section)
@@ -175,6 +228,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void Open()
     {
         _activated.Clear();
+        _lastSection.Clear();
         Devices.Refresh();
         IsOpen = true;
         Activate(Section);
@@ -190,6 +244,11 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void Show(SettingsSection section) => Section = section;
+
+    /// <summary>点导航项:回到这个导航项上次看的分区,没看过就是它的第一个分区。</summary>
+    [RelayCommand]
+    private void ShowPage(SettingsPage page) =>
+        Section = _lastSection.TryGetValue(page, out var last) ? last : SettingsNav.SectionsOf(page)[0];
 
     // ───────────────────────── 搜索(docs/design/03 §11.6)─────────────────────────
 

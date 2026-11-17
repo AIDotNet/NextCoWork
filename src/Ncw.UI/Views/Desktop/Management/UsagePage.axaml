@@ -11,7 +11,7 @@
              x:Class="Ncw.UI.Views.Desktop.Management.UsagePage"
              x:DataType="vm:UsageViewModel">
   <!--
-    设置 · 设备 · 用量(usage.*,只读,viewer 起):汇总、日序列图(Arc 柱状图,颜色全部来自 Arc 图表调色板)、按供应商 / 模型、请求日志(分页)。
+    设置 · 设备 · 用量(usage.*,只读,viewer 起):汇总、日序列图(Arc 柱状图,颜色全部来自 Arc 图表调色板)、按供应商 / 模型。只做用量统计,没有逐条的请求日志。
     费用为 null = 未知(不是 0),不同币种分开不相加;部分请求没能计价时在图下面说明。
   -->
   <UserControl.Styles>
@@ -111,46 +111,6 @@
           <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:UsageStatRow"><m:UsageStatRowView /></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <!-- 请求日志 -->
-        <TextBlock Classes="sectionTitle" Margin="0,8,0,0" Text="{l:NcwText UsageLogsTitle}" />
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-          <ui:NcwSearchField Text="{Binding LogQuery, Mode=TwoWay}" PlaceholderText="{l:NcwText UsageLogsSearch}" />
-          <ui:NcwSelect Grid.Column="1" ChoiceSet="LogStatus" MinWidth="120" SelectedValue="{Binding LogStatus, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText UsageLogsStatus}" />
-          <ui:NcwButton Grid.Column="2" Variant="Secondary" Command="{Binding SearchLogsCommand}" Content="{l:NcwText Search}" />
-        </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding LogsLoading}" ui:NcwMotion.ShowMotion="Fade">
-          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
-          <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
-        </StackPanel>
-        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding LogsFailure, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade" Text="{Binding LogsFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
-        <TextBlock Classes="hint" IsVisible="{Binding LogsEmpty}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText UsageLogsEmpty}" />
-        <ItemsControl ItemsSource="{Binding Logs}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:UsageLogRow">
-              <Border BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}" Padding="0,7">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <ui:NcwStatusDot VerticalAlignment="Top" Margin="0,6,0,0" Tone="{Binding Ok, Converter={x:Static cv:BoolToneConverter.Instance}}" />
-                  <StackPanel Grid.Column="1" Spacing="1">
-                    <WrapPanel Orientation="Horizontal" ItemSpacing="8">
-                      <TextBlock Text="{Binding Model}" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Provider}" />
-                    </WrapPanel>
-                    <WrapPanel Orientation="Horizontal" ItemSpacing="10">
-                      <TextBlock Classes="hint" Text="{Binding At, Converter={x:Static cv:DateTimeTextConverter.Instance}}" />
-                      <TextBlock Classes="hint">
-                        <Run Text="{Binding InputTokens, Converter={x:Static cv:CompactNumberConverter.Instance}}" /><Run Text=" → " /><Run Text="{Binding OutputTokens, Converter={x:Static cv:CompactNumberConverter.Instance}}" />
-                      </TextBlock>
-                      <TextBlock Classes="hint" Text="{Binding LatencyMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
-                      <TextBlock Classes="hint" IsVisible="{Binding ErrorKind, Converter={x:Static ObjectConverters.IsNotNull}}" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{Binding ErrorKind}" />
-                    </WrapPanel>
-                  </StackPanel>
-                  <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Top" Text="{Binding Cost, TargetNullValue=—}" />
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding MoreLogsCommand}" IsVisible="{Binding HasMoreLogs}" Content="{l:NcwText UsageLogsMore}" />
       </StackPanel>
     </StackPanel>
   </StackPanel>

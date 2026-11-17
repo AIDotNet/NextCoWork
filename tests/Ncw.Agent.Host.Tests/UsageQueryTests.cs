@@ -94,23 +94,15 @@ public sealed class UsageQueryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Logs_filter_by_text_and_status_and_the_window_is_half_open()
+    public async Task The_window_is_half_open_and_an_inverted_window_is_rejected()
     {
         await RunAsync("claude-test-0", 100, 10);
         await RunAsync("claude-test-1", 200, 20);
-
-        var all = await _owner.CallAsync(UsageMethods.GetRequestLogs, new UsageLogsQuery(null, long.MaxValue / 2, Limit: 10));
-        Assert.Equal(2, all.Total);
-
-        var one = await _owner.CallAsync(UsageMethods.GetRequestLogs, new UsageLogsQuery(null, long.MaxValue / 2, Query: "claude-test-1"));
-        Assert.Equal("claude-test-1", Assert.Single(one.Items).UpstreamModel);
-        Assert.Equal(0, (await _owner.CallAsync(UsageMethods.GetRequestLogs, new UsageLogsQuery(null, long.MaxValue / 2, Status: "failed"))).Total);
 
         var at = Origin.ToUnixTimeMilliseconds();
         Assert.Equal(2, (await _owner.CallAsync(UsageMethods.GetSummary, new UsageWindowDto(at, at + 1))).RequestCount);  // 含起点
         Assert.Equal(0, (await _owner.CallAsync(UsageMethods.GetSummary, new UsageWindowDto(at - 5, at))).RequestCount);  // 不含终点
         Assert.Equal(ErrorCodes.InvalidRequest, (await Assert.ThrowsAsync<ProtocolException>(() => _owner.CallAsync(UsageMethods.GetSummary, new UsageWindowDto(10, 5)))).Code);
-        Assert.Equal(ErrorCodes.InvalidRequest, (await Assert.ThrowsAsync<ProtocolException>(() => _owner.CallAsync(UsageMethods.GetRequestLogs, new UsageLogsQuery(null, 10, Status: "nope")))).Code);
     }
 
     [Fact]

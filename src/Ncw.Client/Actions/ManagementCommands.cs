@@ -96,8 +96,6 @@ public interface IUsageCommands
 {
     Task<ActionResult<UsageSummaryDto>> GetSummaryAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default);
 
-    Task<ActionResult<UsageLogsPage>> GetRequestLogsAsync(string deviceId, UsageLogsQuery query, CancellationToken ct = default);
-
     Task<ActionResult<UsageDimensionStatsResult>> GetProviderStatsAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default);
 
     Task<ActionResult<UsageDimensionStatsResult>> GetModelStatsAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default);

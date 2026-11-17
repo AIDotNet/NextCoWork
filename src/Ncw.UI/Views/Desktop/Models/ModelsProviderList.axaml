@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ModelsProviderList"
+             x:DataType="vm:ModelsSettingsViewModel">
+  <!--
+    设置页「模型与供应商」的列表栏(docs/design/07 §3,方案 D):第一项「模型目录」,下面是供应商(状态点 + 名字 + 一行摘要)。
+    选中项是纯 UI 状态 SelectedProviderId(null = 模型目录);详情在内容区(ModelsDetail)。
+  -->
+  <StackPanel Spacing="2">
+    <ui:PlainButton x:Name="CatalogItem" Classes="listItem" Classes.active="{Binding ShowsCatalog}" Command="{Binding SelectCatalogCommand}">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="Library" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <StackPanel Grid.Column="1" Spacing="1">
+          <TextBlock Text="{l:NcwText CatalogTitle}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="hint" TextTrimming="CharacterEllipsis" Text="{l:NcwText SettingsProvidersCatalogHint}" />
+        </StackPanel>
+      </Grid>
+    </ui:PlainButton>
+
+    <Grid ColumnDefinitions="*,Auto" Margin="10,12,4,2">
+      <TextBlock Classes="listGroup" Text="{l:NcwText ProvidersTitle}" VerticalAlignment="Center" />
+      <ui:NcwButton x:Name="AddProviderButton" Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding NewProviderCommand}" IsVisible="{Binding CanEdit}"
+                    AutomationProperties.Name="{l:NcwText AddProvider}" arc:Tooltip.Tip="{l:NcwText AddProvider}">
+        <lucide:LucideIcon Kind="Plus" Size="14" />
+      </ui:NcwButton>
+    </Grid>
+    <TextBlock Classes="hint" Margin="10,4" TextWrapping="Wrap" Text="{l:NcwText NoProviders}" IsVisible="{Binding !HasProviders}" />
+    <ItemsControl x:Name="ProviderItems" ItemsSource="{Binding Providers}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Spacing="2" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ProviderItemViewModel">
+          <ui:PlainButton Classes="listItem" Classes.active="{Binding IsSelected}" Command="{Binding SelectCommand}" arc:Tooltip.Tip="{Binding Name}">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Panel Width="15" VerticalAlignment="Center">
+                <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center"
+                        Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsEnabled}" />
+                <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center"
+                        BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}" IsVisible="{Binding !IsEnabled}" />
+              </Panel>
+              <StackPanel Grid.Column="1" Spacing="1">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="hint" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsEnabled}"
+                           Text="{Binding ModelCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderModelCount}" />
+                <TextBlock Classes="hint" IsVisible="{Binding !IsEnabled}" Text="{l:NcwText ProviderDisabledShort}" />
+              </StackPanel>
+            </Grid>
+          </ui:PlainButton>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

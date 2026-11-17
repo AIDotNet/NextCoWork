@@ -155,4 +155,42 @@ public class SettingsTests
         Assert.False(vm.Settings.Remote.IsAvailable);
         Snapshot(window, "settings-remote-unavailable");
     }
+
+    [AvaloniaFact]
+    public void Models_page_is_a_provider_list_with_the_selected_provider_on_the_right()
+    {
+        var (window, vm, stores) = Render();
+        stores.Workspace.Update(s => s with { Devices = s.Devices.SetItem("local", s.Devices["local"] with { Connection = DeviceConnection.Connected, Role = "owner" }) });
+        stores.Providers.Update(_ => new ProvidersMirror(ImmutableDictionary<string, DeviceProviders>.Empty.Add("local", DeviceProviders.Unknown with
+        {
+            Known = true,
+            Providers =
+            [
+                new ProviderDto("anthropic", "Anthropic", "anthropic", "https://api.anthropic.com", 10, true, "5m", null, false, null),
+                new ProviderDto("ollama", "Ollama", "openai-chat", "http://localhost:11434/v1", 20, false, "5m", null, false, null),
+            ],
+            Aliases = [new ModelAliasDto("sonnet", "anthropic", "claude-sonnet-4-5", 200_000, 64_000, "Claude Sonnet 4.5", null, null, null, true, true, [], null, null)],
+        })));
+        vm.Settings.OpenCommand.Execute(null);
+        vm.Settings.ShowPageCommand.Execute(SettingsPage.Models);
+        Dispatch();
+
+        var models = vm.Settings.Models;
+        Assert.True(models.IsAvailable);
+        Assert.True(vm.Settings.ShowsProviderList);
+        Assert.True(Overlay(window).GetVisualDescendants().OfType<Control>().Single(c => c.Name == "CatalogPane").IsEffectivelyVisible);
+        Snapshot(window, "settings-models-catalog");
+
+        // 点列表栏里的供应商:详情区换成它(摘要 + 操作 + 模型别名),目录收起
+        var row = window.GetVisualDescendants().OfType<Ncw.UI.Controls.PlainButton>().First(b => b.DataContext is ProviderItemViewModel { Id: "anthropic" });
+        row.Command!.Execute(null);
+        Dispatch();
+        Assert.Equal("anthropic", models.SelectedProvider?.Id);
+        Assert.Contains("active", row.Classes);
+        Assert.False(Overlay(window).GetVisualDescendants().OfType<Control>().Single(c => c.Name == "CatalogPane").IsEffectivelyVisible);
+        var detail = Overlay(window).GetVisualDescendants().OfType<Control>().Single(c => c.Name == "ProviderPane");
+        Assert.True(detail.IsEffectivelyVisible);
+        Assert.Contains(detail.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Claude Sonnet 4.5");
+        Snapshot(window, "settings-models-provider");
+    }
 }

@@ -528,21 +528,14 @@ public sealed class FakeUsage : IUsageCommands
 
     public List<UsageDailyBucketDto> Buckets { get; } = [];
 
-    public List<UsageAttemptDto> Logs { get; } = [];
-
     public ActionResult<UsageSummaryDto>? SummaryFailure { get; set; }
 
     public List<(UsageWindowDto Window, string Kind)> Calls { get; } = [];
-
-    public List<UsageLogsQuery> LogQueries { get; } = [];
 
     public Func<UsageWindowDto, Task>? Gate { get; set; }
 
     public static UsageDailyBucketDto Bucket(string day, long requests = 3, long input = 100, long output = 50, string currency = "USD", long? cost = 200_000, long priced = -1) =>
         new(day, "anthropic", "Anthropic", "sonnet", "sonnet", currency, requests, requests, input, output, 0, 0, 0, 0, cost, priced < 0 ? requests : priced, 0, 0, 0);
-
-    public static UsageAttemptDto Attempt(string id, bool ok = true, string alias = "sonnet", long at = 1_700_000_000_000) =>
-        new(id, at, "run", "ws", "s", 1, "anthropic", "Anthropic", "anthropic", "/v1/messages", alias, alias, null, 120, 40, 0, 0, 0, null, false, 800, 200, ok, ok ? 200 : 429, ok ? null : "rate_limited", null, null, 12_000, "USD", null, null, 0, 0);
 
     public async Task<ActionResult<UsageSummaryDto>> GetSummaryAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default)
     {
@@ -553,13 +546,6 @@ public sealed class FakeUsage : IUsageCommands
         }
 
         return SummaryFailure ?? R.Ok(Summary);
-    }
-
-    public Task<ActionResult<UsageLogsPage>> GetRequestLogsAsync(string deviceId, UsageLogsQuery query, CancellationToken ct = default)
-    {
-        LogQueries.Add(query);
-        var items = Logs.Where(l => query.Status is null or "all" || (query.Status == "success") == l.Ok).Skip(query.Offset).Take(query.Limit).ToArray();
-        return Task.FromResult(R.Ok(new UsageLogsPage(items, Logs.Count, query.Offset, query.Limit)));
     }
 
     public Task<ActionResult<UsageDimensionStatsResult>> GetProviderStatsAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default) =>

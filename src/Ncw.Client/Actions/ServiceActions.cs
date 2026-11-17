@@ -57,9 +57,6 @@ public sealed class UsageActions(DeviceRegistry devices) : IUsageCommands
     public Task<ActionResult<UsageSummaryDto>> GetSummaryAsync(string deviceId, UsageWindowDto window, CancellationToken ct = default) =>
         ServiceCall.RunAsync(devices, deviceId, link => link.CallAsync(UsageMethods.GetSummary, window, ct));
 
-    public Task<ActionResult<UsageLogsPage>> GetRequestLogsAsync(string deviceId, UsageLogsQuery query, CancellationToken ct = default) =>
-        ServiceCall.RunAsync(devices, deviceId, link => link.CallAsync(UsageMethods.GetRequestLogs, query, ct));
-
     public Task<ActionResult<UsageAttemptsResult>> GetSessionAttemptsAsync(string deviceId, string sessionId, CancellationToken ct = default) =>
         ServiceCall.RunAsync(devices, deviceId, link => link.CallAsync(UsageMethods.GetSessionAttempts, new UsageSessionRefParams(sessionId), ct));
 

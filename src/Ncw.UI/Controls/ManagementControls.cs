@@ -73,7 +73,6 @@ public static class ChoiceSets
         "HookScope" => Make("HookScope", "global", "project"),
         "McpTransport" => Make("McpTransport", "stdio", "streamable-http", "sse"),
         "ScheduleKind" => Make("SchedKind", "once", "daily", "weekly"),
-        "LogStatus" => Make("UsageLog", "all", "success", "failed"),
         "InstallScope" => Make("InstallScope", "global", "project"),
         "ProjectMode" => Make("ProjectMode", "code", "plan"),
         _ => [],

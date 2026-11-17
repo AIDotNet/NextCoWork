@@ -33,10 +33,6 @@ public sealed record UsageSummary(
     public double? CacheHitRate => InputTokens + CacheReadTokens == 0 ? null : (double)CacheReadTokens / (InputTokens + CacheReadTokens);
 }
 
-public sealed record UsageLogsQuery(UsageWindow Window, string? Query = null, string? Status = null, int Offset = 0, int Limit = 50);
-
-public sealed record UsageLogsPage(IReadOnlyList<UsageRow> Items, long Total, int Offset, int Limit);
-
 /// <summary>按供应商 / 模型的一行统计。</summary>
 public sealed record UsageDimensionStat(
     string Id,
@@ -127,38 +123,6 @@ public sealed partial class UsageRepository
         SELECT currency, SUM(cost_micros) FROM usage_records WHERE {where} AND cost_micros IS NOT NULL AND currency IS NOT NULL GROUP BY currency ORDER BY currency
         """, r => new UsageCostTotal(r.GetString(0), r.GetInt64(1)), args);
 
-    /// <summary>一次尝试一行的日志,按时间倒序分页(<c>at DESC, id DESC</c> 是全序,同毫秒的两条翻页不重复不漏)。</summary>
-    public UsageLogsPage Logs(UsageLogsQuery query)
-    {
-        var limit = Math.Clamp(query.Limit, 1, 200);
-        var offset = Math.Max(0, query.Offset);
-        var (where, windowArgs) = WindowWhere(query.Window);
-        var clauses = new List<string> { where };
-        var args = new List<(string, object?)>(windowArgs);
-        if (query.Query?.Trim() is { Length: > 0 } search)
-        {
-            // 在供应商名 / id、别名、上游模型、Run id 里做不区分大小写的子串匹配(instr,不用 LIKE:用户输入里的 % _ 不是通配符)。
-            clauses.Add("instr(lower(provider_name || ' ' || provider_id || ' ' || alias || ' ' || upstream_model || ' ' || run_id), lower($q)) > 0");
-            args.Add(("$q", search));
-        }
-
-        if (query.Status == "success")
-        {
-            clauses.Add("ok = 1");
-        }
-        else if (query.Status == "failed")
-        {
-            clauses.Add("ok = 0");
-        }
-
-        var whereAll = string.Join(" AND ", clauses);
-        var total = database.Count($"SELECT COUNT(*) FROM usage_records WHERE {whereAll}", [.. args]);
-        var items = database.Rows(
-            $"SELECT {Columns} FROM usage_records WHERE {whereAll} ORDER BY at DESC, id DESC LIMIT $limit OFFSET $offset", MapRow,
-            [.. args, ("$limit", limit), ("$offset", offset)]);
-        return new UsageLogsPage(items, total, offset, limit);
-    }
-
     /// <summary>一条会话的逐次账目(不分页:费用浮层逐模型核算整条会话,分页会漏算旧请求)。</summary>
     public IReadOnlyList<UsageRow> SessionAttempts(string sessionId) =>
         database.Rows($"SELECT {Columns} FROM usage_records WHERE session_id = $s ORDER BY at, id", MapRow, ("$s", sessionId));
@@ -199,7 +163,7 @@ public sealed partial class UsageRepository
 
 /// <summary>
 /// 按天 × 供应商 × 模型 × 币种的用量汇总(<c>usage_daily</c>,迁移 20;2.x 的 <c>usage-rollup.ts</c>)。设置页概览(指标卡、热力图、趋势、模型环形图、费用表)全读这张表,
-/// 原始的 <c>usage_records</c> 服务「请求日志」那半页。
+/// 原始的 <c>usage_records</c> 只服务汇总、供应商 / 模型统计和会话的逐次账目(没有逐条的请求日志)。
 /// <para>
 /// <b>按日整桶重算,不做行级增量累加</b>:<c>usage_records</c> 只增不删(清理与清空历史都不碰它),所以任何一天的桶一旦算出来就是终局;重算幂等,就没有理由维护会漂移的「上次加到哪了」。
 /// </para>

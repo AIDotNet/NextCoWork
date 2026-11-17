@@ -4,13 +4,13 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
-             xmlns:cv="using:Ncw.UI.Converters"
              xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:models="using:Ncw.UI.Views.Desktop.Models"
              x:Class="Ncw.UI.Views.Desktop.ModelsSettingsPage"
              x:DataType="vm:ModelsSettingsViewModel">
   <!--
-    设置 · 设备 · 模型与供应商(docs/design/07 §3):供应商列表 / 新建 / 编辑 / 启停、凭据(只写不读,只显示后四位)、模型别名、
-    模型目录状态与手动刷新、连通性测试、OAuth 进度。作用域是「设备」:顶部有设备切换器;设备断开时这一页只读。改动立即生效(经设备,结果经主题回到这里)。
+    设置 · 设备 · 模型与供应商的整页形式(手机设置的导航栈里用;桌面设置页是「列表栏 + 详情」,见 Models/ModelsProviderList、Models/ModelsDetail,docs/design/07 §3)。
+    供应商一张卡片,展开看操作和模型别名;作用域是「设备」:顶部有设备切换器;设备断开时这一页只读。改动立即生效(经设备,结果经主题回到这里)。
   -->
   <StackPanel Spacing="6">
     <StackPanel Spacing="2">
@@ -25,44 +25,7 @@
     <TextBlock Classes="hint" Margin="0,8,0,0" Text="{l:NcwText ModelsUnavailable}" IsVisible="{Binding !IsAvailable}" />
 
     <StackPanel IsVisible="{Binding IsAvailable}" Spacing="8">
-      <TextBlock Classes="hint" Text="{l:NcwText ModelsReadOnly}" IsVisible="{Binding !CanEdit}" Foreground="{arc:ArcDesignTokenResource Warning}" />
-
-      <!-- 操作失败 -->
-      <Border Classes="card danger" Padding="12,8" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-          <lucide:LucideIcon Kind="CircleAlert" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
-          <TextBlock Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Error, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
-          <ui:PlainButton Grid.Column="2" Width="24" Height="24" Command="{Binding DismissErrorCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
-            <lucide:LucideIcon Kind="X" Size="12" HorizontalAlignment="Center" />
-          </ui:PlainButton>
-        </Grid>
-      </Border>
-
-      <!-- 登录进度:授权页由控制端打开(设备可能在另一台电脑上) -->
-      <Border Classes="card attention" IsVisible="{Binding OAuth, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Rise">
-        <StackPanel Spacing="8" DataContext="{Binding OAuth}" x:DataType="vm:OAuthCardViewModel">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
-            <TextBlock FontWeight="SemiBold" VerticalAlignment="Center"
-                       Text="{Binding ProviderName, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=OAuthWaiting}" />
-          </StackPanel>
-          <TextBlock Classes="hint" Text="{l:NcwText OAuthHint}" />
-          <StackPanel Spacing="2" IsVisible="{Binding HasUserCode}">
-            <TextBlock Classes="hint" Text="{l:NcwText OAuthUserCode}" />
-            <SelectableTextBlock Text="{Binding UserCode}" FontSize="24" FontWeight="SemiBold" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" />
-          </StackPanel>
-          <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding AuthorizeUrl}" IsVisible="{Binding AuthorizeUrl, Converter={x:Static ObjectConverters.IsNotNull}}"
-                               Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-          <StackPanel IsVisible="{Binding NeedsPastedCode}" ui:NcwMotion.ShowMotion="Fade" Spacing="6">
-            <ui:NcwInput Text="{Binding PastedCode, Mode=TwoWay}" Label="{l:NcwText OAuthPasteCode}" />
-            <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" Command="{Binding SubmitCommand}" Content="{l:NcwText OAuthSubmit}" />
-          </StackPanel>
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton Margin="0,0,8,0" Variant="Primary" Command="{Binding OpenCommand}" Content="{l:NcwText OAuthOpenBrowser}" />
-            <ui:NcwButton Variant="Ghost" Command="{Binding CancelCommand}" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <models:ModelsNotices />
 
       <!-- 供应商 -->
       <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
@@ -75,65 +38,6 @@
         </ui:NcwButton>
       </Grid>
       <TextBlock Classes="hint" Text="{l:NcwText NoProviders}" IsVisible="{Binding !HasProviders}" ui:NcwMotion.ShowMotion="Fade" />
-
-      <!-- 新建 / 编辑表单 -->
-      <ui:NcwCollapsible IsOpen="{Binding Editor.IsOpen}">
-        <Border Classes="card">
-          <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:ProviderEditorViewModel">
-            <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText ProviderNewTitle}" />
-            <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText ProviderEditTitle}" />
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-              <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText ProviderName}" />
-              <ui:NcwInput Grid.Column="1" Text="{Binding Id, Mode=TwoWay}" Label="{l:NcwText ProviderId}" IsEnabled="{Binding IsNew}" />
-            </Grid>
-            <ui:NcwSelect x:Name="ProtocolSelect" Label="{l:NcwText ProviderProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
-            <ui:NcwInput Text="{Binding BaseUrl, Mode=TwoWay}" Label="{l:NcwText ProviderBaseUrl}" PlaceholderText="https://api.example.com" />
-            <!-- 密钥只写不读:留空 = 不改;保存后输入立即清空,列表只显示后四位 -->
-            <ui:NcwInput Text="{Binding ApiKey, Mode=TwoWay}" Label="{l:NcwText ProviderApiKey}" PasswordChar="•" Description="{l:NcwText ProviderApiKeyHint}" />
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="2">
-                <TextBlock Text="{l:NcwText ProviderEnabled}" />
-                <TextBlock Classes="hint" Text="{l:NcwText ProviderEnabledHint}" />
-              </StackPanel>
-              <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
-            </Grid>
-            <TextBlock IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
-                       Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
-            <WrapPanel Orientation="Horizontal">
-              <ui:NcwButton x:Name="SaveProviderButton" Margin="0,0,8,0" Variant="Primary" IsEnabled="{Binding CanSave}" Content="{l:NcwText Save}" />
-              <ui:NcwButton x:Name="CancelProviderButton" Variant="Ghost" Content="{l:NcwText Cancel}" />
-            </WrapPanel>
-          </StackPanel>
-        </Border>
-      </ui:NcwCollapsible>
-
-      <!-- 导入:从上游拉模型列表,勾选后整表替换这家的别名 -->
-      <ui:NcwCollapsible IsOpen="{Binding Import.IsOpen}">
-        <Border Classes="card">
-          <StackPanel Spacing="8" DataContext="{Binding Import}" x:DataType="vm:ImportModelsViewModel">
-            <TextBlock FontWeight="SemiBold" Text="{Binding ProviderName, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ImportModelsTitle}" />
-            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}" ui:NcwMotion.ShowMotion="Fade">
-              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
-              <TextBlock Classes="hint" Text="{l:NcwText ImportModelsLoading}" />
-            </StackPanel>
-            <TextBlock IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
-                       Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
-            <ScrollViewer MaxHeight="260">
-              <ItemsControl ItemsSource="{Binding Models}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:FetchedModelViewModel">
-                    <ui:NcwCheckbox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Id}" Margin="0,2" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-            <WrapPanel Orientation="Horizontal">
-              <ui:NcwButton x:Name="ApplyImportButton" Margin="0,0,8,0" Variant="Primary" Content="{l:NcwText ImportModelsApply}" />
-              <ui:NcwButton x:Name="CloseImportButton" Variant="Ghost" Content="{l:NcwText Cancel}" />
-            </WrapPanel>
-          </StackPanel>
-        </Border>
-      </ui:NcwCollapsible>
 
       <ItemsControl ItemsSource="{Binding Providers}">
         <ItemsControl.ItemsPanel>
@@ -150,26 +54,7 @@
                           Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsEnabled}" />
                   <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Top" Margin="0,7,0,0"
                           BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}" IsVisible="{Binding !IsEnabled}" />
-                  <StackPanel Grid.Column="1" Spacing="3">
-                    <WrapPanel Orientation="Horizontal">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0" />
-                      <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" /></Border>
-                      <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsOAuth}"><TextBlock Classes="hint" Text="{l:NcwText ProviderAccountLogin}" /></Border>
-                      <Border Classes="chip" IsVisible="{Binding NeedsReauth}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderNeedsReauth}" /></Border>
-                    </WrapPanel>
-                    <TextBlock Classes="mono" Text="{Binding BaseUrl}" TextTrimming="CharacterEllipsis" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                    <WrapPanel Orientation="Horizontal">
-                      <!-- 凭据:只有「有没有」和后四位,明文从不出现在界面 -->
-                      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding HasLast4}"
-                                 Text="{Binding Last4, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderKeyLast4}" />
-                      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding AccountLabel, Converter={x:Static ObjectConverters.IsNotNull}}" Text="{Binding AccountLabel}" />
-                      <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding !HasCredential}" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderNoKey}" />
-                      <TextBlock Classes="hint"
-                                 Text="{Binding ModelCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderModelCount}" />
-                    </WrapPanel>
-                    <TextBlock Classes="hint" IsVisible="{Binding HasTest}"
-                               Text="{Binding TestInfo, Converter={x:Static cv:TestResultTextConverter.Instance}}" />
-                  </StackPanel>
+                  <models:ProviderSummary Grid.Column="1" />
                   <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Top">
                     <ui:NcwSwitch Margin="0,0,6,0" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
                                   AutomationProperties.Name="{l:NcwText ProviderEnabled}" arc:Tooltip.Tip="{l:NcwText ProviderEnabled}" />
@@ -180,102 +65,16 @@
                 </Grid>
                 <!-- 展开:操作 + 模型别名 -->
                 <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
-                <StackPanel Margin="14,0,14,12" Spacing="8">
-                  <!-- 常用的两三个直接放;退出登录、删除密钥、删除供应商这些少用 / 危险的收进「⋯」(删除标红放最后,03 §11.6) -->
-                  <WrapPanel Orientation="Horizontal">
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding TestCommand}" Content="{l:NcwText ProviderTest}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding SignInCommand}" IsVisible="{Binding IsOAuth}" Content="{l:NcwText ProviderSignIn}" />
-                    <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" Content="{l:NcwText ProviderImportModels}" />
-                    <ui:NcwDropdownMenu Margin="0,0,6,6" DataContextChanged="OnProviderMenuDataContext">
-                      <ui:NcwDropdownMenu.Trigger>
-                        <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
-                          <lucide:LucideIcon Kind="Ellipsis" Size="16" />
-                        </ui:NcwButton>
-                      </ui:NcwDropdownMenu.Trigger>
-                    </ui:NcwDropdownMenu>
-                  </WrapPanel>
-                  <TextBlock Classes="hint" Text="{l:NcwText ProviderNoModels}" IsVisible="{Binding !HasModels}" />
-                  <ItemsControl ItemsSource="{Binding Aliases}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:AliasItemViewModel">
-                        <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" Margin="0,4">
-                          <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                          <WrapPanel Grid.Row="1" Orientation="Horizontal">
-                            <TextBlock Classes="mono" Margin="0,0,8,0" Text="{Binding Upstream}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                            <Border Classes="chip" Margin="0,0,4,0"><TextBlock Classes="hint" Text="{Binding WindowText}" /></Border>
-                            <Border Classes="chip" Margin="0,0,4,0" IsVisible="{Binding SupportsImages}"><TextBlock Classes="hint" Text="{l:NcwText ModelVision}" /></Border>
-                            <Border Classes="chip" IsVisible="{Binding CanThink}"><TextBlock Classes="hint" Text="{l:NcwText ModelThinking}" /></Border>
-                          </WrapPanel>
-                          <ui:NcwSwitch Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
-                          <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RenameCommand}" AutomationProperties.Name="{l:NcwText Rename}" arc:Tooltip.Tip="{l:NcwText Rename}">
-                              <lucide:LucideIcon Kind="Pencil" Size="13" />
-                            </ui:NcwButton>
-                            <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RemoveCommand}" AutomationProperties.Name="{l:NcwText ProviderRemove}" arc:Tooltip.Tip="{l:NcwText ProviderRemove}">
-                              <lucide:LucideIcon Kind="Trash2" Size="13" />
-                            </ui:NcwButton>
-                          </StackPanel>
-                        </Grid>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </StackPanel></ui:NcwCollapsible>
+                  <models:ProviderDetail Margin="14,0,14,12" />
+                </ui:NcwCollapsible>
               </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <!-- providers.json 里被跳过的坏条目 -->
-      <StackPanel IsVisible="{Binding HasProblems}" ui:NcwMotion.ShowMotion="Fade" Spacing="2">
-        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderProblems}" />
-        <ItemsControl ItemsSource="{Binding Problems}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ProviderProblemRow">
-              <TextBlock Classes="hint" Text="{Binding Detail}" TextWrapping="Wrap" />
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
+      <models:ProviderProblems />
 
-      <!-- 模型目录(models.dev) -->
-      <TextBlock Classes="sectionTitle" Text="{l:NcwText CatalogTitle}" />
-      <Border Classes="card">
-        <StackPanel Spacing="10">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <StackPanel Spacing="3">
-              <WrapPanel Orientation="Horizontal">
-                <TextBlock Margin="0,0,10,0" Text="{Binding CatalogSource, Converter={x:Static cv:CatalogSourceTextConverter.Instance}}" FontWeight="SemiBold" />
-                <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding CatalogFetchedAt, Converter={x:Static cv:CatalogUpdatedConverter.Instance}}" />
-              </WrapPanel>
-              <TextBlock Classes="hint">
-                <Run Text="{Binding CatalogModels}" /><Run Text=" " /><Run Text="{l:NcwText CatalogModelsUnit}" /><Run Text=" · " /><Run Text="{Binding CatalogProviders}" /><Run Text=" " /><Run Text="{l:NcwText CatalogProvidersUnit}" />
-              </TextBlock>
-              <TextBlock Classes="hint" IsVisible="{Binding RefreshOutcome, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
-                         Text="{Binding RefreshOutcome, Converter={x:Static cv:RefreshOutcomeTextConverter.Instance}}" />
-              <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding CatalogErrorKey, Converter={x:Static ObjectConverters.IsNotNull}}"
-                         Text="{l:NcwText CatalogLastError}" />
-            </StackPanel>
-            <ui:NcwButton Grid.Column="1" Variant="Secondary" VerticalAlignment="Top" Command="{Binding RefreshCatalogCommand}" IsEnabled="{Binding CanEdit}" IsLoading="{Binding IsRefreshing}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <lucide:LucideIcon Kind="RefreshCw" Size="14" VerticalAlignment="Center" />
-                <TextBlock Text="{l:NcwText CatalogRefreshNow}" />
-              </StackPanel>
-            </ui:NcwButton>
-          </Grid>
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:NcwText CatalogAutoUpdate}" />
-              <TextBlock Classes="hint" Text="{l:NcwText CatalogAutoUpdateHint}" />
-            </StackPanel>
-            <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AutoUpdate, Mode=TwoWay}" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="{l:NcwText CatalogAutoUpdate}" />
-          </Grid>
-          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding AutoUpdate}">
-            <TextBlock Text="{l:NcwText CatalogInterval}" VerticalAlignment="Center" />
-            <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="1" Maximum="168" Step="1" UseGrouping="False" Value="{Binding IntervalHoursValue}"
-                               IsEnabled="{Binding CanEdit}" AutomationProperties.Name="{l:NcwText CatalogInterval}" />
-          </Grid>
-        </StackPanel>
-      </Border>
+      <models:ModelsCatalogCard />
     </StackPanel>
   </StackPanel>
 </UserControl>

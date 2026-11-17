@@ -44,7 +44,6 @@ internal static class ServiceHandlers
 
         // usage
         router.Handle(UsageMethods.GetSummary, (p, _, _) => ServiceMapping.Guard(() => ServiceMapping.ToDto(services().Usage.Summary(Window(p)))));
-        router.Handle(UsageMethods.GetRequestLogs, (p, _, _) => ServiceMapping.Guard(() => RequestLogs(services(), p)));
         router.Handle(UsageMethods.GetSessionAttempts, (p, _, _) => ServiceMapping.Guard(() =>
             new UsageAttemptsResult([.. services().Usage.SessionAttempts(p.SessionId).Select(ServiceMapping.ToDto)])));
         router.Handle(UsageMethods.GetProviderStats, (p, _, _) => ServiceMapping.Guard(() =>
@@ -96,17 +95,6 @@ internal static class ServiceHandlers
         }
 
         return ServiceMapping.FromDto(w);
-    }
-
-    private static UsageLogsPage RequestLogs(DeviceServices s, UsageLogsQuery q)
-    {
-        if (q.Status is not (null or "all" or "success" or "failed"))
-        {
-            throw ServiceMapping.Invalid("usage.invalid.status", $"Unknown status filter '{q.Status}'.");
-        }
-
-        var page = s.Usage.Logs(new Ncw.Agent.Storage.UsageLogsQuery(Window(new UsageWindowDto(q.From, q.To)), q.Query, q.Status, q.Offset, q.Limit));
-        return new UsageLogsPage([.. page.Items.Select(ServiceMapping.ToDto)], page.Total, page.Offset, page.Limit);
     }
 
     /// <summary>查询前先刷一次汇总(幂等):刚聊完就打开统计页也看得到新数字。</summary>

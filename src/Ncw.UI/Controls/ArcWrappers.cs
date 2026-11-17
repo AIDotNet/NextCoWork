@@ -90,24 +90,6 @@ public class NcwTreeView : TKCode.Arc.TreeView
     protected override Type StyleKeyOverride => typeof(TKCode.Arc.TreeView);
 }
 
-/// <summary>
-/// 竖向的分区导航(Arc 的 <c>FluidTabControl</c>):左边是导航,右边一个滚动区按顺序放着所有分区;
-/// 点导航滚到对应分区,滚动时导航跟着当前分区走。设置页用它(docs/design/07 §172)。
-/// </summary>
-public class NcwSideNav : TKCode.Arc.FluidTabControl
-{
-    protected override Type StyleKeyOverride => typeof(TKCode.Arc.FluidTabControl);
-}
-
-/// <summary>
-/// <see cref="NcwSideNav"/> 的一项:导航里的图标 + 文字,和它在滚动区里的那一段内容。
-/// 加 <c>group</c> 类、设为不可用,就是一个分组标题(导航里一行小字,内容里一段标题;键盘跳过、不能选中)。
-/// </summary>
-public class NcwSideNavItem : TKCode.Arc.FluidTabItem
-{
-    protected override Type StyleKeyOverride => typeof(TKCode.Arc.FluidTabItem);
-}
-
 /// <summary>Arc 下拉菜单(右侧面板的「+」)。</summary>
 public class NcwDropdownMenu : TKCode.Arc.DropdownMenu
 {

@@ -31,7 +31,7 @@ public sealed record UsageSummaryDto(
     long ToolErrors,
     UsageCostTotalDto[] Costs);
 
-/// <summary>一次上游尝试的账目(日志的一行)。只含计量和路由元数据:提示词、响应、凭据、请求头从不进用量记录。</summary>
+/// <summary>一次上游尝试的账目(会话费用核算的一行)。只含计量和路由元数据:提示词、响应、凭据、请求头从不进用量记录。</summary>
 /// <param name="Protocol"><c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c> / <c>unknown</c>。</param>
 public sealed record UsageAttemptDto(
     string Id,
@@ -67,13 +67,6 @@ public sealed record UsageAttemptDto(
     string? PricingWindow,
     int ToolCalls,
     int ToolErrors);
-
-/// <param name="Query">在供应商名 / id、别名、上游模型、Run id 里做不区分大小写的子串匹配。</param>
-/// <param name="Status"><c>all</c>(缺省)/ <c>success</c> / <c>failed</c>。</param>
-/// <param name="Limit">1–200,缺省 50。</param>
-public sealed record UsageLogsQuery(long? From, long To, string? Query = null, string? Status = null, int Offset = 0, int Limit = 50);
-
-public sealed record UsageLogsPage(UsageAttemptDto[] Items, long Total, int Offset, int Limit);
 
 public sealed record UsageSessionRefParams(string SessionId);
 
@@ -147,9 +140,6 @@ public static class UsageMethods
     public static readonly MethodDef<UsageWindowDto, UsageSummaryDto> GetSummary =
         MethodTable.Query<UsageWindowDto, UsageSummaryDto>("usage.getSummary", Role.Viewer, Capabilities.Usage);
 
-    public static readonly MethodDef<UsageLogsQuery, UsageLogsPage> GetRequestLogs =
-        MethodTable.Query<UsageLogsQuery, UsageLogsPage>("usage.getRequestLogs", Role.Viewer, Capabilities.Usage);
-
     /// <summary>一条会话的逐次账目(不分页:费用浮层逐模型核算整条会话,分页会漏算旧请求)。</summary>
     public static readonly MethodDef<UsageSessionRefParams, UsageAttemptsResult> GetSessionAttempts =
         MethodTable.Query<UsageSessionRefParams, UsageAttemptsResult>("usage.getSessionAttempts", Role.Viewer, Capabilities.Usage);
@@ -168,15 +158,13 @@ public static class UsageMethods
         MethodTable.Query<Unit, UsageActivityStatsDto>("usage.getActivityStats", Role.Viewer, Capabilities.Usage);
 
     public static readonly IReadOnlyList<MethodDef> All =
-        [GetSummary, GetRequestLogs, GetSessionAttempts, GetProviderStats, GetModelStats, GetDailySeries, GetActivityStats];
+        [GetSummary, GetSessionAttempts, GetProviderStats, GetModelStats, GetDailySeries, GetActivityStats];
 }
 
 [GenerateShapeFor<UsageWindowDto>]
 [GenerateShapeFor<UsageCostTotalDto>]
 [GenerateShapeFor<UsageSummaryDto>]
 [GenerateShapeFor<UsageAttemptDto>]
-[GenerateShapeFor<UsageLogsQuery>]
-[GenerateShapeFor<UsageLogsPage>]
 [GenerateShapeFor<UsageSessionRefParams>]
 [GenerateShapeFor<UsageAttemptsResult>]
 [GenerateShapeFor<UsageDimensionStatDto>]

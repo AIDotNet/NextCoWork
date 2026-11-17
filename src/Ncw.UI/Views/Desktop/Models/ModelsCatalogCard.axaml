@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ModelsCatalogCard"
+             x:DataType="vm:ModelsSettingsViewModel">
+  <!-- 模型目录(models.dev):来源、上次更新、模型数,立即更新,自动更新与间隔 -->
+  <StackPanel Spacing="8">
+    <!-- 模型目录(models.dev) -->
+    <TextBlock Classes="sectionTitle" Text="{l:NcwText CatalogTitle}" />
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <StackPanel Spacing="3">
+            <WrapPanel Orientation="Horizontal">
+              <TextBlock Margin="0,0,10,0" Text="{Binding CatalogSource, Converter={x:Static cv:CatalogSourceTextConverter.Instance}}" FontWeight="SemiBold" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding CatalogFetchedAt, Converter={x:Static cv:CatalogUpdatedConverter.Instance}}" />
+            </WrapPanel>
+            <TextBlock Classes="hint">
+              <Run Text="{Binding CatalogModels}" /><Run Text=" " /><Run Text="{l:NcwText CatalogModelsUnit}" /><Run Text=" · " /><Run Text="{Binding CatalogProviders}" /><Run Text=" " /><Run Text="{l:NcwText CatalogProvidersUnit}" />
+            </TextBlock>
+            <TextBlock Classes="hint" IsVisible="{Binding RefreshOutcome, Converter={x:Static ObjectConverters.IsNotNull}}" ui:NcwMotion.ShowMotion="Fade"
+                       Text="{Binding RefreshOutcome, Converter={x:Static cv:RefreshOutcomeTextConverter.Instance}}" />
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding CatalogErrorKey, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{l:NcwText CatalogLastError}" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="1" Variant="Secondary" VerticalAlignment="Top" Command="{Binding RefreshCatalogCommand}" IsEnabled="{Binding CanEdit}" IsLoading="{Binding IsRefreshing}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="RefreshCw" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText CatalogRefreshNow}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:NcwText CatalogAutoUpdate}" />
+            <TextBlock Classes="hint" Text="{l:NcwText CatalogAutoUpdateHint}" />
+          </StackPanel>
+          <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AutoUpdate, Mode=TwoWay}" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="{l:NcwText CatalogAutoUpdate}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding AutoUpdate}">
+          <TextBlock Text="{l:NcwText CatalogInterval}" VerticalAlignment="Center" />
+          <ui:NcwNumberField Grid.Column="1" Width="150" Minimum="1" Maximum="168" Step="1" UseGrouping="False" Value="{Binding IntervalHoursValue}"
+                             IsEnabled="{Binding CanEdit}" AutomationProperties.Name="{l:NcwText CatalogInterval}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

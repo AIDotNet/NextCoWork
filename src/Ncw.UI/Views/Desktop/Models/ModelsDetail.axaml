@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:models="using:Ncw.UI.Views.Desktop.Models"
+             x:Class="Ncw.UI.Views.Desktop.Models.ModelsDetail"
+             x:DataType="vm:ModelsSettingsViewModel">
+  <!--
+    设置页「模型与供应商」的详情区(docs/design/07 §3,方案 D):顶部是和选中项无关的提示与表单(只读、失败、OAuth、新建 / 编辑、导入),
+    下面是选中的供应商(摘要 + 启停 + 操作 + 模型别名),没选供应商时是模型目录。设备切换器在设置导航的「设备」分组下,这里不再放。
+  -->
+  <StackPanel Spacing="8">
+    <StackPanel Spacing="2">
+      <TextBlock Text="{l:NcwText SettingsModels}" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" />
+      <TextBlock Classes="hint" Text="{l:NcwText SettingsModelsHint}" />
+    </StackPanel>
+
+    <TextBlock Classes="hint" Margin="0,8,0,0" Text="{l:NcwText ModelsUnavailable}" IsVisible="{Binding !IsAvailable}" />
+
+    <StackPanel IsVisible="{Binding IsAvailable}" Spacing="8">
+      <models:ModelsNotices />
+
+      <!-- 选中的供应商 -->
+      <StackPanel x:Name="ProviderPane" IsVisible="{Binding !ShowsCatalog}" Spacing="8" Margin="0,8,0,0">
+        <Border Classes="card" DataContext="{Binding SelectedProvider}" x:DataType="vm:ProviderItemViewModel">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <models:ProviderSummary />
+              <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Top" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
+                            AutomationProperties.Name="{l:NcwText ProviderEnabled}" arc:Tooltip.Tip="{l:NcwText ProviderEnabled}" />
+            </Grid>
+            <models:ProviderDetail />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- 没选供应商:模型目录 -->
+      <models:ModelsCatalogCard x:Name="CatalogPane" IsVisible="{Binding ShowsCatalog}" Margin="0,8,0,0" />
+
+      <models:ProviderProblems />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

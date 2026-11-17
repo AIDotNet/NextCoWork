@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ProviderDetail"
+             x:DataType="vm:ProviderItemViewModel">
+  <!-- 一个供应商的操作和模型别名(手机卡片展开后、桌面详情区共用)。
+       常用的两三个直接放;退出登录、删除密钥、删除供应商这些少用 / 危险的收进「⋯」(删除标红放最后,03 §11.6) -->
+  <StackPanel Spacing="8">
+    <WrapPanel Orientation="Horizontal">
+      <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding TestCommand}" Content="{l:NcwText ProviderTest}" />
+      <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding SignInCommand}" IsVisible="{Binding IsOAuth}" Content="{l:NcwText ProviderSignIn}" />
+      <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" Content="{l:NcwText ProviderImportModels}" />
+      <ui:NcwDropdownMenu Margin="0,0,6,6" DataContextChanged="OnProviderMenuDataContext">
+        <ui:NcwDropdownMenu.Trigger>
+          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+            <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+          </ui:NcwButton>
+        </ui:NcwDropdownMenu.Trigger>
+      </ui:NcwDropdownMenu>
+    </WrapPanel>
+    <TextBlock Classes="hint" Text="{l:NcwText ProviderNoModels}" IsVisible="{Binding !HasModels}" />
+    <ItemsControl ItemsSource="{Binding Aliases}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:AliasItemViewModel">
+          <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" Margin="0,4">
+            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <WrapPanel Grid.Row="1" Orientation="Horizontal">
+              <TextBlock Classes="mono" Margin="0,0,8,0" Text="{Binding Upstream}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <Border Classes="chip" Margin="0,0,4,0"><TextBlock Classes="hint" Text="{Binding WindowText}" /></Border>
+              <Border Classes="chip" Margin="0,0,4,0" IsVisible="{Binding SupportsImages}"><TextBlock Classes="hint" Text="{l:NcwText ModelVision}" /></Border>
+              <Border Classes="chip" IsVisible="{Binding CanThink}"><TextBlock Classes="hint" Text="{l:NcwText ModelThinking}" /></Border>
+            </WrapPanel>
+            <ui:NcwSwitch Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
+            <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" VerticalAlignment="Center">
+              <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RenameCommand}" AutomationProperties.Name="{l:NcwText Rename}" arc:Tooltip.Tip="{l:NcwText Rename}">
+                <lucide:LucideIcon Kind="Pencil" Size="13" />
+              </ui:NcwButton>
+              <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RemoveCommand}" AutomationProperties.Name="{l:NcwText ProviderRemove}" arc:Tooltip.Tip="{l:NcwText ProviderRemove}">
+                <lucide:LucideIcon Kind="Trash2" Size="13" />
+              </ui:NcwButton>
+            </StackPanel>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>
