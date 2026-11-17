@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n'
 import { useV3UpgradeStore } from '../../stores/v3-upgrade'
 import { ReleaseNotesDialog } from './ReleaseNotesDialog'
 
-const POINTS = ['v3.point.data', 'v3.point.install', 'v3.point.pairing', 'v3.point.after'] as const
+const POINTS = ['v3.point.data', 'v3.point.install', 'v3.point.pairing', 'v3.point.after', 'v3.point.rollback'] as const
 
 export function V3UpgradeCard(): ReactNode {
   const { t } = useI18n()
