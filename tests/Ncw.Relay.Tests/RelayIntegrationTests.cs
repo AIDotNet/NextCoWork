@@ -409,7 +409,9 @@ public sealed class RelayIntegrationTests
         var forwarded = relay.Metrics.BytesToDevice;
         Assert.InRange(forwarded, 0, 40 * 1024 * 1024); // 中继转发出去的有上限(只有 TCP 缓冲那么多),不是 128 MiB
         await Task.Delay(500);
-        Assert.Equal(forwarded, relay.Metrics.BytesToDevice); // 没有继续涨:中继没有在内存里囤数据
+        // 没有继续涨:中继没有在内存里囤数据。Windows 的 TCP 发送 / 接收缓冲会自动调大,卡住之后还会再吞进去一两百 KiB(CI 上 196608 → 327680),
+        // 所以比的是「这半秒里只多了内核缓冲那么一点」,不是逐字节相等。
+        Assert.InRange(relay.Metrics.BytesToDevice - forwarded, 0, 4 * 1024 * 1024);
 
         release.SetResult(); // 设备恢复读取:发送方继续,直到全部到达
         await sender.WaitAsync(TimeSpan.FromSeconds(60));
