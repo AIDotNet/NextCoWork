@@ -56,6 +56,11 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
     /// <summary>「显示已归档」,纯 UI 状态。</summary>
     [ObservableProperty] public partial bool ShowArchived { get; set; }
 
+    /// <summary>
+    /// 当前打开的会话(不受搜索 / 「显示已归档」过滤):主工作区右上角「更多」菜单对它操作,和会话行的右键菜单走同一组意图。没有打开的会话时为 null。
+    /// </summary>
+    [ObservableProperty] public partial SessionItemViewModel? ActiveSession { get; private set; }
+
     /// <summary>这个项目有没有会话(不论是否被过滤掉):空状态和「没有匹配」要区分。</summary>
     [ObservableProperty] public partial bool HasAnySession { get; private set; }
 
@@ -105,6 +110,7 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
             HasProject = false;
             Sessions.Clear();
             Terminals.Clear();
+            ActiveSession = null;
             OnPropertyChanged(nameof(HasSessions));
             return;
         }
@@ -133,6 +139,10 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
                 SessionActivityView.PendingOf(s.Id, device?.Index, connection)))
             .ToList();
         Replace(Sessions, items);
+        ActiveSession = mine.FirstOrDefault(s => s.Id == selection.SessionId) is { } active
+            ? new SessionItemViewModel(active, SessionActivityView.Of(active.Id, device?.Index, connection), true, _rows,
+                SessionActivityView.PendingOf(active.Id, device?.Index, connection))
+            : null;
         OnPropertyChanged(nameof(HasSessions));
         OnPropertyChanged(nameof(ShowsEmptyHint));
         OnPropertyChanged(nameof(ShowsNoMatch));

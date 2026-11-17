@@ -55,13 +55,15 @@
           </ui:NcwButton>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
-            <lucide:LucideIcon Kind="Ellipsis" Size="16" />
-          </ui:NcwButton>
+          <!-- 更多菜单:当前会话的操作(和会话行右键菜单同一组意图)+ 几个全局命令;条目在 code-behind 里随当前会话 / 快捷键重建 -->
+          <ui:NcwDropdownMenu x:Name="MoreMenu">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+                <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+              </ui:NcwButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
           <!-- 上下文占用环在输入框的工具行里(docs/design/03 §6「输入框版式」),这里不再重复 -->
-          <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText SplitRight}" arc:Tooltip.Tip="{l:NcwText SplitRight}">
-            <lucide:LucideIcon Kind="Columns2" Size="16" />
-          </ui:NcwButton>
         </StackPanel>
       </Grid>
     </Border>

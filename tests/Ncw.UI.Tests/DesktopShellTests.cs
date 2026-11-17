@@ -169,6 +169,29 @@ public class DesktopShellTests
         Assert.True(vm.Inspector.IsGit);
     }
 
+    /// <summary>右上角「⋯」:当前会话的操作 + 全局命令;点「命令面板」走和 ⌘K 同一个入口。</summary>
+    [AvaloniaFact]
+    public void Clicking_more_opens_session_and_global_actions_and_runs_the_command()
+    {
+        var (window, shell, vm) = Render(1500);
+        var workspace = shell.FindControl<WorkspaceArea>("Workspace")!;
+        var menu = workspace.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("MoreMenu")!;
+        Assert.NotNull(vm.Panel.ActiveSession);
+
+        Click(window, menu);
+        Assert.True(menu.IsOpen);
+        Snapshot(window, "workspace-more-menu");
+
+        var entries = window.GetVisualDescendants().Concat(TopLevelPopups(window)).OfType<TKCode.Arc.MenuEntry>().ToList();
+        var headers = entries.Select(e => e.Header as string).ToList();
+        Assert.Contains(Ncw.UI.Localization.NcwTexts.Get(Ncw.UI.Localization.NcwTextKind.Rename), headers);
+        Assert.Contains(Ncw.UI.Localization.NcwTexts.Get(Ncw.UI.Localization.NcwTextKind.DeleteSession), headers);
+        var paletteTitle = Ncw.UI.Controls.ShortcutText.Title(Ncw.Client.Shortcuts.AppCommand.CommandPalette);
+        Click(window, entries.First(e => (e.Header as string) == paletteTitle));
+
+        Assert.True(vm.Palette.IsOpen);
+    }
+
     private static IEnumerable<Avalonia.Visual> TopLevelPopups(Window window) =>
         window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
             .Where(p => p.Child is not null)

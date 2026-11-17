@@ -75,7 +75,6 @@ public enum NcwTextKind
     ContextCardIdle,
     ContextCardCompact,
     ContextCardNothingToFold,
-    SplitRight,
     NewTab,
     CloseTab,
     AddAttachment,

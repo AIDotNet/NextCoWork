@@ -66,7 +66,6 @@
     <unit id="ContextCardIdle"><segment><source>The agent compacts the conversation on its own at {0}%.</source><target state="translated">用到 {0}% 时 Agent 会自动压缩对话。</target></segment></unit>
     <unit id="ContextCardCompact"><segment><source>Compact now</source><target state="translated">立即压缩</target></segment></unit>
     <unit id="ContextCardNothingToFold"><segment><source>Only the newest messages are left; there is nothing to compact.</source><target state="translated">只剩最新的几条消息,没有可以压缩的了。</target></segment></unit>
-    <unit id="SplitRight"><segment><source>Split right</source><target state="translated">向右分屏</target></segment></unit>
     <unit id="NewTab"><segment><source>New tab</source><target state="translated">新建标签页</target></segment></unit>
     <unit id="CloseTab"><segment><source>Close tab</source><target state="translated">关闭标签页</target></segment></unit>
     <unit id="AddAttachment"><segment><source>Add attachment</source><target state="translated">添加附件</target></segment></unit>

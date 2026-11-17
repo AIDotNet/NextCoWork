@@ -66,7 +66,6 @@
     <unit id="ContextCardIdle"><segment><source>The agent compacts the conversation on its own at {0}%.</source><target state="final">The agent compacts the conversation on its own at {0}%.</target></segment></unit>
     <unit id="ContextCardCompact"><segment><source>Compact now</source><target state="final">Compact now</target></segment></unit>
     <unit id="ContextCardNothingToFold"><segment><source>Only the newest messages are left; there is nothing to compact.</source><target state="final">Only the newest messages are left; there is nothing to compact.</target></segment></unit>
-    <unit id="SplitRight"><segment><source>Split right</source><target state="final">Split right</target></segment></unit>
     <unit id="NewTab"><segment><source>New tab</source><target state="final">New tab</target></segment></unit>
     <unit id="CloseTab"><segment><source>Close tab</source><target state="final">Close tab</target></segment></unit>
     <unit id="AddAttachment"><segment><source>Add attachment</source><target state="final">Add attachment</target></segment></unit>
