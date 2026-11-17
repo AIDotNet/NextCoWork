@@ -17,41 +17,33 @@
 | 数据 | profile 根 `~/.next-cowork`(Chromium 的 `Local State` 等在这一层),数据根是它下面的 `data/`(SQLite 主库、附件、settings.json、skills 等)。更早的打包版数据在 Electron 默认 userData 里,已由 2.x 自己迁过来。凭据大部分已经是 `NCK1` 自管加密,少量旧行可能仍是 safeStorage 密文 |
 | 强制更新 | `canStartNewRuns()` 在低于 minimumSupportedVersion 且超过宽限期时禁止新开 Run |
 
-## 2. 升级路径:经过桥接版本 2.9
+## 2. 升级路径:2.9 引导到 3.0
 
 ```
-  2.x(<2.9)──electron-updater──▶ 2.9 桥接版 ──自管安装──▶ 3.0(Avalonia + 内置 ncw-agent)──Velopack──▶ 3.x
+  2.x(<2.9)──electron-updater──▶ 2.9(引导)──用户从官网装 3.0──▶ 3.0(Avalonia + 内置 ncw-agent)──Velopack──▶ 3.x
 ```
 
 **服务端门控**:3.0 不进 electron-updater 的 feed(见下「为什么不直接把 3.0 放进 electron-updater 的 feed」),2.x 的 feed 里最新的就是 2.9,
 所以不需要按客户端版本门控(B1 不做)。2.9 通过 `GET /api/client/updates/v3/latest?channel=stable`(后端已实现,见 §7.4「后端」)得知各平台 3.0 的版本和安装包;
 签过名的清单原样在 `/api/client/updates/v3/{channel}/{rid}/release-manifest.json(.sig)`。
 
-### 2.9 桥接版做的事
+### 2.9 只做引导(2026-11-17 定,偏离原设计)
 
-1. **预检**:磁盘空间、操作系统版本是否满足 3.0 的最低要求(.NET 10 和 Avalonia 12 的平台下限)、
-   数据根是否可写。不满足的话留在 2.9,并说明原因。
-   如果用户配对过 2.x 的独立设备服务,要明确提示:3.0 连不上它们(3.0 不做独立设备服务)。用户可以选择暂不升级,
-   留在 2.9(服务端标记为 mandatory 并超过宽限期时除外),也可以改用云端 Agent。
-2. **用户确认**:显示一张「升级到 3.0」卡片,列出新特性、变化和回退方式。用户可以推迟,
-   直到服务端标记为 mandatory 并超过宽限期。
-3. **整理数据**(必须在关闭 Electron 之前完成):
-   - 停掉所有 Run 和子代理,等收尾完成。
-   - 把残留的 safeStorage 凭据转成 `NCK1` 格式(尽力而为;3.0 自己也能解,见 §4)。
-   - 把数据库迁移到 2.x 的最终 schema,做一次一致性备份(`backup()` 在线备份)。
-   - 写交接文件 `<数据根>/handoff-v3.json`,记录 2.x 版本、schema 版本和备份位置。这个文件只是加速和留痕,
-     3.0 没有它也能接管。
-4. **下载并校验 3.0**:按平台下载对应的产物,校验 sha256,再用 2.9 内置的发布公钥(Ed25519)校验清单签名。
-   这样即使 2.x 没有代码签名,也能防止安装包被篡改。
-5. **安装**(由 2.9 自己完成,不经过 electron-updater):
-   - **Windows**:静默运行 3.0 的 Velopack `Setup.exe`(安装到 `%LocalAppData%\NextCoWork`),然后退出 2.9。
-     3.0 首次启动时,从注册表的 Uninstall 键找到 2.x 的 NSIS 卸载程序,以「保留用户数据」的方式静默卸载。
-     开始菜单和桌面快捷方式换成新的。
-   - **macOS**:下载 3.0 的 `.app.zip` 并解压到临时目录,校验签名。2.9 退出后,由一个独立的 helper 脚本
-     把 `/Applications/NextCoWork.app` 原子替换为新的 bundle,然后启动 3.0。
-     bundle id 保持 `com.nextcowork.app`,通知、登录项和钥匙串条目都能延续。
-   - **Linux**:下载 3.0 的 AppImage,替换 `$APPIMAGE` 指向的文件,然后重启。
-6. **失败处理**:任何一步失败,都停在 2.9 并保持可用。错误信息给出可以复制的诊断内容,并提供手动下载链接。
+原设计里 2.9 是「桥接版」:预检、整理数据、写 `handoff-v3.json`、自己下载校验并安装 3.0(Windows 静默 `Setup.exe`、macOS helper 原子替换 `.app`、Linux 替换 AppImage)。
+**改为只引导**,理由:3.0 首次启动自己就能完整接管 2.x 的数据(§4:一致性备份 → 所有权标记 → 增量迁移,已在 macOS 上用真实 2.x 库验证),
+桥接版的那些步骤都不是接管的前提;而自动安装要依赖正式签名、三个平台各一套 helper,且 2.x 一侧没有真机就无法验证。2.9(`main` 分支的 `release/2.9`)做的是:
+
+1. **告诉用户 3.0 出来了**:主进程按 electron-updater 同一个节奏(启动后 30 秒、每天一次、手动「检查更新」时)问 `/v3/latest`;
+   只有这台电脑的 RID 确实有可下载的安装包、主版本 ≥ 3 时才算有(问不到 = 不知道,界面什么都不显示)。标题栏右端出一颗升级图标(2.x 自己有更新时让位,先装 2.9.x 的修复),
+   点它打开「设置 → 关于」,顶部是升级卡片:数据会自动迁移(迁移前完整备份;个别密钥可能要重新填)、需要重新配对、2.x 的独立设备服务 3.0 不支持、迁移后 2.x 不再打开这份数据。
+2. **「前往下载并退出」**:打开官网下载页(它按访客系统自动选包),然后走 2.x 正常的退出流程(收尾运行中的任务、拦下未保存的文档)。必须退出:3.0 在 2.x 开着时拒绝接管。
+3. **认 3.0 的接管**:2.9 启动时、建窗和开库之前,只读地看一眼数据库:`migrations` 里有比 2.x 已知的最新(37)更新的版本,或者有所有权标记、但它的 `device_id` 不是同一数据根里
+   2.x 独立设备服务的 `device-identity.json` —— 就是被 3.0 接管了(2.x 的设备服务接管时行为不变)。这时不建窗、不开库,弹系统对话框「打开 NextCoWork 3.0 / 下载 3.0 / 退出」。
+   「打开 3.0」只在找得到装好的 3.x 时出现(靠 Velopack 的 `sq.version` 认,macOS 上两代的 bundle 名和 bundle id 都一样)。
+   **为什么必须拦**:2.x 的迁移执行器跳过它不认识的版本、照常往库里写,两个版本交替打开会写坏数据。
+4. **不做**:预检、凭据预转换(3.0 自己能解 safeStorage)、2.9 自己的备份(3.0 接管时做 `VACUUM INTO`)、`handoff-v3.json`(3.0 不读它)、下载校验与自动安装。
+
+**还缺的(3.0 一侧)**:§5 的「设置 → 数据 → 回退到 2.x」入口还没做(存储层的回滚已有:`DataRootTakeover` 的 rollback),所以 2.9 的对话框和卡片都不提回退。
 
 ### 为什么不直接把 3.0 放进 electron-updater 的 feed
 
@@ -59,7 +51,7 @@
   但在交接之前没有机会整理数据。
 - macOS 上,Squirrel.Mac 会用当前 App 的 designated requirement 去校验新 bundle。ad-hoc 签名的
   designated requirement 绑定的是 cdhash,换成另一个程序的 bundle,结果没法保证。
-- 桥接版能在 Electron 还活着的时候先停掉 Run、做好备份,接管更稳。但它不是接管的前提,3.0 能直接接管(§4)。
+- 3.0 能直接接管(§4),不需要 2.x 一侧先停 Run、做备份;2.9 只要保证接管时 2.x 已经退出(引导流程最后一步就是正常退出)。
 
 ## 3. 3.x 的自更新(Velopack)
 
@@ -113,7 +105,7 @@
   而是提示用户先用最新的 2.x 打开一次(`blocked/unsupported-layout`)。
 - 凭据(第 4 步)在提交之后、就绪之前转换,只有库里还有旧 safeStorage 行时才执行,并在接管页上先显示「系统可能请求访问钥匙串」。
   实现在 `Ncw.Agent.Storage/Credentials/`;钥匙串只在遇到第一条旧行时读取一次。
-- 迁移版本号和 2.x 共用一个序列(1–37 是 2.x 的,38 起是 3.0 的),所以**桥接版 2.9 不能再新增数据库迁移**。
+- 迁移版本号和 2.x 共用一个序列(1–37 是 2.x 的,38 起是 3.0 的),所以 **2.9 不能再新增数据库迁移**(2.9 也正是靠「迁移版本 > 37」认出 3.0 的接管,见 §2)。
 
 1. **检查 2.x 是否在运行**:Chromium 的 `SingletonLock` 指向活进程,或者服务锁被占用时,界面提示「请先退出 NextCoWork 2.x」,
    并提供「帮我退出」按钮。不抢锁。
@@ -151,11 +143,11 @@
 |---|---|---|
 | macOS | 3.0 起用 Developer ID 签名,开启 Hardened Runtime,并公证(notarytool + staple)。`ncw-agent` 和内置的原生库(e_sqlite3 等)都要签名 | Gatekeeper 不再拦截首次打开;Velopack 在 macOS 上依赖签名 |
 | Windows | 3.0 起用 Authenticode 签名:`Setup.exe`、主程序、`ncw-agent.exe` 和原生库 | 减少 SmartScreen 警告 |
-| 所有平台 | 发布清单另外用 Ed25519 签名 | 不依赖平台签名,也能保证 2.9 拿到的 3.0 产物没被篡改 |
+| 所有平台 | 发布清单另外用 Ed25519 签名 | 不依赖平台签名,也能保证 3.x 自更新拿到的产物没被篡改(2.9 只引导、不下载 3.0) |
 
-**2.9 桥接版自己仍然保持 ad-hoc 签名**:2.8 → 2.9 这一跳走的还是 electron-updater 和 Squirrel.Mac,
+**2.9 自己仍然保持 ad-hoc 签名**:2.8 → 2.9 这一跳走的还是 electron-updater 和 Squirrel.Mac,
 签名方式一变,就可能过不了旧版本的 designated requirement 校验。换签名身份只发生在 2.9 → 3.0 这一跳,
-而这一跳由 2.9 自己的 helper 安装,不经过 Squirrel。
+而这一跳是用户从官网下载安装,不经过 Squirrel。
 
 ## 7. 实现备注(M4:sidecar 打包与守护、`tools/Ncw.Build`)
 
