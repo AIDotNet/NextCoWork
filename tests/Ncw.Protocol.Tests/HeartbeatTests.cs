@@ -30,6 +30,9 @@ public sealed class HeartbeatTests
             await device.Frames.WriteAsync(new WelcomeFrame(ProtocolInfo.Version, "dev-1", "3.0.0-test", "owner", [], "resume", 0));
             var client = await connecting;
             _ = device.ServeAsync(answerPings);
+            // ping 循环和看门狗是握手之后在线程池上起的:等它们都挂上定时器再把连接交给测试。否则测试先推进了时钟,
+            // 看门狗「还剩多久」是按旧时刻算的、定时器却按新时刻挂,到期点整体后移,永远等不到(Linux / Windows CI 上各超时过一次)。
+            await clock.WaitForTimersAsync(2);
             return (device, client);
         }
 
@@ -142,7 +145,11 @@ public sealed class HeartbeatTests
         await device.Frames.WriteAsync(new PongFrame(0)); // 设备主动发来的帧(这里随便用一种)
         await WaitUntil(() => client.IdleFor == TimeSpan.Zero, "frame received");
 
-        clock.Advance(TimeSpan.FromSeconds(50)); // 距离上一帧才 50 秒
+        // 分两步走:先停在看门狗原定的 60 秒上,等它按「上一帧在 50 秒」重新挂好(到期点 110 秒),再往前。
+        // 一步跨过去的话,看门狗在时钟还在走的时候重新计算,到期点取决于它被调度到的那一刻。
+        clock.Advance(TimeSpan.FromSeconds(10));
+        await clock.WaitForTimersAsync(2);
+        clock.Advance(TimeSpan.FromSeconds(40)); // 距离上一帧才 50 秒
         Assert.False(client.Completion.IsCompleted);
 
         clock.Advance(TimeSpan.FromSeconds(10)); // 满 60 秒

@@ -24,10 +24,16 @@ public sealed class TestApp : Application
                   .AfterSetup(_ =>
                   {
                       NcwMotion.Apply(UiMotionLevel.Off);
-                      Avalonia.Controls.Window.WindowOpenedEvent.AddClassHandler<Avalonia.Controls.Window>((window, _) => Opened.Add(window));
+                      Avalonia.Controls.Window.WindowOpenedEvent.AddClassHandler<Avalonia.Controls.Window>((window, _) =>
+                      {
+                          lock (Opened)
+                          {
+                              Opened.Add(window);
+                          }
+                      });
                   });
 
-    /// <summary>这一条用例里打开过的窗口(只在界面线程上读写)。</summary>
+    /// <summary>这一条用例里打开过的窗口。界面线程上加,任何线程都可能来读(钩子是程序集级的,普通 [Fact] 在线程池上跑),所以加锁。</summary>
     private static readonly List<Avalonia.Controls.Window> Opened = [];
 
     private static int _closedBatches;
@@ -36,32 +42,40 @@ public sealed class TestApp : Application
     /// 关掉用例留下的窗口,并定期把 Skia 的非托管内存收回来。
     /// ★ 每条截图用例都建一个完整的窗口、渲染一帧,用完既不关也不释放;位图是非托管内存,GC 感受不到压力——800 多条用例下来进程涨到十几 GB:
     /// macOS 靠内存压缩扛得住,GitHub 的 Linux runner 直接失联(「The hosted runner lost communication」),Windows 60 分钟跑不完。
+    /// <para>
+    /// ★ 这里<b>不能碰 <c>Dispatcher.UIThread</c></b>:headless 每条用例都重建应用,重建时会重置界面调度器,之后第一个访问
+    /// <c>Dispatcher.UIThread</c> 的线程就成了「界面线程」。本钩子也会在线程池线程上被调用(普通 [Fact] 与界面用例并行),它在那个空档里访问一次,
+    /// 调度器就绑到了线程池线程上,正在重建应用的那条界面用例随即在 <c>DefaultRenderLoop.Add</c> 里报
+    /// 「The calling thread cannot access this object」(Linux CI 上出现过两次,都在加了这个钩子之后;这是按堆栈推出来的原因,没有单独复现)。
+    /// 所以只用窗口自己的调度器判断归属:不是当前线程的窗口不碰。
+    /// </para>
     /// </summary>
     public static void CloseOpenWindows()
     {
-        if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        Avalonia.Controls.Window[] mine;
+        lock (Opened)
         {
-            return; // 不在界面线程上(非 Avalonia 用例):没有窗口可关
+            mine = [.. Opened.Where(window => window.CheckAccess())];
+            if (mine.Length == 0)
+            {
+                return; // 不在界面线程上,或者这条用例没开过窗口
+            }
+
+            Opened.RemoveAll(window => mine.Contains(window));
         }
 
         try
         {
-            foreach (var window in Opened.ToArray())
+            foreach (var window in mine)
             {
-                // 有的用例自己起一个 headless 会话(另一条界面线程):那里的窗口归那条线程,这里不碰(Linux CI 上 MotionTests 的清理因此失败过)
-                if (window.CheckAccess())
-                {
-                    window.Close();
-                }
+                window.Close();
             }
 
-            Opened.Clear();
-            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            mine[0].Dispatcher.RunJobs();
         }
         catch (Exception)
         {
             // 用例已经结束:清理时出的任何错都不该算到这条用例头上,也不该把下一条带倒
-            Opened.Clear();
         }
 
         if (++_closedBatches % 8 == 0)
