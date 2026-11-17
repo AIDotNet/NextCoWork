@@ -66,7 +66,14 @@ public sealed class ProcessSmokeTests : IAsyncLifetime
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         if (Directory.Exists(_root))
         {
-            Directory.Delete(_root, recursive: true);
+            try
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Windows 上刚退出的 ncw-agent 可能还没放开 nextcowork.db;临时目录清不掉不影响测试结论
+            }
         }
     }
 
