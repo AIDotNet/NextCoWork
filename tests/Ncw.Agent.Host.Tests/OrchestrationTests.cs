@@ -148,8 +148,10 @@ public sealed class SubagentTests : IAsyncLifetime
         Assert.Contains("\"callId\":\"c1\"", message.PartsJson);
         Assert.Contains("THE-END", S.WireText(_llm.RequestsOf(session.Id)[2]));
 
-        // 父会话主题:先 stopped(父 Run 的日志已经收口,subagent_end 进不去,所以单独发一条),汇报进度 injecting → reported
+        // 父会话主题:stopped(父 Run 的日志已经收口,subagent_end 进不去,所以单独发一条)和汇报进度 injecting → reported。
+        // 两者的先后没有保证:SubagentService 是「先交给汇报、再通知 Stopped」,汇报在另一条路上走,reported 可以先到(Linux / macOS CI 上都撞到过)——所以两个都要等。
         await topic.WaitAsync(() => topic.Decoded<SubagentReportDto>(SubagentEvents.Report).Any(r => r.Status == "reported"), "report status reported");
+        await topic.WaitAsync(() => topic.Decoded<SubagentStoppedDto>(SubagentEvents.Stopped).Count != 0, "the stopped event");
         var stopped = Assert.Single(topic.Decoded<SubagentStoppedDto>(SubagentEvents.Stopped));
         Assert.Equal(("c1", "p1:sub:1", childSession, "done", true), (stopped.CallId, stopped.ChildRunId, stopped.ChildSessionId, stopped.Status, stopped.Background));
         var statuses = topic.Decoded<SubagentReportDto>(SubagentEvents.Report).Select(r => r.Status).ToList();

@@ -115,6 +115,32 @@ public class ConversationReducerTests
         Assert.Single(late.Sessions[Session].Messages);
     }
 
+    /// <summary>
+    /// 「编辑并重发 / 重新生成」先把历史截断,再起新的一轮。上一轮 Run 的快照这时才到的话,不能把已经被截断掉的回复重新塞回会话:
+    /// 镜像早就收过这些事件(序号不大于已收到的 = 重放),快照里的它们同样不该再作用到会话上。
+    /// Windows CI 上撞到过:会话里是「旧回复 | 问题 | 新回复」三条。
+    /// </summary>
+    [Fact]
+    public void A_late_snapshot_of_a_finished_run_does_not_put_back_messages_that_were_truncated_since()
+    {
+        var state = WithSession();
+        state = Apply(state, 1, new RunStartEventDto("r1", "s1", "sonnet"));
+        state = Apply(state, 2, new MessageEndEventDto(Msg("old-reply"), null, null, "endTurn"));
+        state = Apply(state, 3, new RunEndEventDto("done"));
+        Assert.Single(state.Sessions[Session].Messages);
+
+        // 重新生成:历史被截断,新的一轮写进了新的提问
+        state = ConversationReducer.ApplyHistoryReset(state, Device, new SessionPageDto(Meta(), [Msg("question", "user")], false, [], [], []));
+
+        var late = ConversationReducer.ApplyRunSnapshot(state, Device, Snapshot("done", 3,
+            new SeqEventDto(1, new RunStartEventDto("r1", "s1", "sonnet")),
+            new SeqEventDto(2, new MessageEndEventDto(Msg("old-reply"), null, null, "endTurn")),
+            new SeqEventDto(3, new RunEndEventDto("done"))), 3);
+
+        Assert.Equal(["question"], late.Sessions[Session].Messages.Select(m => m.Id));
+        Assert.Equal(RunPhase.Done, late.Runs[Run].Phase);
+    }
+
     [Fact]
     public void Starting_a_run_gives_an_immediate_running_mirror_that_the_first_events_then_extend()
     {

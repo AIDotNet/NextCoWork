@@ -41,6 +41,47 @@ public sealed class IdempotencyTests
         return (router, clock, calls);
     }
 
+    private sealed class Scope(Action onDispose) : IDisposable
+    {
+        public void Dispose() => onDispose();
+    }
+
+    /// <summary>
+    /// 闸门返回的句柄要罩住整个方法实现(成功或失败都在实现结束之后才释放):宿主用它在请求期间占着执行环境,
+    /// 提前释放的话,一次比空闲阈值更久的操作会被空闲回收器中途断开。
+    /// </summary>
+    [Fact]
+    public async Task The_scope_returned_by_the_gate_is_held_for_the_whole_call_and_released_afterwards_even_when_the_handler_fails()
+    {
+        var router = new MethodRouter(new ManualClock());
+        var held = 0;
+        var heldInsideHandler = -1;
+        var fail = false;
+        router.BeforeInvoke = (_, _, _, _) =>
+        {
+            held++;
+            return ValueTask.FromResult<IDisposable?>(new Scope(() => held--));
+        };
+        router.Handle(DeviceMethods.ProjectsRemove, async (_, _, _) =>
+        {
+            await Task.Yield();
+            heldInsideHandler = held;
+            return fail ? throw new ProtocolException(ErrorCodes.Conflict, "nope") : Unit.Value;
+        });
+
+        Assert.True((await CallAsync(router, "a")).Ok);
+        Assert.Equal((1, 0), (heldInsideHandler, held));
+
+        fail = true;
+        Assert.False((await CallAsync(router, "b")).Ok);
+        Assert.Equal((1, 0), (heldInsideHandler, held));
+
+        // 闸门可以不给句柄
+        router.BeforeInvoke = (_, _, _, _) => ValueTask.FromResult<IDisposable?>(null);
+        fail = false;
+        Assert.True((await CallAsync(router, "c")).Ok);
+    }
+
     [Fact]
     public async Task The_same_key_runs_once_within_the_retention_window()
     {
