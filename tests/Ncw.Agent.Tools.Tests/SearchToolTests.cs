@@ -230,7 +230,7 @@ internal sealed class ThrowingFs(IEnvironmentFs inner, EnvironmentException erro
 
 public sealed class GlobToolTests : IDisposable
 {
-    private readonly Fixture _fx = new();
+    private readonly Fixture _fx = new(clock: new SteppedClock()); // 搜索预算不跟墙上时间走(见 Fixture)
     private readonly GlobTool _glob = new();
 
     public void Dispose() => _fx.Dispose();
@@ -429,7 +429,7 @@ internal sealed class SteppedClock : TimeProvider
 
 public sealed class GrepToolTests : IDisposable
 {
-    private readonly Fixture _fx = new();
+    private readonly Fixture _fx = new(clock: new SteppedClock()); // 搜索预算不跟墙上时间走(见 Fixture)
     private readonly GrepTool _grep = new();
 
     public void Dispose() => _fx.Dispose();
@@ -794,7 +794,7 @@ public sealed class GrepToolTests : IDisposable
 /// </summary>
 public sealed class GrepNativeBackendTests : IDisposable
 {
-    private readonly Fixture _fx = new();
+    private readonly Fixture _fx = new(clock: new SteppedClock()); // 搜索预算不跟墙上时间走(见 Fixture)
     private readonly GrepTool _grep = new();
 
     public GrepNativeBackendTests()
@@ -830,7 +830,7 @@ public sealed class GrepNativeBackendTests : IDisposable
         p!.WaitForExit();
     }
 
-    private ToolRuntime With(GrepBackends backends) => new() { Environment = _fx.Env, Root = _fx.Runtime.Root, GrepBackends = backends };
+    private ToolRuntime With(GrepBackends backends) => new() { Environment = _fx.Env, Root = _fx.Runtime.Root, GrepBackends = backends, Clock = _fx.Runtime.Clock };
 
     private async Task<string> GrepAsync(GrepBackends backends, params (string, object?)[] args)
     {
