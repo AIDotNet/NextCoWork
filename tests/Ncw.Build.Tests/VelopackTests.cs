@@ -59,6 +59,24 @@ public class VelopackPlanTests
     }
 
     [Fact]
+    public void A_distribution_build_without_an_installer_certificate_ships_no_pkg_rather_than_an_unsigned_one()
+    {
+        var withoutInstaller = Pack(TestKit.MacArm, TestKit.MacArm, new() { ["NCW_MAC_SIGN_IDENTITY"] = "Developer ID Application: X (T)", ["NCW_NOTARY_PROFILE"] = "ncw" });
+        Assert.Contains("--noInst", withoutInstaller.Args);
+        Assert.DoesNotContain("--signInstallIdentity", withoutInstaller.Args);
+
+        // 有安装器证书:出 .pkg 并签名;本机的 ad-hoc / 不签名构建:照旧出 .pkg
+        Assert.DoesNotContain("--noInst", Pack(TestKit.MacArm, TestKit.MacArm, new()
+        {
+            ["NCW_MAC_SIGN_IDENTITY"] = "Developer ID Application: X (T)",
+            ["NCW_MAC_INSTALLER_IDENTITY"] = "Developer ID Installer: X (T)",
+        }).Args);
+        Assert.DoesNotContain("--noInst", Pack(TestKit.MacArm, TestKit.MacArm, new() { ["NCW_MAC_SIGN_IDENTITY"] = "-" }).Args);
+        Assert.DoesNotContain("--noInst", Pack(TestKit.MacArm, TestKit.MacArm).Args);
+        Assert.DoesNotContain("--noInst", Pack(TestKit.WinX64, TestKit.WinX64, new() { ["NCW_MAC_SIGN_IDENTITY"] = "Developer ID Application: X (T)" }).Args);
+    }
+
+    [Fact]
     public void Without_identities_no_signing_arguments_are_passed()
     {
         var args = Pack(TestKit.MacArm, TestKit.MacArm).Args;

@@ -64,6 +64,13 @@ internal static class VelopackPlans
                 {
                     args.AddRange(["--signInstallIdentity", installer]);
                 }
+                else if (env("NCW_MAC_SIGN_IDENTITY") is { Length: > 0 } and not "-")
+                {
+                    // 正式签名的发布却没有安装器证书(Developer ID Installer,和签应用的 Developer ID Application 是两张证书):
+                    // 不出 .pkg。没签名的 .pkg 从浏览器下载后会被 Gatekeeper 直接拦下,也没法公证;这时给用户的是 portable 压缩包里那个签名并公证过的 .app。
+                    // 开发用的 ad-hoc 签名("-")和不签名的构建照旧出 .pkg(只在本机用)。
+                    args.Add("--noInst");
+                }
 
                 if (env("NCW_NOTARY_PROFILE") is { Length: > 0 } profile)
                 {

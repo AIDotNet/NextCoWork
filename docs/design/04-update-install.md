@@ -266,13 +266,20 @@ ConPTY 本身(`WindowsConPtyTests`:起 cmd、回显、退出码、调整大小�
 - **`ci.yml`**(push / PR 到 `v3/avalonia`、手动):macOS / Windows / Linux 三个 runner 的矩阵(`osx-arm64` / `win-x64` / `linux-x64`;NativeAOT 不能跨操作系统编译,所以一平台一 runner):
   还原 → `dotnet build NextCoWork.slnx`(`Directory.Build.props` 里 `TreatWarningsAsErrors=true`,有警告就失败,不另加开关)→ `dotnet test`(trx)→ **上传 UI 截图**(`tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`,无论成败)
   → `publish-agent`(零裁剪警告,失败即红)→ 对发布出的 `ncw-agent` 做 `verify --agent` 冒烟 → `build-relay` 与 `build-relay --aot`(发布 + 产物自检)。Linux 上先装 `clang zlib1g-dev`(NativeAOT)和 `libfontconfig1`(Headless 截图的 Skia)。
-- **`release.yml`**(`v3.*` tag 或手动;手动可选通道、`require_signing`、`mandatory`、`minimum_supported_version`、`release_notes`):`preflight`(读 `Directory.Build.props` 的版本,tag 必须是 `v<版本>`)→ 三平台矩阵按本节流水线顺序 `publish-agent` → `publish-desktop` → `bundle` → `verify` → (准备凭据)`sign` → 签名后再 `verify` → `velopack`,
-  产物(`artifacts/velopack/<rid>/<channel>/`)与符号上传为 workflow artifact → 汇总任务 `manifest`(下载三个平台的包,逐个文件交给 `manifest`,有 Ed25519 密钥才签名,再 `manifest-verify`,清单与签名上传为 artifact)。
-  **凭据只经 secrets / vars 的名字进入环境变量**(文件里没有任何值):macOS `NCW_MAC_CERT_P12_BASE64` + `NCW_MAC_CERT_PASSWORD`(导入临时钥匙串,结束后删除)、`NCW_MAC_SIGN_IDENTITY`、公证 `NCW_NOTARY_*`、`NCW_MAC_INSTALLER_IDENTITY`;
-  Windows `NCW_WIN_CERT_PFX_BASE64` + `NCW_WIN_CERT_PASSWORD`、`vars.NCW_WIN_TIMESTAMP_URL`;清单 `NCW_RELEASE_SIGNING_KEY` / `NCW_RELEASE_SIGNING_KEY_ID`、`vars.NCW_RELEASE_PUBLIC_KEY`。
+- **`release.yml`**(`v3.*` tag 或手动;手动可选通道、`require_signing`、`mandatory`、`minimum_supported_version`、`release_notes`、`upload`):`preflight`(读 `Directory.Build.props` 的版本,tag 必须是 `v<版本>`)→ 三平台矩阵按本节流水线顺序 `publish-agent` → `publish-desktop` → `bundle` → `verify` → (准备凭据)`sign` → 签名后再 `verify` → `velopack` → (macOS)从 vpk 的包里解出 `.app` 核对签名与公证,
+  产物(`artifacts/velopack/<rid>/<channel>/`)与符号上传为 workflow artifact → 汇总任务 `manifest`(三个平台合在一起的清单 + **每个平台各一份签名清单**,后者是后端更新源要的) → `upload`(tag 发布总是执行,手动要勾选):逐个平台 `Ncw.Build upload`,发布到后端的 3.x 更新源。
+  后端没上线时只有 `upload` 这一个 job 失败,产物都在(保留 30 天):后端上线后单独重跑它即可,文件按内容寻址,重跑只补缺的。
+  **信任根**:`vars.NCW_RELEASE_PUBLIC_KEYS`(`kid:base64`)在 `publish-desktop` 时编进应用;tag 发布时没有它直接失败——没有信任根的安装包装得上,但会拒绝一切更新清单。
+  **凭据只经 secrets / vars 的名字进入环境变量**(文件里没有任何值):macOS `NCW_MAC_CERT_P12_BASE64` + `NCW_MAC_CERT_PASSWORD`(导入临时钥匙串,结束后删除)、`NCW_MAC_SIGN_IDENTITY`、公证 `NCW_NOTARY_*`、`NCW_MAC_INSTALLER_IDENTITY`——
+  这一组没配时退回 2.x 流水线已有的 `CSC_LINK` / `CSC_KEY_PASSWORD` 和 `APPLE_ID` / `APPLE_TEAM_ID` / `APPLE_APP_SPECIFIC_PASSWORD`,签名身份从导入的证书里取;
+  Windows `NCW_WIN_CERT_PFX_BASE64` + `NCW_WIN_CERT_PASSWORD`、`vars.NCW_WIN_TIMESTAMP_URL`(**目前没有 Windows 证书,Windows 包不签名**,和 2.x 一样);清单 `NCW_RELEASE_SIGNING_KEY`、`vars.NCW_RELEASE_SIGNING_KEY_ID`、`vars.NCW_RELEASE_PUBLIC_KEY`;上传 `NCW_RELEASE_UPLOAD_TOKEN`(没配时用 2.x 的 `CLIENT_UPLOAD_TOKEN`,后端是同一个令牌)。
+  **macOS 的公证由 vpk 做,不由 `sign` 做**:vpk 打包时会往 `.app` 里加文件并重新签名,在那之前公证的票据是废的。流水线把 Apple ID 的凭据存成临时钥匙串里的 notarytool 配置(`NCW_NOTARY_PROFILE`),vpk 用它公证并钉票据;随后那一步用 `spctl` / `stapler validate` 核对,配了公证凭据却没公证成就失败。
+  **`.pkg` 安装器要另一张证书**(Developer ID Installer;签应用的是 Developer ID Application,2.x 只出 dmg 所以一直只有后者):流水线先看 `NCW_MAC_INSTALLER_IDENTITY`,
+  再看导入的 `.p12` 里有没有这张证书,有就签名并公证 `.pkg`;**没有就不出 `.pkg`**(`velopack` 加 `--noInst`)——没签名的 `.pkg` 从浏览器下载后会被 Gatekeeper 直接拦下。
+  这时 macOS 的下载物是 `Portable.zip`(里面是签名并公证过的 `.app`,解压后拖进「应用程序」),自更新不受影响。
   **缺凭据就跳过并明说**:`sign` 自己打印 `SKIPPED signing: …`,`manifest` 打印 `NOT SIGNED`,工作流再写 `::warning::` 和 job 摘要(每个平台的签名状态、清单是否已签名)。
-  与 §6 / 上面 `sign --require` 的关系:tag 触发**默认不加 `--require`**(secrets 还没配、流水线还没在真实 runner 上走通,硬要求只会让每次都红);手动触发勾选 `require_signing` 即加 `--require`。
-  **secrets 配齐并跑通一次之后,应把 `REQUIRE_SIGNING` 的 tag 默认值改成 true**,正式发布不能悄悄发出未签名的包。第三方 action 目前按主版本号引用(`@v4`),生产使用前应固定到提交 SHA。
+  与 §6 / 上面 `sign --require` 的关系:tag 触发**默认不加 `--require`**(Windows 没有证书,加了每次都红);手动触发勾选 `require_signing` 即加 `--require`。第三方 action 目前按主版本号引用(`@v4`),生产使用前应固定到提交 SHA。
+  **清单签名密钥**(Ed25519,密钥 id `ncw-2026-11`,2026-11-18 生成):私钥在发布人本机的仓库外目录和仓库的 `NCW_RELEASE_SIGNING_KEY` secret 里,**两处都丢了就再也无法给已安装的 3.x 推更新**(只能让用户重装带新公钥的版本);要换钥,先发一个信任列表里同时带新旧公钥的版本。
 
 ### 7.2 sidecar 守护(`Ncw.Desktop`)
 

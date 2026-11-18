@@ -207,6 +207,18 @@ jobs:
           echo "NCW_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
           echo "Signing identity: $identity"
 
+          # 安装器(.pkg)要另一张证书(Developer ID Installer)。没显式配置时看导入的 .p12 里有没有;没有就不出 .pkg(Ncw.Build velopack 加 --noInst):
+          # 没签名的 .pkg 会被 Gatekeeper 拦下,用户拿到的是 portable 压缩包里签名并公证过的 .app。
+          if [ -z "$NCW_MAC_INSTALLER_IDENTITY" ]; then
+            installer="$(security find-identity -v "$keychain" | sed -n 's/.*"\(Developer ID Installer:[^"]*\)".*/\1/p' | head -n 1)"
+            if [ -n "$installer" ]; then
+              echo "NCW_MAC_INSTALLER_IDENTITY=$installer" >> "$GITHUB_ENV"
+              echo "Installer identity: $installer"
+            else
+              echo "::notice::No 'Developer ID Installer' certificate: the macOS release ships the notarized app as a zip, without a .pkg installer."
+            fi
+          fi
+
           # 公证:把 Apple ID 的凭据存成这个临时钥匙串里的 notarytool 配置,vpk 用配置名取(--notaryProfile + --keychain)
           if [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_TEAM_ID" ] && [ -n "$NOTARY_PASSWORD" ]; then
             xcrun notarytool store-credentials ncw-notary --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$keychain"
