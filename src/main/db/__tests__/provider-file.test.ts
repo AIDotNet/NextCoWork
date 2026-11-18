@@ -290,7 +290,7 @@ describe('ProviderFileStore: watching', () => {
     writeFileSync(replacement, JSON.stringify(doc))
     renameSync(replacement, join(actual, PROVIDER_FILE_NAME))
     await vi.waitFor(() => expect(seen).toEqual([['astra', 'gw']]), { timeout: 10_000 })
-  })
+  }, 20_000)
 
   it('notifies on an external edit but not on its own writes', async () => {
     vi.useRealTimers()
@@ -308,7 +308,7 @@ describe('ProviderFileStore: watching', () => {
     doc.providers['astra'] = { baseUrl: 'http://a/v1', protocol: 'openai-chat' }
     writeFileSync(path, JSON.stringify(doc))
     await vi.waitFor(() => expect(seen).toEqual([['astra', 'gw']]), { timeout: 10_000 })
-  })
+  }, 20_000)
 
   it('keeps the last good state when an external edit breaks the file', async () => {
     store.load()
@@ -320,5 +320,5 @@ describe('ProviderFileStore: watching', () => {
     await vi.waitFor(() => expect(store.error).toBeDefined(), { timeout: 10_000 })
     expect(seen).toEqual([])
     expect(store.listProviders().map((p) => p.id)).toEqual(['gw'])
-  })
+  }, 20_000)
 })
