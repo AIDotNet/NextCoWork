@@ -1,14 +1,17 @@
 # NextCoWork 3.0 的发布流水线,步骤顺序就是 docs/design/04 §7.1:
 #   publish-agent -> publish-desktop -> bundle -> verify -> sign -> velopack(三平台各一个 runner)-> manifest(汇总)。
 #
-# 注意:本工作流**没有在真实的 GitHub Actions 上运行过**(只用 actionlint 做了静态检查;各步骤的命令在 macOS 上手工跑过,
-# Windows / Linux 的 signtool、Setup.exe、AppImage 从未在真机上验证过,见 04 §7.1「没有验证的部分」)。
+# 运行状态见 docs/design/04 §7.1.1(Windows / Linux 的安装包从未在真机上装过,见 04 §7.1「没有验证的部分」)。
 #
 # 本文件不包含任何密钥。签名凭据全部来自仓库 / 环境的 secrets(只出现名字):
-#   macOS    NCW_MAC_CERT_P12_BASE64 + NCW_MAC_CERT_PASSWORD(Developer ID Application 证书,base64 的 .p12)、NCW_MAC_SIGN_IDENTITY、
-#            公证:NCW_NOTARY_PROFILE,或 NCW_NOTARY_APPLE_ID + NCW_NOTARY_TEAM_ID + NCW_NOTARY_PASSWORD;可选 NCW_MAC_INSTALLER_IDENTITY(.pkg)
+#   macOS    NCW_MAC_CERT_P12_BASE64 + NCW_MAC_CERT_PASSWORD(Developer ID Application 证书,base64 的 .p12)、NCW_MAC_SIGN_IDENTITY;
+#            没配这一组时退回 2.x 流水线已有的 CSC_LINK + CSC_KEY_PASSWORD(同一张证书),签名身份从导入的证书里取。
+#            公证:NCW_NOTARY_APPLE_ID + NCW_NOTARY_TEAM_ID + NCW_NOTARY_PASSWORD,没配时退回 APPLE_ID + APPLE_TEAM_ID + APPLE_APP_SPECIFIC_PASSWORD;
+#            流水线把它们存成临时钥匙串里的 notarytool 配置,交给 vpk(最终签名和公证都由 vpk 做)。可选 NCW_MAC_INSTALLER_IDENTITY(.pkg)
 #   Windows  NCW_WIN_CERT_PFX_BASE64 + NCW_WIN_CERT_PASSWORD(Authenticode,base64 的 .pfx);时间戳地址放在 vars.NCW_WIN_TIMESTAMP_URL(公开信息)
-#   清单     NCW_RELEASE_SIGNING_KEY(Ed25519 私钥种子,base64)+ NCW_RELEASE_SIGNING_KEY_ID;验证用的公钥放在 vars.NCW_RELEASE_PUBLIC_KEY
+#   清单     NCW_RELEASE_SIGNING_KEY(Ed25519 私钥种子,base64);密钥 id 在 vars.NCW_RELEASE_SIGNING_KEY_ID,验证用的公钥在 vars.NCW_RELEASE_PUBLIC_KEY
+#   信任根   vars.NCW_RELEASE_PUBLIC_KEYS(kid:base64,…)在 publish-desktop 时编进应用:没有它的构建,自更新会拒绝一切清单
+#   上传     NCW_RELEASE_UPLOAD_TOKEN,没配时退回 2.x 的 CLIENT_UPLOAD_TOKEN(后端的 3.x 更新源沿用同一个令牌);服务器在 vars.NCW_RELEASE_SERVER(默认 https://nextco.work)
 # 缺哪个就跳过哪一步并明说(Ncw.Build 的 sign / manifest 自己会打印 SKIPPED / NOT SIGNED,这里再写进 job 摘要)。
 # 正式发布要「缺凭据就失败」:手动触发时勾选 require_signing(对应 `sign --require`);tag 触发默认不强制——
 # 等 secrets 配齐、整条流水线在真实 runner 上跑通一遍之后,把下面 REQUIRE_SIGNING 的默认值改成 true。
@@ -39,6 +42,10 @@ on:
         description: Release notes recorded in the manifest (optional)
         type: string
         default: ""
+      upload:
+        description: Publish the packages to the backend's 3.x update feed (tag pushes always do)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -105,12 +112,10 @@ jobs:
       # 凭据:缺失时是空字符串,Ncw.Build 按「没设置」处理。这里只映射名字,值在运行时由 GitHub 注入。
       NCW_MAC_SIGN_IDENTITY: ${{ secrets.NCW_MAC_SIGN_IDENTITY }}
       NCW_MAC_INSTALLER_IDENTITY: ${{ secrets.NCW_MAC_INSTALLER_IDENTITY }}
-      NCW_NOTARY_PROFILE: ${{ secrets.NCW_NOTARY_PROFILE }}
-      NCW_NOTARY_APPLE_ID: ${{ secrets.NCW_NOTARY_APPLE_ID }}
-      NCW_NOTARY_TEAM_ID: ${{ secrets.NCW_NOTARY_TEAM_ID }}
-      NCW_NOTARY_PASSWORD: ${{ secrets.NCW_NOTARY_PASSWORD }}
       NCW_WIN_CERT_PASSWORD: ${{ secrets.NCW_WIN_CERT_PASSWORD }}
       NCW_WIN_TIMESTAMP_URL: ${{ vars.NCW_WIN_TIMESTAMP_URL }}
+      # 自更新的信任根(公开信息):publish-desktop 把它编进应用。
+      NCW_RELEASE_PUBLIC_KEYS: ${{ vars.NCW_RELEASE_PUBLIC_KEYS }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -133,6 +138,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang zlib1g-dev
 
+      # 没有信任根的安装包装得上、但永远收不到更新(它会拒绝一切清单):tag 发布时直接拦下。
+      - name: Require the update trust root on tag releases
+        if: github.ref_type == 'tag'
+        run: |
+          if [ -z "$NCW_RELEASE_PUBLIC_KEYS" ]; then
+            echo "::error::vars.NCW_RELEASE_PUBLIC_KEYS is not set: this build could never accept a signed update manifest."
+            exit 1
+          fi
+
       # ── 1. publish-agent:ncw-agent 的 NativeAOT 发布,任何裁剪警告都让这一步失败 ──
       - name: "1/7 publish-agent"
         run: ${{ env.NCW_BUILD }} publish-agent --rid ${{ matrix.rid }}
@@ -153,25 +167,53 @@ jobs:
       - name: Prepare the macOS signing keychain
         if: runner.os == 'macOS'
         env:
-          MAC_CERT_P12_BASE64: ${{ secrets.NCW_MAC_CERT_P12_BASE64 }}
-          MAC_CERT_PASSWORD: ${{ secrets.NCW_MAC_CERT_PASSWORD }}
+          MAC_CERT_P12_BASE64: ${{ secrets.NCW_MAC_CERT_P12_BASE64 || secrets.CSC_LINK }}
+          MAC_CERT_PASSWORD: ${{ secrets.NCW_MAC_CERT_PASSWORD || secrets.CSC_KEY_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NCW_NOTARY_APPLE_ID || secrets.APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NCW_NOTARY_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NCW_NOTARY_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
-          if [ -z "$MAC_CERT_P12_BASE64" ] || [ -z "$NCW_MAC_SIGN_IDENTITY" ]; then
-            echo "::warning::macOS signing certificate is not configured (NCW_MAC_CERT_P12_BASE64 / NCW_MAC_SIGN_IDENTITY); the app will NOT be signed or notarized."
+          if [ -z "$MAC_CERT_P12_BASE64" ]; then
+            echo "::warning::macOS signing certificate is not configured (NCW_MAC_CERT_P12_BASE64 or CSC_LINK); the app will NOT be signed or notarized."
             exit 0
           fi
           keychain="$RUNNER_TEMP/ncw-signing.keychain-db"
           keychain_password="$(uuidgen)"
           echo "::add-mask::$keychain_password"
-          echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/ncw-signing.p12"
+          # CSC_LINK 按 electron-builder 的约定可以是 base64,也可以是 https 地址
+          case "$MAC_CERT_P12_BASE64" in
+            https://*) curl -fsSL "$MAC_CERT_P12_BASE64" -o "$RUNNER_TEMP/ncw-signing.p12" ;;
+            *) printf '%s' "$MAC_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/ncw-signing.p12" ;;
+          esac
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           security import "$RUNNER_TEMP/ncw-signing.p12" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" login.keychain-db
           rm -f "$RUNNER_TEMP/ncw-signing.p12"
           echo "NCW_MAC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+          # 签名身份:显式配置优先,否则取导入的那张 Developer ID Application 证书
+          identity="$NCW_MAC_SIGN_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -n 1)"
+          fi
+          if [ -z "$identity" ]; then
+            echo "::error::The imported certificate has no 'Developer ID Application' identity; cannot sign for distribution outside the App Store."
+            security find-identity -v -p codesigning "$keychain" | sed -E 's/[0-9A-F]{40}/<sha1>/' || true
+            exit 1
+          fi
+          echo "NCW_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "Signing identity: $identity"
+
+          # 公证:把 Apple ID 的凭据存成这个临时钥匙串里的 notarytool 配置,vpk 用配置名取(--notaryProfile + --keychain)
+          if [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_TEAM_ID" ] && [ -n "$NOTARY_PASSWORD" ]; then
+            xcrun notarytool store-credentials ncw-notary --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$keychain"
+            echo "NCW_NOTARY_PROFILE=ncw-notary" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Notarization credentials are not configured (NCW_NOTARY_* or APPLE_ID / APPLE_TEAM_ID / APPLE_APP_SPECIFIC_PASSWORD); the app will be signed but NOT notarized."
+          fi
 
       - name: Prepare the Windows signing certificate
         if: runner.os == 'Windows'
@@ -194,12 +236,12 @@ jobs:
             echo "::warning::signtool.exe was not found in the Windows SDK; signing will fail if a certificate is configured."
           fi
 
-      # 缺凭据时 Ncw.Build 自己打印「SKIPPED signing: …」并继续(REQUIRE_SIGNING 为 true 时改为失败)。macOS 带 --notarize:缺公证凭据同样跳过并明说。
+      # 缺凭据时 Ncw.Build 自己打印「SKIPPED signing: …」并继续(REQUIRE_SIGNING 为 true 时改为失败)。
+      # 这里不带 --notarize:vpk 打包时会往 .app 里加文件并重新签名,在那之前公证出来的票据是废的——公证由第 6 步的 vpk 做(钥匙串里的 notarytool 配置)。
       - name: "5/7 sign"
         run: |
           args=(--rid ${{ matrix.rid }})
           if [ "$REQUIRE_SIGNING" = "true" ]; then args+=(--require); fi
-          if [ "$RUNNER_OS" = "macOS" ]; then args+=(--notarize); fi
           ${{ env.NCW_BUILD }} sign "${args[@]}"
 
       # 签名改变了二进制:bundle.json 已由 sign 刷新,签名之后再冒烟一次(04 §7.1 实测:签名后 verify 仍然 PASS)。
@@ -220,6 +262,31 @@ jobs:
       # ── 6. velopack:vpk 打安装器与更新包;签名变量(环境里的)由 vpk 用于 macOS 的最终签名与 .pkg ──
       - name: "6/7 velopack"
         run: ${{ env.NCW_BUILD }} velopack --rid ${{ matrix.rid }} --channel "$CHANNEL"
+
+      # 用户拿到的是 vpk 包里的那个 .app:解出来问 Gatekeeper。配了公证凭据却没公证成,这一步就失败(不让没公证的包悄悄发出去)。
+      - name: Check the packaged macOS app (signature, notarization)
+        if: runner.os == 'macOS'
+        run: |
+          dir="artifacts/velopack/${{ matrix.rid }}/$CHANNEL"
+          zip="$(find "$dir" -maxdepth 1 -name '*Portable.zip' | head -n 1)"
+          out="$RUNNER_TEMP/ncw-portable-check"
+          rm -rf "$out" && mkdir -p "$out"
+          ditto -x -k "$zip" "$out"
+          app="$(find "$out" -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$NCW_MAC_SIGN_IDENTITY" ]; then
+            echo "- **${{ matrix.rid }}**: packaged app: NOT SIGNED" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app"
+          assessment="$(spctl -a -vv --type execute "$app" 2>&1 || true)"
+          echo "$assessment"
+          if [ -n "$NCW_NOTARY_PROFILE" ]; then
+            xcrun stapler validate "$app"
+            echo "$assessment" | grep -q "source=Notarized Developer ID" || { echo "::error::The packaged app is signed but Gatekeeper does not see it as notarized."; exit 1; }
+            echo "- **${{ matrix.rid }}**: packaged app: signed, notarized and stapled" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- **${{ matrix.rid }}**: packaged app: signed, NOT notarized" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Remove the temporary signing material
         if: always()
@@ -255,7 +322,7 @@ jobs:
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
       NCW_RELEASE_SIGNING_KEY: ${{ secrets.NCW_RELEASE_SIGNING_KEY }}
-      NCW_RELEASE_SIGNING_KEY_ID: ${{ secrets.NCW_RELEASE_SIGNING_KEY_ID }}
+      NCW_RELEASE_SIGNING_KEY_ID: ${{ vars.NCW_RELEASE_SIGNING_KEY_ID }}
       NCW_RELEASE_PUBLIC_KEY: ${{ vars.NCW_RELEASE_PUBLIC_KEY }}
       MANDATORY: ${{ inputs.mandatory == true }}
       MIN_SUPPORTED: ${{ inputs.minimum_supported_version }}
@@ -316,3 +383,75 @@ jobs:
           path: artifacts/release/${{ needs.preflight.outputs.version }}/
           if-no-files-found: error
           retention-days: 30
+
+      # 后端的 3.x 更新源按「通道 × 平台」托管(04 §7.4):每个平台要有一份只列这个平台产物的签名清单,upload 发布的就是它。
+      # 私钥只在这个 job 里出现;上传的 job 只拿公钥验签。
+      - name: Write the per-platform feed manifests
+        run: |
+          for dir in artifacts/in/velopack-*; do
+            rid="${dir##*/velopack-}"
+            args=(--scan "$dir" --rid "$rid" --version "$VERSION" --channel "$CHANNEL" --out "artifacts/feed/$rid")
+            if [ "$MANDATORY" = "true" ]; then args+=(--mandatory); fi
+            if [ -n "$MIN_SUPPORTED" ]; then args+=(--minimum-supported-version "$MIN_SUPPORTED"); fi
+            if [ -n "$RELEASE_NOTES" ]; then args+=(--notes "$RELEASE_NOTES"); fi
+            ${{ env.NCW_BUILD }} manifest "${args[@]}"
+            if [ -f "artifacts/feed/$rid/release-manifest.json.sig" ] && [ -n "$NCW_RELEASE_PUBLIC_KEY" ]; then
+              ${{ env.NCW_BUILD }} manifest-verify --manifest "artifacts/feed/$rid/release-manifest.json" --dir "$dir"
+            fi
+          done
+
+      - name: Upload the feed manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: feed-manifests
+          path: artifacts/feed/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── 8. upload:把每个平台的包和它的签名清单发布到后端的 3.x 更新源(官网下载页和 3.x 的自更新都读它) ──
+  # tag 发布总是上传;手动触发要勾选 upload。后端还没上线时这个 job 会失败,产物都还在:后端上线后只重跑这一个 job 即可。
+  upload:
+    name: 8/8 upload to the 3.x feed
+    needs: [preflight, build, manifest]
+    if: github.ref_type == 'tag' || inputs.upload == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NCW_RELEASE_UPLOAD_TOKEN: ${{ secrets.NCW_RELEASE_UPLOAD_TOKEN || secrets.CLIENT_UPLOAD_TOKEN }}
+      NCW_RELEASE_PUBLIC_KEYS: ${{ vars.NCW_RELEASE_PUBLIC_KEYS }}
+      NCW_RELEASE_SERVER: ${{ vars.NCW_RELEASE_SERVER }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (version from global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Download the platform packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: velopack-*
+          path: artifacts/in
+
+      - name: Download the feed manifests
+        uses: actions/download-artifact@v4
+        with:
+          name: feed-manifests
+          path: artifacts/feed
+
+      # upload 自己先验签(用客户端内置的那组公钥)、核对每个文件的 sha256,验不过不传;文件按内容寻址,重跑只补缺的。
+      - name: Publish each platform
+        run: |
+          if [ -z "$NCW_RELEASE_UPLOAD_TOKEN" ]; then
+            echo "::error::No upload token (NCW_RELEASE_UPLOAD_TOKEN or CLIENT_UPLOAD_TOKEN)."
+            exit 1
+          fi
+          for dir in artifacts/in/velopack-*; do
+            rid="${dir##*/velopack-}"
+            args=(--rid "$rid" --channel "$CHANNEL" --dir "$dir" --manifest "artifacts/feed/$rid/release-manifest.json")
+            if [ -n "$NCW_RELEASE_SERVER" ]; then args+=(--server "$NCW_RELEASE_SERVER"); fi
+            ${{ env.NCW_BUILD }} upload "${args[@]}"
+            echo "- **$rid**: published to the $CHANNEL feed" >> "$GITHUB_STEP_SUMMARY"
+          done
