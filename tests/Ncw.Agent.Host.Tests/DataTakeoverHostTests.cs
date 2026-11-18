@@ -92,7 +92,9 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
 
     private static async Task<DataStatus> WaitFor(DeviceClient client, string state)
     {
-        for (var i = 0; i < 200; i++)
+        // 按截止时间而不是固定次数:慢 CI(Windows 虚拟机上整个 Host 测试组曾跑到 4 分钟以上)里 5 秒不够接管跑完。
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < deadline)
         {
             var status = await client.CallAsync(DeviceMethods.DataStatus, Unit.Value);
             if (status.State == state) return status;
