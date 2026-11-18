@@ -100,6 +100,15 @@ public sealed class GatewayHostTests : IAsyncLifetime
 
             await gateway.ReconcileGate.WaitAsync();
             var enable = _owner.CallAsync(GatewayMethods.SetEnabled, new GatewaySetEnabledParams(true), idem: Guid.NewGuid().ToString("N"));
+            // 先等「启用」真正写进设置:对账读的是拿到闸门那一刻的设置,慢机器上请求可能还没处理完,
+            // 这时 X 合法地读到「关」而返回空端口,和被测的竞态无关。
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!gateway.Status().Enabled)
+            {
+                Assert.True(DateTime.UtcNow < deadline, $"round {round}: the enable request never reached the settings");
+                await Task.Delay(10);
+            }
+
             await Task.Delay(100); // 让设置变更触发的对账和处理器自己的对账都排到闸门后面(没排上只会让这一轮变弱,不会让它出错)
 
             var x = gateway.ReconcileAsync();

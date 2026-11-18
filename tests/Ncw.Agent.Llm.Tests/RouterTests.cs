@@ -694,7 +694,7 @@ public sealed class RouterTests
     [Fact]
     public async Task Progress_resets_the_idle_deadline_so_there_is_no_total_run_limit()
     {
-        var h = OnlyA(options: new LlmRouterOptions { IdleTimeout = () => TimeSpan.FromMilliseconds(400) });
+        var h = OnlyA(options: new LlmRouterOptions { IdleTimeout = () => TimeSpan.FromMilliseconds(1000) });
         var chunks = new List<string>
         {
             TypedFrames(("message_start", """{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1}}}"""),
@@ -709,7 +709,7 @@ public sealed class RouterTests
             ("content_block_stop", """{"type":"content_block_stop","index":0}"""),
             ("message_delta", """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}"""),
             ("message_stop", """{"type":"message_stop"}""")));
-        h.Upstream.Enqueue(() => Reply.SsePaced(chunks, TimeSpan.FromMilliseconds(120))); // 总长 ~1s,远超 400ms,但每个间隔都没超
+        h.Upstream.Enqueue(() => Reply.SsePaced(chunks, TimeSpan.FromMilliseconds(250))); // 总长 ~2s,远超 1s,但每个间隔都没超(余量 4 倍,扛得住慢 CI 的定时器抖动)
 
         var events = await h.RunAsync(Msg.Request("hi"));
 
