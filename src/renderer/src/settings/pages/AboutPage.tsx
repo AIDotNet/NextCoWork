@@ -4,6 +4,8 @@ import { SettingGroup, SettingRow } from '../Row'
 import { useI18n } from '../../i18n'
 import { Button } from '../../components/arc/button/button'
 import { ReleaseNotesDialog } from './ReleaseNotesDialog'
+import { V3UpgradeCard } from './V3UpgradeCard'
+import { useV3UpgradeStore } from '../../stores/v3-upgrade'
 import { updateCheck, updateDownload, updateGetState, updateInstall } from '../../services/app'
 import type { UpdateState } from '../../../../shared/domain/update'
 import { updateErrorKey } from '../../lib/update-error'
@@ -27,8 +29,11 @@ export function AboutPage({ versions }: { versions: Bootstrap['versions'] }): Re
     void updateGetState().then(setResult).catch(() => undefined)
     return on('app:updateChanged', setResult)
   }, [])
+  const refreshV3 = useV3UpgradeStore((s) => s.refresh)
   const check = async (): Promise<void> => {
     setChecking(true)
+    // 2.9:手动检查时顺带问一次有没有 3.0(结果进 stores/v3-upgrade.ts,上面的卡片自己跟着变)
+    void refreshV3()
     try { setResult(await updateCheck()) } catch { setResult({ state: 'error', currentVersion: versions.app, code: 'network' }) } finally { setChecking(false) }
   }
   const download = async (): Promise<void> => { setWorking(true); try { setResult(await updateDownload()) } finally { setWorking(false) } }
@@ -41,6 +46,8 @@ export function AboutPage({ versions }: { versions: Bootstrap['versions'] }): Re
   ]
   const releaseNotes = result?.state === 'available' ? result.update.releaseNotes : undefined
   return (
+    <>
+    <V3UpgradeCard />
     <SettingGroup>
       <SettingRow
         title="NextCoWork"
@@ -74,5 +81,6 @@ export function AboutPage({ versions }: { versions: Bootstrap['versions'] }): Re
 
       <ReleaseNotesDialog notes={releaseNotes ?? ''} open={notesOpen} onClose={() => setNotesOpen(false)} />
     </SettingGroup>
+    </>
   )
 }

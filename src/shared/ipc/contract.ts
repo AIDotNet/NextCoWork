@@ -85,6 +85,7 @@ import type { ModeDefinition } from '../domain/mode'
 import type { Workspace, WorkspaceSettings } from '../domain/workspace'
 import type { ConnectionProfile, ConnectionProfileInput, ConnectionStatus, PreparedWorkspace, RemoteDirectory, SshAuthRequest, SshAuthResponse } from '../domain/environment'
 import type { UpdateCheckResult, UpdateState } from '../domain/update'
+import type { V3OfferState } from '../domain/v3-upgrade'
 import type { ClientAuthState, ClientAuthUser, ClientUsageEntry } from '../domain/client-auth'
 import type { ReferralState } from '../domain/referral'
 import type { RechargeCheckoutResult, RechargeOptionsState, RechargeOrderState } from '../domain/recharge'
@@ -266,6 +267,14 @@ export interface IpcInvokeMap {
   'app:updateDownload': { req: void; res: UpdateState }
   'app:updateInstall': { req: void; res: void }
   'app:updateGetState': { req: void; res: UpdateState }
+  /** 2.9:有没有 NextCoWork 3.0 可以升级(见 `shared/domain/v3-upgrade.ts`)。只读主进程缓存的那一份,不联网。 */
+  'app:v3OfferGetState': { req: void; res: V3OfferState }
+  /** 2.9:重新问一次后端(「关于」里点「检查更新」时)。 */
+  'app:v3OfferRefresh': { req: void; res: V3OfferState }
+  /** 2.9:打开 3.0 下载页,然后走正常的退出流程(3.0 在 2.x 开着时拒绝接管数据)。 */
+  'app:v3Upgrade': { req: void; res: void }
+  /** 2.9:只打开 3.0 下载页。 */
+  'app:v3OpenDownload': { req: void; res: void }
   'app:copyText': { req: { text: string }; res: void }
   // ── 设备(控制端本地:设备清单与配对凭据只在这台电脑上) ──
   /** 已配对设备清单 + 当前选择与连接状态。不含证书/私钥。 */
@@ -1688,6 +1697,8 @@ export interface IpcEventMap {
   'clientAuth:changed': ClientAuthState
   'configSync:changed': SyncStatus
   'app:updateChanged': UpdateState
+  /** 2.9:3.0 的升级信息变了。整份下发(和 `app:v3OfferGetState` 同一个类型)。 */
+  'app:v3OfferChanged': V3OfferState
   /**
    * 导入状态变了 —— 作业进度、同步状态、新批次。
    *
@@ -1736,6 +1747,10 @@ export const INVOKE_CHANNELS = {
   'app:updateDownload': 1,
   'app:updateInstall': 1,
   'app:updateGetState': 1,
+  'app:v3OfferGetState': 1,
+  'app:v3OfferRefresh': 1,
+  'app:v3Upgrade': 1,
+  'app:v3OpenDownload': 1,
   'app:copyText': 1,
   'device:getState': 1,
   'device:inspectInvitation': 1,
@@ -2144,6 +2159,7 @@ export const EVENT_CHANNELS = {
   'clientAuth:changed': 1
   ,'configSync:changed': 1
   ,'app:updateChanged': 1
+  ,'app:v3OfferChanged': 1
   ,'imports:changed': 1
   ,'scheduled:changed': 1
   ,'scheduled:focusRun': 1
