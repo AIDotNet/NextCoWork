@@ -37,6 +37,8 @@
                            Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
         <lucide:LucideIcon Kind="CircleCheckBig" Size="28" IsVisible="{Binding IsCompleted}"
                            Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <lucide:LucideIcon Kind="History" Size="28" IsVisible="{Binding IsRolledBack}"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
       </Panel>
 
       <TextBlock x:Name="Title" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
@@ -49,10 +51,15 @@
                  Text="{Binding Reason, Converter={x:Static cv:DataReasonConverter.Instance}}" />
       <TextBlock Classes="detail" IsVisible="{Binding IsCompleted}"
                  Text="{Binding Summary, Converter={x:Static cv:TakeoverSummaryConverter.Instance}}" />
+      <!-- 回退到 2.x 之后:说明 + 「重新迁移」(data.retry 在这个状态下就是重新接管) -->
+      <TextBlock Classes="detail" IsVisible="{Binding IsRolledBack}" Text="{l:NcwText DataRolledBackDetail}" />
 
       <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Margin="0,6,0,0"
                     IsVisible="{Binding CanRetry}" IsEnabled="{Binding !IsRetrying}"
                     Command="{Binding RetryCommand}" Content="{l:NcwText Retry}" />
+      <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Margin="0,6,0,0"
+                    IsVisible="{Binding IsRolledBack}" IsEnabled="{Binding !IsRetrying}"
+                    Command="{Binding RetryCommand}" Content="{l:NcwText DataRolledBackMigrateAgain}" />
       <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Margin="0,6,0,0"
                     IsVisible="{Binding IsCompleted}"
                     Command="{Binding ContinueCommand}" Content="{l:NcwText Continue}" />

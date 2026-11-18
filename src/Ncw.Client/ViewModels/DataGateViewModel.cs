@@ -18,6 +18,11 @@ public enum DataGateMode
 
     /// <summary>刚完成 2.x 接管:显示迁移了多少项目和会话,用户点「继续」后关闭。</summary>
     Completed,
+
+    /// <summary>
+    /// 数据已经回退给 2.x(设置 · 数据 · 回退到 2.x):不自动再迁移,提示用 2.9 打开;用户点「重新迁移」才再接管一次(<c>data.retry</c>)。
+    /// </summary>
+    RolledBack,
 }
 
 /// <summary>
@@ -86,6 +91,8 @@ public sealed partial class DataGateViewModel : ObservableObject
 
     public bool IsCompleted => Mode == DataGateMode.Completed;
 
+    public bool IsRolledBack => Mode == DataGateMode.RolledBack;
+
     partial void OnModeChanged(DataGateMode value)
     {
         OnPropertyChanged(nameof(IsVisible));
@@ -93,6 +100,7 @@ public sealed partial class DataGateViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRetry));
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(IsCompleted));
+        OnPropertyChanged(nameof(IsRolledBack));
     }
 
     [RelayCommand]
@@ -130,6 +138,7 @@ public sealed partial class DataGateViewModel : ObservableObject
             DataStates.TakingOver => DataGateMode.TakingOver,
             DataStates.Blocked => DataGateMode.Blocked,
             DataStates.Failed => DataGateMode.Failed,
+            DataStates.RolledBack => DataGateMode.RolledBack,
             DataStates.Ready when data.TakenOver is not null && !_summaryDismissed => DataGateMode.Completed,
             _ => DataGateMode.Hidden,
         };

@@ -58,7 +58,8 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         // 文件在主工作区里作为标签页打开:文件页签只负责「点了哪个」,预览与编辑在标签里
         Workspace = new WorkspaceViewModel(stores, Sessions, inspectorServices.Files, () => Dialogs, () => Inspector.Text, () => Inspector.LocalFiles);
         Inspector.Files.Tabs = Workspace;
-        DataGate = new DataGateViewModel(stores, Devices, new DataActions(Devices));
+        DataActions = new DataActions(Devices, () => StartupHost, () => RequestExit);
+        DataGate = new DataGateViewModel(stores, Devices, DataActions);
         // 启动加载界面(docs/design/03 §10):事实由 StartupRecorder 锁存进 Store,ViewModel 只读;和数据页读同一份数据状态,同一时刻只有一个全屏层
         StartupRecorder = new StartupRecorder(stores, Devices);
         Startup = new StartupViewModel(stores, Devices, DataGate,
@@ -70,7 +71,7 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Settings = new SettingsViewModel(stores, Devices, DeviceActions,
             new ModelsSettingsViewModel(stores, Providers, Catalog, () => Dialogs, () => Text, () => Launcher, clock),
             management ?? new ManagementPages(stores, SettingsActions, Extensions.Skills, Extensions.Commands, Extensions.Hooks, Extensions.Mcp, Usage, Storage, Gateway,
-                () => Dialogs, () => Launcher, clock ?? TimeProvider.System, Extensions.Plugins),
+                () => Dialogs, () => Launcher, clock ?? TimeProvider.System, Extensions.Plugins, DataActions),
             Account, new AboutViewModel(stores, new UpdateActions(updates), clock));
         Onboarding = new OnboardingViewModel(stores, Account, DataGate, Settings, () => Projects.NewProjectAsync());
         // 插件市场安装需要账户令牌(plugins.authRequired):提示卡上的「去登录」打开设置的「账户」标签
@@ -452,6 +453,9 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
 
     /// <summary>启动时的数据页(接管 2.x 数据的进度、被挡住时的重试)。</summary>
     public DataGateViewModel DataGate { get; }
+
+    /// <summary>设备数据的意图:接管页的重试 / 重新迁移,设置 · 数据 · 回退到 2.x。</summary>
+    public DataActions DataActions { get; }
 
     /// <summary>启动加载界面:真实的加载阶段、进度、慢启动提示、失败面板(整窗覆盖层,盖在外壳上,淡出后释放)。没有在跟踪启动时什么也不显示。</summary>
     public StartupViewModel Startup { get; }

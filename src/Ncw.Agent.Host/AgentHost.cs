@@ -1,3 +1,4 @@
+using Ncw.Agent.Storage.Takeover;
 using System.Reflection;
 using System.Text.Json;
 using Ncw.Agent.Cloud;
@@ -261,9 +262,31 @@ public sealed class AgentHost : IDisposable
             return Unit.Value;
         });
         _router.Handle(DeviceMethods.DataStatus, (_, _, _) => ValueTask.FromResult(_data.Status));
-        _router.Handle(DeviceMethods.DataRetry, async (_, _, ct) => await _data.PrepareAsync(ct).ConfigureAwait(false));
+        // data.retry 在「已回退到 2.x」的状态下就是用户明确要求的「重新迁移」(DataGate.RetryAsync)
+        _router.Handle(DeviceMethods.DataRetry, async (_, _, ct) => await _data.RetryAsync(ct).ConfigureAwait(false));
+        // 设置 · 数据 · 回退到 2.x(04 §5):只登记请求,Agent 关库之后执行(DataGate.Dispose)
+        _router.Handle(DeviceMethods.DataRollbackInfo, (_, _, _) => ValueTask.FromResult(ToDto(_data.RollbackInfo())));
+        _router.Handle(DeviceMethods.DataRequestRollback, (p, _, _) =>
+        {
+            if (!p.AcknowledgeDataLoss)
+            {
+                throw Ncw.Agent.Host.Services.ServiceMapping.Invalid("data.rollback.notAcknowledged", "Confirm that data written in 3.0 after the move will not go back to 2.x.");
+            }
+
+            try
+            {
+                return ValueTask.FromResult(ToDto(_data.RequestRollback()));
+            }
+            catch (TakeoverException e) when (e.Failure == TakeoverFailure.NothingToRollBack)
+            {
+                throw Ncw.Agent.Host.Services.ServiceMapping.Invalid("data.rollback.unavailable", e.Message);
+            }
+        });
+        _router.Handle(DeviceMethods.DataCancelRollback, (_, _, _) => ValueTask.FromResult(ToDto(_data.CancelRollback())));
 
     }
+
+    private static DataRollbackInfo ToDto(RollbackAvailability a) => new(a.Available, a.TakenOverAt, a.Pending);
 
     public static string Version =>
         typeof(AgentHost).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";

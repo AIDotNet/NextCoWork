@@ -51,10 +51,13 @@ public sealed partial class StorageViewModel : ManagementPageViewModel
     private string? _confirmToken;
     private string? _restorePath;
     private string? _uploadId;
+    private readonly IDataRollbackCommands? _rollback;
 
-    public StorageViewModel(SettingsScope scope, ClientStores stores, IStorageCommands commands, ISettingsCommands settings, Func<IDialogService> dialogs, TimeProvider clock)
+    public StorageViewModel(SettingsScope scope, ClientStores stores, IStorageCommands commands, ISettingsCommands settings, Func<IDialogService> dialogs, TimeProvider clock,
+        IDataRollbackCommands? rollback = null)
         : base(scope, Need.Member)
     {
+        _rollback = rollback;
         _stores = stores;
         _commands = commands;
         _settings = settings;
@@ -73,12 +76,18 @@ public sealed partial class StorageViewModel : ManagementPageViewModel
 
     public Gate OwnerGate => Scope.GateFor(Need.Owner);
 
-    protected override void OnGatesChanged() => OnPropertyChanged(nameof(DangerGate));
+    protected override void OnGatesChanged()
+    {
+        OnPropertyChanged(nameof(DangerGate));
+        OnPropertyChanged(nameof(ShowsRollback));
+        OnPropertyChanged(nameof(CanRollBack));
+    }
 
     protected override void OnUnavailable()
     {
         Stats = null;
         Backup = null;
+        Rollback = null;
         CancelDanger();
     }
 
@@ -102,6 +111,98 @@ public sealed partial class StorageViewModel : ManagementPageViewModel
         Backup = backup.IsOk ? backup.Value : null;
         SyncBackupSettings();
         Ready();
+        await LoadRollbackAsync();
+    }
+
+    // ───────────────────────── 回退到 2.x(docs/design/04 §5,只对本机设备) ─────────────────────────
+
+    /// <summary>能不能回退;null = 没问过 / 不适用(远程设备、没有宿主)。</summary>
+    [ObservableProperty] public partial DataRollbackInfo? Rollback { get; private set; }
+
+    /// <summary>「我已了解:迁移之后在 3.0 里新写的数据不会带回 2.x」。</summary>
+    [ObservableProperty] public partial bool RollbackAcknowledged { get; set; }
+
+    [ObservableProperty] public partial bool RollingBack { get; private set; }
+
+    [ObservableProperty] public partial Failure? RollbackFailure { get; private set; }
+
+    /// <summary>只在本机 owner、并且这份数据确实是从 2.x 接管来的(接管前的备份还在)时显示。</summary>
+    public bool ShowsRollback => _rollback is not null && DangerGate.Allowed && Rollback is { Available: true };
+
+    public bool CanRollBack => ShowsRollback && RollbackAcknowledged && !RollingBack;
+
+    partial void OnRollbackChanged(DataRollbackInfo? value)
+    {
+        OnPropertyChanged(nameof(ShowsRollback));
+        OnPropertyChanged(nameof(CanRollBack));
+    }
+
+    partial void OnRollbackAcknowledgedChanged(bool value) => OnPropertyChanged(nameof(CanRollBack));
+
+    partial void OnRollingBackChanged(bool value) => OnPropertyChanged(nameof(CanRollBack));
+
+    private async Task LoadRollbackAsync()
+    {
+        if (_rollback is null || !DangerGate.Allowed || Scope.DeviceId is not { } device)
+        {
+            return;
+        }
+
+        var info = await _rollback.GetRollbackInfoAsync();
+        if (IsCurrent(device))
+        {
+            Rollback = info.IsOk ? info.Value : null;
+        }
+    }
+
+    /// <summary>登记回退 → 本机 Agent 关库后执行 → 应用退出。失败时停在这里并说明原因(什么都没停、没退出)。</summary>
+    [RelayCommand]
+    private async Task RollBackToLegacyAsync()
+    {
+        if (_rollback is null || !CanRollBack)
+        {
+            return;
+        }
+
+        RollingBack = true;
+        RollbackFailure = null;
+        try
+        {
+            var result = await _rollback.RollBackToLegacyAsync();
+            if (result.IsOk)
+            {
+                Rollback = result.Value;
+            }
+            else
+            {
+                RollbackFailure = Failure.Of(result);
+            }
+        }
+        finally
+        {
+            RollingBack = false;
+        }
+    }
+
+    /// <summary>撤回还没执行的回退请求(例如退出被取消,用户改主意了)。</summary>
+    [RelayCommand]
+    private async Task CancelRollbackAsync()
+    {
+        if (_rollback is null)
+        {
+            return;
+        }
+
+        var result = await _rollback.CancelRollbackAsync();
+        if (result.IsOk)
+        {
+            Rollback = result.Value;
+            RollbackAcknowledged = false;
+        }
+        else
+        {
+            RollbackFailure = Failure.Of(result);
+        }
     }
 
     // ───────────────────────── 备份设置(设备设置的 data 段) ─────────────────────────

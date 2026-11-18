@@ -196,7 +196,7 @@ public sealed partial class StartupViewModel : ObservableObject, IDisposable
         {
             DataGateMode.Preparing => new StartupData(StartupDataPhase.Preparing),
             DataGateMode.TakingOver => new StartupData(StartupDataPhase.TakingOver, _dataGate.Step),
-            DataGateMode.Blocked or DataGateMode.Failed or DataGateMode.Completed => new StartupData(StartupDataPhase.NeedsUser),
+            DataGateMode.Blocked or DataGateMode.Failed or DataGateMode.Completed or DataGateMode.RolledBack => new StartupData(StartupDataPhase.NeedsUser),
             _ => new StartupData(_dataGate.IsReady ? StartupDataPhase.Ready : StartupDataPhase.Unknown),
         };
         return stored with { Connection = StartupLive.ConnectionOf(_stores.Workspace.State, _devices, stored.Profile), Data = data };
