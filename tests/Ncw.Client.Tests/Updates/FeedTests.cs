@@ -62,23 +62,26 @@ public class FeedTests
 
     private sealed class LocalHttp : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        private readonly HttpListener _listener;
         private readonly Task _loop;
 
         public LocalHttp(Func<string, (int Status, byte[] Body)> route)
         {
+            // Linux 上 Start 失败(端口被占)会把监听器释放掉,所以每次重试都新建一个。
             var port = new Random().Next(20000, 60000);
             for (;; port++)
             {
+                var listener = new HttpListener();
                 try
                 {
-                    _listener.Prefixes.Add($"http://127.0.0.1:{port}/feed/");
-                    _listener.Start();
+                    listener.Prefixes.Add($"http://127.0.0.1:{port}/feed/");
+                    listener.Start();
+                    _listener = listener;
                     break;
                 }
                 catch (HttpListenerException)
                 {
-                    _listener.Prefixes.Clear();
+                    listener.Close();
                 }
             }
 
