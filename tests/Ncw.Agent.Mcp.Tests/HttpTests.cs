@@ -15,7 +15,10 @@ public sealed class HttpTests
         var rig = new McpRig();
         before?.Invoke(rig);
         var status = await rig.Service.UpsertAsync(McpRig.Remote(id, http.Url, kind, headers));
-        Assert.Equal(McpState.Connected, status.State);
+        // 失败时把原因带出来(macOS CI 上旧版 SSE 的连接失败过一次,当时只看得到 Failed)
+        Assert.True(
+            status.State == McpState.Connected,
+            $"state {status.State}, error {status.ErrorKey} {string.Join(", ", status.ErrorParams.Select(p => $"{p.Key}={p.Value}"))}; requests: {string.Join(" | ", http.Requests.Select(r => $"{r.Method} {r.Path}"))}");
         return rig;
     }
 

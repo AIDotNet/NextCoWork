@@ -203,6 +203,7 @@ public sealed class RealBrowserTests : IAsyncLifetime
 
         // 截图:真 PNG,尺寸等于视口
         var shot = await Run("browser_screenshot", "ws-a", ("tabId", tab));
+        Ok(shot); // macOS CI 上截图这一步失败过两次(一次没有图片、一次表现为随后的坐标点击报错):带上工具的错误文本
         var image = Assert.Single(shot.Content.OfType<ImagePart>());
         var png = Convert.FromBase64String(image.DataRef["data:image/png;base64,".Length..]);
         Assert.Equal((1280, 720), PageSize(png));

@@ -224,7 +224,8 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 > **`ci.yml`**:2026-11-17 起在真实的 GitHub Actions 上运行(PR #195):三平台每一步都通过过——构建零警告、测试、`publish-agent`(NativeAOT、零裁剪警告)、`verify --agent` 冒烟、`build-relay`(默认与 `--aot`)。
 > 一共跑了 6 轮才三平台同时全绿(第 6 轮,8417 个测试;Linux 16 分钟、Windows 24 分钟、macOS 30 分钟)。
 > **一轮全绿不等于稳定**:紧接着只改了文档的第 7 轮又有 6 个失败(三个平台各有),另一个分支的同一轮有 3 个——都是满载的 runner 上才出现的竞态,已逐个定位(见下表),
-> 其中一半是产品里的问题。把 CI 当合并门槛之前,先看连续几轮的结果。
+> 其中一半是产品里的问题。修完之后同一个提交(`1ec60132`)连跑 3 次:9 个任务里 8 个全绿,另 1 个(macOS)有 3 个此前没见过的偶发。
+> 也就是说现在大约每三轮会红一次,红的时候是一两个平台上各一到三个用例——**还不能当成无人值守的合并门槛**:红了先对照下面的清单,不在清单里的要查。
 > **`release.yml` 仍然没有在真实 GitHub Actions 上运行过**:只做了静态检查(actionlint 通过、YAML 能被解析、没有任何密钥内容);`signtool` 的位置、AppImage 的 vpk 依赖、
 > `security` 钥匙串步骤、Ed25519 清单签名的 secrets 接线都要在第一次真实运行时核对。
 
@@ -242,7 +243,9 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 
 - Windows:Bash 工具跑 `cat app.txt` 退出码 0 但没有输出(`Ncw.Agent.Tools.Tests` 的 `Read_then_Edit_then_Bash_through_the_real_loop`)。如果不是 runner 的问题,就是 Windows 上命令输出可能被丢掉,**值得优先查**。
 - Windows:杀浏览器进程后 10 秒内没有报告退出(`RealBrowserTests`,出现过两轮);超时信息现在会区分「已退出但通知未到」和「仍在运行」。
-- macOS:真实浏览器用例里 `browser_cua_click` 报错(整条用例 81 秒,runner 很慢);断言现在会带上工具的错误文本。
+- macOS:真实浏览器用例里截图这一步失败(两次:一次截图结果里没有图片,一次表现为随后的 `browser_cua_click` 报错;整条用例 50~80 秒,runner 很慢);断言现在会带上工具的错误文本。
+- macOS:MCP 旧版 SSE 传输连接失败(`HttpTests`,一次,90 毫秒内就失败);断言现在会带上错误键和收到的请求。
+- Windows:runner 偶尔卡顿十几秒,同一时间段里 git grep 超过 10 秒的超时、界面测试里真实 Agent 的连接断开(`RealAgentTests`);搜索类用例已改用不走的时钟,另外两处依赖真实时间,没有处理。
 
 **Windows 上跳过的 294 个用例**(`Assert.SkipWhen/SkipUnless`,原因写在用例里):`Ncw.Agent.Environments.Tests` 119、`Hooks` 59、`Host` 42、`Terminal` 27、`Parity` 13、`Workspace` 13、`Storage` 6、`Integration` 5、
 `Mcp` 3、`Extensions` 2、`Desktop` 2,以及 `Browser` / `Tools` / `UI` 各 1。它们依赖 POSIX shell、POSIX PTY、符号链接或 Unix 权限位;**这些路径在 Windows 上没有被验证**,「CI 绿」不覆盖它们。
