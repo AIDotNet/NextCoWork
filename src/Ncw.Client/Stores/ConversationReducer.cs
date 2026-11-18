@@ -119,9 +119,17 @@ public static class ConversationReducer
         state.Runs.TryGetValue(run, out var existing);
         var rebuilt = RunView.New(run, snapshot.SessionId, existing?.StartedAtRev ?? knownRev);
         var next = state;
+        var seen = existing?.Seq ?? 0;
         foreach (var e in snapshot.Events)
         {
-            (next, rebuilt) = Fold(next, deviceId, rebuilt, e.Seq, e.Event, knownRev);
+            // Run 的镜像总是从头折一遍;但落到会话上的副作用(消息、回执)只认镜像还没收过的事件——序号不大于已收到的就是重放,
+            // 和 ApplyRunEvent 同一条规则。否则一份迟到的快照会把这之后已经被截断(编辑重发 / 重新生成)的消息重新塞回会话。
+            var (folded, view) = Fold(next, deviceId, rebuilt, e.Seq, e.Event, knownRev);
+            rebuilt = view;
+            if (e.Seq > seen)
+            {
+                next = folded;
+            }
         }
 
         // ★ 迟到的旧快照:快照的返回值和推送的事件走两条路,镜像可能已经收到了比它更靠后的事件。这时「当前状态」类的字段(流式文本、思考、重试、

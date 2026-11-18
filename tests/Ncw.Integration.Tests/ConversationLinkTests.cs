@@ -295,7 +295,12 @@ public sealed class ConversationLinkTests : IAsyncLifetime
         Assert.Equal("from the client test", File.ReadAllText(target));
         var messagesA = a.State.Sessions[session.Value].Messages;
         Assert.Equal(messagesA.Select(m => m.Id), b.State.Sessions[session.Value].Messages.Select(m => m.Id));
-        Assert.Empty(a.State.Runs[run].Streaming);
+        // 「已完成、已收口」可以先由权威广播对账得出(规则 5),这时 A 的事件流可能还没送完最后几个增量和 message_end:等它送完。
+        // 送完之后必须是空的——留着就是镜像里有清不掉的流式文本(迟到的旧快照曾经造成过,见 ConversationReducerTests)。
+        await WaitUntil(
+            () => a.State.Runs[run].Streaming.IsEmpty,
+            "streaming text replaced by the complete message",
+            detail: () => string.Join(" | ", a.State.Runs[run].Streaming.Select(p => $"{p.Key}={p.Value}")));
         Assert.Equal(ToolCallStatus.Done, a.State.Runs[run].Tools["c1"].Status);
         await WaitUntil(() => a.State.InteractionsOf(run.DeviceId).Pending.IsEmpty && b.State.InteractionsOf(run.DeviceId).Pending.IsEmpty, "interactions cleared");
         await WaitUntil(() => a.Workspace.ActivityOf(project) is { RunningRuns: 0, PendingInteractions: 0 }, "project idle");
