@@ -17,18 +17,69 @@ public sealed class RoutedUpstream : IUpstreamHttp
     private readonly Dictionary<string, List<JsonObject>> _scripts = [];
     private readonly Dictionary<string, int> _counts = [];
     private readonly Func<string, Task> _gate;
+    private readonly Func<IReadOnlyList<string>, CancellationToken, Task> _toolResultsObserved;
     private readonly object _lock = new();
 
-    public RoutedUpstream(JsonArray routes, JsonObject upstream, Action<string, int, int> chunkConsumed, Func<string, Task> gate)
+    /// <param name="toolResultsObserved">
+    /// 应答之前先等「这次请求末尾带回来的那几个工具结果,它们的 <c>tool_end</c> 已经被测试台看到」。循环把事件写进通道、由另一个泵送出去,
+    /// 所以循环可以先于泵走到下一次请求;挂在 <c>tool_end</c> 上的用户操作(比如删掉计划文件)就可能晚于下一个工具,而 2.x 里事件回调是同步的。
+    /// </param>
+    public RoutedUpstream(
+        JsonArray routes, JsonObject upstream, Action<string, int, int> chunkConsumed, Func<string, Task> gate, Func<IReadOnlyList<string>, CancellationToken, Task> toolResultsObserved)
     {
         _routes = [.. routes.Select(r => r!.AsObject())];
         _gate = gate;
+        _toolResultsObserved = toolResultsObserved;
         foreach (var (key, items) in upstream)
         {
             var script = items!.AsArray().Select(i => i!.AsObject()).ToList();
             _scripts[key] = script;
             _byKey[key] = new ScriptedUpstream(script, (request, chunk) => chunkConsumed(key, request, chunk));
         }
+    }
+
+    /// <summary>
+    /// 请求末尾那一组工具结果的调用 id(三种线上格式:Anthropic 的 <c>tool_result</c> 块、Chat Completions 的 <c>role: tool</c> 消息、Responses 的 <c>function_call_output</c> 项)。
+    /// 只看末尾:更早的结果在更早的请求上已经等过了。
+    /// </summary>
+    internal static IReadOnlyList<string> TrailingToolResults(JsonNode? body)
+    {
+        var ids = new List<string>();
+        if ((body?["messages"] ?? body?["input"]) is not JsonArray items)
+        {
+            return ids;
+        }
+
+        for (var i = items.Count - 1; i >= 0; i--)
+        {
+            if (items[i] is not JsonObject item)
+            {
+                break;
+            }
+
+            var before = ids.Count;
+            if (Text(item["type"]) == "function_call_output" && Text(item["call_id"]) is { } callId)
+            {
+                ids.Add(callId);
+            }
+            else if (Text(item["role"]) == "tool" && Text(item["tool_call_id"]) is { } toolCallId)
+            {
+                ids.Add(toolCallId);
+            }
+            else if (Text(item["role"]) == "user" && item["content"] is JsonArray blocks)
+            {
+                ids.AddRange(blocks.OfType<JsonObject>().Where(b => Text(b["type"]) == "tool_result").Select(b => Text(b["tool_use_id"])).OfType<string>());
+            }
+
+            if (ids.Count == before)
+            {
+                break;
+            }
+        }
+
+        return ids;
+
+        static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
     }
 
     /// <summary>每个路由键收到的请求(按到达顺序)。</summary>
@@ -38,6 +89,11 @@ public sealed class RoutedUpstream : IUpstreamHttp
     {
         var body = request.Content is null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
         var key = RouteOf(body) ?? throw new InvalidOperationException($"No route matches this upstream request (first user message: {Clip(FirstUser(body))}).");
+        if (TrailingToolResults(body) is { Count: > 0 } results)
+        {
+            await _toolResultsObserved(results, ct).ConfigureAwait(false);
+        }
+
         int index;
         lock (_lock)
         {

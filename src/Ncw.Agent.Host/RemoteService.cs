@@ -728,7 +728,24 @@ public sealed class RemoteService : IDisposable
     {
         foreach (var (_, session) in _sessions.Where(s => s.Value.Fingerprint == fingerprint))
         {
-            session.Cts.Cancel();
+            Cancel(session.Cts);
+        }
+    }
+
+    /// <summary>
+    /// 断开一个会话。会话自己收尾时先把自己从表里拿掉、再释放令牌源,而这里遍历到的可能是拿掉之前的那一项——
+    /// 对已经释放的令牌源 Cancel 会抛 <see cref="ObjectDisposedException"/>:会话反正已经结束,不该让「改角色」因此报内部错误
+    /// (配对连接刚断开就改这个控制端的角色时撞上过,Linux CI)。
+    /// </summary>
+    private static void Cancel(CancellationTokenSource session)
+    {
+        try
+        {
+            session.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // 已经结束
         }
     }
 
@@ -801,7 +818,7 @@ public sealed class RemoteService : IDisposable
     {
         foreach (var (_, session) in _sessions)
         {
-            session.Cts.Cancel();
+            Cancel(session.Cts);
         }
     }
 

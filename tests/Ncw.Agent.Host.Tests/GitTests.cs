@@ -76,6 +76,9 @@ public sealed class GitTests : IAsyncLifetime
     private void InitRepoWithCommit()
     {
         Git("init", "-q", "-b", "main");
+        // 仓库级身份:被测的产品代码自己跑 git commit,拿不到上面给测试命令设的 GIT_AUTHOR_*;CI 机器上又没有全局身份(Linux CI 首跑时 commit 失败)
+        Git("config", "user.name", "Test");
+        Git("config", "user.email", "t@example.com");
         File.WriteAllText(Abs("a.txt"), "one\n");
         Git("add", "-A");
         Git("commit", "-q", "-m", "initial");
@@ -301,6 +304,8 @@ public sealed class GitTests : IAsyncLifetime
         var project = await plain.AddProjectAsync(client);
         Assert.SkipUnless(GitOnPath.Present, "git is not available on this machine");
         RunGit(project.Path, "init", "-q", "-b", "main");
+        RunGit(project.Path, "config", "user.name", "Test");
+        RunGit(project.Path, "config", "user.email", "t@example.com");
         File.WriteAllText(Path.Combine(project.Path, "a.txt"), "x\n");
         RunGit(project.Path, "add", "-A");
 

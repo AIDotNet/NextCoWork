@@ -313,7 +313,8 @@ public sealed class OrchestrationRig : IAsyncLifetime
         {
             if (Directory.Exists(dir))
             {
-                try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
+                // Windows 上 .git/objects 里的文件是只读的(UnauthorizedAccessException);临时目录清不掉不影响测试结论
+                try { Directory.Delete(dir, recursive: true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             }
         }
     }

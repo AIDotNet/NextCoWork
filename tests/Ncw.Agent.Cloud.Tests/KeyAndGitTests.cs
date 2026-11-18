@@ -223,7 +223,14 @@ public sealed class GitRelayTests : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _env.DisposeAsync();
-        Directory.Delete(_root, recursive: true);
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Windows 上 .git/objects 里的文件是只读的,删不掉;临时目录清不掉不影响测试结论
+        }
     }
 
     private EnvPath P(string name) => EnvPath.Parse(Path.Combine(_root, name), _env.Facts.PathStyle);

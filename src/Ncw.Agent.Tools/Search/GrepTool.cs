@@ -92,7 +92,6 @@ public sealed class GrepTool() : BuiltinTool(
         var nameGlob = args.Str("glob") ?? (type is null ? null : SearchLimits.TypeGlobs[type]);
         var nameFilter = nameGlob is null ? null : GlobMatcher.Compile(nameGlob, caseSensitive: !rt.CaseInsensitiveFileSystem);
         var needText = mode == "content";
-        var started = rt.Clock.GetTimestamp();
 
         // 先交给原生程序:它们跑在独立进程里,回溯卡死的是它们自己,超时由环境整树杀掉
         var native = await NativeGrep.RunAsync(rt, new NativeGrepRequest(
@@ -133,6 +132,8 @@ public sealed class GrepTool() : BuiltinTool(
                 : $"Invalid regular expression: {e.Message} (checked by the built-in .NET regex engine). When searching for a literal, escape . ( ) [ ] {{ }} * + ? with a backslash.");
         }
 
+        // 预算从托管搜索开始时起算(和 2.x 一样):原生后端探测 / 超时耗掉的时间不算在里面,否则它们一慢,回退到这里就一个文件都扫不了
+        var started = rt.Clock.GetTimestamp();
         var prefilter = GrepPrefilter.Create(pattern, ignoreCase);
         List<(string Rel, EnvPath Abs)> files;
         var walkTruncated = false;

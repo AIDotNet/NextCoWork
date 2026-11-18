@@ -14,6 +14,9 @@ public sealed class GitRepo : IDisposable
         if (init)
         {
             Git("init", "-q", "-b", "main");
+            // 仓库级身份:被测的产品代码自己跑 git commit,拿不到上面给测试命令设的 GIT_AUTHOR_*;CI 机器上又没有全局身份(Linux CI 首跑时 commit 失败)
+            Git("config", "user.name", "Test");
+            Git("config", "user.email", "t@example.com");
         }
     }
 
@@ -21,8 +24,11 @@ public sealed class GitRepo : IDisposable
 
     public string Root => Project.Root;
 
+    /// <summary>不指定选项时把超时放宽:产品默认「读 10 秒」,满载的 CI(Windows runner)上一条 git rev-parse 超过过。专门测超时的用例自己传选项。</summary>
     public GitService Service(string? subdirectory = null, GitServiceOptions? options = null) =>
-        new(Project.Env, subdirectory is null ? Project.RootPath : Project.RootPath.Join(subdirectory), options);
+        new(Project.Env, subdirectory is null ? Project.RootPath : Project.RootPath.Join(subdirectory), options ?? new GitServiceOptions { Timeouts = PatientTimeouts });
+
+    private static GitTimeouts PatientTimeouts { get; } = new() { Read = TimeSpan.FromSeconds(60), Write = TimeSpan.FromSeconds(120) };
 
     public string Git(params string[] args) => GitIn(Root, args);
 

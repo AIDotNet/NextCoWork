@@ -141,6 +141,8 @@ public class PosixPtyTests
         await output.SendLineAsync("set +H 2>/dev/null; true"); // 交互式 bash 把 `$!;` 里的 `!` 当历史展开
         await output.SendLineAsync("sleep 300 & echo BG=$!; (sleep 301 & echo GRAND=$!; wait) & echo SUB=$!; echo ready-tree-$((6*7))");
         await output.WaitForAsync("ready-tree-42");
+        // GRAND 是后台子 shell 打印的,可以晚于前台的 ready 行(Linux CI 上撞到过)
+        await Wait.UntilAsync(() => System.Text.RegularExpressions.Regex.IsMatch(output.Text, @"GRAND=\d+"), 15_000, "the subshell to print GRAND=<pid>");
         var pids = new[] { Pid(output, "BG"), Pid(output, "GRAND") };
         Assert.All(pids, pid => Assert.True(Wait.ProcessAlive(pid)));
 

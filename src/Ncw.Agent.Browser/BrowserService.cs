@@ -380,7 +380,14 @@ public sealed class BrowserService : IAsyncDisposable
 
             if (launched is not null)
             {
-                await launched.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await launched.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    // 终止已经发出、进程没在时限内报告退出(满载的 Windows 上出现过):收尾是尽力而为,不让它把服务的释放变成异常(LocalProcess.DisposeAsync 同样处理)
+                }
             }
         }
     }

@@ -108,7 +108,7 @@ M7 里的 2.9 也要尽早发布,因为它需要先在 2.x 用户中铺开。2.9
 | 2.x 和 3.0 同时打开同一份数据 | 数据损坏 | 接管时卸载或提示删除 2.x;2.9 起认所有权标记 |
 | Linux 上 `nextcowork://` 注册不生效 | 登录卡住 | 提供登录码备用方式 |
 | 云端冷启动慢 | 手机端体验差 | 预热镜像池、卷快照;界面显示唤醒进度 |
-| 签名和公证流水线 | 公证被拒或运行时被系统杀掉 | M2 出第一个 `ncw-agent` 二进制时就接入签名和公证,别留到 M7。**进度**:`tools/Ncw.Build` 的 `sign`(codesign / notarytool / signtool)已接入,macOS 上用 ad-hoc 身份把「逐文件签 → verify → vpk 打包 → 从包里解出的 .app 再验证」走通;Developer ID 与公证需要证书和账户,尚未实跑(04 §7.1) |
+| 签名和公证流水线 | 公证被拒或运行时被系统杀掉 | M2 出第一个 `ncw-agent` 二进制时就接入签名和公证,别留到 M7。**进度**:`tools/Ncw.Build` 的 `sign`(codesign / notarytool / signtool)已接入,macOS 上用 ad-hoc 身份把「逐文件签 → verify → vpk 打包 → 从包里解出的 .app 再验证」走通;Developer ID Application 签名(时间戳 + hardened runtime)2026-11-17 在 macOS arm64 上实跑通过;公证未做(3.0 首发先不公证),`.pkg` 没有安装器证书、未签名(04 §7) |
 | 移植期间 2.x 还在修 bug | C# 版漏掉修复 | 2.x 的每个 Agent 侧修复都登记到 `docs/parity.md`,作为 C# 版的待办 |
 
 ## 4. 测试策略

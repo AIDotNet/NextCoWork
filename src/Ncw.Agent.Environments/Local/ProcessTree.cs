@@ -53,9 +53,9 @@ internal static partial class ProcessTree
             {
                 process.Kill(entireProcessTree: true);
             }
-            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or AggregateException)
             {
-                // 已经退出
+                // 已经退出;AggregateException = 根进程已经处理过、个别后代没杀掉(比如权限不同的沙箱子进程),调用方以根进程是否退出为准
             }
 
             return;

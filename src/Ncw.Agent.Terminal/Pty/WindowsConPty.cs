@@ -109,6 +109,10 @@ internal sealed class ConPtyTerminal : PtyTerminal
 
             var startup = default(StartupInfoExW);
             startup.StartupInfo.Cb = (uint)sizeof(StartupInfoExW);
+            // STARTF_USESTDHANDLES(三个句柄留空):本进程的标准句柄被重定向时——ncw-agent 就是被桌面端用管道拉起的(stdin 生命线、stdout 的 ready 行)——
+            // 不让子进程沿用父进程那套重定向的句柄,只用伪终端的(node-pty 的 conpty.cc 同样处理)。这是防御性的:没有在真机上对比过设与不设的差别,
+            // ConPTY 的输入输出由 WindowsConPtyTests 在 CI 的 Windows runner 上验证。
+            startup.StartupInfo.Flags = StartfUseStdHandles;
             startup.AttributeList = attributeList;
 
             var commandLine = (WindowsCommandLine.Build(launch.Program, launch.Args) + "\0").ToCharArray();
@@ -282,6 +286,8 @@ internal sealed class ConPtyTerminal : PtyTerminal
         CloseHandle(_thread);
         CloseHandle(_process);
         CloseHandle(_job); // KILL_ON_JOB_CLOSE:还活着的后代在这里被带走
-        _writeLock.Dispose();
+        // _writeLock 故意不 Dispose:shell 因为刚写进去的输入而退出(`exit`)时,终端在写入收尾(Release)之前就被释放,
+        // 对已释放的 SemaphoreSlim 操作会抛 ObjectDisposedException(CI 的 macOS 上撞到过)。没取过 AvailableWaitHandle 的 SemaphoreSlim 不持有系统资源;
+        // 关闭之后再来的写入照常拿到锁,在底层句柄上得到「terminal closed」。
     }
 }

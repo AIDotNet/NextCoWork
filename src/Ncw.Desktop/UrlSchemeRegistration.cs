@@ -11,6 +11,9 @@ namespace Ncw.Desktop;
 /// </summary>
 public static class UrlSchemeRegistration
 {
+    /// <summary>桌面应用的可执行文件名(<c>Ncw.Desktop.csproj</c> 的 AssemblyName,也是 bundle / Velopack 的包名)。</summary>
+    private const string AppExecutableName = "NextCoWork";
+
     public const string Scheme = "nextcowork";
 
     public const string DesktopFileName = "nextcowork-url-handler.desktop";
@@ -74,7 +77,7 @@ public static class UrlSchemeRegistration
             var exe = ExecutablePath();
             if (exe is null)
             {
-                return "dotnet-host"; // 开发时用 dotnet 启动:不要把 dotnet 注册成处理程序
+                return "dotnet-host"; // 不是应用自己的可执行文件(dotnet 主机、dotnet test 的 testhost):不能把它们注册成处理程序
             }
 
             if (OperatingSystem.IsWindows())
@@ -95,7 +98,11 @@ public static class UrlSchemeRegistration
         }
     }
 
-    /// <summary>应用自己的可执行文件(AppImage 用 <c>APPIMAGE</c> 指向的那个文件,因为挂载点每次不同)。<c>dotnet</c> 主机启动时为 null。</summary>
+    /// <summary>
+    /// 应用自己的可执行文件(AppImage 用 <c>APPIMAGE</c> 指向的那个文件,因为挂载点每次不同)。不是应用自己的可执行文件时为 null。
+    /// ★ 判据是「文件名就是 NextCoWork」,不是「不是 dotnet」:Linux / Windows 上 <c>dotnet test</c> 经 apphost 起的是 <c>testhost</c>,
+    /// 旧判据会把 testhost 注册成 <c>nextcowork://</c> 的处理程序(Windows 上写进注册表),CI 首次在 Linux 上跑时暴露出来。
+    /// </summary>
     private static string? ExecutablePath()
     {
         if (Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } appImage && File.Exists(appImage))
@@ -104,7 +111,7 @@ public static class UrlSchemeRegistration
         }
 
         var path = Environment.ProcessPath;
-        return path is null || Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? null : path;
+        return path is not null && Path.GetFileNameWithoutExtension(path).Equals(AppExecutableName, StringComparison.OrdinalIgnoreCase) ? path : null;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]

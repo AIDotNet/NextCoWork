@@ -154,7 +154,8 @@ public sealed class EndToEndTests : IDisposable
         Assert.Contains("     2\tversion=1", secondRequest);
 
         // Bash 看到的是 Edit 之后的文件
-        Assert.Contains("version=2", run.End("c3").Output.Content);
+        var shown = run.End("c3").Output;
+        Assert.True(shown.Content.Contains("version=2", StringComparison.Ordinal), $"Bash output: {shown.Content}; details: {shown.Details?.GetRawText()}");
 
         // Details 只给界面,且每张卡片都带执行环境标识(设备 + 环境);发给模型的请求里没有 Details 的内容
         foreach (var id in new[] { "c1", "c2", "c3" })
@@ -232,6 +233,7 @@ public sealed class EndToEndTests : IDisposable
     [Fact]
     public async Task Aborting_the_run_kills_a_running_Bash_and_the_loop_ends_aborted_with_paired_results()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the scripted command is POSIX shell (echo $$ > pid.txt; exec sleep 60)");
         var llm = new FakeLlm()
             .Then(_ => Calls(("c1", "Bash", J(("command", "echo $$ > pid.txt; exec sleep 60"), ("description", "sleep")))));
         using var cts = new CancellationTokenSource();

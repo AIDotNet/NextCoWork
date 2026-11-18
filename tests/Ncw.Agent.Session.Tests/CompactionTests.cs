@@ -46,12 +46,15 @@ public sealed class CompactionTests : IDisposable
         AutoContinue = trigger == "auto",
         Binding = Binding(),
         Context = new RequestContext("ws", "run-1:compact", "s1"),
-        ReadFile = (path, ct) => Ncw.Agent.Kernel.Session.Compactor.ReadAttachableFileAsync(_env, EnvPath.Posix(_dir), path, ct),
+        ReadFile = (path, ct) => Ncw.Agent.Kernel.Session.Compactor.ReadAttachableFileAsync(_env, LocalEnvironment.PathOf(_dir), path, ct),
     };
 
     private static Message Ask(string id, string text) => Harness.User(id, text);
 
     private static Message Say(string id, string text) => Harness.Assistant(id, new TextPart(text));
+
+    /// <summary>把原生路径放进 JSON 字符串字面量:Windows 路径里的反斜杠必须转义(<c>C:\Users</c> 的 <c>\U</c> 不是合法的 JSON 转义)。</summary>
+    internal static string JsonPath(string path) => System.Text.Json.JsonEncodedText.Encode(path).ToString();
 
     private static Message Call(string id, string callId, string name, string json) => Harness.Assistant(id, new ToolCallPart(callId, name, Jsn.Parse(json)));
 
@@ -498,13 +501,13 @@ public sealed class CompactionTests : IDisposable
     }
 
     private static IReadOnlyList<Message> Touched(params string[] paths) =>
-        [Ask("u1", "go"), .. paths.SelectMany((p, i) => new[] { Call($"a{i}", $"c{i}", "Read", $$"""{"file_path":"{{p}}"}"""), Result($"r{i}", $"c{i}") })];
+        [Ask("u1", "go"), .. paths.SelectMany((p, i) => new[] { Call($"a{i}", $"c{i}", "Read", $$"""{"file_path":"{{JsonPath(p)}}"}"""), Result($"r{i}", $"c{i}") })];
 
     [Fact]
     public async Task Restored_file_content_is_read_from_disk_now_not_copied_from_the_transcript()
     {
         var path = Write("a.cs", "class Fresh {}");
-        var messages = new List<Message> { Ask("u1", "go"), Call("a1", "c1", "Read", $$"""{"file_path":"{{path}}"}"""), Result("r1", "c1", "class Stale {}") };
+        var messages = new List<Message> { Ask("u1", "go"), Call("a1", "c1", "Read", $$"""{"file_path":"{{JsonPath(path)}}"}"""), Result("r1", "c1", "class Stale {}") };
 
         var ok = await Ok(messages);
 

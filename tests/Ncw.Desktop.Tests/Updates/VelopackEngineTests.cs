@@ -45,7 +45,8 @@ public class VelopackEngineTests : IDisposable
             File.WriteAllBytes(Path.Combine(_feed.Path, name), bytes);
             contents[v] = bytes;
             assets.Add($$"""{"PackageId":"NextCoWork","Version":"{{v}}","Type":"Full","FileName":"{{name}}","SHA1":"{{Convert.ToHexString(SHA1.HashData(bytes))}}","SHA256":"{{Sha(bytes)}}","Size":{{bytes.Length}},"NotesMarkdown":"","NotesHTML":""}""");
-            artifacts.Add(UpdateKit.Artifact(name, "velopack-full", Sha(bytes).ToLowerInvariant())); // 清单里是小写(Ncw.Build),Velopack 算出来的是大写
+            // 平台必须是当前平台:引擎按 PlatformId.Current 只放行本平台的包(UpdateKit 的默认是 osx-arm64,在 Linux / Windows CI 上会全被过滤掉)
+            artifacts.Add(UpdateKit.Artifact(name, "velopack-full", Sha(bytes).ToLowerInvariant(), PlatformId.Current)); // 清单里是小写(Ncw.Build),Velopack 算出来的是大写
         }
 
         File.WriteAllText(Path.Combine(_feed.Path, "releases.stable.json"), $$"""{"Assets":[{{string.Join(',', assets)}}]}""");

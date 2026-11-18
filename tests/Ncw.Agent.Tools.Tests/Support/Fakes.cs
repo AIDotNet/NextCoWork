@@ -7,7 +7,7 @@ namespace Ncw.Agent.Tools.Tests;
 
 public static class Wait
 {
-    public static async Task UntilAsync(Func<bool> condition, int timeoutMs = 5000, string? what = null)
+    public static async Task UntilAsync(Func<bool> condition, int timeoutMs = 30_000, string? what = null)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (!condition())

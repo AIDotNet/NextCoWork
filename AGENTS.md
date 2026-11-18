@@ -8,7 +8,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 (但真实 2.x 数据根与 safeStorage 凭据只在 macOS 上验证过)。M3 / M4 的 Agent 侧(模型层、回合循环、权限、执行环境、工具、终端、子代理、压缩、计划、待办、目标、Skills、Hooks、MCP、插件宿主、定时任务、开放网关、模型目录)
 和桌面界面主体已完成,M4 的 sidecar 打包守护与 `tools/Ncw.Build` 在 macOS 上跑通;M5 完成共享层和 Android 宿主(本机 Android 模拟器上走通「配对 → 审批 → 长按允许 → Run 继续」,推送 / 真机 / iOS 没做);M6 只完成中继(`Ncw.Relay` 与中继承载)。
 **尚未完成**:云端 Agent 模式(`--mode cloud`)、2.x 回放对照测试、iOS 宿主、Android 真机验证、推送、真实后端(账户、更新 feed、推送中继、云端编排)、正式签名与公证、Windows / Linux 真机验证、
-升级链路的其余部分(M7:桌面自更新运行时已接入并在 macOS 上本机演练过,后端 feed、2.9 桥接、正式签名与公证、Windows / Linux 未做)、CI 工作流(已写但没在真实 GitHub Actions 上跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
+升级链路的其余部分(M7:桌面自更新运行时已接入并在 macOS 上本机演练过,后端 feed、2.9 桥接、正式签名与公证、Windows / Linux 未做)、CI(`ci.yml` 已在真实 GitHub Actions 上三平台跑通;发布流水线 `release.yml` 没跑过)。逐项状态以 `docs/parity.md` 和 `docs/design/05-roadmap.md` 的「当前进度」为准。
 设计文档在 `docs/design/`;实现必须与设计一致,偏离时先改设计文档。
 
 ## 1. 范围(必须)
@@ -76,7 +76,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 - 桌面运行:`dotnet run --project src/Ncw.Desktop`
 - Android 宿主(需要 .NET 的 android workload + JDK + Android SDK,不在 `NextCoWork.slnx` 里;安装与回退见 `docs/design/11-mobile-hosts.md` §2):`dotnet build NextCoWork.Mobile.slnx -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=$HOME/Library/Developer/Xamarin/jdk`;模拟器冒烟(开发 / CI,默认不跑):`NCW_ANDROID_SMOKE=1 dotnet run --project tools/Ncw.MobileSmoke -- smoke`(前提:模拟器已启动、`src/Ncw.Agent` 与 Android 宿主已构建)
 - Agent 运行:`dotnet run --project src/Ncw.Agent -- --mode local`
-- CI:`.github/workflows/ci.yml`(三平台:构建零警告、测试、UI 截图、`publish-agent` 零裁剪警告、`build-relay`)与 `release.yml`(tag / 手动触发的发布流水线);均未在真实 GitHub Actions 上运行过
+- CI:`.github/workflows/ci.yml`(三平台:构建零警告、测试、UI 截图、`publish-agent` 零裁剪警告、`build-relay`)与 `release.yml`(tag / 手动触发的发布流水线)。`ci.yml` 已在真实 GitHub Actions 上三平台全绿(Windows 有约 290 个依赖 POSIX 的用例按平台跳过,还有几个未根治的偶发,清单在 `docs/design/04-update-install.md` §7.1.1);`release.yml` 没运行过
 - 中继(开发用,部署物):`NCW_RELAY_URLS=http://127.0.0.1:8080 dotnet run --project src/Ncw.Relay`(配置见 `docs/design/09-protocol.md` §9.3)
 - 插件宿主的 NativeAOT 探针(开发 / CI,零警告 + 原生二进制里实跑一个插件):`dotnet publish tools/PluginAotProbe -c Release -r <rid> -o <dir>`,运行 `<dir>/PluginAotProbe`(退出码 0 = 通过)
 - 动效的真窗口冒烟(开发用,不进 slnx,需要图形会话,只在 macOS 上验证过):`dotnet run --project tools/MotionSmoke`——真实窗口里在完整级别下触发展开 / 收起、左右栏滑动、设置覆盖层,记录每一帧的间隔、断言终态精确,再切到减弱 / 关闭核对终态一致,中间帧离屏截图到 `NCW_MOTION_SMOKE_OUT`(设计见 `docs/design/03-ui-layout.md` §9)。

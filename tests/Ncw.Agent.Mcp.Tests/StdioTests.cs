@@ -152,8 +152,8 @@ public sealed class StdioTests
         var spec = Assert.Single(projectEnv.Spawned);
         Assert.Equal("fake-mcp", spec.Program);
         Assert.Equal(StdinMode.Pipe, spec.Stdin);
-        Assert.EndsWith("/sub", spec.WorkingDirectory!.Value.Value);
-        Assert.StartsWith("/", spec.WorkingDirectory!.Value.Value);
+        Assert.Equal("sub", spec.WorkingDirectory!.Value.FileName); // 本机风格的路径:Windows 上分隔符是反斜杠
+        Assert.True(spec.WorkingDirectory!.Value.IsAbsolute);
         Assert.Equal("test-value", spec.Environment!["TOKEN"]);
         Assert.Single(spec.Environment); // 只有声明过的键
     }

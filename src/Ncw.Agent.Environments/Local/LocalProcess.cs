@@ -79,7 +79,27 @@ internal sealed class LocalProcess : IEnvProcess
 
         Interlocked.Exchange(ref _killRequested, 1);
         await ProcessTree.TerminateAsync(_process, _exited, _killGrace).ConfigureAwait(false);
-        await _exited.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        try
+        {
+            await _exited.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // 把两种情形分开说:进程其实已经没了、只是退出通知还没到(线程池忙),还是真的没杀掉
+            throw new TimeoutException($"The process did not exit within 10 s of being killed ({DescribeState()}).");
+        }
+    }
+
+    private string DescribeState()
+    {
+        try
+        {
+            return _process.HasExited ? "the OS reports it has exited; the exit notification has not arrived" : $"pid {_process.Id} is still running";
+        }
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception or NotSupportedException)
+        {
+            return $"state unknown: {e.Message}";
+        }
     }
 
     public async ValueTask DisposeAsync()

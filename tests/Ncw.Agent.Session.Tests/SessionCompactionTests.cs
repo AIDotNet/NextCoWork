@@ -313,7 +313,7 @@ public sealed class SessionCompactionTests
         File.WriteAllText(file, "class Fresh {}");
         h.SeedHistory(
             Seed("h0", Role.User, new TextPart("edit a")),
-            Seed("h1", Role.Assistant, new ToolCallPart("c0", "Read", Jsn.Parse($$"""{"file_path":"{{file}}"}"""))),
+            Seed("h1", Role.Assistant, new ToolCallPart("c0", "Read", Jsn.Parse($$"""{"file_path":"{{CompactionTests.JsonPath(file)}}"}"""))),
             Seed("h2", Role.User, new ToolResultPart("c0", new ToolOutput("class Stale {}" + Big), false)),
             Seed("h3", Role.Assistant, new TextPart("ok")));
         h.Llm.Turn(Up.CallReporting(200_000, "c1", "echo"), Up.Text("好"));

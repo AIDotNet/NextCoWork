@@ -38,6 +38,8 @@ public sealed class RuleRegistryTests
     [Fact]
     public async Task Every_rule_is_exercised_by_at_least_one_recording()
     {
+        // Windows 上跑不了依赖 POSIX shell 的录制(Recording.NeedsPosixShell),只被它们用到的规则会被误判成「没人用」
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "some recordings need a POSIX shell; the full rule ledger is checked on macOS / Linux");
         var used = new HashSet<string>();
         foreach (var recording in Recording.LoadAll())
         {
