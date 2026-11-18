@@ -14,6 +14,8 @@ namespace Ncw.Agent.Host.Environments;
 /// <item><b>惰性连接,首次指纹 / 凭据以交互出现</b>(任何控制端可答),请求在这里等用户回答;请求被取消(控制端断开、<c>cancel</c> 帧)时一并取消。</item>
 /// <item><b>只有 member 起才会发起连接</b>:viewer 是只读访客,不能让设备去连内网主机、也不能替用户在别的控制端上弹出确认框——环境没连着就是可重试的 <c>unavailable</c>(<c>environments.notConnected</c>)。</item>
 /// <item>本机项目、没有项目 id 的调用、项目不存在(留给方法实现报 <c>not_found</c>)都直接放行。</item>
+/// <item><b>请求期间持有环境的租约</b>:方法实现跑多久,空闲回收器就等多久。没有它的话,一次比空闲阈值更久的操作(SSH 上的 <c>git fetch</c>、读大文件、
+/// 建终端)会在中途被回收器断开——「确保已连接」只是把最后使用时间记到请求开始的那一刻。</item>
 /// </list>
 /// 项目 id 从 MessagePack 参数里按键名取(<c>WorkspaceId</c> / <c>ProjectId</c>):参数形状只有协议层一份定义,这里不重复一份类型表。
 /// 按会话 id 进来的方法(<c>runs.start</c> 等)在各自的处理器里 <c>await EnvironmentOfAsync</c>。
@@ -38,19 +40,30 @@ internal static class ProjectEnvironmentGate
 
     internal static bool NeedsEnvironment(string method) => Methods.Contains(method) || Prefixes.Any(p => method.StartsWith(p, StringComparison.Ordinal));
 
-    private static async ValueTask InvokeAsync(ConversationService? conversation, MethodDef def, RequestFrame request, CallContext context, CancellationToken ct)
+    private static async ValueTask<IDisposable?> InvokeAsync(ConversationService? conversation, MethodDef def, RequestFrame request, CallContext context, CancellationToken ct)
     {
         if (conversation is null || !NeedsEnvironment(def.Name))
         {
-            return;
+            return null;
         }
 
         if (FindProjectId(request.Params) is not { Length: > 0 } projectId || conversation.Workspaces.Get(projectId) is not { EnvironmentKind: "connection" } project)
         {
-            return;
+            return null;
         }
 
-        await conversation.Environments.EnsureProjectReadyAsync(project, context.Role >= Role.Member ? ConnectMode.Interactive : ConnectMode.None, ct).ConfigureAwait(false);
+        // 先取租约再确保连接:中间不留「已连接、但还没人占着」的空档
+        var lease = conversation.Environments.Hold(project.ConnectionId);
+        try
+        {
+            await conversation.Environments.EnsureProjectReadyAsync(project, context.Role >= Role.Member ? ConnectMode.Interactive : ConnectMode.None, ct).ConfigureAwait(false);
+            return lease;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
     }
 
     /// <summary>从 MessagePack 编码的参数(字符串键的 map)里取 <c>WorkspaceId</c> / <c>ProjectId</c> 的字符串值;没有、不是字符串、格式不对返回 null(交给方法实现去报错)。</summary>
