@@ -16,22 +16,59 @@ namespace Ncw.UI.Tests;
 /// </summary>
 public sealed class TestApp : Application
 {
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<TestApp>()
-                  .UseSkia()
-                  .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
-                  .UseNcw()
-                  .AfterSetup(_ =>
-                  {
-                      NcwMotion.Apply(UiMotionLevel.Off);
-                      Avalonia.Controls.Window.WindowOpenedEvent.AddClassHandler<Avalonia.Controls.Window>((window, _) =>
-                      {
-                          lock (Opened)
-                          {
-                              Opened.Add(window);
-                          }
-                      });
-                  });
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure<TestApp>()
+                                .UseSkia()
+                                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                                .UseNcw()
+                                .AfterSetup(_ =>
+                                {
+                                    NcwMotion.Apply(UiMotionLevel.Off);
+                                    Avalonia.Controls.Window.WindowOpenedEvent.AddClassHandler<Avalonia.Controls.Window>((window, _) =>
+                                    {
+                                        lock (Opened)
+                                        {
+                                            Opened.Add(window);
+                                        }
+                                    });
+                                });
+
+        // 每条用例的初始化(AppBuilder.SetupUnsafe)一开始就先把界面调度器拿回来,见 ClaimUiDispatcher
+        var runtime = builder.RuntimePlatformServicesInitializer;
+        var windowing = builder.WindowingSubsystemInitializer;
+        return builder
+            .UseRuntimePlatformSubsystem(() => { ClaimUiDispatcher(); runtime?.Invoke(); }, builder.RuntimePlatformServicesName ?? "")
+            .UseWindowingSubsystem(() => { ClaimUiDispatcher(); windowing?.Invoke(); }, builder.WindowingSubsystemName ?? "");
+    }
+
+    private static readonly System.Reflection.MethodInfo? ResetDispatcher =
+        typeof(Avalonia.Threading.Dispatcher).GetMethod("ResetBeforeUnitTests", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+
+    /// <summary>
+    /// 让当前线程(headless 会话线程)成为界面线程。
+    /// <para>
+    /// ★ headless 每条用例结束时都把全局调度器清空(<c>Dispatcher.ResetForUnitTests</c>),到下一条用例初始化才重建;而 Avalonia 的规则是
+    /// 「清空之后第一个访问 <c>Dispatcher.UIThread</c> 的线程就是界面线程」。两条用例之间的整段空档里,任何后台线程访问它一次——
+    /// 上一条用例留下的后台任务从线程池上改了视图模型的属性(绑定收到跨线程通知时会去查界面调度器)、协议回调经 <c>AvaloniaUiDispatcher</c> 切线程——
+    /// 调度器就绑到了那个线程池线程上,下一条用例在 <c>DefaultRenderLoop.Add</c> 里报「The calling thread cannot access this object」,
+    /// 被 xunit 记成那条用例的 Test Case Cleanup Failure(Linux CI 上 7 轮里出现 4 轮,每次落在不同的用例上)。
+    /// </para>
+    /// 做法:初始化的第一步检查调度器是不是自己的,不是就再清一次、重新取(清空用的是 Avalonia 给单元测试留的内部方法,反射调用;取不到就不做)。
+    /// 拿到之后别的线程再访问 <c>Dispatcher.UIThread</c> 得到的就是这一个,抢不走了。
+    /// </summary>
+    private static void ClaimUiDispatcher()
+    {
+        for (var attempt = 0; attempt < 16 && !Avalonia.Threading.Dispatcher.UIThread.CheckAccess(); attempt++)
+        {
+            if (ResetDispatcher is null)
+            {
+                return;
+            }
+
+            ResetDispatcher.Invoke(null, null);
+        }
+    }
 
     /// <summary>这一条用例里打开过的窗口。界面线程上加,任何线程都可能来读(钩子是程序集级的,普通 [Fact] 在线程池上跑),所以加锁。</summary>
     private static readonly List<Avalonia.Controls.Window> Opened = [];
@@ -43,11 +80,8 @@ public sealed class TestApp : Application
     /// ★ 每条截图用例都建一个完整的窗口、渲染一帧,用完既不关也不释放;位图是非托管内存,GC 感受不到压力——800 多条用例下来进程涨到十几 GB:
     /// macOS 靠内存压缩扛得住,GitHub 的 Linux runner 直接失联(「The hosted runner lost communication」),Windows 60 分钟跑不完。
     /// <para>
-    /// ★ 这里<b>不能碰 <c>Dispatcher.UIThread</c></b>:headless 每条用例都重建应用,重建时会重置界面调度器,之后第一个访问
-    /// <c>Dispatcher.UIThread</c> 的线程就成了「界面线程」。本钩子也会在线程池线程上被调用(普通 [Fact] 与界面用例并行),它在那个空档里访问一次,
-    /// 调度器就绑到了线程池线程上,正在重建应用的那条界面用例随即在 <c>DefaultRenderLoop.Add</c> 里报
-    /// 「The calling thread cannot access this object」(Linux CI 上出现过两次,都在加了这个钩子之后;这是按堆栈推出来的原因,没有单独复现)。
-    /// 所以只用窗口自己的调度器判断归属:不是当前线程的窗口不碰。
+    /// 这里不碰 <c>Dispatcher.UIThread</c>:本钩子也会在线程池线程上被调用(普通 [Fact] 与界面用例并行),而两条用例之间调度器是空的,
+    /// 谁先访问谁就成了界面线程(见 <see cref="ClaimUiDispatcher"/>)。只用窗口自己的调度器判断归属:不是当前线程的窗口不碰。
     /// </para>
     /// </summary>
     public static void CloseOpenWindows()

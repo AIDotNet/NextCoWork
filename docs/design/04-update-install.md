@@ -223,6 +223,8 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 
 > **`ci.yml`**:2026-11-17 起在真实的 GitHub Actions 上运行(PR #195):三平台每一步都通过过——构建零警告、测试、`publish-agent`(NativeAOT、零裁剪警告)、`verify --agent` 冒烟、`build-relay`(默认与 `--aot`)。
 > 一共跑了 6 轮才三平台同时全绿(第 6 轮,8417 个测试;Linux 16 分钟、Windows 24 分钟、macOS 30 分钟)。
+> **一轮全绿不等于稳定**:紧接着只改了文档的第 7 轮又有 6 个失败(三个平台各有),另一个分支的同一轮有 3 个——都是满载的 runner 上才出现的竞态,已逐个定位(见下表),
+> 其中一半是产品里的问题。把 CI 当合并门槛之前,先看连续几轮的结果。
 > **`release.yml` 仍然没有在真实 GitHub Actions 上运行过**:只做了静态检查(actionlint 通过、YAML 能被解析、没有任何密钥内容);`signtool` 的位置、AppImage 的 vpk 依赖、
 > `security` 钥匙串步骤、Ed25519 清单签名的 secrets 接线都要在第一次真实运行时核对。
 
@@ -231,16 +233,16 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 | 类别 | 现象 | 处理 |
 | --- | --- | --- |
 | 测试夹具假设 POSIX | Windows 首轮 349 个失败:把本机路径当 POSIX 路径、JSON 里拼反斜杠路径、`\r\n` 换行、SChannel 不接受 PEM 的临时私钥、往终端里敲 `$((…))` / `$$` / `rm -rf` | 夹具改成按平台取路径风格;落盘的 JSON 固定 `\n`;中继证书在 Windows 上转 PKCS#12;只能在 POSIX shell 下成立的用例在 Windows 上跳过并写明原因 |
-| 界面测试不关窗口 | 每条截图用例留下一个窗口和它的 Skia 位图:Linux runner 内存耗尽失联、Windows 60 分钟跑不完 | `Ncw.UI.Tests/TestApp.cs` 的程序集级钩子每条用例后关窗、定期回收(钩子不能碰 `Dispatcher.UIThread`,原因写在那里) |
+| 界面测试不关窗口 | 每条截图用例留下一个窗口和它的 Skia 位图:Linux runner 内存耗尽失联、Windows 60 分钟跑不完 | `Ncw.UI.Tests/TestApp.cs` 的程序集级钩子每条用例后关窗、定期回收 |
+| 界面调度器被后台线程抢走 | Linux 上 7 轮里 4 轮出现「Test Case Cleanup Failure:The calling thread cannot access this object」,每次落在不同的界面用例上。headless 在两条用例之间把全局调度器清空,这段空档里第一个访问 `Dispatcher.UIThread` 的线程(上一条用例留下的后台通知)就成了界面线程 | `TestApp.ClaimUiDispatcher`:每条用例初始化的第一步把调度器拿回来;`DispatcherOwnershipTests` 稳定复现(去掉那一步必然失败) |
 | 满载下才出现的时序假设 | 等待 5 秒不够、git 读操作超过 10 秒、假时钟在定时器挂上之前就被推进、挂在 `tool_end` 上的测试动作晚于下一个工具 | 逐个改成等条件而不是等时间 |
-| 产品里的真实问题 | 改角色时取消一个已释放的会话令牌源(控制端收到 Internal error);迟到的旧快照把已清掉的流式文本带回镜像;Grep 的预算从尝试原生后端之前起算;单实例的转发管道在成为主实例之后才开始监听;写一个已断开的连接时抛出原始的 `IOException` | 均已修复;「迟到的旧快照」和「Grep 预算」各有一条修复前稳定失败的单测,其余几项没有单独的回归测试(竞态难以稳定触发) |
+| 产品里的真实问题 | 改角色时取消一个已释放的会话令牌源(控制端收到 Internal error);迟到的旧 run 快照把已清掉的流式文本带回镜像、把已经被截断(重新生成 / 编辑重发)的消息重新塞回会话;Grep 的预算从尝试原生后端之前起算;文件 / git / 终端等请求在执行期间不持有 SSH 环境的租约,比空闲阈值更久的操作会被空闲回收器中途断开;单实例的转发管道在成为主实例之后才开始监听;写一个已断开的连接时抛出原始的 `IOException` | 均已修复;「迟到的旧快照」(两条)、「Grep 预算」、「闸门的句柄罩住整个请求」各有修复前失败的单测,其余几项没有单独的回归测试(竞态难以稳定触发) |
 
-**还没有根治的偶发**(各出现过一次,只加了诊断信息,再出现时断言会带上现场):
+**还没有根治的偶发**(只加了诊断信息,再出现时断言会带上现场):
 
 - Windows:Bash 工具跑 `cat app.txt` 退出码 0 但没有输出(`Ncw.Agent.Tools.Tests` 的 `Read_then_Edit_then_Bash_through_the_real_loop`)。如果不是 runner 的问题,就是 Windows 上命令输出可能被丢掉,**值得优先查**。
 - Windows:杀浏览器进程后 10 秒内没有报告退出(`RealBrowserTests`,出现过两轮);超时信息现在会区分「已退出但通知未到」和「仍在运行」。
 - macOS:真实浏览器用例里 `browser_cua_click` 报错(整条用例 81 秒,runner 很慢);断言现在会带上工具的错误文本。
-- Windows:`ConversationLinkTests` 的「重新生成」20 秒没等到新回复(本机加压 12 次复现不出);超时信息现在会带上当时的消息。
 
 **Windows 上跳过的 294 个用例**(`Assert.SkipWhen/SkipUnless`,原因写在用例里):`Ncw.Agent.Environments.Tests` 119、`Hooks` 59、`Host` 42、`Terminal` 27、`Parity` 13、`Workspace` 13、`Storage` 6、`Integration` 5、
 `Mcp` 3、`Extensions` 2、`Desktop` 2,以及 `Browser` / `Tools` / `UI` 各 1。它们依赖 POSIX shell、POSIX PTY、符号链接或 Unix 权限位;**这些路径在 Windows 上没有被验证**,「CI 绿」不覆盖它们。
