@@ -951,7 +951,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 - **错误码对上了**:Agent 写进消息和 Run 终态的错误码是 `MessageCodec.CodeName` 那一套(`auth` / `rate_limit` / `context_length` / `network` / `provider` / `cache_unsupported` / `no_healthy_provider` / `conflict` / `tool_failed` / `aborted`),
   界面原来只认 `rate_limited` / `context_overflow` 两个(对不上),其余一律把设备的英文诊断原样显示。现在 `ErrorTextConverter.Text(code, messageKey)` 每个码一句人话(早期的别名照认,`run.*` 消息 key 也翻),认不出来给通用说明;
   原文(错误码 · 诊断串)收在卡片的「详情」里,可选中复制。
-- **同一次失败只画一张**:失败的 Run 会把错误写进最后一条助手消息(持久化的 error 块),Run 终态也带着它;派生转录时(`TranscriptBuilder`)紧挨着的那条消息错误让给 Run 的那一张(它能重试)。
+- **同一次失败只画一张**:失败的 Run 会把错误写进最后一条助手消息(持久化的 error 块),Run 终态也带着它;派生转录时(`TranscriptBuilder`)紧挨着的那条消息错误让给 Run 的那一张(它能重试)。Run 的那一张**只给这个会话最近的一个 Run**:之后又跑了 Run(成功或还在跑),旧的失败只剩消息里的 error 块、留在它发生的位置,不再钉在转录末尾(Store 不清理收口的 Run);收口的 Run 镜像里没落库的调用(被丢弃的消息、被改写的历史)也不再画到末尾。
 - **能做的事**:可重试的有「重试」;`auth` / `no_healthy_provider` / `cache_unsupported` 是供应商配置问题,给「供应商设置」直达(`ConversationViewModel.ProviderSettingsRequested` → 外壳打开设置的「模型与供应商」)。
 - **没有可用的模型**:输入框里那行提示旁边直接给「添加供应商」按钮(同一个意图)。
 - **空会话(2026-11-17 改版:输入框居中)**:空会话时**输入框在视觉中心**(大多数人一上来就打字,视线落点就是输入框),发出第一条消息后回到底部,和有内容的会话一样。

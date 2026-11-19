@@ -128,8 +128,9 @@ public static class TranscriptBuilder
             }
         }
 
-        // 还没落库的:流式文字 / 思考、已开始的工具
-        foreach (var run in runs.OrderBy(r => r.Ref.RunId, StringComparer.Ordinal))
+        // 还没落库的:流式文字 / 思考、已开始的工具。只看还在跑(或状态未知)的 Run:已经收口的 Run,该落库的都在消息里了,
+        // 镜像里剩下的(被丢弃的消息、被改写掉的历史、不在当前消息窗口里的旧调用)再画就会堆在转录末尾,而且永远不消失
+        foreach (var run in runs.Where(r => r.Phase is RunPhase.Running or RunPhase.Unknown).OrderBy(r => r.Ref.RunId, StringComparer.Ordinal))
         {
             foreach (var (messageId, text) in run.Thinking.Where(kv => !committed.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
             {
@@ -155,11 +156,11 @@ public static class TranscriptBuilder
             rows = GroupFinishedWork(rows);
         }
 
-        // 运行状态与失败的 Run
+        // 失败的 Run:只有这个会话最近的一个 Run 失败了才在末尾画它的卡片(能重试)。之后又跑过 Run(成功也好、还在跑也好),
+        // 旧的失败就只剩消息里持久化的 error 块,留在它发生的位置——Store 不清理收口的 Run,不加这个限制,旧错误会一直钉在转录末尾
         var last = runs.OrderByDescending(r => r.Ref.RunId, StringComparer.Ordinal).FirstOrDefault();
-        foreach (var run in runs.Where(r => r.Phase == RunPhase.Error && r.Error is not null))
+        if (last is { Phase: RunPhase.Error, Error: { } error })
         {
-            var error = run.Error!;
             // 同一次失败会落两份:Agent 把错误写进最后一条助手消息(持久化的 error 块),Run 的终态也带着它。
             // 转录末尾紧挨着的那条消息错误就是这一次失败:只留 Run 的这一张(它能重试),不画两张一样的卡片(03 §11.4)
             if (rows.Count > 0 && rows[^1] is ErrorRow { Key: var previous } && !previous.StartsWith("run:", StringComparison.Ordinal))
@@ -167,7 +168,7 @@ public static class TranscriptBuilder
                 rows.RemoveAt(rows.Count - 1);
             }
 
-            rows.Add(new ErrorRow($"run:{run.Ref.RunId}", error.Code, error.Message, error.MessageKey, error.Retryable, run.Ref == last?.Ref));
+            rows.Add(new ErrorRow($"run:{last.Ref.RunId}", error.Code, error.Message, error.MessageKey, error.Retryable, true));
         }
 
         if (deviceUnknown && (view.ActiveRunId is not null || runs.Any(r => r.Phase == RunPhase.Unknown)))
