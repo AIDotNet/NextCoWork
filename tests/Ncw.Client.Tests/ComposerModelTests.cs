@@ -18,9 +18,17 @@ public class ComposerModelTests
     {
         public List<(SessionRef Session, string Alias, string? Provider, string? Workspace)> ModelWrites { get; } = [];
 
+        public List<(SessionRef Session, string Mode, string? ActiveRunId, string? Workspace)> PermissionWrites { get; } = [];
+
         public Task<bool> SetModelAsync(SessionRef session, string alias, string? providerId, string? defaultForWorkspace = null, CancellationToken ct = default)
         {
             ModelWrites.Add((session, alias, providerId, defaultForWorkspace));
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> SetPermissionModeAsync(SessionRef session, string mode, string? activeRunId = null, string? defaultForWorkspace = null, CancellationToken ct = default)
+        {
+            PermissionWrites.Add((session, mode, activeRunId, defaultForWorkspace));
             return Task.FromResult(true);
         }
 
@@ -48,11 +56,11 @@ public class ComposerModelTests
 
     private static readonly ModelOptionDto[] Options = [Option("haiku"), Option("sonnet"), Option("opus")];
 
-    private static SessionDto Meta(SessionRef session, string model = "", string? provider = null) =>
-        new(session.SessionId, "ws", null, "user", "t", null, model, provider, "code", "auto", false, false, 1, 2);
+    private static SessionDto Meta(SessionRef session, string model = "", string? provider = null, string permission = "ask") =>
+        new(session.SessionId, "ws", null, "user", "t", null, model, provider, "code", "auto", false, false, 1, 2, permission);
 
-    private static void Show(ComposerViewModel composer, SessionRef session, SessionDto meta, string role = "owner") =>
-        composer.Update(session, meta, null, null, SessionActivity.Idle, DeviceConnection.Connected, role, Options);
+    private static void Show(ComposerViewModel composer, SessionRef session, SessionDto meta, string role = "owner", string? activeRunId = null) =>
+        composer.Update(session, meta, null, activeRunId, activeRunId is null ? SessionActivity.Idle : SessionActivity.Running, DeviceConnection.Connected, role, Options);
 
     [Fact]
     public async Task Picking_a_model_remembers_it_on_the_session_and_as_the_project_default_for_an_owner()
@@ -127,5 +135,43 @@ public class ComposerModelTests
         await composer.WhenModelSaved;
 
         Assert.Equal([(A, "haiku", "anthropic", null)], commands.ModelWrites);
+    }
+
+    [Fact]
+    public async Task Picking_a_permission_mode_remembers_it_on_the_session_updates_the_active_run_and_writes_the_project_default_for_an_owner()
+    {
+        var commands = new Commands();
+        var composer = new ComposerViewModel(commands);
+        Show(composer, A, Meta(A, "haiku", "anthropic", permission: "ask"), activeRunId: "run-1");
+        Assert.Equal("ask", composer.Permission);
+
+        composer.SetPermissionCommand.Execute("full");
+        await composer.WhenPermissionSaved;
+
+        Assert.Equal([(A, "full", "run-1", "ws")], commands.PermissionWrites);
+        // 写回还在路上(会话主题还没推回来):不把用户的选择撤回去
+        Show(composer, A, Meta(A, "haiku", "anthropic", permission: "ask"), activeRunId: "run-1");
+        Assert.Equal("full", composer.Permission);
+    }
+
+    [Fact]
+    public async Task Each_session_shows_its_own_remembered_permission_and_a_member_clamps_full_and_writes_on_the_session_only()
+    {
+        var commands = new Commands();
+        var composer = new ComposerViewModel(commands);
+        Show(composer, A, Meta(A, "haiku", "anthropic", permission: "auto"));
+        Assert.Equal("auto", composer.Permission);
+
+        Show(composer, B, Meta(B, "sonnet", "anthropic", permission: "full"));
+        Assert.Equal("full", composer.Permission);
+
+        // 切到 member:full 被夹紧成 ask(ComposerLogic.ClampPermission);member 切档位只写会话,不写项目默认值也不调 owner 专属的 runs.setPermissionMode
+        Show(composer, B, Meta(B, "sonnet", "anthropic", permission: "full"), role: "member", activeRunId: "run-2");
+        Assert.Equal("ask", composer.Permission);
+
+        composer.SetPermissionCommand.Execute("auto");
+        await composer.WhenPermissionSaved;
+
+        Assert.Equal([(B, "auto", null, null)], commands.PermissionWrites);
     }
 }

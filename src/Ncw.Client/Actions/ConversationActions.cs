@@ -104,6 +104,14 @@ public interface IConversationCommands
         Task.FromResult(false);
 
     /// <summary>
+    /// 输入框里选了一个权限档位:记在会话上(<c>sessions.setPermissionMode</c>);若当前有正在跑的 Run(<paramref name="activeRunId"/> 非空),
+    /// 同时切这个实时 Run 的权限档位(<c>runs.setPermissionMode</c>,owner 才能调);<paramref name="defaultForWorkspace"/> 非空时
+    /// 顺带写成这个项目新会话的默认权限档位(<c>settings.project.update</c>)。没有覆盖它的实现(单测里的假实现)什么也不做。
+    /// </summary>
+    Task<bool> SetPermissionModeAsync(SessionRef session, string mode, string? activeRunId = null, string? defaultForWorkspace = null, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
+    /// <summary>
     /// 立刻压缩会话的上下文(<c>/compact [说明]</c>,<c>context.compact</c>)。<paramref name="instructions"/> 接在摘要提示词的 <c>Additional focus:</c> 后面;
     /// <paramref name="options"/> 是当前的发送档位(会话还没记模型时设备用它选压缩模型)。没有覆盖它的实现(单测里的假实现)返回 <see cref="CompactOutcome.Unavailable"/>。
     /// </summary>
@@ -237,6 +245,56 @@ public sealed class ConversationActions(DeviceRegistry devices, InteractionLedge
         {
             return CompactOutcome.Failed;
         }
+    }
+
+    /// <summary>
+    /// 记住会话的权限档位(见 <see cref="IConversationCommands.SetPermissionModeAsync"/>)。更新后的会话经会话主题推回 Store,这里不改 Store。
+    /// 切正在跑的 Run 或写项目默认值失败(Run 已刚结束、不是 owner)不算失败:会话上已经记住了。
+    /// </summary>
+    public async Task<bool> SetPermissionModeAsync(SessionRef session, string mode, string? activeRunId = null, string? defaultForWorkspace = null, CancellationToken ct = default)
+    {
+        if (Link(session.DeviceId) is not { } link)
+        {
+            return false;
+        }
+
+        try
+        {
+            await link.CallAsync(ConversationMethods.SessionsSetPermissionMode, new SessionsSetPermissionModeParams(session.SessionId, mode), ct,
+                idem: $"setPermissionMode:{session.SessionId}:{Ulid.New()}").ConfigureAwait(false);
+        }
+        catch (ProtocolException)
+        {
+            return false;
+        }
+
+        if (activeRunId is { Length: > 0 } runId)
+        {
+            try
+            {
+                await link.CallAsync(ConversationMethods.RunsSetPermissionMode, new RunsSetPermissionModeParams(runId, mode), ct,
+                    idem: $"run.permissionMode:{runId}:{Ulid.New()}").ConfigureAwait(false);
+            }
+            catch (ProtocolException)
+            {
+                // Run 可能刚好结束或当前不是 owner:会话上已经记住了
+            }
+        }
+
+        if (defaultForWorkspace is not null)
+        {
+            try
+            {
+                await link.CallAsync(SettingsMethods.ProjectUpdate, new ProjectSettingsPatchDto(defaultForWorkspace, PermissionMode: mode), ct,
+                    idem: $"project.permissionMode:{defaultForWorkspace}:{Ulid.New()}").ConfigureAwait(false);
+            }
+            catch (ProtocolException)
+            {
+                // 只记在会话上
+            }
+        }
+
+        return true;
     }
 
     /// <summary>打开一个会话:订阅它的主题(快照进 Store,之后的变化跟着更新,断线重连后自动恢复)。</summary>

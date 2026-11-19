@@ -66,6 +66,10 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
         return IsModeId(id) ? id : "code";
     }
 
+    /// <summary>权限档位归一:<c>ask</c> / <c>auto</c> / <c>full</c>,其余一律按默认 <c>ask</c>。</summary>
+    public static string NormalizePermissionMode(string? value) =>
+        value?.Trim().ToLowerInvariant() is "auto" ? "auto" : value?.Trim().ToLowerInvariant() is "full" ? "full" : "ask";
+
     private static bool IsModeId(string id)
     {
         // ^[a-z0-9][a-z0-9-]{0,63}$
@@ -109,7 +113,8 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
             Archived: false,
             Favorited: false,
             CreatedAt: now,
-            UpdatedAt: now);
+            UpdatedAt: now,
+            PermissionMode: NormalizePermissionMode(input.PermissionMode));
         return Put(session);
     }
 
@@ -151,6 +156,7 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
             ParentSessionId = session.ParentSessionId == session.Id ? null : session.ParentSessionId,
             Title = session.Title.Trim() is { Length: > 0 } title ? title : DefaultTitle,
             Mode = NormalizeMode(session.Mode),
+            PermissionMode = NormalizePermissionMode(session.PermissionMode),
         };
 
         var previous = database.Row("SELECT workspace_id, title, json FROM sessions WHERE id = $id",
@@ -181,6 +187,7 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
             Favorited = normalized.Favorited,
             CreatedAt = normalized.CreatedAt,
             UpdatedAt = normalized.UpdatedAt,
+            PermissionMode = normalized.PermissionMode == "ask" ? null : normalized.PermissionMode,
             Extra = ParseJson(previous?.Json)?.Extra,
         };
 
@@ -338,6 +345,22 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
     });
 
     /// <summary>
+    /// 记住这条会话选中的权限档位(<c>ask</c> / <c>auto</c> / <c>full</c>)。和 <see cref="SetModel"/> 一样不动更新时间:
+    /// 在输入框切换权限档位不是对话内容更新,不该让侧边栏的会话顺序跳动。
+    /// </summary>
+    public bool SetPermissionMode(string id, string permissionMode) => database.InTransaction(() =>
+    {
+        var normalized = NormalizePermissionMode(permissionMode);
+        if (Get(id) is not { } session || session.PermissionMode == normalized)
+        {
+            return false;
+        }
+
+        Put(session with { PermissionMode = normalized });
+        return true;
+    });
+
+    /// <summary>
     /// 一条会话 + 它派生出来的全部子代理转录(任意深度),root 在前。
     /// ★ <c>UNION</c> 而不是 <c>UNION ALL</c>:畸形数据造出的环会被去重终止。每一层都按作用域收窄。
     /// </summary>
@@ -455,7 +478,8 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
             Archived: (r.IsDBNull(8) ? (parsed?.Archived == true ? 1 : 0) : r.GetInt64(8)) != 0,
             Favorited: (r.IsDBNull(9) ? (parsed?.Favorited == true ? 1 : 0) : r.GetInt64(9)) != 0,
             CreatedAt: r.IsDBNull(10) ? parsed?.CreatedAt ?? 0 : r.GetInt64(10),
-            UpdatedAt: r.IsDBNull(11) ? parsed?.UpdatedAt ?? 0 : r.GetInt64(11));
+            UpdatedAt: r.IsDBNull(11) ? parsed?.UpdatedAt ?? 0 : r.GetInt64(11),
+            PermissionMode: NormalizePermissionMode(parsed?.PermissionMode));
     }
 
     private sealed record PreviousRow(string WorkspaceId, string Title, string? Json);

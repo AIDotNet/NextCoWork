@@ -61,6 +61,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     private string? _role;
     private string _rememberedModel = "";
     private string? _rememberedProvider;
+    private string _rememberedPermission = "";
     private List<ModelOptionDto> _options = [];
     private SessionActivity _activity;
     private DeviceConnection _connection = DeviceConnection.Connecting;
@@ -285,6 +286,9 @@ public sealed partial class ComposerViewModel : ObservableObject
         var rememberedChanged = changedSession || (meta?.Model ?? "") != _rememberedModel || meta?.ModelProviderId != _rememberedProvider;
         _rememberedModel = meta?.Model ?? "";
         _rememberedProvider = meta?.ModelProviderId;
+        var nextPermission = meta?.PermissionMode ?? "";
+        var permissionChanged = changedSession || nextPermission != _rememberedPermission;
+        _rememberedPermission = nextPermission;
         _workspaceId = meta?.WorkspaceId ?? _workspaceId;
         _options = [.. options.Where(o => o.IsChatModel)];
 
@@ -303,7 +307,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
 
         SyncModels(changedSession, rememberedChanged);
-        Permission = ComposerLogic.ClampPermission(Permission, role);
+        SyncPermission(changedSession, permissionChanged, role);
         Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
         Sync(PermissionChoices, ComposerLogic.PermissionModesFor(role));
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
@@ -329,12 +333,30 @@ public sealed partial class ComposerViewModel : ObservableObject
         SelectedModel = (rememberedChanged ? remembered : null) ?? picked ?? remembered ?? choices.FirstOrDefault(c => c.IsAvailable);
     }
 
+    /// <summary>
+    /// 选中哪个权限档位:会话上记住的(设备真源)变了就跟它走——换了会话、快照刚到、选完之后设备推回来、别的控制端改了;
+    /// 没变就保留刚才的选择(写回还在路上,不把用户的选择撤回去);都没有才兜底成 <c>ask</c>。一律按当前角色夹紧。
+    /// </summary>
+    private void SyncPermission(bool changedSession, bool permissionChanged, string? role)
+    {
+        var remembered = _rememberedPermission.Length > 0 ? _rememberedPermission : null;
+        var picked = !changedSession ? Permission : null;
+        var chosen = (permissionChanged ? remembered : null) ?? picked ?? remembered ?? "ask";
+        Permission = ComposerLogic.ClampPermission(chosen, role);
+    }
+
     private ModelOptionDto? CurrentOption() =>
         SelectedModel is { } m ? _options.FirstOrDefault(o => o.ProviderId == m.ProviderId && o.Alias == m.Alias) : null;
 
     private void RefreshState()
     {
         State = ComposerLogic.Of(Draft, _session is not null, _activity, _connection, _role, hasModel: SelectedModel is not null || _rememberedModel.Length > 0);
+        if (IsCompacting)
+        {
+            // 手动压缩在进行:会话被设备锁着,现在发出去只会被拒绝
+            State = State with { CanSend = false, CanQueue = false, CanSteer = false };
+        }
+
         if (Attachments.IsUploading)
         {
             // 附件还在上传:现在发出去会丢掉它,等传完(停止不受影响)
@@ -666,8 +688,23 @@ public sealed partial class ComposerViewModel : ObservableObject
 
     private Task _modelWrite = Task.CompletedTask;
 
+    /// <summary>最近一次权限档位写回(测试用:等到它落定)。</summary>
+    public Task WhenPermissionSaved => _permissionWrite;
+
+    private Task _permissionWrite = Task.CompletedTask;
+
     [RelayCommand]
-    private void SetPermission(string mode) => Permission = ComposerLogic.ClampPermission(mode, _role);
+    private void SetPermission(string mode)
+    {
+        var clamped = ComposerLogic.ClampPermission(mode, _role);
+        Permission = clamped;
+        var effectiveRemembered = ComposerLogic.ClampPermission(_rememberedPermission.Length > 0 ? _rememberedPermission : "ask", _role);
+        if (_session is { } session && clamped != effectiveRemembered)
+        {
+            // 记在会话上;owner 还顺带切当前实时 Run 的档位 + 写成这个项目新会话的默认权限档位(2.x 的写回)。结果经会话主题推回来,SyncPermission 跟着它走
+            _permissionWrite = _commands.SetPermissionModeAsync(session, clamped, _role == "owner" ? _activeRunId : null, _role == "owner" ? _workspaceId : null);
+        }
+    }
 
     [RelayCommand]
     private void SetThinking(string level) => Thinking = ComposerLogic.ClampThinking(level, CurrentOption());

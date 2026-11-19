@@ -259,6 +259,10 @@ record ProjectAppearance(ProjectRef Ref, string? Icon, string? Color, string? Al
     (2.x 的「药丸写回工作区默认值」;不是 owner 或写失败只记在会话上,不打断用户)。新建会话没指定模型时,设备按**项目默认 → 设备默认**整对取(和定时任务同一条规则),都没配留空。
     输入框显示哪个:会话上记住的变了(换会话、快照到、写回推回来、别的控制端改了)就跟它走;没变就保留刚才的选择(写回在路上 / 失败);上一个会话的选择不带到下一个会话;
     都没有才兜底第一个可用的。**兜底结果不写成项目默认值**(2.x 同样),但会话上还没记模型时发出的第一条会把真正用的那个记在会话上。
+  - **权限档位的记忆与跟随**(2026-11 修复「右下角权限选择不持久化、不跟随会话与项目」):真源是会话上的 `PermissionMode`(`sessions.json` 里的 `permissionMode`,缺省 `ask`,不动 schema)。
+    选权限档位 = `ConversationActions.SetPermissionModeAsync` 一个意图:`sessions.setPermissionMode` 记在会话上并同步重打排队里未消费消息的权限标签;
+    若当前有正在跑的顶层 Run 且是 owner,顺带调 `runs.setPermissionMode` 切实时 Run 的档位;owner 还顺带 `settings.project.update` 写成这个项目新会话的默认权限档位。
+    新建会话没指定权限档位时,设备按**项目默认 → 设备默认**继承(member 新建会话时若继承到 `full` 则夹紧为 `ask`)。输入框切换会话或收到推送时按会话记住的 `PermissionMode` 同步并按角色夹紧。
 - **输入框版式**(2026-11 重设计,方案 A「精修单卡」,原型 `docs/design/mockups/composer-options.html`):
   - 一张卡片:书写区是 Arc 的 `TokenTextEditor`(封装 `NcwTokenEditor`,它不画自己的框),只留卡片的描边;焦点在卡片内任何位置时整张卡片描边加深(`:focus-within`)。
   - **文件引用和命令是草稿里的 token**:选中 `@` 候选,草稿末尾的 `@查询` 换成 `@文件名 `(和已引用的文件重名时写项目相对路径),开头的已知 `/命令 ` 也是 token;

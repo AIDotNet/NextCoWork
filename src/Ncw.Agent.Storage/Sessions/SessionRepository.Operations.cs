@@ -73,7 +73,8 @@ public sealed partial class SessionRepository
             Thinking: source.Thinking,
             RootPathAtCreation: source.RootPathAtCreation,
             SkillSourceSessionId: source.SkillSourceSessionId,
-            CreatedAt: Now()));
+            CreatedAt: Now(),
+            PermissionMode: source.PermissionMode));
         var cloned = messages
             .Select(m => (rewrite?.Invoke(m) ?? m) with { Id = Ulid.New(new FixedClock(m.CreatedAt)) })
             .ToList();

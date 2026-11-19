@@ -125,6 +125,28 @@ public sealed class ServicesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_session_created_without_a_permission_mode_takes_the_project_default_then_the_device_default_and_can_be_changed()
+    {
+        var bare = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal("ask", bare.PermissionMode);
+
+        // 设备默认权限档位
+        await _owner.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(new DeviceSettingsPatchDto(DefaultPermissionMode: "full")));
+        var fromDevice = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal("full", fromDevice.PermissionMode);
+
+        // 项目默认权限档位压过设备的
+        await _owner.CallAsync(SettingsMethods.ProjectUpdate, new ProjectSettingsPatchDto(_project.WorkspaceId, PermissionMode: "auto"));
+        var fromProjectAuto = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(_project.WorkspaceId));
+        Assert.Equal("auto", fromProjectAuto.PermissionMode);
+
+        // 会话上直接改权限档位
+        var updated = await _owner.CallAsync(ConversationMethods.SessionsSetPermissionMode, new SessionsSetPermissionModeParams(fromProjectAuto.Id, "full"));
+        Assert.Equal("full", updated.PermissionMode);
+        Assert.Equal("full", (await _owner.CallAsync(ConversationMethods.SessionsGet, new SessionRefParams(fromProjectAuto.Id))).Session.PermissionMode);
+    }
+
+    [Fact]
     public async Task The_proxy_password_is_stored_encrypted_and_only_a_has_flag_ever_leaves_the_device()
     {
         const string secret = "proxy-SECRET-pass-123";

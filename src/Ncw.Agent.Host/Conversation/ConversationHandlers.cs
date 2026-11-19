@@ -28,10 +28,11 @@ internal static class ConversationHandlers
         router.Handle(ConversationMethods.SessionsList, (p, _, _) => Sync(() => SessionsList(service(), p)));
         router.Handle(ConversationMethods.SessionsGet, (p, _, _) => Sync(() => SessionsGet(service(), p)));
         router.Handle(ConversationMethods.SessionsGetPage, (p, _, _) => Sync(() => SessionsGetPage(service(), p)));
-        router.Handle(ConversationMethods.SessionsCreate, (p, _, _) => Sync(() => SessionsCreate(service(), p)));
+        router.Handle(ConversationMethods.SessionsCreate, (p, ctx, _) => Sync(() => SessionsCreate(service(), p, ctx)));
         router.Handle(ConversationMethods.SessionsRename, (p, _, _) => Sync(() => Mutate(service(), p.SessionId, s => s.Sessions.Rename(p.SessionId, p.Title))));
         router.Handle(ConversationMethods.SessionsSetMode, (p, _, _) => Sync(() => SetMode(service(), p)));
         router.Handle(ConversationMethods.SessionsSetModel, (p, _, _) => Sync(() => Mutate(service(), p.SessionId, s => s.Sessions.SetModel(p.SessionId, p.Model, p.ModelProviderId))));
+        router.Handle(ConversationMethods.SessionsSetPermissionMode, (p, ctx, _) => Sync(() => SetSessionPermissionMode(service(), p, ctx)));
         router.Handle(ConversationMethods.SessionsArchive, (p, _, _) => Sync(() => Mutate(service(), p.SessionId, s => s.Sessions.SetArchived(p.SessionId, p.Archived))));
         router.Handle(ConversationMethods.SessionsFavorite, (p, _, _) => Sync(() => Mutate(service(), p.SessionId, s => s.Sessions.SetFavorited(p.SessionId, p.Favorited))));
         router.Handle(ConversationMethods.SessionsDelete, async (p, _, _) => await DeleteAsync(service(), p).ConfigureAwait(false));
@@ -92,18 +93,38 @@ internal static class ConversationHandlers
     private static SessionPageDto SessionsGetPage(ConversationService s, SessionsGetPageParams p) =>
         Mapping.ToDto(s.Sessions.Page(p.SessionId, Math.Clamp(p.Limit, 1, MaxPage), p.BeforeMessageId) ?? throw NotFound(p.SessionId));
 
-    private static SessionDto SessionsCreate(ConversationService s, SessionsCreateParams p)
+    private static SessionDto SessionsCreate(ConversationService s, SessionsCreateParams p, CallContext context)
     {
         var project = s.RequireProject(p.WorkspaceId);
         // 没指定模型:落到项目的默认模型,再落到设备的默认模型(和定时任务同一条规则);都没配就留空,由控制端在候选里兜底。
         // 别名和供应商整对地取,不各挑各的(否则拼出「新别名 + 旧供应商」这个谁也没配过的组合)。
+        var projectSettings = new ProjectSettingsService(s.Workspaces);
+        var deviceSettings = s.DeviceSettings.Current();
         var pick = p.Model is { Length: > 0 } model
             ? new ModelPick(model, p.ModelProviderId)
-            : new ProjectSettingsService(s.Workspaces).Get(project.Id)?.DefaultModel is { IsSet: true } projectModel ? projectModel : s.DeviceSettings.Current().DefaultModel;
+            : projectSettings.Get(project.Id)?.DefaultModel is { IsSet: true } projectModel ? projectModel : deviceSettings.DefaultModel;
+        // 没指定权限档位:落到项目的默认权限档位,再落到设备的默认权限档位;member 新建会话时默认是 full 则收窄到 auto,显式请求 full 则拒绝。
+        string permissionMode;
+        if (p.PermissionMode is { Length: > 0 } explicitPermission)
+        {
+            if (!PermissionModes.TryParse(explicitPermission, out _))
+            {
+                throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown permission mode '{explicitPermission}'.");
+            }
+
+            ConversationService.RequirePermissionModeAllowed(explicitPermission, context);
+            permissionMode = explicitPermission;
+        }
+        else
+        {
+            var inherited = projectSettings.NonDefaultPermissionMode(project.Id) ?? deviceSettings.DefaultPermissionMode;
+            permissionMode = inherited == "full" && context.Role < Ncw.Protocol.Methods.Role.Owner ? "ask" : inherited;
+        }
+
         // 给了 id 用 Ensure:同 id 已存在就返回现有的,不整行覆盖(控制端生成 id 的重试 / 重复创建是安全的)。
         var input = new SessionCreate(
             project.Id, p.Id, Title: p.Title, Model: pick.IsSet ? pick.Model : null, ModelProviderId: pick.IsSet ? pick.ProviderId : null, Mode: p.Mode, Thinking: p.Thinking,
-            RootPathAtCreation: project.RootPath);
+            RootPathAtCreation: project.RootPath, PermissionMode: permissionMode);
         var created = p.Id is null ? s.Sessions.Create(input) : s.Sessions.Ensure(input);
         return Mapping.ToDto(created);
     }
@@ -127,6 +148,23 @@ internal static class ConversationHandlers
             }
         });
         return session;
+    }
+
+    private static SessionDto SetSessionPermissionMode(ConversationService s, SessionsSetPermissionModeParams p, CallContext context)
+    {
+        if (!PermissionModes.TryParse(p.PermissionMode, out _))
+        {
+            throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown permission mode '{p.PermissionMode}'.");
+        }
+
+        ConversationService.RequirePermissionModeAllowed(p.PermissionMode, context);
+        return Mutate(s, p.SessionId, x =>
+        {
+            if (x.Sessions.SetPermissionMode(p.SessionId, p.PermissionMode))
+            {
+                x.Registry.RetagQueuedPermission(p.SessionId, SessionRepository.NormalizePermissionMode(p.PermissionMode));
+            }
+        });
     }
 
     private static async ValueTask<Unit> DeleteAsync(ConversationService s, SessionRefParams p)

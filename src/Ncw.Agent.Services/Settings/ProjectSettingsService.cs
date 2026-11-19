@@ -35,6 +35,13 @@ public sealed record ProjectSettingsPatch
 /// <summary>读写项目设置。校验规则和设备设置一样(整个补丁先校验,坏值不许落库);读是宽容的(坏值按出厂值)。</summary>
 public sealed class ProjectSettingsService(WorkspaceRepository workspaces)
 {
+    /// <summary>
+    /// 项目配过的非默认 <c>permissionMode</c>(<c>auto</c> / <c>full</c>);仍是出厂值 <c>ask</c> 或未设置时返回 null,
+    /// 让调用方回退到设备级的 <c>DefaultPermissionMode</c>(新建工作区时 JSON 里固定带出厂的 <c>permissionMode: "ask"</c>)。
+    /// </summary>
+    public string? NonDefaultPermissionMode(string workspaceId) =>
+        Get(workspaceId)?.PermissionMode is { } m and not "ask" ? m : null;
+
     /// <summary>项目不存在(或属于别的作用域)返回 null。</summary>
     public ProjectSettings? Get(string workspaceId) => workspaces.Get(workspaceId) is { } w ? Read(w) : null;
 

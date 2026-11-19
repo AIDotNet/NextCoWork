@@ -26,6 +26,8 @@ public static class ConversationMethods
 
     public static readonly MethodDef<SessionsSetModelParams, SessionDto> SessionsSetModel = Command<SessionsSetModelParams, SessionDto>("sessions.setModel", Role.Member);
 
+    public static readonly MethodDef<SessionsSetPermissionModeParams, SessionDto> SessionsSetPermissionMode = Command<SessionsSetPermissionModeParams, SessionDto>("sessions.setPermissionMode", Role.Member);
+
     public static readonly MethodDef<SessionsArchiveParams, SessionDto> SessionsArchive = Command<SessionsArchiveParams, SessionDto>("sessions.archive", Role.Member);
 
     public static readonly MethodDef<SessionsFavoriteParams, SessionDto> SessionsFavorite = Command<SessionsFavoriteParams, SessionDto>("sessions.favorite", Role.Member);
@@ -108,7 +110,7 @@ public static class ConversationMethods
 
     public static readonly IReadOnlyList<MethodDef> All =
     [
-        SessionsList, SessionsGet, SessionsGetPage, SessionsCreate, SessionsRename, SessionsSetMode, SessionsSetModel, SessionsArchive,
+        SessionsList, SessionsGet, SessionsGetPage, SessionsCreate, SessionsRename, SessionsSetMode, SessionsSetModel, SessionsSetPermissionMode, SessionsArchive,
         SessionsFavorite, SessionsDelete, SessionsDuplicate, SessionsBranch, SessionsEditMessage, SessionsDeleteTurn, SessionsDeleteReply,
         RunsStart, RunsAbort, RunsSteer, RunsBackground, RunsSetPermissionMode,
         InteractionsList, InteractionsRespond,
@@ -134,6 +136,7 @@ public static class ConversationMethods
 [GenerateShapeFor<SessionsRenameParams>]
 [GenerateShapeFor<SessionsSetModeParams>]
 [GenerateShapeFor<SessionsSetModelParams>]
+[GenerateShapeFor<SessionsSetPermissionModeParams>]
 [GenerateShapeFor<SessionsArchiveParams>]
 [GenerateShapeFor<SessionsFavoriteParams>]
 [GenerateShapeFor<SessionsDuplicateParams>]
