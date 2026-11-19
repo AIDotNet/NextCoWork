@@ -7,7 +7,7 @@
  */
 import { create } from 'zustand'
 import type { V3OfferState } from '../../../shared/domain/v3-upgrade'
-import { v3OfferGetState, v3OfferRefresh, v3OpenDownload, v3Upgrade } from '../services/app'
+import { v3Download, v3OfferGetState, v3OfferRefresh, v3OpenDownload, v3Upgrade } from '../services/app'
 import { on } from '../services/ipc'
 
 interface V3UpgradeStoreState {
@@ -17,6 +17,8 @@ interface V3UpgradeStoreState {
   load: () => Promise<void>
   refresh: () => Promise<void>
   /** 打开下载页并退出 2.x(3.0 在 2.x 开着时不接管数据)。 */
+  /** 应用内下载 3.0(进度经广播进 `state`)。 */
+  download: () => Promise<void>
   upgrade: () => Promise<void>
   /** 只打开下载页。 */
   openDownload: () => Promise<void>
@@ -52,6 +54,14 @@ export const useV3UpgradeStore = create<V3UpgradeStoreState>((set) => ({
       set({ state: await v3OfferRefresh() })
     } catch (error) {
       console.warn('[v3] 检查 3.0 失败:', error)
+    }
+  },
+
+  async download() {
+    try {
+      await v3Download()
+    } catch (error) {
+      console.warn('[v3] 下载 3.0 失败:', error)
     }
   },
 

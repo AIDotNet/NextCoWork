@@ -18,13 +18,25 @@ export function V3UpgradeCard(): ReactNode {
   const upgrading = useV3UpgradeStore((s) => s.upgrading)
   const load = useV3UpgradeStore((s) => s.load)
   const upgrade = useV3UpgradeStore((s) => s.upgrade)
+  const download = useV3UpgradeStore((s) => s.download)
   const openDownload = useV3UpgradeStore((s) => s.openDownload)
   const [notesOpen, setNotesOpen] = useState(false)
 
   useEffect(() => { void load() }, [load])
 
   if (state.status !== 'available') return null
-  const { offer } = state
+  const { offer, install } = state
+  // 有可在应用内装的文件:下载 → 重启并安装;没有(平台不支持 / 后端没给校验和)就保持「前往下载页并退出」
+  const inApp = offer.file !== undefined
+  const busy = upgrading || install.phase === 'downloading' || install.phase === 'verifying' || install.phase === 'installing'
+  const primaryLabel =
+    install.phase === 'downloading' ? t('v3.downloading', { percent: install.total > 0 ? Math.min(99, Math.floor((install.received / install.total) * 100)) : 0 })
+    : install.phase === 'verifying' ? t('v3.verifying')
+    : install.phase === 'installing' ? t('v3.installing')
+    : install.phase === 'ready' ? t('v3.install')
+    : install.phase === 'error' ? t('v3.retry')
+    : t('v3.download')
+  const onPrimary = (): void => { void (install.phase === 'ready' ? upgrade() : download()) }
 
   return (
     <section className="mb-4 rounded-[14px] border border-accent/40 bg-accent/5 p-4" aria-labelledby="v3-upgrade-title">
@@ -36,9 +48,15 @@ export function V3UpgradeCard(): ReactNode {
         {POINTS.map((key) => <li key={key}>{t(key)}</li>)}
       </ul>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="primary" disabled={upgrading} onClick={() => void upgrade()}>
-          {upgrading ? t('v3.upgrading') : t('v3.upgrade')}
-        </Button>
+        {inApp ? (
+          <Button type="button" size="sm" variant="primary" disabled={busy} onClick={onPrimary}>
+            {primaryLabel}
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="primary" disabled={upgrading} onClick={() => void upgrade()}>
+            {upgrading ? t('v3.upgrading') : t('v3.upgrade')}
+          </Button>
+        )}
         <Button type="button" size="sm" variant="secondary" disabled={upgrading} onClick={() => void openDownload()}>
           {t('v3.openDownload')}
         </Button>
@@ -48,6 +66,9 @@ export function V3UpgradeCard(): ReactNode {
           </Button>
         )}
       </div>
+      {install.phase === 'error' && (
+        <p role="alert" className="mt-2 text-[12px] leading-[1.6] text-danger">{t(`v3.error.${install.code}`)}</p>
+      )}
       <ReleaseNotesDialog notes={offer.notes ?? ''} open={notesOpen} onClose={() => setNotesOpen(false)} />
     </section>
   )

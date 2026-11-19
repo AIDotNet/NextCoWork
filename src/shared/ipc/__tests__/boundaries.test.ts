@@ -38,6 +38,7 @@ const CONTROLLER_LOCAL_INVOKE = [
   'app:v3OfferRefresh',
   'app:v3Upgrade',
   'app:v3OpenDownload',
+  'app:v3Download',
   'app:copyText',
   'app:copyImage',
   'app:openSessionWindow',

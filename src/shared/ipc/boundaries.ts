@@ -37,6 +37,7 @@ export const INVOKE_BOUNDARIES = {
   'app:updateGetState': 'controller-local',
   'app:v3OfferGetState': 'controller-local',
   'app:v3OfferRefresh': 'controller-local',
+  'app:v3Download': 'controller-local',
   'app:v3Upgrade': 'controller-local',
   'app:v3OpenDownload': 'controller-local',
   'app:copyText': 'controller-local',

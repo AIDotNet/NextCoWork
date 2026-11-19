@@ -22,8 +22,8 @@ describe('V3OfferService', () => {
   it('starts unknown and becomes available when the backend lists an installer for this platform', async () => {
     const { service, emitted, urls } = rig([ok(body([mac300]))])
     expect(service.getState()).toEqual({ status: 'unknown' })
-    expect(await service.refresh()).toEqual({ status: 'available', offer: { version: '3.0.0' } })
-    expect(emitted).toEqual([{ status: 'available', offer: { version: '3.0.0' } }])
+    expect(await service.refresh()).toEqual({ status: 'available', offer: { version: '3.0.0' }, install: { phase: 'idle' } })
+    expect(emitted).toEqual([{ status: 'available', offer: { version: '3.0.0' }, install: { phase: 'idle' } }])
     expect(urls).toEqual(['https://nextco.work/api/client/updates/v3/latest?channel=stable'])
   })
 
@@ -43,7 +43,7 @@ describe('V3OfferService', () => {
   it('keeps the last known offer when a later check fails, and only broadcasts real changes', async () => {
     const { service, emitted } = rig([ok(body([mac300])), () => Promise.reject(new Error('offline')), ok(body([mac300]))])
     await service.refresh()
-    expect(await service.refresh()).toEqual({ status: 'available', offer: { version: '3.0.0' } })
+    expect(await service.refresh()).toEqual({ status: 'available', offer: { version: '3.0.0' }, install: { phase: 'idle' } })
     await service.refresh()
     expect(emitted).toHaveLength(1)
   })

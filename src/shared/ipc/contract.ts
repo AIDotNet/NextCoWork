@@ -271,7 +271,9 @@ export interface IpcInvokeMap {
   'app:v3OfferGetState': { req: void; res: V3OfferState }
   /** 2.9:重新问一次后端(「关于」里点「检查更新」时)。 */
   'app:v3OfferRefresh': { req: void; res: V3OfferState }
-  /** 2.9:打开 3.0 下载页,然后走正常的退出流程(3.0 在 2.x 开着时拒绝接管数据)。 */
+  /** 2.9:在应用内下载这个平台的 3.0(下载 → 校验 → 就绪);进度并在 `app:v3OfferChanged` 里。 */
+  'app:v3Download': { req: void; res: void }
+  /** 2.9:3.0 已就绪就起安装脚本并走正常退出流程;否则打开 3.0 下载页再退出(3.0 在 2.x 开着时拒绝接管数据)。 */
   'app:v3Upgrade': { req: void; res: void }
   /** 2.9:只打开 3.0 下载页。 */
   'app:v3OpenDownload': { req: void; res: void }
@@ -1749,6 +1751,7 @@ export const INVOKE_CHANNELS = {
   'app:updateGetState': 1,
   'app:v3OfferGetState': 1,
   'app:v3OfferRefresh': 1,
+  'app:v3Download': 1,
   'app:v3Upgrade': 1,
   'app:v3OpenDownload': 1,
   'app:copyText': 1,

@@ -58,6 +58,10 @@ export function v3OfferRefresh(): Promise<V3OfferState> {
   return invoke('app:v3OfferRefresh', undefined)
 }
 
+export function v3Download(): Promise<void> {
+  return invoke('app:v3Download', undefined)
+}
+
 export function v3Upgrade(): Promise<void> {
   return invoke('app:v3Upgrade', undefined)
 }

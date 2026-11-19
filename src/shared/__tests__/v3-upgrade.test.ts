@@ -52,3 +52,22 @@ describe('parseV3Latest', () => {
     }
   })
 })
+
+describe('parseV3Latest · in-app install file', () => {
+  const portable = { fileName: 'NextCoWork-stable-Portable.zip', kind: 'portable', sha256: 'B'.repeat(64), size: 90_959_464, url: '/api/client/updates/v3/stable/osx-arm64/NextCoWork-stable-Portable.zip' }
+  const body = latest([item({ downloads: [portable] })])
+
+  it('offers the file of the kind this platform can install in-app, with a lower-cased checksum', () => {
+    expect(parseV3Latest(body, 'osx-arm64', 'portable')?.file).toEqual({ ...portable, sha256: 'b'.repeat(64) })
+  })
+
+  it('leaves the file out (download-page fallback) for another kind, no kind, or unusable fields', () => {
+    expect(parseV3Latest(body, 'osx-arm64', 'appimage')?.file).toBeUndefined()
+    expect(parseV3Latest(body, 'osx-arm64')?.file).toBeUndefined()
+    for (const bad of [{ sha256: 'zz' }, { sha256: undefined }, { size: 0 }, { fileName: '../evil.zip' }, { url: undefined }]) {
+      const out = parseV3Latest(latest([item({ downloads: [{ ...portable, ...bad }] })]), 'osx-arm64', 'portable')
+      expect(out?.version).toBe('3.0.0')
+      expect(out?.file).toBeUndefined()
+    }
+  })
+})
