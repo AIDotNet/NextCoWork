@@ -400,6 +400,9 @@ public sealed class RunHandle : IDisposable
     /// <summary>settle 只收一次:被看门狗强行收口过的 Run,驱动日后真醒过来也不能再放一次别人的锁、再续一次队列。</summary>
     internal bool TryBeginSettle() => Interlocked.Exchange(ref _settling, 1) == 0;
 
+    /// <summary>收尾已经开始(<see cref="IsSettled"/> 要等收尾做完才为真)。</summary>
+    internal bool IsSettling => Volatile.Read(ref _settling) == 1;
+
     // ─────────────────────────── 中止 ───────────────────────────
 
     /// <summary>

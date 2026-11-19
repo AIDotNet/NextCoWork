@@ -464,7 +464,10 @@ public sealed class RunRegistry : IRunHandleHost, IQueueHost, IDisposable
     {
         lock (_gate)
         {
-            if (_watchdogs.ContainsKey(run.RunId) || run.IsSettled)
+            // 看「收尾已开始」而不是「已收尾」:驱动可能在中止请求到这里之前就收到取消、在别的线程上开始收尾,
+            // 那边的 StopWatchdog 已经执行过了,这时再建看门狗就没人摘——定时器和 RunHandle 一直留在字典里。
+            // Settle 先标记收尾开始、再在同一把锁里摘看门狗,所以检查和登记放在锁里,两种先后都不会漏。
+            if (_watchdogs.ContainsKey(run.RunId) || run.IsSettling)
             {
                 return;
             }
