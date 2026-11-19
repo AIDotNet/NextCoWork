@@ -11,7 +11,7 @@ namespace Ncw.Client.Actions;
 /// OAuth:授权页由控制端打开——界面订阅 Store 里的 <c>DeviceProviders.OAuth</c>,Waiting 阶段带授权 URL / 配对码;
 /// <see cref="StartOAuthAsync"/> 等方法在登录结束(成功 / 失败 / 取消)时才返回,回调码经 <see cref="SubmitOAuthCodeAsync"/> 交回。
 /// </summary>
-public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProviderDiscoveryCommands, ViewModels.IProviderEditorCommands
+public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProviderDiscoveryCommands, ViewModels.IProviderEditorCommands, ViewModels.IModelEditorCommands
 {
     // ── 供应商 ──
 

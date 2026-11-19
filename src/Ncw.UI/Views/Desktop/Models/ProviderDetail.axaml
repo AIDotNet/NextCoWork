@@ -37,7 +37,7 @@
             </WrapPanel>
             <ui:NcwSwitch Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
             <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" VerticalAlignment="Center">
-              <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RenameCommand}" AutomationProperties.Name="{l:NcwText Rename}" arc:Tooltip.Tip="{l:NcwText Rename}">
+              <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding EditCommand}" AutomationProperties.Name="{l:NcwText ModelEditorTitle}" arc:Tooltip.Tip="{l:NcwText ModelEditorTitle}">
                 <lucide:LucideIcon Kind="Pencil" Size="13" />
               </ui:NcwButton>
               <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RemoveCommand}" AutomationProperties.Name="{l:NcwText ProviderRemove}" arc:Tooltip.Tip="{l:NcwText ProviderRemove}">

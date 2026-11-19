@@ -362,8 +362,44 @@
     <unit id="QueueRemove"><segment><source>Remove from queue</source><target state="translated">从队列移除</target></segment></unit>
     <unit id="QueueSteer"><segment><source>Steer</source><target state="translated">插话</target></segment></unit>
     <unit id="QueueSteerHint"><segment><source>Insert this message into the running task at the next turn</source><target state="translated">在下一个回合把这句话插进正在运行的任务</target></segment></unit>
-    <unit id="RenameAliasDescription"><segment><source>The alias is the name you pick a model by.</source><target state="translated">别名是在会话里选择模型时用的名字。</target></segment></unit>
-    <unit id="RenameAliasTitle"><segment><source>Rename model alias</source><target state="translated">重命名模型别名</target></segment></unit>
+    <unit id="ModelEditorTitle"><segment><source>Edit model</source><target state="translated">编辑模型</target></segment></unit>
+    <unit id="ModelEditorDescription"><segment><source>Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</source><target state="translated">改过的字段归这个供应商,不再跟随模型目录更新;没改的继续跟随。</target></segment></unit>
+    <unit id="ModelEditorSectionBasics"><segment><source>Basics</source><target state="translated">基本</target></segment></unit>
+    <unit id="ModelEditorAlias"><segment><source>Alias</source><target state="translated">别名</target></segment></unit>
+    <unit id="ModelEditorAliasHint"><segment><source>The name you pick this model by in conversations.</source><target state="translated">在会话里选择模型时用的名字。</target></segment></unit>
+    <unit id="ModelEditorDisplayName"><segment><source>Display name</source><target state="translated">显示名称</target></segment></unit>
+    <unit id="ModelEditorDisplayNamePlaceholder"><segment><source>Same as the alias</source><target state="translated">留空则显示别名</target></segment></unit>
+    <unit id="ModelEditorUpstream"><segment><source>Upstream model</source><target state="translated">上游模型</target></segment></unit>
+    <unit id="ModelEditorSectionContext"><segment><source>Context</source><target state="translated">上下文</target></segment></unit>
+    <unit id="ModelEditorContextWindow"><segment><source>Context window (tokens)</source><target state="translated">上下文窗口(tokens)</target></segment></unit>
+    <unit id="ModelEditorMaxOutput"><segment><source>Max output (tokens)</source><target state="translated">最大输出(tokens)</target></segment></unit>
+    <unit id="ModelEditorSectionCapabilities"><segment><source>Capabilities and protocol</source><target state="translated">能力与协议</target></segment></unit>
+    <unit id="ModelEditorVision"><segment><source>Image input</source><target state="translated">图片输入</target></segment></unit>
+    <unit id="ModelEditorVisionHint"><segment><source>Lets conversations send images to this model.</source><target state="translated">允许在会话里给这个模型发送图片。</target></segment></unit>
+    <unit id="ModelEditorProtocol"><segment><source>Request protocol</source><target state="translated">请求协议</target></segment></unit>
+    <unit id="ModelEditorProtocolFollow"><segment><source>Follow the provider ({0})</source><target state="translated">跟随供应商({0})</target></segment></unit>
+    <unit id="ModelEditorProtocolFollowPlain"><segment><source>Follow the provider</source><target state="translated">跟随供应商</target></segment></unit>
+    <unit id="ModelEditorSectionThinking"><segment><source>Thinking</source><target state="translated">思考</target></segment></unit>
+    <unit id="ModelEditorThinkingMode"><segment><source>Thinking control</source><target state="translated">思考控制方式</target></segment></unit>
+    <unit id="ModelEditorThinkingModeHint"><segment><source>How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</source><target state="translated">设备向上游发请求时怎么带思考参数;会话里选的思考档位按这里生效。</target></segment></unit>
+    <unit id="ModelEditorThinkingAuto"><segment><source>Follow the model catalog</source><target state="translated">跟随模型目录</target></segment></unit>
+    <unit id="ModelEditorThinkingAutoCurrent"><segment><source>Follow the model catalog (now: {0})</source><target state="translated">跟随模型目录(当前:{0})</target></segment></unit>
+    <unit id="ModelEditorThinkingUnsupported"><segment><source>Not supported</source><target state="translated">不支持</target></segment></unit>
+    <unit id="ModelEditorThinkingAlways"><segment><source>Always thinks</source><target state="translated">总是思考</target></segment></unit>
+    <unit id="ModelEditorThinkingToggle"><segment><source>On / off</source><target state="translated">开 / 关</target></segment></unit>
+    <unit id="ModelEditorThinkingBudget"><segment><source>Token budget</source><target state="translated">思考预算</target></segment></unit>
+    <unit id="ModelEditorThinkingEffort"><segment><source>Effort levels</source><target state="translated">强度档位</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabled"><segment><source>Think by default</source><target state="translated">默认开启思考</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabledHint"><segment><source>Used when thinking is set to Auto in a conversation.</source><target state="translated">会话里思考选「自动」时按这个来。</target></segment></unit>
+    <unit id="ModelEditorBudget"><segment><source>Default budget (tokens)</source><target state="translated">默认预算(tokens)</target></segment></unit>
+    <unit id="ModelEditorEfforts"><segment><source>Supported levels</source><target state="translated">支持的强度</target></segment></unit>
+    <unit id="ModelEditorEffortsHint"><segment><source>Check Off if this model can turn thinking off.</source><target state="translated">勾上「关」表示这个模型可以关掉思考。</target></segment></unit>
+    <unit id="ModelEditorDefaultEffort"><segment><source>Default level</source><target state="translated">默认强度</target></segment></unit>
+    <unit id="ModelEditorErrAliasRequired"><segment><source>Enter an alias.</source><target state="translated">请填写别名。</target></segment></unit>
+    <unit id="ModelEditorErrContextTooSmall"><segment><source>The context window must be at least 1024 tokens.</source><target state="translated">上下文窗口至少 1024 tokens。</target></segment></unit>
+    <unit id="ModelEditorErrOutputTooLarge"><segment><source>Max output must be between 1 and the context window.</source><target state="translated">最大输出要在 1 到上下文窗口之间。</target></segment></unit>
+    <unit id="ModelEditorErrBudgetTooSmall"><segment><source>The thinking budget must be at least 1024 tokens.</source><target state="translated">思考预算至少 1024 tokens。</target></segment></unit>
+    <unit id="ModelEditorErrNoEffort"><segment><source>Check at least one level other than Off.</source><target state="translated">除了「关」,至少勾选一个强度。</target></segment></unit>
     <unit id="RenameSessionDescription"><segment><source>The new name appears in the session list.</source><target state="translated">新名称会显示在会话列表里。</target></segment></unit>
     <unit id="RenameSessionTitle"><segment><source>Rename session</source><target state="translated">重命名会话</target></segment></unit>
     <unit id="ScopeGlobal"><segment><source>Everywhere</source><target state="translated">所有项目</target></segment></unit>

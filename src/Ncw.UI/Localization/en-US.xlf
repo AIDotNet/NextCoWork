@@ -362,8 +362,44 @@
     <unit id="QueueRemove"><segment><source>Remove from queue</source><target state="final">Remove from queue</target></segment></unit>
     <unit id="QueueSteer"><segment><source>Steer</source><target state="final">Steer</target></segment></unit>
     <unit id="QueueSteerHint"><segment><source>Insert this message into the running task at the next turn</source><target state="final">Insert this message into the running task at the next turn</target></segment></unit>
-    <unit id="RenameAliasDescription"><segment><source>The alias is the name you pick a model by.</source><target state="final">The alias is the name you pick a model by.</target></segment></unit>
-    <unit id="RenameAliasTitle"><segment><source>Rename model alias</source><target state="final">Rename model alias</target></segment></unit>
+    <unit id="ModelEditorTitle"><segment><source>Edit model</source><target state="final">Edit model</target></segment></unit>
+    <unit id="ModelEditorDescription"><segment><source>Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</source><target state="final">Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</target></segment></unit>
+    <unit id="ModelEditorSectionBasics"><segment><source>Basics</source><target state="final">Basics</target></segment></unit>
+    <unit id="ModelEditorAlias"><segment><source>Alias</source><target state="final">Alias</target></segment></unit>
+    <unit id="ModelEditorAliasHint"><segment><source>The name you pick this model by in conversations.</source><target state="final">The name you pick this model by in conversations.</target></segment></unit>
+    <unit id="ModelEditorDisplayName"><segment><source>Display name</source><target state="final">Display name</target></segment></unit>
+    <unit id="ModelEditorDisplayNamePlaceholder"><segment><source>Same as the alias</source><target state="final">Same as the alias</target></segment></unit>
+    <unit id="ModelEditorUpstream"><segment><source>Upstream model</source><target state="final">Upstream model</target></segment></unit>
+    <unit id="ModelEditorSectionContext"><segment><source>Context</source><target state="final">Context</target></segment></unit>
+    <unit id="ModelEditorContextWindow"><segment><source>Context window (tokens)</source><target state="final">Context window (tokens)</target></segment></unit>
+    <unit id="ModelEditorMaxOutput"><segment><source>Max output (tokens)</source><target state="final">Max output (tokens)</target></segment></unit>
+    <unit id="ModelEditorSectionCapabilities"><segment><source>Capabilities and protocol</source><target state="final">Capabilities and protocol</target></segment></unit>
+    <unit id="ModelEditorVision"><segment><source>Image input</source><target state="final">Image input</target></segment></unit>
+    <unit id="ModelEditorVisionHint"><segment><source>Lets conversations send images to this model.</source><target state="final">Lets conversations send images to this model.</target></segment></unit>
+    <unit id="ModelEditorProtocol"><segment><source>Request protocol</source><target state="final">Request protocol</target></segment></unit>
+    <unit id="ModelEditorProtocolFollow"><segment><source>Follow the provider ({0})</source><target state="final">Follow the provider ({0})</target></segment></unit>
+    <unit id="ModelEditorProtocolFollowPlain"><segment><source>Follow the provider</source><target state="final">Follow the provider</target></segment></unit>
+    <unit id="ModelEditorSectionThinking"><segment><source>Thinking</source><target state="final">Thinking</target></segment></unit>
+    <unit id="ModelEditorThinkingMode"><segment><source>Thinking control</source><target state="final">Thinking control</target></segment></unit>
+    <unit id="ModelEditorThinkingModeHint"><segment><source>How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</source><target state="final">How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</target></segment></unit>
+    <unit id="ModelEditorThinkingAuto"><segment><source>Follow the model catalog</source><target state="final">Follow the model catalog</target></segment></unit>
+    <unit id="ModelEditorThinkingAutoCurrent"><segment><source>Follow the model catalog (now: {0})</source><target state="final">Follow the model catalog (now: {0})</target></segment></unit>
+    <unit id="ModelEditorThinkingUnsupported"><segment><source>Not supported</source><target state="final">Not supported</target></segment></unit>
+    <unit id="ModelEditorThinkingAlways"><segment><source>Always thinks</source><target state="final">Always thinks</target></segment></unit>
+    <unit id="ModelEditorThinkingToggle"><segment><source>On / off</source><target state="final">On / off</target></segment></unit>
+    <unit id="ModelEditorThinkingBudget"><segment><source>Token budget</source><target state="final">Token budget</target></segment></unit>
+    <unit id="ModelEditorThinkingEffort"><segment><source>Effort levels</source><target state="final">Effort levels</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabled"><segment><source>Think by default</source><target state="final">Think by default</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabledHint"><segment><source>Used when thinking is set to Auto in a conversation.</source><target state="final">Used when thinking is set to Auto in a conversation.</target></segment></unit>
+    <unit id="ModelEditorBudget"><segment><source>Default budget (tokens)</source><target state="final">Default budget (tokens)</target></segment></unit>
+    <unit id="ModelEditorEfforts"><segment><source>Supported levels</source><target state="final">Supported levels</target></segment></unit>
+    <unit id="ModelEditorEffortsHint"><segment><source>Check Off if this model can turn thinking off.</source><target state="final">Check Off if this model can turn thinking off.</target></segment></unit>
+    <unit id="ModelEditorDefaultEffort"><segment><source>Default level</source><target state="final">Default level</target></segment></unit>
+    <unit id="ModelEditorErrAliasRequired"><segment><source>Enter an alias.</source><target state="final">Enter an alias.</target></segment></unit>
+    <unit id="ModelEditorErrContextTooSmall"><segment><source>The context window must be at least 1024 tokens.</source><target state="final">The context window must be at least 1024 tokens.</target></segment></unit>
+    <unit id="ModelEditorErrOutputTooLarge"><segment><source>Max output must be between 1 and the context window.</source><target state="final">Max output must be between 1 and the context window.</target></segment></unit>
+    <unit id="ModelEditorErrBudgetTooSmall"><segment><source>The thinking budget must be at least 1024 tokens.</source><target state="final">The thinking budget must be at least 1024 tokens.</target></segment></unit>
+    <unit id="ModelEditorErrNoEffort"><segment><source>Check at least one level other than Off.</source><target state="final">Check at least one level other than Off.</target></segment></unit>
     <unit id="RenameSessionDescription"><segment><source>The new name appears in the session list.</source><target state="final">The new name appears in the session list.</target></segment></unit>
     <unit id="RenameSessionTitle"><segment><source>Rename session</source><target state="final">Rename session</target></segment></unit>
     <unit id="ScopeGlobal"><segment><source>Everywhere</source><target state="final">Everywhere</target></segment></unit>

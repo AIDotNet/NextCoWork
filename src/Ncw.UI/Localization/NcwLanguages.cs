@@ -59,8 +59,4 @@ public sealed class NcwClientText : IClientText
     public string DeleteProviderMessage(string providerName) => NcwTexts.Format(NcwTextKind.DeleteProviderMessage, providerName);
 
     public string TemplateVariant(string variant) => Converters.TemplateVariantTextConverter.Text(variant);
-
-    public string RenameAliasTitle => NcwTexts.Get(NcwTextKind.RenameAliasTitle);
-
-    public string RenameAliasDescription => NcwTexts.Get(NcwTextKind.RenameAliasDescription);
 }

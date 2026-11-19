@@ -56,7 +56,7 @@ public sealed partial class AliasItemViewModel(ModelsSettingsViewModel owner, Mo
     private Task ToggleAsync() => owner.SetAliasEnabledAsync(Dto, !Dto.Enabled);
 
     [RelayCommand]
-    private Task RenameAsync() => owner.RenameAliasAsync(Dto);
+    private Task EditAsync() => owner.EditAliasAsync(Dto);
 
     [RelayCommand]
     private Task RemoveAsync() => owner.RemoveAliasAsync(Dto);
@@ -801,19 +801,18 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
     }
 
-    internal async Task RenameAliasAsync(ModelAliasDto alias)
+    /// <summary>「编辑模型」弹窗:预填设备算好的有效值(模型候选里对应的那一行),保存 / 失败都在弹窗里处理。</summary>
+    internal async Task EditAliasAsync(ModelAliasDto alias)
     {
-        if (DeviceId is not { } device)
+        if (DeviceId is not { } device || !CanEdit)
         {
             return;
         }
 
-        var text = _text();
-        var next = await _dialogs().PromptTextAsync(text.RenameAliasTitle, text.RenameAliasDescription, text.NameLabel, alias.Alias);
-        if (!string.IsNullOrWhiteSpace(next) && next != alias.Alias)
-        {
-            Report(await _providers.RenameModelAsync(device, alias.ProviderId, alias.Alias, next.Trim()));
-        }
+        var effective = _stores.Providers.State.Devices.TryGetValue(device, out var mirror)
+            ? mirror.Options.FirstOrDefault(o => o.ProviderId == alias.ProviderId && o.Alias == alias.Alias)
+            : null;
+        await _dialogs().ShowModelEditorAsync(new ModelEditorViewModel(_providers, device, alias, effective));
     }
 
     internal async Task RemoveAliasAsync(ModelAliasDto alias)

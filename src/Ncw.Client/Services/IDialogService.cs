@@ -82,6 +82,12 @@ public interface IDialogService
     Task ShowProviderEditorAsync(ViewModels.ProviderEditorViewModel form) => Task.CompletedTask;
 
     /// <summary>
+    /// 弹出「编辑模型」窗口(docs/design/07「编辑模型」);保存成功后由 <paramref name="form"/> 的 <see cref="ViewModels.ModelEditorViewModel.Completed"/> 关闭。
+    /// 没有界面的实现当作取消。
+    /// </summary>
+    Task ShowModelEditorAsync(ViewModels.ModelEditorViewModel form) => Task.CompletedTask;
+
+    /// <summary>
     /// 让用户选一张图片做项目图标,并压缩成 <see cref="ProjectIconSpec.PixelSize"/> 见方的小图(界面层解码,按缩小后的尺寸解码以省内存)。
     /// 取消返回 null;没有界面的实现当作取消。
     /// </summary>

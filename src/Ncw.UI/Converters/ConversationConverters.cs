@@ -31,6 +31,18 @@ public sealed class PermissionModeTextConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>模型声明的推理强度(线上名,<c>none</c> = 关)→ 短名,和输入框里思考档位的叫法一致。</summary>
+public sealed class EffortTextConverter : IValueConverter
+{
+    public static readonly EffortTextConverter Instance = new();
+
+    public static string Text(string? effort) => ThinkingLevelTextConverter.ShortText(effort == "none" ? "off" : effort);
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>思考档位 → 文字。</summary>
 public sealed class ThinkingLevelTextConverter : IValueConverter
 {
@@ -333,6 +345,11 @@ public sealed class ProviderErrorTextConverter : IValueConverter
         "providers.discovery.alreadyImported" => NcwTextKind.ProvErrDiscoveryAlreadyImported,
         "providers.editor.keyRequired" => NcwTextKind.ProvErrKeyRequired,
         "providers.editor.idTaken" => NcwTextKind.ProvErrIdTaken,
+        "models.editor.aliasRequired" => NcwTextKind.ModelEditorErrAliasRequired,
+        "models.editor.contextTooSmall" => NcwTextKind.ModelEditorErrContextTooSmall,
+        "models.editor.outputTooLarge" => NcwTextKind.ModelEditorErrOutputTooLarge,
+        "models.editor.budgetTooSmall" => NcwTextKind.ModelEditorErrBudgetTooSmall,
+        "models.editor.noEffort" => NcwTextKind.ModelEditorErrNoEffort,
         _ => NcwTextKind.ProvErrGeneric,
     });
 

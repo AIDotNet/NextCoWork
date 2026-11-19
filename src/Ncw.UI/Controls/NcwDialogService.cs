@@ -207,6 +207,45 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
         }
     }
 
+    /// <summary>
+    /// 「编辑模型」(docs/design/07「编辑模型」):Arc Dialog(Large 档)包住 <see cref="ModelEditorDialog"/>,按钮行「取消 / 保存」。
+    /// 保存成功由 ViewModel 的 <see cref="ModelEditorViewModel.Completed"/> 关窗口;失败时窗口不关,原因在里面。改过东西后点遮罩不关(防误触),Esc 和「取消」照常关。
+    /// </summary>
+    public async Task ShowModelEditorAsync(ModelEditorViewModel form)
+    {
+        var content = new ModelEditorDialog { DataContext = form };
+        var save = new NcwButton { Variant = ButtonVariant.Primary, Content = NcwTexts.Get(NcwTextKind.Save), Command = form.SaveCommand };
+        var dialog = new Dialog
+        {
+            Title = NcwTexts.Get(NcwTextKind.ModelEditorTitle),
+            Description = NcwTexts.Get(NcwTextKind.ModelEditorDescription),
+            Content = content,
+            Actions = ActionRow(CancelButton(), save),
+            Size = ControlSize.Large,
+        };
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(ModelEditorViewModel.IsDirty))
+            {
+                dialog.CloseOnOutsidePress = !form.IsDirty;
+            }
+        }
+
+        void Close() => dialog.Close(true);
+        form.PropertyChanged += OnChanged;
+        form.Completed += Close;
+        dialog.Opened += (_, _) => Dispatcher.UIThread.Post(content.FocusFirst, DispatcherPriority.Input);
+        try
+        {
+            await dialog.ShowAsync(owner);
+        }
+        finally
+        {
+            form.PropertyChanged -= OnChanged;
+            form.Completed -= Close;
+        }
+    }
+
     /// <summary>「添加供应商」弹窗的宽度:三列模版卡片、表单两列字段都放得下(docs/design/07 §3)。</summary>
     internal const double ProviderEditorWidth = 640;
 
