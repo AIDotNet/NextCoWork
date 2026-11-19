@@ -264,6 +264,31 @@ public sealed class SessionRepositoryTests : SessionTestBase
     }
 
     [Fact]
+    public void Permission_mode_is_remembered_per_session_leaves_recency_alone_and_persists_across_restart()
+    {
+        var a = Repo.Create(new SessionCreate("w", "a"));
+        var b = Repo.Create(new SessionCreate("w", "b", PermissionMode: "auto"));
+        Repo.Put(a with { UpdatedAt = 1_000 });
+
+        Assert.Equal("ask", a.PermissionMode);
+        Assert.Equal("auto", b.PermissionMode);
+
+        Assert.True(Repo.SetPermissionMode("a", "full"));
+        Assert.Equal("full", Repo.Get("a")!.PermissionMode);
+        Assert.Equal(1_000, Repo.Get("a")!.UpdatedAt);
+        Assert.False(Repo.SetPermissionMode("a", "full"));
+        Assert.False(Repo.SetPermissionMode("missing", "auto"));
+
+        Restart();
+
+        Assert.Equal("full", Repo.Get("a")!.PermissionMode);
+        Assert.Equal("auto", Repo.Get("b")!.PermissionMode);
+
+        var copy = Repo.Duplicate("a", "copy");
+        Assert.Equal("full", copy.PermissionMode);
+    }
+
+    [Fact]
     public void Mode_change_moves_updated_at_and_is_a_no_op_when_unchanged_or_missing()
     {
         Repo.Create(new SessionCreate("w", "a", CreatedAt: 1));

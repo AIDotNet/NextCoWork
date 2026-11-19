@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using Ncw.Agent.Llm.Auth;
 using Ncw.Agent.Llm.Pricing;
 using Ncw.Agent.Llm.Routing;
@@ -215,8 +216,8 @@ public sealed class ModelCatalogService : IDisposable
     {
         lock (_gate)
         {
-            var cached = _store.Load();
-            if (cached is { } c && TryParse(c.Body, c.Meta.FetchedAt) is { ModelCount: > 0 } parsed)
+            var cached = _store.Load((body, meta) => TryParse(body, meta.FetchedAt));
+            if (cached is { Result: { ModelCount: > 0 } parsed } c)
             {
                 _rawProviders = parsed.Providers;
                 _meta = c.Meta;
@@ -238,7 +239,7 @@ public sealed class ModelCatalogService : IDisposable
         }
     }
 
-    private ParsedCatalog? TryParse(byte[] body, DateTimeOffset fetchedAt)
+    private ParsedCatalog? TryParse(ReadOnlySpan<byte> body, DateTimeOffset fetchedAt)
     {
         try
         {
@@ -362,13 +363,15 @@ public sealed class ModelCatalogService : IDisposable
                 return Fail(CatalogErrorKeys.TooLarge, $"The response is larger than the {_options.MaxBytes} byte limit.", now);
             }
 
-            var body = await ReadCappedAsync(response.Content, _options.MaxBytes, linked.Token).ConfigureAwait(false);
-            if (body is null)
+            // 正文边下边写进草稿(不进 GC 堆:几 MB 的数组会留在大对象堆上,空闲的 Agent 很久不做完整 GC),边算哈希
+            using var draft = _store.BeginDraft();
+            var hash = await CopyCappedAsync(response.Content, draft.Body, _options.MaxBytes, linked.Token).ConfigureAwait(false);
+            if (hash is null)
             {
                 return Fail(CatalogErrorKeys.TooLarge, $"The response is larger than the {_options.MaxBytes} byte limit.", now);
             }
 
-            return Adopt(body, response, now);
+            return Adopt(draft, hash, response, now);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -384,25 +387,30 @@ public sealed class ModelCatalogService : IDisposable
         }
     }
 
-    private static async Task<byte[]?> ReadCappedAsync(HttpContent content, long max, CancellationToken ct)
+    /// <summary>把响应正文复制进 <paramref name="target"/>,同时算 SHA-256;超过 <paramref name="max"/> 返回 null。</summary>
+    private static async Task<string?> CopyCappedAsync(HttpContent content, Stream target, long max, CancellationToken ct)
     {
         await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        using var buffer = new MemoryStream();
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var chunk = new byte[81920];
+        long total = 0;
         while (true)
         {
             var read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false);
             if (read == 0)
             {
-                return buffer.ToArray();
+                await target.FlushAsync(ct).ConfigureAwait(false);
+                return Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
             }
 
-            if (buffer.Length + read > max)
+            total += read;
+            if (total > max)
             {
                 return null;
             }
 
-            buffer.Write(chunk, 0, read);
+            sha.AppendData(chunk, 0, read);
+            await target.WriteAsync(chunk.AsMemory(0, read), ct).ConfigureAwait(false);
         }
     }
 
@@ -420,19 +428,34 @@ public sealed class ModelCatalogService : IDisposable
         return new CatalogRefreshResult(CatalogRefreshOutcome.NotModified, ModelCount: Current.ModelCount);
     }
 
-    private CatalogRefreshResult Adopt(byte[] body, HttpResponseMessage response, DateTimeOffset now)
+    private CatalogRefreshResult Adopt(ICatalogDraft draft, string hash, HttpResponseMessage response, DateTimeOffset now)
     {
+        var etag = response.Headers.ETag?.ToString();
+        var lastModified = response.Content.Headers.LastModified is { } modified ? modified.ToString("R") : null;
+        lock (_gate)
+        {
+            if (_meta is { } known && string.Equals(known.Sha256, hash, StringComparison.Ordinal))
+            {
+                // 内容与已采用的这一份一字不差(上游不支持条件请求时的常态):等同 304,不发变更通知,也不必再解析一遍
+                _lastChecked = now;
+                _lastError = null;
+                _meta = known with { CheckedAt = now, ETag = etag ?? known.ETag, LastModified = lastModified ?? known.LastModified };
+                _store.SaveMeta(_meta);
+                return new CatalogRefreshResult(CatalogRefreshOutcome.NotModified, ModelCount: known.ModelCount);
+            }
+        }
+
         ParsedCatalog parsed;
         try
         {
-            parsed = ModelsDevParser.Parse(body, now.ToString("yyyy-MM-dd"), _options.ModelsDev);
+            var fetchedAt = now.ToString("yyyy-MM-dd");
+            parsed = draft.Read(body => ModelsDevParser.Parse(body, fetchedAt, _options.ModelsDev));
         }
         catch (CatalogParseException e)
         {
             return Reject(CatalogErrorKeys.InvalidJson, e.Message, now);
         }
 
-        var hash = FileCatalogStore.Hash(body);
         CatalogSnapshot? snapshot = null;
         CatalogRefreshResult result;
         lock (_gate)
@@ -444,24 +467,10 @@ public sealed class ModelCatalogService : IDisposable
                 return RejectLocked(CatalogErrorKeys.Shrunk, $"The new catalog has {parsed.ModelCount} models but the current one has {previous}; keeping the current one.", now);
             }
 
-            var meta = new CatalogCacheMeta(
-                response.Headers.ETag?.ToString(),
-                response.Content.Headers.LastModified is { } modified ? modified.ToString("R") : null,
-                now,
-                now,
-                hash,
-                parsed.ModelCount);
+            var meta = new CatalogCacheMeta(etag, lastModified, now, now, hash, parsed.ModelCount);
             _lastChecked = now;
             _lastError = null;
-            if (_meta is { } known && string.Equals(known.Sha256, hash, StringComparison.Ordinal))
-            {
-                // 内容与已采用的这一份一字不差(上游不支持条件请求时的常态):等同 304,不发变更通知。
-                _meta = known with { CheckedAt = now, ETag = meta.ETag ?? known.ETag, LastModified = meta.LastModified ?? known.LastModified };
-                _store.SaveMeta(_meta);
-                return new CatalogRefreshResult(CatalogRefreshOutcome.NotModified, ModelCount: parsed.ModelCount);
-            }
-
-            _store.Save(body, meta);
+            draft.Commit(meta);
             _meta = meta;
             _rawProviders = parsed.Providers;
             _source = CatalogSource.Remote;

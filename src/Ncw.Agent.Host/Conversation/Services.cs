@@ -110,6 +110,9 @@ public sealed class AgentServices
     /// <summary>「这家走不走账号登录」的预设表。默认:内置的几家。</summary>
     public IProviderPresets? Presets { get; init; }
 
+    /// <summary>供应商自动发现读文件 / 环境变量的入口;null = 本机(<see cref="Ncw.Agent.Catalog.Discovery.LocalDiscoveryHost"/>)。测试注入内存里的。</summary>
+    public Ncw.Agent.Catalog.Discovery.IDiscoveryHost? DiscoveryHost { get; init; }
+
     /// <summary>各家 OAuth 的刷新规格(凭据刷新器用)。默认:空(各家 issuer 随 <c>oauth/issuers/*</c> 移植)。</summary>
     public IOAuthRegistry? OAuth { get; init; }
 

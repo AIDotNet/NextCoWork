@@ -15,7 +15,7 @@ namespace Ncw.UI.Tests;
 
 /// <summary>
 /// 设置页「插件」标签的 Headless 截图:已安装列表 × 四个断点(1500 / 1200 / 900 / 600)× 深浅主题;其余场景(权限含敏感高亮与待批准、配置表单、诊断与 faulted、市场含详情与 authRequired 提示、
-/// 待处理提示含执行审批的设备 + 环境、错误、viewer 读不了、member 只读、二次确认)各拍宽屏深色和窄屏浅色。数据经脚本化后端和 Store 进来。截图在 <c>bin/Debug/net10.0/screenshots/plugins-*.png</c>。
+/// 待处理提示含执行审批的设备 + 环境、错误、viewer 读不了、member 只读、二次确认)各拍宽屏深色和窄屏浅色。数据经脚本化后端和 Store 进来。截图在 <c>bin/Debug/net11.0/screenshots/plugins-*.png</c>。
 /// </summary>
 public class PluginsScreenshotTests
 {

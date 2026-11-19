@@ -21,10 +21,29 @@ public sealed record ModelChoice(string ProviderId, string ProviderName, string 
 /// <summary>排队消息的一行。<see cref="IsPromoted"/> = 已经「插话」(下一个回合边界送进正在跑的 Run)。</summary>
 public sealed record QueueItemView(string Id, string Text, bool IsPromoted);
 
-/// <summary>斜杠命令一行。<see cref="IsAvailable"/> = false 是还没接入的内置命令(占位,选中只补全文字)。<see cref="Description"/> 来自 <c>commands.list</c>。</summary>
-public sealed record SlashCommandItem(string Command, bool IsAvailable, string? Description = null, string? ArgumentHint = null)
+/// <summary>
+/// 斜杠菜单一行。<see cref="Action"/> 非空 = 内置的本地动作(<see cref="ComposerSlash"/>,说明和参数提示由界面按动作翻译);否则是设备上的命令(<c>commands.list</c>,
+/// <see cref="Description"/> / <see cref="ArgumentHint"/> 是用户自己写的,不翻译)。<see cref="IsAvailable"/> = false 是占位(选中只补全文字)。
+/// <see cref="IsActive"/> 是键盘高亮(纯 UI 状态)。
+/// </summary>
+public sealed partial class SlashCommandItem(string command, bool isAvailable, string? description = null, string? argumentHint = null, SlashAction? action = null) : ObservableObject
 {
+    public string Command { get; } = command;
+
+    public bool IsAvailable { get; } = isAvailable;
+
+    public string? Description { get; } = description;
+
+    public string? ArgumentHint { get; } = argumentHint;
+
+    public SlashAction? Action { get; } = action;
+
     public bool HasDescription => !string.IsNullOrEmpty(Description);
+
+    [ObservableProperty] public partial bool IsActive { get; set; }
+
+    internal bool SameAs(SlashCommandItem other) =>
+        Command == other.Command && IsAvailable == other.IsAvailable && Description == other.Description && ArgumentHint == other.ArgumentHint && Action == other.Action;
 }
 
 /// <summary>
@@ -35,12 +54,14 @@ public sealed record SlashCommandItem(string Command, bool IsAvailable, string? 
 public sealed partial class ComposerViewModel : ObservableObject
 {
     private readonly IConversationCommands _commands;
+    private readonly IGoalCommands? _goals;
     private readonly Dictionary<SessionRef, string> _drafts = [];
     private SessionRef? _session;
     private string? _activeRunId;
     private string? _role;
     private string _rememberedModel = "";
     private string? _rememberedProvider;
+    private string _rememberedPermission = "";
     private List<ModelOptionDto> _options = [];
     private SessionActivity _activity;
     private DeviceConnection _connection = DeviceConnection.Connecting;
@@ -53,9 +74,11 @@ public sealed partial class ComposerViewModel : ObservableObject
     private IReadOnlyList<CommandDto> _projectCommands = [];
     private bool _restoring;
 
-    public ComposerViewModel(IConversationCommands commands, IComposerLookups? lookups = null, TimeSpan? suggestDelay = null, AttachmentTrayViewModel? attachments = null)
+    public ComposerViewModel(IConversationCommands commands, IComposerLookups? lookups = null, TimeSpan? suggestDelay = null, AttachmentTrayViewModel? attachments = null,
+        IGoalCommands? goals = null)
     {
         _commands = commands;
+        _goals = goals;
         Attachments = attachments ?? new AttachmentTrayViewModel();
         Attachments.PropertyChanged += (_, e) =>
         {
@@ -88,6 +111,29 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] public partial SendOutcome? LastFailure { get; private set; }
 
     [ObservableProperty] public partial bool IsSending { get; private set; }
+
+    /// <summary>本地动作(<c>/goal</c>、<c>/compact</c>、<c>/model</c>……)的结果提示;null = 没有。下一次提交或改草稿时清掉。</summary>
+    [ObservableProperty] public partial SlashNotice? Notice { get; private set; }
+
+    public bool HasNotice => Notice is not null;
+
+    /// <summary>提示只是告知(用法、已切换),不是出了问题:界面用次要色而不是警告色。</summary>
+    public bool NoticeIsInfo => Notice?.Kind is SlashNoticeKind.GoalUsage or SlashNoticeKind.ModelSwitched or SlashNoticeKind.CompactNothing;
+
+    partial void OnNoticeChanged(SlashNotice? value)
+    {
+        OnPropertyChanged(nameof(HasNotice));
+        OnPropertyChanged(nameof(NoticeIsInfo));
+    }
+
+    /// <summary>正在手动压缩(<c>/compact</c>,要等一次模型调用):输入框里显示进度,期间不能再提交。</summary>
+    [ObservableProperty] public partial bool IsCompacting { get; private set; }
+
+    /// <summary><c>/model</c> 没带名字:交给界面打开模型菜单。</summary>
+    public event Action? ModelMenuRequested;
+
+    /// <summary><c>/clear</c>:交给上层在当前项目里开一个新会话。</summary>
+    public event Action? NewSessionRequested;
 
     /// <summary>草稿末尾正在输入的 <c>@</c> 引用(不含 @);没有为 null。files.* 协议接入后这里出候选,现在只是占位。</summary>
     [ObservableProperty] public partial string? FileQuery { get; private set; }
@@ -165,11 +211,6 @@ public sealed partial class ComposerViewModel : ObservableObject
     /// <summary>设备是不是 owner:界面据此显示「完全访问」档位。</summary>
     public bool CanUseFull => _role == "owner";
 
-    /// <summary>内置命令:还没接入,保留占位(设备上的命令清单有同名的,以清单为准)。</summary>
-    private static readonly SlashCommandItem[] KnownSlash =
-    [
-        new("/goal", false), new("/compact", false), new("/clear", false), new("/model", false),
-    ];
 
     partial void OnDraftChanged(string value)
     {
@@ -183,6 +224,11 @@ public sealed partial class ComposerViewModel : ObservableObject
             PruneRefs(value);
         }
 
+        if (!_slashRunning)
+        {
+            Notice = null;
+        }
+
         RefreshState();
         UpdateTriggers(value);
     }
@@ -192,8 +238,8 @@ public sealed partial class ComposerViewModel : ObservableObject
     /// </summary>
     public event EventHandler? DraftReplaced;
 
-    /// <summary>已知命令名(不含 <c>/</c>):设备上的命令清单。草稿开头的 <c>/命令 </c> 据此画成 token。</summary>
-    public IEnumerable<string> CommandNames => _projectCommands.Select(static c => c.Name);
+    /// <summary>已知命令名(不含 <c>/</c>):内置的本地动作 + 设备上的命令清单。草稿开头的 <c>/命令 </c> 据此画成 token。</summary>
+    public IEnumerable<string> CommandNames => ComposerSlash.Builtins.Select(static b => b.Name).Concat(_projectCommands.Select(static c => c.Name));
 
     /// <summary>草稿里应当画成 token 的片段(只有 <see cref="ComposerLogic.Mentions"/> 一处规则)。</summary>
     public IReadOnlyList<MentionSpan> Mentions(string text) => ComposerLogic.Mentions(text, FileRefs, CommandNames);
@@ -240,6 +286,9 @@ public sealed partial class ComposerViewModel : ObservableObject
         var rememberedChanged = changedSession || (meta?.Model ?? "") != _rememberedModel || meta?.ModelProviderId != _rememberedProvider;
         _rememberedModel = meta?.Model ?? "";
         _rememberedProvider = meta?.ModelProviderId;
+        var nextPermission = meta?.PermissionMode ?? "";
+        var permissionChanged = changedSession || nextPermission != _rememberedPermission;
+        _rememberedPermission = nextPermission;
         _workspaceId = meta?.WorkspaceId ?? _workspaceId;
         _options = [.. options.Where(o => o.IsChatModel)];
 
@@ -258,7 +307,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
 
         SyncModels(changedSession, rememberedChanged);
-        Permission = ComposerLogic.ClampPermission(Permission, role);
+        SyncPermission(changedSession, permissionChanged, role);
         Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
         Sync(PermissionChoices, ComposerLogic.PermissionModesFor(role));
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
@@ -284,12 +333,30 @@ public sealed partial class ComposerViewModel : ObservableObject
         SelectedModel = (rememberedChanged ? remembered : null) ?? picked ?? remembered ?? choices.FirstOrDefault(c => c.IsAvailable);
     }
 
+    /// <summary>
+    /// 选中哪个权限档位:会话上记住的(设备真源)变了就跟它走——换了会话、快照刚到、选完之后设备推回来、别的控制端改了;
+    /// 没变就保留刚才的选择(写回还在路上,不把用户的选择撤回去);都没有才兜底成 <c>ask</c>。一律按当前角色夹紧。
+    /// </summary>
+    private void SyncPermission(bool changedSession, bool permissionChanged, string? role)
+    {
+        var remembered = _rememberedPermission.Length > 0 ? _rememberedPermission : null;
+        var picked = !changedSession ? Permission : null;
+        var chosen = (permissionChanged ? remembered : null) ?? picked ?? remembered ?? "ask";
+        Permission = ComposerLogic.ClampPermission(chosen, role);
+    }
+
     private ModelOptionDto? CurrentOption() =>
         SelectedModel is { } m ? _options.FirstOrDefault(o => o.ProviderId == m.ProviderId && o.Alias == m.Alias) : null;
 
     private void RefreshState()
     {
         State = ComposerLogic.Of(Draft, _session is not null, _activity, _connection, _role, hasModel: SelectedModel is not null || _rememberedModel.Length > 0);
+        if (IsCompacting)
+        {
+            // 手动压缩在进行:会话被设备锁着,现在发出去只会被拒绝
+            State = State with { CanSend = false, CanQueue = false, CanSteer = false };
+        }
+
         if (Attachments.IsUploading)
         {
             // 附件还在上传:现在发出去会丢掉它,等传完(停止不受影响)
@@ -320,21 +387,88 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
     }
 
-    /// <summary>斜杠菜单 = 设备上的命令清单(<c>commands.list</c>,按前缀过滤)+ 还没接入的内置命令占位(同名的以清单为准)。</summary>
+    /// <summary>
+    /// 斜杠菜单 = 内置的本地动作(在前)+ 设备上的命令清单(<c>commands.list</c>),都按前缀过滤。和内置同名的磁盘命令不列:提交时本地动作先拦下(2.x 同样),
+    /// 列出来也执行不到。
+    /// </summary>
     private void RefreshSlash()
     {
         if (SlashQuery is not { } q)
         {
-            Sync(SlashCommands, []);
+            SyncSlash([]);
             return;
         }
 
+        var builtin = ComposerSlash.Builtins
+            .Select(b => new SlashCommandItem("/" + b.Name, true, action: b.Action))
+            .Where(c => c.Command.StartsWith(q, StringComparison.OrdinalIgnoreCase));
         var real = _projectCommands
+            .Where(c => ComposerSlash.Builtins.All(b => !string.Equals(b.Name, c.Name, StringComparison.OrdinalIgnoreCase)))
             .Select(c => new SlashCommandItem("/" + c.Name, true, c.Description, c.ArgumentHint))
             .Where(c => c.Command.StartsWith(q, StringComparison.OrdinalIgnoreCase));
-        var builtin = KnownSlash.Where(c => c.Command.StartsWith(q, StringComparison.OrdinalIgnoreCase) && _projectCommands.All(p => "/" + p.Name != c.Command));
-        Sync(SlashCommands, [.. real, .. builtin]);
+        SyncSlash([.. builtin, .. real]);
         OnPropertyChanged(nameof(HasSlashQuery));
+    }
+
+    /// <summary>内容没变就不动集合(输入框每变一次都会重新过滤);变了整份换掉,高亮回到第一行。</summary>
+    private void SyncSlash(IReadOnlyList<SlashCommandItem> items)
+    {
+        if (SlashCommands.Count == items.Count && SlashCommands.Zip(items).All(static p => p.First.SameAs(p.Second)))
+        {
+            return;
+        }
+
+        SlashCommands.Clear();
+        foreach (var item in items)
+        {
+            SlashCommands.Add(item);
+        }
+
+        SlashIndex = 0;
+        HighlightSlash();
+    }
+
+    /// <summary>斜杠菜单里高亮的那一行(键盘上下移动,Tab / Enter 选中)。</summary>
+    public int SlashIndex { get; private set; }
+
+    private void HighlightSlash()
+    {
+        for (var i = 0; i < SlashCommands.Count; i++)
+        {
+            SlashCommands[i].IsActive = i == SlashIndex;
+        }
+    }
+
+    /// <summary>键盘上下移动斜杠菜单的高亮。</summary>
+    public void MoveSlash(int delta)
+    {
+        if (SlashCommands.Count == 0)
+        {
+            return;
+        }
+
+        SlashIndex = (SlashIndex + delta + SlashCommands.Count) % SlashCommands.Count;
+        HighlightSlash();
+    }
+
+    /// <summary>
+    /// 斜杠菜单开着时的 Tab / Enter:把高亮的命令补进草稿(<c>/命令 </c>)。<paramref name="enter"/> 为真且草稿已经是一个完整的命令名时<b>不拦</b>
+    /// (返回 false,Enter 照常提交:打全了 <c>/compact</c> 再按回车就是要执行它)。没有菜单返回 false。
+    /// </summary>
+    public bool AcceptSlash(bool enter)
+    {
+        if (!HasSlashQuery || SlashQuery is not { } q)
+        {
+            return false;
+        }
+
+        if (enter && SlashCommands.Any(c => string.Equals(c.Command, q, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        InsertSlash(SlashCommands[Math.Clamp(SlashIndex, 0, SlashCommands.Count - 1)]);
+        return true;
     }
 
     /// <summary>第一次敲 <c>/</c>(或换了会话)时取一次命令清单;取回来重新过滤。</summary>
@@ -554,8 +688,23 @@ public sealed partial class ComposerViewModel : ObservableObject
 
     private Task _modelWrite = Task.CompletedTask;
 
+    /// <summary>最近一次权限档位写回(测试用:等到它落定)。</summary>
+    public Task WhenPermissionSaved => _permissionWrite;
+
+    private Task _permissionWrite = Task.CompletedTask;
+
     [RelayCommand]
-    private void SetPermission(string mode) => Permission = ComposerLogic.ClampPermission(mode, _role);
+    private void SetPermission(string mode)
+    {
+        var clamped = ComposerLogic.ClampPermission(mode, _role);
+        Permission = clamped;
+        var effectiveRemembered = ComposerLogic.ClampPermission(_rememberedPermission.Length > 0 ? _rememberedPermission : "ask", _role);
+        if (_session is { } session && clamped != effectiveRemembered)
+        {
+            // 记在会话上;owner 还顺带切当前实时 Run 的档位 + 写成这个项目新会话的默认权限档位(2.x 的写回)。结果经会话主题推回来,SyncPermission 跟着它走
+            _permissionWrite = _commands.SetPermissionModeAsync(session, clamped, _role == "owner" ? _activeRunId : null, _role == "owner" ? _workspaceId : null);
+        }
+    }
 
     [RelayCommand]
     private void SetThinking(string level) => Thinking = ComposerLogic.ClampThinking(level, CurrentOption());
@@ -589,6 +738,12 @@ public sealed partial class ComposerViewModel : ObservableObject
     {
         if (!State.CanSend || _session is not { } session)
         {
+            return;
+        }
+
+        if (ComposerSlash.Parse(Draft) is { } slash)
+        {
+            await RunSlashAsync(session, slash);
             return;
         }
 
@@ -644,6 +799,13 @@ public sealed partial class ComposerViewModel : ObservableObject
             return;
         }
 
+        if (ComposerSlash.Parse(Draft) is { } slash)
+        {
+            // 本地动作不进队列、不插话:它们改的是会话状态 / 客户端选择,现在就做(压缩自己会因为会话在跑而拒绝)
+            await RunSlashAsync(session, slash);
+            return;
+        }
+
         var text = Draft.Trim();
         var options = Options();
         var files = InputFiles();
@@ -664,6 +826,228 @@ public sealed partial class ComposerViewModel : ObservableObject
             }
         }
     }
+
+    // ───────────────────────── 本地动作(/goal /compact /model /clear) ─────────────────────────
+
+    private bool _slashRunning;
+
+    /// <summary>最近一次本地动作(测试用:等到它落定)。</summary>
+    public Task WhenSlashDone => _slashTask;
+
+    private Task _slashTask = Task.CompletedTask;
+
+    /// <summary>
+    /// 执行一条本地动作。成功清空草稿;用法不对 / 被拒绝时草稿留着(用户改一下再提交),原因写进 <see cref="Notice"/> 或 <see cref="LastFailure"/>。
+    /// </summary>
+    private Task RunSlashAsync(SessionRef session, SlashInvocation slash)
+    {
+        if (IsCompacting)
+        {
+            return Task.CompletedTask;
+        }
+
+        Notice = null;
+        LastFailure = null;
+        _slashTask = slash.Action switch
+        {
+            SlashAction.Goal => GoalAsync(session, slash.Args),
+            SlashAction.Compact => CompactAsync(session, slash.Args),
+            SlashAction.Model => ModelAsync(slash.Args),
+            _ => ClearAsync(),
+        };
+        return _slashTask;
+    }
+
+    private void Show(SlashNotice notice)
+    {
+        _slashRunning = true;
+        try
+        {
+            Notice = notice;
+        }
+        finally
+        {
+            _slashRunning = false;
+        }
+    }
+
+    private void ConsumeDraft()
+    {
+        _slashRunning = true;
+        try
+        {
+            Draft = "";
+        }
+        finally
+        {
+            _slashRunning = false;
+        }
+    }
+
+    private async Task GoalAsync(SessionRef session, string args)
+    {
+        switch (GoalConditions.ParseCommand(args))
+        {
+            case GoalCommandIntent.Show:
+                // 只敲了 /goal:给用法,草稿留成「/goal 」等着写条件
+                ReplaceDraft("/goal ");
+                Show(new SlashNotice(SlashNoticeKind.GoalUsage));
+                return;
+            case GoalCommandIntent.Invalid { Reason: GoalInvalidReason.TooLong }:
+                Show(new SlashNotice(SlashNoticeKind.GoalTooLong, GoalConditions.Max.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                return;
+            case GoalCommandIntent.Invalid:
+                Show(new SlashNotice(SlashNoticeKind.GoalEmpty));
+                return;
+        }
+
+        if (_goals is null)
+        {
+            Show(new SlashNotice(SlashNoticeKind.Unavailable));
+            return;
+        }
+
+        var text = Draft;
+        IsSending = true;
+        ConsumeDraft();
+        try
+        {
+            if (GoalConditions.ParseCommand(args) is GoalCommandIntent.Set set)
+            {
+                var result = await _goals.SetAsync(session, set.Condition, Options());
+                switch (result)
+                {
+                    case { IsOk: true, Value.Outcome: GoalOutcomes.Set }:
+                        return; // 目标经 goal 主题回来,目标条出现
+                    case { IsOk: true, Value.Outcome: GoalOutcomes.TooLong }:
+                        Show(new SlashNotice(SlashNoticeKind.GoalTooLong, GoalConditions.Max.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                        break;
+                    case { IsOk: true }:
+                        Show(new SlashNotice(SlashNoticeKind.GoalEmpty));
+                        break;
+                    default:
+                        LastFailure = ToSendOutcome(result.Outcome);
+                        break;
+                }
+            }
+            else
+            {
+                var cleared = await _goals.ClearAsync(session);
+                if (cleared.IsOk)
+                {
+                    return;
+                }
+
+                LastFailure = ToSendOutcome(cleared.Outcome);
+            }
+
+            RestoreDraft(text);
+        }
+        finally
+        {
+            IsSending = false;
+        }
+    }
+
+    private async Task CompactAsync(SessionRef session, string instructions)
+    {
+        if (_activity is SessionActivity.Running)
+        {
+            Show(new SlashNotice(SlashNoticeKind.CompactBusy));
+            return;
+        }
+
+        var text = Draft;
+        IsCompacting = true;
+        ConsumeDraft();
+        RefreshState();
+        try
+        {
+            var outcome = await _commands.CompactAsync(session, instructions.Length == 0 ? null : instructions, Options());
+            switch (outcome)
+            {
+                case CompactOutcome.Done:
+                    return; // 边界经会话主题回来,转录里出现压缩分隔线
+                case CompactOutcome.Busy:
+                    Show(new SlashNotice(SlashNoticeKind.CompactBusy));
+                    break;
+                case CompactOutcome.NothingToCompact:
+                    Show(new SlashNotice(SlashNoticeKind.CompactNothing));
+                    return; // 没东西可压:不是用户写错了,草稿不还
+                case CompactOutcome.Unavailable:
+                    LastFailure = SendOutcome.Unavailable;
+                    break;
+                default:
+                    Show(new SlashNotice(SlashNoticeKind.CompactFailed));
+                    break;
+            }
+
+            RestoreDraft(text);
+        }
+        finally
+        {
+            IsCompacting = false;
+            RefreshState();
+        }
+    }
+
+    private Task ModelAsync(string name)
+    {
+        if (name.Length == 0)
+        {
+            ConsumeDraft();
+            ModelMenuRequested?.Invoke();
+            return Task.CompletedTask;
+        }
+
+        var (match, count) = ComposerSlash.MatchModel(Models, name);
+        if (match is null)
+        {
+            Show(new SlashNotice(count > 1 ? SlashNoticeKind.ModelAmbiguous : SlashNoticeKind.ModelNotFound, name));
+            return Task.CompletedTask;
+        }
+
+        if (!match.IsAvailable)
+        {
+            Show(new SlashNotice(SlashNoticeKind.ModelUnavailable, match.DisplayName));
+            return Task.CompletedTask;
+        }
+
+        PickModel(match);
+        ConsumeDraft();
+        Show(new SlashNotice(SlashNoticeKind.ModelSwitched, match.DisplayName));
+        return Task.CompletedTask;
+    }
+
+    private Task ClearAsync()
+    {
+        ConsumeDraft();
+        NewSessionRequested?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    private void RestoreDraft(string text)
+    {
+        if (Draft.Length == 0)
+        {
+            _slashRunning = true;
+            try
+            {
+                Draft = text;
+            }
+            finally
+            {
+                _slashRunning = false;
+            }
+        }
+    }
+
+    private static SendOutcome ToSendOutcome(ActionOutcome outcome) => outcome switch
+    {
+        ActionOutcome.Forbidden => SendOutcome.Forbidden,
+        ActionOutcome.Unavailable => SendOutcome.Unavailable,
+        _ => SendOutcome.Rejected,
+    };
 
     /// <summary>没有可用的模型(没配供应商):输入框里给「添加供应商」按钮。</summary>
     public bool NeedsProvider => State.Block == ComposerBlock.NoModel;

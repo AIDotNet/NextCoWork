@@ -8,8 +8,10 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.Models.ProviderSummary"
              x:DataType="vm:ProviderItemViewModel">
-  <!-- 一个供应商的摘要:名字和标签、地址、凭据(只有「有没有」和后四位)、模型数、上次连通性测试。手机卡片和桌面详情的页头共用 -->
-  <StackPanel Spacing="3">
+  <!-- 一个供应商的摘要:logo、名字和标签、地址、凭据(只有「有没有」和后四位)、模型数、上次连通性测试。手机卡片和桌面详情的页头共用 -->
+  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+  <ui:NcwProviderLogo Classes="tile" Width="36" Height="36" VerticalAlignment="Top" Service="{Binding Logo}" FallbackText="{Binding Name}" />
+  <StackPanel Grid.Column="1" Spacing="3">
     <WrapPanel Orientation="Horizontal">
       <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0" />
       <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" /></Border>
@@ -28,4 +30,5 @@
     <TextBlock Classes="hint" IsVisible="{Binding HasTest}"
                Text="{Binding TestInfo, Converter={x:Static cv:TestResultTextConverter.Instance}}" />
   </StackPanel>
+  </Grid>
 </UserControl>

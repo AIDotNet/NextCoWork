@@ -157,6 +157,6 @@ public class ServicesDtoTests
         // 所有写定时任务的都是 owner(定时 Run 用 full 权限)
         Assert.All(SchedulesMethods.All.Where(static m => m.Kind == MethodKind.Command), m => Assert.Equal(Role.Owner, m.MinRole));
         // 所有 command 方法的种类声明了(路由据此要求幂等键)
-        Assert.All(All.Where(static m => m.Name.EndsWith(".update") || m.Name.EndsWith(".create")), m => Assert.Equal(MethodKind.Command, m.Kind));
+        Assert.All(All.Where(static m => m.Name.EndsWith(".update", StringComparison.Ordinal) || m.Name.EndsWith(".create", StringComparison.Ordinal)), m => Assert.Equal(MethodKind.Command, m.Kind));
     }
 }

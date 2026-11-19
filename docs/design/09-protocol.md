@@ -296,6 +296,9 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `providers.accounts.remove` / `setEnabled` / `setLabel` / `setCurrent` / `reorder` / `clearLimit` / `pause` | command | owner | 账号池操作,结果是这一家的账号全量 |
 | `providers.oauth.start` / `addAccount` / `reauth` | command | owner | 走一遍 OAuth;**登录结束(成功、失败、取消)才返回**,进度走 `providers.oauth` 主题;同一时刻只有一条登录,再次发起先掐掉上一条 |
 | `providers.oauth.signOut` / `cancel` / `submitCode` | command | owner | 退出当前账号 / 取消正在进行的登录 / 把授权页给的回调码交回(`needsPastedCode` 的登录) |
+| `providers.discovery.scan` | query | owner | **能力 `providers.discovery`**(后加的能力,老设备不报就不调)。在设备上找其他客户端已经配好的供应商(Claude Code、Codex、cc-switch、opencode、常见环境变量),只读、不写任何东西。结果每条带来源、建议的 id / 名字 / 协议 / 地址、密钥后四位、模型提示,以及和现有供应商的关系(`new` / `imported` / `conflict`);**密钥明文从不出设备** |
+| `providers.discovery.import` | command | owner | 能力同上。按候选 id 导入:设备**重新扫一遍**、在设备上直接建供应商并存密钥(控制端从头到尾碰不到明文),有模型提示的同时建别名;id 冲突时加后缀;逐条给结果(成功的供应商 id / 失败的 key)。扫描后来源变了(候选没了)这一条报 `providers.discovery.gone` |
+| `providers.templates.list` | query | member | **能力 `providers.templates`**(后加的能力,老设备不报:添加供应商只有「自定义」)。「添加供应商」的内置模版:一个端点一条(`deepseek`、`deepseek-anthropic`、`moonshot-intl`……),带所属服务(控制端据此找 logo)、分组(`intl` / `cn` / `aggregator` / `local`)、端点标签(`intl` / `anthropic`)、协议、地址、拿 key 的地址、要不要 key、是否「常用」。静态数据,和自动发现共用 Agent 的已知服务表(`Ncw.Agent.Catalog/Providers/Templates`);名字是品牌名不本地化,分组和端点标签是开放的字符串,控制端认不出就放「其他」/ 原样显示。冻结向量 `GoldenV1ProviderTemplates` |
 
 **子代理 / 计划 / 目标**(能力 `subagents` / `planning`,承载 本机 + 远程;实现:`Ncw.Agent.Host/Conversation/OrchestrationHandlers`,领域层 `Ncw.Agent.Subagents` / `Ncw.Agent.Planning`)。方法声明齐全(种类、角色、能力、承载),command 带幂等键:
 

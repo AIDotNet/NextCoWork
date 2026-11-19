@@ -5,7 +5,7 @@ namespace Ncw.Build.Tests;
 
 /// <summary>
 /// 真实冒烟:启动一个真的 ncw-agent 进程。用 <c>NCW_AGENT_PATH</c>(例如 AOT 发布产物);没有就找本仓库刚构建出来的
-/// <c>src/Ncw.Agent/bin/*/net10.0/ncw-agent</c>。都没有、或设置了 <c>NCW_SKIP_AGENT_SMOKE=1</c> 时跳过(并说明原因)。
+/// <c>src/Ncw.Agent/bin/*/net11.0/ncw-agent</c>。都没有、或设置了 <c>NCW_SKIP_AGENT_SMOKE=1</c> 时跳过(并说明原因)。
 /// </summary>
 public class AgentSmokeTests
 {

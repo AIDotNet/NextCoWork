@@ -46,6 +46,8 @@ internal sealed class SessionJson
 
     public long? UpdatedAt { get; set; }
 
+    public string? PermissionMode { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 }

@@ -215,4 +215,57 @@ public class TranscriptLayoutTests
         Assert.Equal(default, surface.VisibleRect);
         surface.Dispose();
     }
+
+    [AvaloniaFact]
+    public void A_wheel_the_web_view_swallowed_scrolls_the_transcript_and_is_announced_first()
+    {
+        var surface = new NcwWidgetSurface { Height = 400 };
+        var content = new StackPanel();
+        content.Children.Add(new Border { Height = 300 });
+        content.Children.Add(surface);
+        content.Children.Add(new Border { Height = 1000 });
+        var scroller = new ScrollViewer { Content = content, Height = 500, VerticalAlignment = VerticalAlignment.Top };
+        var window = new Window { Width = 600, Height = 800, Content = scroller };
+        var announced = new List<double>();
+        scroller.AddHandler(NcwWidgetSurface.WheelForwardedEvent, (_, e) => announced.Add(e.DeltaY));
+        window.Show();
+        Dispatch();
+
+        // 页面交出来的滚轮(正 = 往下)滚的是外面的 ScrollViewer;滚动容器先听到(转录据此停止跟随最新)
+        surface.ForwardWheel(120);
+        Dispatch();
+        Assert.Equal(120, scroller.Offset.Y);
+        Assert.Equal([120], announced);
+
+        // 钳在范围内:不会滚出顶 / 底
+        surface.ForwardWheel(-1000);
+        Dispatch();
+        Assert.Equal(0, scroller.Offset.Y);
+        surface.ForwardWheel(5000);
+        Dispatch();
+        Assert.Equal(scroller.Extent.Height - scroller.Viewport.Height, scroller.Offset.Y, 3);
+
+        // 卡片滚出视口(WebView 整个被裁掉)时用户不可能在它上面滚:丢弃
+        var bottom = scroller.Offset.Y;
+        surface.ForwardWheel(-200);
+        Dispatch();
+        Assert.Equal(bottom, scroller.Offset.Y);
+
+        // 有人处理(标 Handled)就不再自己滚;不显示时(空域挂起,宿主把它藏起来)直接丢弃
+        scroller.Offset = new Vector(0, 300);
+        Dispatch();
+        var before = scroller.Offset.Y;
+        void Claim(object? s, NcwWidgetWheelEventArgs e) => e.Handled = true;
+        scroller.AddHandler(NcwWidgetSurface.WheelForwardedEvent, Claim);
+        surface.ForwardWheel(-200);
+        Dispatch();
+        Assert.Equal(before, scroller.Offset.Y);
+        scroller.RemoveHandler(NcwWidgetSurface.WheelForwardedEvent, Claim);
+        surface.IsVisible = false;
+        surface.ForwardWheel(-200);
+        Dispatch();
+
+        Assert.Equal(before, scroller.Offset.Y);
+        surface.Dispose();
+    }
 }

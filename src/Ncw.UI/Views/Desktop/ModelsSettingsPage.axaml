@@ -74,6 +74,11 @@
       </ItemsControl>
       <models:ProviderProblems />
 
+      <!-- 从其他应用导入:设备支持、能写才显示(桌面是列表栏里的一项) -->
+      <Border Classes="card" IsVisible="{Binding ShowsDiscoveryEntry}">
+        <models:ProviderDiscoveryPanel DataContext="{Binding Discovery}" />
+      </Border>
+
       <models:ModelsCatalogCard />
     </StackPanel>
   </StackPanel>

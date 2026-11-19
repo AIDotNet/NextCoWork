@@ -1,5 +1,22 @@
+# NextCoWork 3.0 代码规范的机器可执行部分。
+# 规则的来由、取舍,以及 .editorconfig 管不到的约定,见 docs/coding-style.md;改这里的规则时同步改那份文档。
+#
+# 怎么读这个文件:
+# - 选项(`csharp_style_* = true`)只写取值,决定 IDE 的格式化和代码修复往哪边改;
+#   严重级别一律用 `dotnet_diagnostic.<ID>.severity` 单独写,不用 `true:warning` 这种后缀写法。
+# - 构建开了 EnforceCodeStyleInBuild + TreatWarningsAsErrors(Directory.Build.props),所以:
+#     warning    = 强制。构建失败,CI 拦下。
+#     suggestion = 推荐。IDE 里给提示,构建不拦。新代码照着写。
+#     silent     = 只提供重构,不提示。两种写法都可以。
+#     none       = 明确不要。
+# - 标了「待清理」的规则:约定已经定了,但现有代码还有违规(数字是 2026-11-17 统计的处数),暂时是 suggestion;
+#   清理完改成 warning,并删掉标记。清理方法见 docs/coding-style.md §9。
+
 root = true
 
+###############################################################################
+# 所有文件
+###############################################################################
 [*]
 charset = utf-8
 end_of_line = lf
@@ -8,8 +25,493 @@ indent_style = space
 indent_size = 4
 trim_trailing_whitespace = true
 
-[*.{json,props,targets,csproj,slnx,axaml,xml,yml,yaml}]
+[*.{json,props,targets,csproj,slnx,axaml,xaml,xml,xlf,yml,yaml,resx,config,manifest,plist}]
 indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.{sh,bash}]
+indent_size = 2
+
+[*.{cmd,bat,ps1}]
+end_of_line = crlf
+
+###############################################################################
+# C#
+###############################################################################
+[*.cs]
+
+#### 1. 文件结构 ##############################################################
+
+# 文件作用域命名空间。
+csharp_style_namespace_declarations = file_scoped
+dotnet_diagnostic.IDE0160.severity = none
+dotnet_diagnostic.IDE0161.severity = warning
+
+# 命名空间不要求和目录一致:目录只是归类,命名空间跟逻辑模块走
+# (例:src/Ncw.Agent.Session/Session/ 下是 Ncw.Agent.Kernel.Session)。
+dotnet_style_namespace_match_folder = false
+dotnet_diagnostic.IDE0130.severity = none
+
+# using 放在命名空间之外;System.* 最前,其余按字母序,组之间不空行。
+csharp_using_directive_placement = outside_namespace
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+dotnet_diagnostic.IDE0065.severity = warning
+
+# 多余的 using。构建期检查依赖 GenerateDocumentationFile(Directory.Build.props 已打开)。
+# 待清理:270
+dotnet_diagnostic.IDE0005.severity = suggestion
+
+# 不要求文件头。
+dotnet_diagnostic.IDE0073.severity = none
+
+#### 2. 格式:换行、缩进、空格 ################################################
+
+# Allman 大括号。
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_between_query_expression_clauses = true
+# 初始化器允许一行写多个成员:`new() { Id = id, Name = name }`。
+csharp_new_line_before_members_in_object_initializers = false
+csharp_new_line_before_members_in_anonymous_types = false
+
+# 保留单行块和单行语句:`{ get; init; }`、`case "enter": return Enter;` 这类对齐的表格写法。
+csharp_preserve_single_line_blocks = true
+csharp_preserve_single_line_statements = true
+
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents = true
+csharp_indent_case_contents_when_block = false
+csharp_indent_switch_labels = true
+csharp_indent_labels = one_less_than_current
+
+csharp_space_after_cast = false
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_after_comma = true
+csharp_space_after_dot = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_after_semicolon_in_for_statement = true
+csharp_space_around_binary_operators = before_and_after
+csharp_space_around_declaration_statements = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_before_comma = false
+csharp_space_before_dot = false
+csharp_space_before_open_square_brackets = false
+csharp_space_before_semicolon_in_for_statement = false
+csharp_space_between_empty_square_brackets = false
+csharp_space_between_method_call_empty_parameter_list_parentheses = false
+csharp_space_between_method_call_name_and_opening_parenthesis = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+csharp_space_between_method_declaration_name_and_open_parenthesis = false
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_parentheses = false
+csharp_space_between_square_brackets = false
+
+# 以上全部格式选项的总开关。
+# 待清理:183(大头是 `for (;;)`——改成 `while (true)`;以及个别 lambda 块的缩进)
+dotnet_diagnostic.IDE0055.severity = suggestion
+
+# 空行:不连续空两行,`}` 和 `}` 之间不空行。
+dotnet_style_allow_multiple_blank_lines_experimental = false
+csharp_style_allow_blank_lines_between_consecutive_braces_experimental = false
+dotnet_style_allow_statement_immediately_after_block_experimental = true
+csharp_style_allow_embedded_statements_on_same_line_experimental = true
+csharp_style_allow_blank_line_after_colon_in_constructor_initializer_experimental = true
+csharp_style_allow_blank_line_after_token_in_conditional_expression_experimental = true
+csharp_style_allow_blank_line_after_token_in_arrow_expression_clause_experimental = true
+# 待清理:6
+dotnet_diagnostic.IDE2000.severity = suggestion
+# 待清理:1
+dotnet_diagnostic.IDE2002.severity = suggestion
+
+# 控制语句:多行时必须有大括号;`if (x) return;` 这样的单行允许。
+csharp_prefer_braces = when_multiline
+# 待清理:1
+dotnet_diagnostic.IDE0011.severity = suggestion
+
+#### 3. this. 与预定义类型 ####################################################
+
+# 不写 this.(私有字段靠 _ 前缀区分)。
+dotnet_style_qualification_for_field = false
+dotnet_style_qualification_for_property = false
+dotnet_style_qualification_for_method = false
+dotnet_style_qualification_for_event = false
+dotnet_diagnostic.IDE0003.severity = warning
+dotnet_diagnostic.IDE0009.severity = none
+
+# string / int,不用 String / Int32(成员访问也是:string.Empty、int.Parse)。
+dotnet_style_predefined_type_for_locals_parameters_members = true
+dotnet_style_predefined_type_for_member_access = true
+dotnet_diagnostic.IDE0049.severity = warning
+
+#### 4. 修饰符 ################################################################
+
+# 显式写可访问性(接口成员除外)。
+dotnet_style_require_accessibility_modifiers = for_non_interface_members
+dotnet_diagnostic.IDE0040.severity = warning
+
+# 修饰符顺序。
+csharp_preferred_modifier_order = public, private, protected, internal, file, new, static, abstract, virtual, sealed, override, readonly, extern, unsafe, volatile, async, required, partial
+# 待清理:2
+dotnet_diagnostic.IDE0036.severity = suggestion
+
+# 只在构造里赋值的字段标 readonly。
+dotnet_style_readonly_field = true
+# 待清理:1
+dotnet_diagnostic.IDE0044.severity = suggestion
+
+# 不捕获外部状态的本地函数 / lambda 标 static。
+csharp_prefer_static_local_function = true
+csharp_prefer_static_anonymous_function = true
+dotnet_diagnostic.IDE0062.severity = suggestion
+dotnet_diagnostic.IDE0320.severity = suggestion
+
+# readonly struct / readonly 成员。
+csharp_style_prefer_readonly_struct = true
+csharp_style_prefer_readonly_struct_member = true
+dotnet_diagnostic.IDE0250.severity = suggestion
+dotnet_diagnostic.IDE0251.severity = suggestion
+
+#### 5. var ###################################################################
+
+# 一律 var。
+csharp_style_var_for_built_in_types = true
+csharp_style_var_when_type_is_apparent = true
+csharp_style_var_elsewhere = true
+# 待清理:38
+dotnet_diagnostic.IDE0007.severity = suggestion
+dotnet_diagnostic.IDE0008.severity = none
+
+#### 6. 表达式与模式 ##########################################################
+
+# null 判断:`is null` / `is not null`。
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true
+csharp_style_prefer_null_check_over_type_check = true
+dotnet_diagnostic.IDE0041.severity = warning
+dotnet_diagnostic.IDE0150.severity = warning
+
+# 模式匹配代替 as + null 判断、is + 强转;`is not`。
+csharp_style_pattern_matching_over_as_with_null_check = true
+csharp_style_pattern_matching_over_is_with_cast_check = true
+csharp_style_prefer_not_pattern = true
+csharp_style_prefer_pattern_matching = true
+csharp_style_prefer_extended_property_pattern = true
+csharp_style_prefer_switch_expression = true
+# 待清理:1
+dotnet_diagnostic.IDE0019.severity = suggestion
+dotnet_diagnostic.IDE0020.severity = warning
+dotnet_diagnostic.IDE0038.severity = warning
+dotnet_diagnostic.IDE0083.severity = warning
+dotnet_diagnostic.IDE0078.severity = suggestion
+dotnet_diagnostic.IDE0170.severity = suggestion
+dotnet_diagnostic.IDE0066.severity = suggestion
+
+# ??、?.、??=、throw 表达式、事件的 ?.Invoke。
+dotnet_style_coalesce_expression = true
+dotnet_style_null_propagation = true
+csharp_style_throw_expression = true
+csharp_style_conditional_delegate_call = true
+dotnet_diagnostic.IDE0029.severity = warning
+dotnet_diagnostic.IDE0030.severity = warning
+# 待清理:27
+dotnet_diagnostic.IDE0031.severity = suggestion
+# 待清理:1
+dotnet_diagnostic.IDE0074.severity = suggestion
+dotnet_diagnostic.IDE0016.severity = suggestion
+dotnet_diagnostic.IDE0270.severity = suggestion
+dotnet_diagnostic.IDE1005.severity = warning
+
+# 目标类型 new()、default 字面量、简化的 using 声明、^ 和 .. 运算符。
+csharp_style_implicit_object_creation_when_type_is_apparent = true
+csharp_prefer_simple_default_expression = true
+csharp_prefer_simple_using_statement = true
+csharp_style_prefer_index_operator = true
+csharp_style_prefer_range_operator = true
+dotnet_diagnostic.IDE0090.severity = warning
+# 待清理:1
+dotnet_diagnostic.IDE0034.severity = suggestion
+dotnet_diagnostic.IDE0063.severity = suggestion
+dotnet_diagnostic.IDE0056.severity = suggestion
+dotnet_diagnostic.IDE0057.severity = suggestion
+
+# 集合表达式 `[]`:新代码用;旧的 `new List<T>()` 不强改。
+dotnet_style_prefer_collection_expression = when_types_loosely_match
+dotnet_diagnostic.IDE0028.severity = suggestion
+dotnet_diagnostic.IDE0300.severity = suggestion
+dotnet_diagnostic.IDE0301.severity = suggestion
+dotnet_diagnostic.IDE0302.severity = suggestion
+dotnet_diagnostic.IDE0303.severity = suggestion
+dotnet_diagnostic.IDE0304.severity = suggestion
+dotnet_diagnostic.IDE0305.severity = suggestion
+
+# 初始化器、自动属性、元组名。
+dotnet_style_object_initializer = true
+dotnet_style_collection_initializer = true
+dotnet_style_prefer_auto_properties = true
+dotnet_style_explicit_tuple_names = true
+dotnet_style_prefer_inferred_tuple_names = true
+dotnet_style_prefer_inferred_anonymous_type_member_names = true
+dotnet_diagnostic.IDE0017.severity = suggestion
+dotnet_diagnostic.IDE0032.severity = suggestion
+dotnet_diagnostic.IDE0033.severity = warning
+dotnet_diagnostic.IDE0037.severity = silent
+
+# 布尔表达式与复合赋值。
+dotnet_style_prefer_simplified_boolean_expressions = true
+dotnet_style_prefer_compound_assignment = true
+dotnet_style_prefer_simplified_interpolation = true
+# 待清理:4
+dotnet_diagnostic.IDE0075.severity = suggestion
+dotnet_diagnostic.IDE0054.severity = warning
+dotnet_diagnostic.IDE0071.severity = suggestion
+# 待清理:4
+dotnet_diagnostic.IDE0100.severity = suggestion
+
+# 三元表达式:不强制把 if/else 改成 ?:(可读性优先)。
+dotnet_style_prefer_conditional_expression_over_assignment = true
+dotnet_style_prefer_conditional_expression_over_return = true
+dotnet_diagnostic.IDE0045.severity = silent
+dotnet_diagnostic.IDE0046.severity = silent
+
+# 括号:优先级不直观时加上,多余的不报。
+dotnet_style_parentheses_in_arithmetic_binary_operators = always_for_clarity
+dotnet_style_parentheses_in_other_binary_operators = always_for_clarity
+dotnet_style_parentheses_in_relational_binary_operators = always_for_clarity
+dotnet_style_parentheses_in_other_operators = never_if_unnecessary
+dotnet_diagnostic.IDE0047.severity = silent
+dotnet_diagnostic.IDE0048.severity = silent
+
+# 内联 out 变量、解构、本地函数代替 lambda 变量。
+csharp_style_inlined_variable_declaration = true
+csharp_style_deconstructed_variable_declaration = true
+csharp_style_prefer_local_over_anonymous_function = true
+csharp_style_prefer_tuple_swap = true
+csharp_style_prefer_utf8_string_literals = true
+csharp_style_prefer_method_group_conversion = true
+# 待清理:1
+dotnet_diagnostic.IDE0018.severity = suggestion
+dotnet_diagnostic.IDE0042.severity = suggestion
+dotnet_diagnostic.IDE0039.severity = suggestion
+dotnet_diagnostic.IDE0180.severity = suggestion
+dotnet_diagnostic.IDE0230.severity = suggestion
+dotnet_diagnostic.IDE0200.severity = silent
+
+# 多余的强转、无法到达的代码、多余的 default 分支等。
+# 待清理:23
+dotnet_diagnostic.IDE0004.severity = suggestion
+dotnet_diagnostic.IDE0035.severity = warning
+dotnet_diagnostic.IDE0080.severity = warning
+dotnet_diagnostic.IDE0110.severity = warning
+dotnet_diagnostic.IDE0001.severity = suggestion
+dotnet_diagnostic.IDE0002.severity = suggestion
+
+# 未使用的值、参数、成员。
+csharp_style_unused_value_assignment_preference = discard_variable
+csharp_style_unused_value_expression_statement_preference = discard_variable
+dotnet_code_quality_unused_parameters = non_public
+dotnet_diagnostic.IDE0059.severity = suggestion
+dotnet_diagnostic.IDE0058.severity = none
+dotnet_diagnostic.IDE0060.severity = suggestion
+# 待清理:2
+dotnet_diagnostic.IDE0051.severity = suggestion
+dotnet_diagnostic.IDE0052.severity = suggestion
+
+#### 7. 表达式主体 ############################################################
+
+# 构造函数不用 =>;方法、运算符、本地函数单行时可以;属性、索引器、访问器、lambda 能用就用。
+csharp_style_expression_bodied_constructors = false
+csharp_style_expression_bodied_methods = when_on_single_line
+csharp_style_expression_bodied_operators = when_on_single_line
+csharp_style_expression_bodied_local_functions = when_on_single_line
+csharp_style_expression_bodied_properties = true
+csharp_style_expression_bodied_indexers = true
+csharp_style_expression_bodied_accessors = true
+csharp_style_expression_bodied_lambdas = true
+dotnet_diagnostic.IDE0021.severity = silent
+dotnet_diagnostic.IDE0022.severity = silent
+dotnet_diagnostic.IDE0023.severity = silent
+dotnet_diagnostic.IDE0024.severity = silent
+dotnet_diagnostic.IDE0025.severity = suggestion
+dotnet_diagnostic.IDE0026.severity = suggestion
+dotnet_diagnostic.IDE0027.severity = suggestion
+dotnet_diagnostic.IDE0053.severity = silent
+dotnet_diagnostic.IDE0061.severity = silent
+
+#### 8. 类型 ##################################################################
+
+# 主构造函数:推荐,不强制(需要校验参数或参数会被改写时用普通构造)。
+csharp_style_prefer_primary_constructors = true
+dotnet_diagnostic.IDE0290.severity = suggestion
+
+# 顶级语句:两种都行。
+csharp_style_prefer_top_level_statements = true
+dotnet_diagnostic.IDE0210.severity = silent
+dotnet_diagnostic.IDE0211.severity = silent
+
+# 自定义的 GetHashCode 用 HashCode.Combine。
+dotnet_diagnostic.IDE0070.severity = suggestion
+
+###############################################################################
+# 命名(IDE1006)
+###############################################################################
+# 规则按从上到下的顺序匹配,越具体的放越前面。
+# 注意:构建里 IDE1006 只有一个严重级别(下面这一行),单条规则写的 severity 只在 IDE 里有区别;
+# 想让某条规则只做推荐,就不要写进来,写进 docs/coding-style.md。
+# 待清理:44(私有字段缺 _、两处 s_ 前缀、测试里 PascalCase 的局部常量和 `using var _r = …`)
+dotnet_diagnostic.IDE1006.severity = suggestion
+
+# --- 风格 ---
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+dotnet_naming_style.camel_case.capitalization = camel_case
+
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+
+dotnet_naming_style.i_pascal_case.capitalization = pascal_case
+dotnet_naming_style.i_pascal_case.required_prefix = I
+
+dotnet_naming_style.t_pascal_case.capitalization = pascal_case
+dotnet_naming_style.t_pascal_case.required_prefix = T
+
+# --- 符号 ---
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+
+dotnet_naming_symbols.type_parameters.applicable_kinds = type_parameter
+dotnet_naming_symbols.type_parameters.applicable_accessibilities = *
+
+dotnet_naming_symbols.types.applicable_kinds = namespace, class, struct, enum, delegate
+dotnet_naming_symbols.types.applicable_accessibilities = *
+
+dotnet_naming_symbols.const_fields.applicable_kinds = field
+dotnet_naming_symbols.const_fields.applicable_accessibilities = *
+dotnet_naming_symbols.const_fields.required_modifiers = const
+
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.applicable_accessibilities = *
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private, private_protected
+
+dotnet_naming_symbols.visible_fields.applicable_kinds = field
+dotnet_naming_symbols.visible_fields.applicable_accessibilities = public, internal, protected, protected_internal
+
+dotnet_naming_symbols.members.applicable_kinds = property, method, event, local_function
+dotnet_naming_symbols.members.applicable_accessibilities = *
+
+dotnet_naming_symbols.locals_and_parameters.applicable_kinds = parameter, local
+dotnet_naming_symbols.locals_and_parameters.applicable_accessibilities = *
+
+# --- 规则 ---
+# 接口:I 前缀。
+dotnet_naming_rule.interfaces_rule.symbols = interfaces
+dotnet_naming_rule.interfaces_rule.style = i_pascal_case
+dotnet_naming_rule.interfaces_rule.severity = warning
+
+# 类型参数:T 前缀(T、TKey、TResult)。
+dotnet_naming_rule.type_parameters_rule.symbols = type_parameters
+dotnet_naming_rule.type_parameters_rule.style = t_pascal_case
+dotnet_naming_rule.type_parameters_rule.severity = warning
+
+# 命名空间与类型:PascalCase。
+dotnet_naming_rule.types_rule.symbols = types
+dotnet_naming_rule.types_rule.style = pascal_case
+dotnet_naming_rule.types_rule.severity = warning
+
+# 常量字段:PascalCase,不用 ALL_CAPS。局部常量按局部变量走 camelCase。
+dotnet_naming_rule.const_fields_rule.symbols = const_fields
+dotnet_naming_rule.const_fields_rule.style = pascal_case
+dotnet_naming_rule.const_fields_rule.severity = warning
+
+# static readonly 字段:PascalCase(不分可访问性)。
+dotnet_naming_rule.static_readonly_fields_rule.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_fields_rule.style = pascal_case
+dotnet_naming_rule.static_readonly_fields_rule.severity = warning
+
+# 私有字段(实例字段、可变的 static 字段):_camelCase。不用 s_ / m_。
+dotnet_naming_rule.private_fields_rule.symbols = private_fields
+dotnet_naming_rule.private_fields_rule.style = underscore_camel_case
+dotnet_naming_rule.private_fields_rule.severity = warning
+
+# 可见字段(public / internal / protected;只应出现在 struct、互操作和计数器里):PascalCase。
+dotnet_naming_rule.visible_fields_rule.symbols = visible_fields
+dotnet_naming_rule.visible_fields_rule.style = pascal_case
+dotnet_naming_rule.visible_fields_rule.severity = warning
+
+# 属性、方法、事件、本地函数:PascalCase。
+dotnet_naming_rule.members_rule.symbols = members
+dotnet_naming_rule.members_rule.style = pascal_case
+dotnet_naming_rule.members_rule.severity = warning
+
+# 参数、局部变量(含局部常量):camelCase。
+dotnet_naming_rule.locals_and_parameters_rule.symbols = locals_and_parameters
+dotnet_naming_rule.locals_and_parameters_rule.style = camel_case
+dotnet_naming_rule.locals_and_parameters_rule.severity = warning
+
+###############################################################################
+# 代码分析(CA)与编译器警告(CS)
+###############################################################################
+# 基线是 SDK 默认的 AnalysisLevel(latest + Default 模式);这里只调整个别规则。
+
+# 没有子类的 internal / private 类型标 sealed。
+dotnet_diagnostic.CA1852.severity = warning
+
+# 不访问实例数据的成员可以标 static。
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# ConfigureAwait 不由分析器强制:Agent 和库代码写 ConfigureAwait(false),UI 线程上的代码不能写。见 docs/coding-style.md §6。
+dotnet_diagnostic.CA2007.severity = none
+
+# 字符串比较 / 格式化要显式给 StringComparison / CultureInfo(协议字段和界面文字都不能受当前区域影响)。
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1307.severity = suggestion
+dotnet_diagnostic.CA1309.severity = suggestion
+# 待清理:14(都在测试里)
+dotnet_diagnostic.CA1310.severity = suggestion
+
+# 集合的性能建议。
+# 待清理:1
+dotnet_diagnostic.CA1827.severity = suggestion
+dotnet_diagnostic.CA1829.severity = warning
+dotnet_diagnostic.CA1860.severity = suggestion
+
+# JsonSerializerOptions 要缓存,不要每次 new。
+dotnet_diagnostic.CA1869.severity = warning
+
+# 文档注释:不要求每个 public 成员都有(大量 public 类型是程序集之间的契约,不是对外 API),
+# 也不要求「写了一个 <param> 就得写全」。
+dotnet_diagnostic.CS1591.severity = none
+dotnet_diagnostic.CS1573.severity = none
+# 写了的文档注释必须正确:cref 能解析、XML 合法、位置正确。
+# 待清理:CS1574 23、CS1734 24、CS1570 5、CS0419 5、CS1587 4
+dotnet_diagnostic.CS1574.severity = suggestion
+dotnet_diagnostic.CS1734.severity = suggestion
+dotnet_diagnostic.CS1570.severity = suggestion
+dotnet_diagnostic.CS0419.severity = suggestion
+dotnet_diagnostic.CS1587.severity = suggestion
+
+###############################################################################
+# 测试
+###############################################################################
+[tests/**.cs]
+
+# 测试方法用句子式命名:`A_disconnected_device_is_unknown_and_not_actionable`。
+dotnet_naming_rule.members_rule.severity = none
+
+# 夹具和 xUnit 约定带来的未用参数、可 static 的成员不提示。
+dotnet_diagnostic.IDE0060.severity = none
+dotnet_diagnostic.CA1822.severity = none
+
+###############################################################################
+# 生成的代码
+###############################################################################
+[**/{obj,bin}/**.cs]
+generated_code = true

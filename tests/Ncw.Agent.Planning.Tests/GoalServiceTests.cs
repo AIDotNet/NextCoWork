@@ -366,7 +366,7 @@ public sealed class GoalServiceTests : IDisposable
         Assert.Equal(1, finish.Status!.Iterations);
         Assert.False(finish.Status.Met);
         Assert.Equal(1, Goals.Store.Get(S)!.Iterations); // 目标留着
-        Assert.Contains(_rig.Telemetry, t => t.StartsWith("goal_idle_streak_stopped"));
+        Assert.Contains(_rig.Telemetry, t => t.StartsWith("goal_idle_streak_stopped", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -534,7 +534,7 @@ public sealed class GoalServiceTests : IDisposable
         var goal = Goals.Store.Get(S)!;
         Assert.Equal(0, goal.IdleCheckinCount);
         Assert.Equal(0, goal.CheckinCount);
-        Assert.Contains(_rig.Telemetry, t => t.StartsWith("goal_checkin_delivery_failed"));
+        Assert.Contains(_rig.Telemetry, t => t.StartsWith("goal_checkin_delivery_failed", StringComparison.Ordinal));
     }
 
     [Fact]

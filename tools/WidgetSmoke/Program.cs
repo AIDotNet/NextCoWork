@@ -74,6 +74,7 @@ internal abstract class Page
     protected readonly Dictionary<string, string> Reports = [];
     protected readonly List<Uri> External = [];
     protected readonly List<double> Heights = [];
+    protected readonly List<double> Wheels = [];
     protected NcwWidgetSurface Surface = null!;
     protected WidgetBridge Bridge = null!;
     protected readonly List<string> Failures = [];
@@ -90,6 +91,7 @@ internal abstract class Page
         Bridge = new WidgetBridge(new WidgetRef("smoke", "s1", "c1"), new WidgetActions(new DeviceRegistry()), Confirm, () => Launch,
             () => new WidgetBridgeContext(new WidgetFacts(WidgetCall.Done, true, false, false, false, false), []), json => Surface.Post(json));
         Bridge.HeightChanged += Heights.Add;
+        Bridge.Wheel += Wheels.Add;
         Bridge.Ready += () => Dispatcher.UIThread.Post(() =>
         {
             Surface.MarkReady();
@@ -149,7 +151,10 @@ internal abstract class Page
 internal sealed class Behaviour : Page
 {
     protected override string Code => """
-        <div id="box" style="height:240px">content</div>
+        <div id="box" style="height:240px">content
+          <div id="inner" style="height:40px;overflow:auto"><div style="height:200px"></div></div>
+          <div id="zoom" style="height:20px"></div>
+        </div>
         <a id="lnk" href="https://docs.example.com/page">link</a>
         <form id="f" action="https://example.com/post" method="post"><input name="a"></form>
         <script>
@@ -191,6 +196,14 @@ internal sealed class Behaviour : Page
           ncw.setState({ x: 1 }).then(function () { report('setstate_reply', 'ok'); }, function (e) { report('setstate_reply', String(e.message)); });
           ncw.openUrl('javascript:alert(1)').then(function () { report('js_url', 'opened'); }, function (e) { report('js_url', String(e.message)); });
           setTimeout(function () { report('still_here', location.href === before); }, 6000);
+          // 滚轮:页面不消费的交给宿主;里面能滚的元素、被脚本拦下的(图表缩放)、双指缩放(ctrlKey)不交
+          document.getElementById('zoom').addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
+          function wheel(id, init) { init.bubbles = true; init.cancelable = true; document.getElementById(id).dispatchEvent(new WheelEvent('wheel', init)); }
+          setTimeout(function () { wheel('box', { deltaY: 30 }); }, 2000);
+          setTimeout(function () { wheel('inner', { deltaY: 25 }); }, 2200);
+          setTimeout(function () { wheel('zoom', { deltaY: 1000 }); }, 2400);
+          setTimeout(function () { wheel('box', { deltaY: 500, ctrlKey: true }); }, 2600);
+          setTimeout(function () { wheel('box', { deltaY: -2, deltaMode: 1 }); }, 2800);
         })();
         </script>
         """;
@@ -227,6 +240,7 @@ internal sealed class Behaviour : Page
         Check("env-data", Report("ondata") == "\"{\\\"q\\\":2}\"", Report("ondata") ?? "(none)");
         Check("theme-token", Report("css_token") == "\"#123456\"", Report("css_token") ?? "(none)");
         Check("height-report", Heights.Count > 0 && Heights[^1] is >= 240 and <= 300, $"heights: {string.Join(",", Heights.TakeLast(3))}");
+        Check("wheel-forwarded", Wheels.SequenceEqual([30, -80]), $"wheels: {string.Join(",", Wheels)} (expected 30,-80: the scrollable child, the preventDefault and the pinch are kept by the page)");
         Check("no-surface-failure", Failures.Count == 0, string.Join(",", Failures));
         return Finish() - 0;
     }

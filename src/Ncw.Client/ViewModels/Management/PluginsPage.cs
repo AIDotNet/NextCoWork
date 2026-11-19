@@ -65,6 +65,9 @@ public sealed partial class PluginsViewModel : ManagementPageViewModel
             if (_locale != value)
             {
                 _locale = value;
+                // 提示卡的文字在创建时按语言取好;请求没变时 Rebuild 不重建它们,所以先清掉,按新语言重建
+                // (页面按需创建,docs/design/03 §12:页面第一次打开前到达的提示是按默认语言建的)
+                Prompts.Clear();
                 Rebuild();
             }
         }

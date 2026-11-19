@@ -36,7 +36,7 @@ public sealed class SessionTests
 
         Assert.Equal(RunStatus.Done, ran.Status);
         var stored = h.Stored();
-        Assert.Equal(["client-1", "id0001"], stored.Select(m => m.Id.Value).Where(id => id == "client-1" || id.StartsWith("id")).Take(2));
+        Assert.Equal(["client-1", "id0001"], stored.Select(m => m.Id.Value).Where(id => id == "client-1" || id.StartsWith("id", StringComparison.Ordinal)).Take(2));
         Assert.Equal(("hi", "hello there"), (TextOf(stored[0]), TextOf(stored[1])));
         Assert.Equal([Role.User, Role.Assistant], stored.Select(m => m.Role));
         // 助手消息的来源和停止原因落在 meta 里:跨模型切换(只回放同源的思考块)要用

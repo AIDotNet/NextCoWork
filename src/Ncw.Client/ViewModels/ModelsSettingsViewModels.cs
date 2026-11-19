@@ -56,7 +56,7 @@ public sealed partial class AliasItemViewModel(ModelsSettingsViewModel owner, Mo
     private Task ToggleAsync() => owner.SetAliasEnabledAsync(Dto, !Dto.Enabled);
 
     [RelayCommand]
-    private Task RenameAsync() => owner.RenameAliasAsync(Dto);
+    private Task EditAsync() => owner.EditAliasAsync(Dto);
 
     [RelayCommand]
     private Task RemoveAsync() => owner.RemoveAliasAsync(Dto);
@@ -93,6 +93,9 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
 
     /// <summary>走账号登录(OAuth)的供应商。</summary>
     public bool IsOAuth => Dto.OAuthIssuer is not null;
+
+    /// <summary>logo 的键(认出来的模版所属服务,<see cref="ProviderTemplateMatch"/>);认不出为 null,界面画首字母。</summary>
+    [ObservableProperty] public partial string? Logo { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasLast4))]
@@ -161,7 +164,7 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
     private Task ToggleEnabledAsync() => owner.SetProviderEnabledAsync(this, !Dto.Enabled);
 
     [RelayCommand]
-    private void Edit() => owner.Edit(this);
+    private Task EditAsync() => owner.EditAsync(this);
 
     [RelayCommand]
     private Task RemoveAsync() => owner.RemoveProviderAsync(this);
@@ -190,52 +193,6 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
 
     [RelayCommand]
     private void ToggleExpanded() => IsExpanded = !IsExpanded;
-}
-
-/// <summary>新建 / 编辑供应商的表单。密钥只写不读:保存后立刻清掉输入,界面之后只显示后四位。</summary>
-public sealed partial class ProviderEditorViewModel : ObservableObject
-{
-    public static readonly IReadOnlyList<string> Protocols = ["anthropic", "openai-chat", "openai-responses"];
-
-    [ObservableProperty] public partial bool IsOpen { get; set; }
-
-    [ObservableProperty] public partial bool IsNew { get; set; }
-
-    [ObservableProperty] public partial string Id { get; set; } = "";
-
-    [ObservableProperty] public partial string Name { get; set; } = "";
-
-    [ObservableProperty] public partial string Protocol { get; set; } = "anthropic";
-
-    [ObservableProperty] public partial string BaseUrl { get; set; } = "";
-
-    [ObservableProperty] public partial int Priority { get; set; } = 50;
-
-    [ObservableProperty] public partial bool Enabled { get; set; } = true;
-
-    /// <summary>API Key 输入(只写不读)。留空 = 不改动已有的 key。</summary>
-    [ObservableProperty] public partial string ApiKey { get; set; } = "";
-
-    [ObservableProperty] public partial bool IsSaving { get; set; }
-
-    [ObservableProperty] public partial string? ErrorKey { get; set; }
-
-    public bool HasError => ErrorKey is not null;
-
-    partial void OnErrorKeyChanged(string? value) => OnPropertyChanged(nameof(HasError));
-
-    /// <summary>必填项齐了才能保存。id 新建时必填;名称、地址必填。</summary>
-    public bool CanSave => !IsSaving && Name.Trim().Length > 0 && BaseUrl.Trim().Length > 0 && (!IsNew || Id.Trim().Length > 0);
-
-    partial void OnNameChanged(string value) => OnPropertyChanged(nameof(CanSave));
-
-    partial void OnBaseUrlChanged(string value) => OnPropertyChanged(nameof(CanSave));
-
-    partial void OnIdChanged(string value) => OnPropertyChanged(nameof(CanSave));
-
-    partial void OnIsSavingChanged(bool value) => OnPropertyChanged(nameof(CanSave));
-
-    partial void OnIsNewChanged(bool value) => OnPropertyChanged(nameof(CanSave));
 }
 
 /// <summary>导入弹窗:从上游拉到的模型列表,勾选后「更新列表」整表替换这家的别名。</summary>
@@ -319,17 +276,57 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         _text = text;
         _launcher = launcher;
         _clock = clock ?? TimeProvider.System;
+        Discovery = new ProviderDiscoveryViewModel(providers, SelectWhenAvailable);
+        Discovery.Items.CollectionChanged += (_, _) => ApplyLogos();
+        Discovery.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(ProviderDiscoveryViewModel.ImportableCount) or nameof(ProviderDiscoveryViewModel.IsUnsupported))
+            {
+                OnPropertyChanged(nameof(ShowsDiscoveryEntry));
+            }
+        };
         stores.Workspace.Changed += Refresh;
         stores.Providers.Changed += Refresh;
         stores.Catalog.Changed += Refresh;
         Refresh();
     }
 
+    /// <summary>「从其他应用导入」(供应商自动发现,07 §3)。</summary>
+    public ProviderDiscoveryViewModel Discovery { get; }
+
+    /// <summary>列表栏里「从其他应用导入」这一项:设备支持、能写才有。</summary>
+    public bool ShowsDiscoveryEntry => CanEdit && !Discovery.IsUnsupported;
+
+    /// <summary>详情区显示「从其他应用导入」。</summary>
+    [ObservableProperty] public partial bool ShowsDiscovery { get; private set; }
+
+    partial void OnShowsDiscoveryChanged(bool value) => OnPropertyChanged(nameof(ShowsCatalog));
+
+    partial void OnCanEditChanged(bool value) => OnPropertyChanged(nameof(ShowsDiscoveryEntry));
+
+    [RelayCommand]
+    private void SelectDiscovery()
+    {
+        SelectedProviderId = null;
+        ShowsDiscovery = true;
+    }
+
+    /// <summary>导入后要选中的供应商:它经 providers 主题到达之前先记着(到了再选)。</summary>
+    private string? _pendingSelection;
+
+    private void SelectWhenAvailable(string providerId)
+    {
+        _pendingSelection = providerId;
+        if (Providers.Any(p => p.Id == providerId))
+        {
+            _pendingSelection = null;
+            SelectedProviderId = providerId;
+        }
+    }
+
     public ObservableCollection<DeviceChoice> DeviceChoices { get; } = [];
 
     public ObservableCollection<ProviderItemViewModel> Providers { get; } = [];
-
-    public ProviderEditorViewModel Editor { get; } = new();
 
     public ImportModelsViewModel Import { get; } = new();
 
@@ -382,7 +379,12 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     {
         _credentialsRequested.Clear();
         _settingsFor = null;
+        _templatesFor = null;
+        _templates = [];
         SelectedProviderId = null;
+        ShowsDiscovery = false;
+        _pendingSelection = null;
+        Discovery.Reset();
         Refresh();
     }
 
@@ -392,14 +394,26 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     /// <summary>选中的供应商(详情区显示它)。</summary>
     public ProviderItemViewModel? SelectedProvider => SelectedProviderId is { } id ? Providers.FirstOrDefault(p => p.Id == id) : null;
 
-    /// <summary>详情区显示模型目录(没选供应商)。</summary>
-    public bool ShowsCatalog => SelectedProvider is null;
+    /// <summary>详情区显示模型目录(没选供应商,也没选「从其他应用导入」)。</summary>
+    public bool ShowsCatalog => SelectedProvider is null && !ShowsDiscovery;
 
-    partial void OnSelectedProviderIdChanged(string? value) => SyncSelection();
+    partial void OnSelectedProviderIdChanged(string? value)
+    {
+        if (value is not null)
+        {
+            ShowsDiscovery = false;
+        }
+
+        SyncSelection();
+    }
 
     /// <summary>列表栏的「模型目录」项。</summary>
     [RelayCommand]
-    private void SelectCatalog() => SelectedProviderId = null;
+    private void SelectCatalog()
+    {
+        SelectedProviderId = null;
+        ShowsDiscovery = false;
+    }
 
     private void SyncSelection()
     {
@@ -493,6 +507,12 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasProviders));
+        if (_pendingSelection is { } pending && Providers.Any(p => p.Id == pending))
+        {
+            _pendingSelection = null;
+            SelectedProviderId = pending;
+        }
+
         SyncSelection();
         Problems.Clear();
         foreach (var problem in mirror.Problems)
@@ -533,6 +553,69 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         {
             _settingsFor = DeviceId;
             _ = LoadCatalogSettingsAsync(DeviceId);
+        }
+
+        if (IsAvailable && _templatesFor != DeviceId)
+        {
+            _templatesFor = DeviceId;
+            _ = LoadTemplatesAsync(DeviceId);
+        }
+
+        ApplyLogos();
+
+        // 自动发现:能写的设备第一次可用时扫一次(换设备会重扫)
+        if (IsAvailable)
+        {
+            Discovery.Activate(DeviceId, CanEdit);
+        }
+    }
+
+    // ───────────────────────── 内置模版(logo、添加供应商) ─────────────────────────
+
+    private IReadOnlyList<ProviderTemplateDto> _templates = [];
+    private string? _templatesFor;
+
+    /// <summary>这台设备的内置模版(<c>providers.templates.list</c> 的一次性结果,不进 Store;老设备为空)。</summary>
+    public IReadOnlyList<ProviderTemplateDto> Templates => _templates;
+
+    private async Task LoadTemplatesAsync(string device)
+    {
+        if (!_providers.SupportsTemplates(device))
+        {
+            return;
+        }
+
+        var result = await _providers.ListTemplatesAsync(device);
+        if (result.IsOk && result.Value is { } value && DeviceId == device)
+        {
+            _templates = value.Templates;
+            ApplyLogos();
+        }
+    }
+
+    /// <summary>这个地址对应的模版(派生:<see cref="ProviderTemplateMatch"/>)。</summary>
+    public ProviderTemplateDto? TemplateOf(string baseUrl, string protocol) =>
+        ProviderTemplateMatch.Find(baseUrl, protocol, [.. _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol))]) is { } hit
+            ? _templates.First(t => t.Id == hit.Id)
+            : null;
+
+    /// <summary>列表、详情、发现候选的 logo 都跟着模版走(模版到了或供应商变了时重算)。</summary>
+    private void ApplyLogos()
+    {
+        if (_templates.Count == 0)
+        {
+            return;
+        }
+
+        var refs = _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol)).ToList();
+        foreach (var p in Providers)
+        {
+            p.Logo = ProviderTemplateMatch.Find(p.BaseUrl, p.Protocol, refs)?.Service;
+        }
+
+        foreach (var c in Discovery.Items)
+        {
+            c.Logo = ProviderTemplateMatch.Find(c.BaseUrl, c.Protocol, refs)?.Service;
         }
     }
 
@@ -613,88 +696,64 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
     // ───────────────────────── 供应商 ─────────────────────────
 
+    /// <summary>「添加供应商」:弹窗(先选模版再填 key),保存成功后在列表里选中新的那家;点了弹窗里的「去导入」就切到「从其他应用导入」。</summary>
     [RelayCommand]
-    private void NewProvider()
+    private async Task NewProviderAsync()
     {
-        Editor.IsNew = true;
-        Editor.Id = "";
-        Editor.Name = "";
-        Editor.Protocol = "anthropic";
-        Editor.BaseUrl = "";
-        Editor.Priority = 50;
-        Editor.Enabled = true;
-        Editor.ApiKey = "";
-        Editor.ErrorKey = null;
-        Editor.IsOpen = true;
-    }
-
-    internal void Edit(ProviderItemViewModel provider)
-    {
-        Editor.IsNew = false;
-        Editor.Id = provider.Id;
-        Editor.Name = provider.Name;
-        Editor.Protocol = provider.Protocol;
-        Editor.BaseUrl = provider.BaseUrl;
-        Editor.Priority = provider.Dto.Priority;
-        Editor.Enabled = provider.IsEnabled;
-        Editor.ApiKey = "";
-        Editor.ErrorKey = null;
-        Editor.IsOpen = true;
-    }
-
-    [RelayCommand]
-    private void CancelEdit()
-    {
-        Editor.ApiKey = "";
-        Editor.IsOpen = false;
-    }
-
-    [RelayCommand]
-    private async Task SaveProviderAsync()
-    {
-        if (DeviceId is not { } device || !Editor.CanSave)
+        if (DeviceId is not { } device || !CanEdit)
         {
             return;
         }
 
-        Editor.IsSaving = true;
-        Editor.ErrorKey = null;
+        var text = _text();
+        var editor = new ProviderEditorViewModel(_providers, device, _templates, [.. Providers.Select(p => p.Id)], Discovery.ImportableCount, text.TemplateVariant);
+        await ShowEditorAsync(editor, isNew: true);
+    }
+
+    /// <summary>「编辑」:同一个弹窗,直接进表单(id 只读)。</summary>
+    internal async Task EditAsync(ProviderItemViewModel provider)
+    {
+        if (DeviceId is not { } device || !CanEdit)
+        {
+            return;
+        }
+
+        var editor = new ProviderEditorViewModel(_providers, device, provider.Dto, TemplateOf(provider.BaseUrl, provider.Protocol));
+        await ShowEditorAsync(editor, isNew: false);
+    }
+
+    private async Task ShowEditorAsync(ProviderEditorViewModel editor, bool isNew)
+    {
+        var discovery = false;
+        void OnDiscovery() => discovery = true;
+        editor.DiscoveryRequested += OnDiscovery;
         try
         {
-            var id = Editor.Id.Trim();
-            var upsert = await _providers.UpsertAsync(device, new ProvidersUpsertParams(id, Editor.Name.Trim(), Editor.Protocol, Editor.BaseUrl.Trim(), Editor.Priority, Editor.Enabled));
-            if (!upsert.IsOk)
-            {
-                Editor.ErrorKey = upsert.ErrorKey ?? upsert.Outcome.ToString();
-                return;
-            }
-
-            // 密钥只写不读:送出去就清掉输入,之后界面只显示后四位
-            var key = Editor.ApiKey.Trim();
-            Editor.ApiKey = "";
-            if (key.Length > 0)
-            {
-                var set = await _providers.SetApiKeyAsync(device, id, key);
-                if (!set.IsOk)
-                {
-                    Editor.ErrorKey = set.ErrorKey ?? set.Outcome.ToString();
-                    return;
-                }
-
-                _credentialsRequested.Remove(id);
-                Providers.FirstOrDefault(p => p.Id == id)?.Let(p => p.Last4 = set.Value?.Last4);
-            }
-
-            if (Editor.IsNew && Providers.Any(p => p.Id == id))
-            {
-                SelectedProviderId = id; // 新建的供应商:直接选中它(列表栏)
-            }
-
-            Editor.IsOpen = false;
+            await _dialogs().ShowProviderEditorAsync(editor);
         }
         finally
         {
-            Editor.IsSaving = false;
+            editor.DiscoveryRequested -= OnDiscovery;
+        }
+
+        if (discovery)
+        {
+            SelectDiscovery();
+            return;
+        }
+
+        // 存过就有这家(测试没过、点了取消也一样:供应商已经建好了)
+        if (editor.SavedProviderId is { } id)
+        {
+            _credentialsRequested.Remove(id);
+            if (isNew)
+            {
+                SelectWhenAvailable(id);
+            }
+            else if (Providers.FirstOrDefault(p => p.Id == id) is { } vm)
+            {
+                _ = LoadCredentialAsync(vm);
+            }
         }
     }
 
@@ -742,19 +801,18 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
     }
 
-    internal async Task RenameAliasAsync(ModelAliasDto alias)
+    /// <summary>「编辑模型」弹窗:预填设备算好的有效值(模型候选里对应的那一行),保存 / 失败都在弹窗里处理。</summary>
+    internal async Task EditAliasAsync(ModelAliasDto alias)
     {
-        if (DeviceId is not { } device)
+        if (DeviceId is not { } device || !CanEdit)
         {
             return;
         }
 
-        var text = _text();
-        var next = await _dialogs().PromptTextAsync(text.RenameAliasTitle, text.RenameAliasDescription, text.NameLabel, alias.Alias);
-        if (!string.IsNullOrWhiteSpace(next) && next != alias.Alias)
-        {
-            Report(await _providers.RenameModelAsync(device, alias.ProviderId, alias.Alias, next.Trim()));
-        }
+        var effective = _stores.Providers.State.Devices.TryGetValue(device, out var mirror)
+            ? mirror.Options.FirstOrDefault(o => o.ProviderId == alias.ProviderId && o.Alias == alias.Alias)
+            : null;
+        await _dialogs().ShowModelEditorAsync(new ModelEditorViewModel(_providers, device, alias, effective));
     }
 
     internal async Task RemoveAliasAsync(ModelAliasDto alias)

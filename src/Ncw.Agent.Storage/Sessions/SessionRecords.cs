@@ -2,7 +2,7 @@ namespace Ncw.Agent.Storage.Sessions;
 
 /// <summary>
 /// 一条会话(2.x 的 <c>Session</c>)。列(过滤 / 级联 / 排序读的那些)是真源;<c>origin</c>、<c>titleSource</c>、
-/// <c>modelProviderId</c>、<c>skillSource</c> 只活在 json 列里,没有提列(2.x 的判据:不参与 WHERE / ORDER BY / 级联)。
+/// <c>modelProviderId</c>、<c>skillSource</c>、<c>permissionMode</c> 只活在 json 列里,没有提列(2.x 的判据:不参与 WHERE / ORDER BY / 级联)。
 /// 2.x 的 <c>status</c> 永远是 idle(运行中永不从磁盘恢复),这里不建模。
 /// </summary>
 public sealed record SessionRecord(
@@ -21,7 +21,8 @@ public sealed record SessionRecord(
     bool Archived,
     bool Favorited,
     long CreatedAt,
-    long UpdatedAt);
+    long UpdatedAt,
+    string PermissionMode = "ask");
 
 /// <summary>2.x 的 <c>SessionCreateInput</c>。</summary>
 public sealed record SessionCreate(
@@ -36,7 +37,8 @@ public sealed record SessionCreate(
     string? Thinking = null,
     string? RootPathAtCreation = null,
     long? CreatedAt = null,
-    string? SkillSourceSessionId = null);
+    string? SkillSourceSessionId = null,
+    string? PermissionMode = null);
 
 /// <summary>侧边栏的一行。<c>Running</c> 永远是 false:运行状态不在库里,由 Agent 的运行注册表在上层合并。</summary>
 public sealed record SessionListItem(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool Running, bool SkillExtraction);

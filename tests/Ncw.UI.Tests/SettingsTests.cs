@@ -176,6 +176,14 @@ public class SettingsTests
         Dispatch();
 
         var models = vm.Settings.Models;
+        // logo 由设备给的模版按地址派生(ConfigLinkTests 用真 Agent 覆盖);这里的设备是假的、没有模版,直接给上看画出来的样子
+        foreach (var p in models.Providers)
+        {
+            p.Logo = p.Id;
+        }
+
+        Dispatch();
+        Assert.Contains(window.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwProviderLogo>(), l => l.Service == "ollama" && l.IsEffectivelyVisible);
         Assert.True(models.IsAvailable);
         Assert.True(vm.Settings.ShowsProviderList);
         Assert.True(Overlay(window).GetVisualDescendants().OfType<Control>().Single(c => c.Name == "CatalogPane").IsEffectivelyVisible);
@@ -192,5 +200,57 @@ public class SettingsTests
         Assert.True(detail.IsEffectivelyVisible);
         Assert.Contains(detail.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Claude Sonnet 4.5");
         Snapshot(window, "settings-models-provider");
+    }
+
+    private sealed class FakeDiscovery : IProviderDiscoveryCommands
+    {
+        public bool SupportsDiscovery(string deviceId) => true;
+
+        public Task<Ncw.Client.Actions.ActionResult<DiscoveryScanResult>> ScanDiscoveryAsync(string deviceId, CancellationToken ct = default) =>
+            Task.FromResult(new Ncw.Client.Actions.ActionResult<DiscoveryScanResult>(Ncw.Client.Actions.ActionOutcome.Ok, new DiscoveryScanResult(
+            [
+                new DiscoveredProviderDto("c1", DiscoverySources.ClaudeCode, "~/.claude/settings.json", [DiscoverySources.CcSwitch], "deepseek-anthropic", "DeepSeek",
+                    "anthropic", "https://api.deepseek.com/anthropic", "9f3a", ["deepseek-chat", "deepseek-reasoner"], DiscoveryStatus.New, null),
+                new DiscoveredProviderDto("c2", DiscoverySources.Codex, "~/.codex/config.toml", [], "moonshot", "Kimi (Moonshot)",
+                    "openai-chat", "https://api.moonshot.cn/v1", "bbbb", ["kimi-k2"], DiscoveryStatus.Conflict, "moonshot"),
+                new DiscoveredProviderDto("c3", DiscoverySources.Env, "OPENAI_API_KEY", [], "openai", "OpenAI",
+                    "openai-responses", "https://api.openai.com/v1", "abcd", [], DiscoveryStatus.Imported, "openai"),
+                new DiscoveredProviderDto("c4", DiscoverySources.Shell, "~/.zshrc · MISTRAL_API_KEY", [DiscoverySources.Env], "mistral", "Mistral",
+                    "openai-chat", "https://api.mistral.ai/v1", "m1st", [], DiscoveryStatus.New, null),
+                new DiscoveredProviderDto("c5", DiscoverySources.Local, "~/.ollama", [], "ollama", "Ollama",
+                    "openai-chat", "http://localhost:11434/v1", null, [], DiscoveryStatus.New, null),
+            ])));
+
+        public Task<Ncw.Client.Actions.ActionResult<DiscoveryImportResult>> ImportDiscoveredAsync(string deviceId, IReadOnlyList<string> candidateIds, CancellationToken ct = default) =>
+            Task.FromResult(new Ncw.Client.Actions.ActionResult<DiscoveryImportResult>(Ncw.Client.Actions.ActionOutcome.Ok, new DiscoveryImportResult([])));
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Discovery_panel_lists_candidates_with_their_source_key_suffix_and_status(bool dark)
+    {
+        TKCode.Arc.ArcTheme.Apply(t => t.Appearance(dark ? TKCode.Arc.ArcAppearance.Dark : TKCode.Arc.ArcAppearance.Light));
+        var vm = new ProviderDiscoveryViewModel(new FakeDiscovery(), _ => { });
+        vm.Activate("local", canEdit: true);
+        var panel = new Ncw.UI.Views.Desktop.Models.ProviderDiscoveryPanel { DataContext = vm, Margin = new Avalonia.Thickness(24) };
+        var window = new Window { Width = 760, Height = 980, Content = panel, Background = dark ? Avalonia.Media.Brushes.Black : Avalonia.Media.Brushes.White };
+        window.Styles.Add(new Ncw.UI.Themes.NcwStyles()); // 外壳里合并的那套共用样式(卡片、标签、提示文字)
+        window.Show();
+        Dispatch();
+
+        Assert.Equal(5, vm.Items.Count);
+        var texts = panel.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
+        Assert.Contains("Claude Code", texts);
+        Assert.Contains(texts, t => t?.Contains("••••9f3a", StringComparison.Ordinal) == true);
+        Assert.Contains(texts, t => t?.Contains("cc-switch", StringComparison.Ordinal) == true); // 也见于
+        var boxes = panel.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwCheckbox>().ToList();
+        Assert.Equal([true, false, false, true, true], boxes.Select(b => b.IsChecked == true));
+        Assert.Contains("Shell 配置", texts);
+        Assert.Contains("无密钥", texts); // 本地服务
+        Assert.False(boxes[2].IsEnabled); // 已导入的不能选
+        Assert.True(panel.GetVisualDescendants().OfType<Control>().Single(c => c.Name == "ImportButton").IsEffectivelyVisible);
+        Snapshot(window, $"settings-models-discovery-{(dark ? "dark" : "light")}");
+        TKCode.Arc.ArcTheme.Apply(t => t.Appearance(TKCode.Arc.ArcAppearance.Dark));
     }
 }

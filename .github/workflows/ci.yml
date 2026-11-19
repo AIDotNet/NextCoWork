@@ -93,7 +93,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-screenshots-${{ matrix.rid }}
-          path: tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/
+          path: tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/
           if-no-files-found: warn
           retention-days: 14
 

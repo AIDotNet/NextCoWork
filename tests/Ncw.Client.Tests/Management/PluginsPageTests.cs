@@ -426,6 +426,17 @@ public sealed class PluginsPageTests
     }
 
     [Fact]
+    public async Task Prompts_that_arrived_before_the_language_was_known_are_rebuilt_in_it()
+    {
+        // 页面按需创建(docs/design/03 §12):页面第一次打开(才告诉 ViewModel 界面语言)之前到达的提示是按默认语言建的
+        var kit = await Open(seed: p => p.Interactions.Add(FakePlugins.Confirm("c", "acme.hello", "cmd.hello")));
+        Assert.Equal("Say hello", kit.Pages.Plugins.Prompts.Single().Title);
+
+        kit.Pages.Plugins.Locale = "zh-CN";
+        Assert.Equal("打个招呼", kit.Pages.Plugins.Prompts.Single().Title);
+    }
+
+    [Fact]
     public async Task Prompt_texts_are_the_plugins_own_words_and_each_kind_answers_with_its_own_field()
     {
         var kit = await Open(seed: p =>

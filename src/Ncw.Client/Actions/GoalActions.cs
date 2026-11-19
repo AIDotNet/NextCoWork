@@ -10,7 +10,15 @@ namespace Ncw.Client.Actions;
 /// 目标相关的用户意图(AGENTS.md §3 规则 4)。目标的真源在设备(<c>GoalStore</c> + 转录里的 <c>goal_status</c> 标记);控制端按 <c>(deviceId, 会话)</c> 镜像,
 /// 首帧(<c>goal</c> 主题的快照、<c>goal.get</c>)和后续变更(<c>goal.changed</c>)是同一个全量类型。设定 / 清除的结果不直接改 Store:状态经主题回来。
 /// </summary>
-public sealed class GoalActions(DeviceRegistry devices)
+/// <summary>输入框的 <c>/goal</c> 用到的两个目标意图(<see cref="GoalActions"/> 的子集):ViewModel 依赖它,单测里换成假实现。</summary>
+public interface IGoalCommands
+{
+    Task<ActionResult<GoalSetResultDto>> SetAsync(SessionRef session, string condition, SendOptionsDto? options = null, CancellationToken ct = default);
+
+    Task<ActionResult<Unit>> ClearAsync(SessionRef session, CancellationToken ct = default);
+}
+
+public sealed class GoalActions(DeviceRegistry devices) : IGoalCommands
 {
     /// <summary>
     /// 取一个会话当前的目标(设备会先从转录恢复)。结果同时按「不更旧」的版本规则合进 Store(打开会话时用:恢复本身也会广播,这里保证没订阅 <c>goal</c> 主题时也拿得到)。

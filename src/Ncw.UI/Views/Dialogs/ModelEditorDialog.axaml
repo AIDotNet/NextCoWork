@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Dialogs.ModelEditorDialog"
+             x:DataType="vm:ModelEditorViewModel">
+  <!--
+    「编辑模型」窗口的内容(docs/design/07「编辑模型」;标题、按钮由 NcwDialogService 的 Arc Dialog 提供):
+    基本(别名、显示名称、上游模型)→ 上下文(窗口、最大输出)→ 能力与协议(图片输入、请求协议)→ 思考(控制方式 + 按方式出现的默认值 / 档位)。
+    中间这块自己滚动(最大高度由 code-behind 按窗口高度算),标题和按钮不动。
+  -->
+  <ScrollViewer x:Name="Body" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
+    <StackPanel Spacing="20" Margin="0,0,14,0">
+      <!-- ── 基本 ── -->
+      <StackPanel Spacing="10">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionBasics}" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+          <ui:NcwInput x:Name="AliasInput" Label="{l:NcwText ModelEditorAlias}" Text="{Binding AliasName, Mode=TwoWay}"
+                       AutomationProperties.Name="{l:NcwText ModelEditorAlias}" />
+          <ui:NcwInput Grid.Column="1" Label="{l:NcwText ModelEditorDisplayName}" Placeholder="{l:NcwText ModelEditorDisplayNamePlaceholder}"
+                       Text="{Binding DisplayName, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText ModelEditorDisplayName}" />
+        </Grid>
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ModelEditorAliasHint}" />
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+          <TextBlock Classes="hint" Text="{l:NcwText ModelEditorUpstream}" />
+          <SelectableTextBlock Grid.Column="1" Classes="hint" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" TextWrapping="Wrap" Text="{Binding Upstream}" />
+        </Grid>
+      </StackPanel>
+
+      <!-- ── 上下文 ── -->
+      <StackPanel Spacing="10">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionContext}" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+          <ui:NcwNumberField x:Name="ContextField" Minimum="1024" Maximum="100000000" Step="1024" LargeStep="65536" UseGrouping="True"
+                             Value="{Binding ContextWindow, Mode=TwoWay}" Label="{l:NcwText ModelEditorContextWindow}" />
+          <ui:NcwNumberField x:Name="OutputField" Grid.Column="1" Minimum="1" Maximum="100000000" Step="1024" LargeStep="16384" UseGrouping="True"
+                             Value="{Binding MaxOutputTokens, Mode=TwoWay}" Label="{l:NcwText ModelEditorMaxOutput}" />
+        </Grid>
+      </StackPanel>
+
+      <!-- ── 能力与协议 ── -->
+      <StackPanel Spacing="10">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionCapabilities}" />
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:NcwText ModelEditorVision}" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ModelEditorVisionHint}" />
+          </StackPanel>
+          <ui:NcwSwitch x:Name="VisionSwitch" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding SupportsImages, Mode=TwoWay}"
+                        AutomationProperties.Name="{l:NcwText ModelEditorVision}" />
+        </Grid>
+        <ui:NcwSelect x:Name="ProtocolSelect" Label="{l:NcwText ModelEditorProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
+      </StackPanel>
+
+      <!-- ── 思考 ── -->
+      <StackPanel Spacing="10">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionThinking}" />
+        <ui:NcwSelect x:Name="ThinkingSelect" Label="{l:NcwText ModelEditorThinkingMode}" Description="{l:NcwText ModelEditorThinkingModeHint}"
+                      SelectedValue="{Binding ThinkingMode, Mode=TwoWay}" />
+
+        <Border Classes="card" IsVisible="{Binding ShowsThinkingDetails}" ui:NcwMotion.ShowMotion="Fade">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowsDefaultEnabled}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:NcwText ModelEditorDefaultEnabled}" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ModelEditorDefaultEnabledHint}" />
+              </StackPanel>
+              <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding DefaultEnabled, Mode=TwoWay}"
+                            AutomationProperties.Name="{l:NcwText ModelEditorDefaultEnabled}" />
+            </Grid>
+
+            <ui:NcwNumberField x:Name="BudgetField" IsVisible="{Binding ShowsBudget}" Minimum="1024" Maximum="1000000" Step="1024" UseGrouping="True"
+                               Value="{Binding BudgetTokens, Mode=TwoWay}" Label="{l:NcwText ModelEditorBudget}" />
+
+            <StackPanel Spacing="8" IsVisible="{Binding ShowsEfforts}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:NcwText ModelEditorEfforts}" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ModelEditorEffortsHint}" />
+              </StackPanel>
+              <ItemsControl x:Name="EffortList" ItemsSource="{Binding Efforts}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:EffortChoice">
+                    <ui:NcwCheckbox Margin="0,0,14,4" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                    Content="{Binding Value, Converter={x:Static cv:EffortTextConverter.Instance}}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ui:NcwSelect x:Name="DefaultEffortSelect" Label="{l:NcwText ModelEditorDefaultEffort}" ItemsSource="{Binding DefaultEffortChoices}"
+                            SelectedValue="{Binding DefaultEffort, Mode=TwoWay}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- 保存前 / 写入失败 -->
+      <TextBlock x:Name="ErrorText" IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                 Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

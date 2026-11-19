@@ -72,7 +72,7 @@ public interface IProviderPresets
     string? OAuthIssuerOf(string providerId);
 }
 
-/// <summary>2.x 预设表里带 <c>oauthIssuer</c> 的几家(<c>shared/domain/presets.ts</c>)。完整预设目录(地址、协议、图标)属于客户端,不在 Agent。</summary>
+/// <summary>2.x 预设表里带 <c>oauthIssuer</c> 的几家(<c>shared/domain/presets.ts</c>)。API Key 类的内置模版(地址、协议、分组)在 <see cref="Templates.ProviderTemplates"/>,经 <c>providers.templates.list</c> 给控制端;logo 是界面资源,在客户端。</summary>
 public sealed class BuiltinProviderPresets : IProviderPresets
 {
     public static readonly BuiltinProviderPresets Instance = new();

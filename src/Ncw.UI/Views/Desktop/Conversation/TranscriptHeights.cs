@@ -19,13 +19,14 @@ public sealed class TranscriptHeights : IRowHeightEstimator
     private const double ToolbarRow = 28;   // 消息下面的工具条(悬停才显示,但一直占位)
     private const double OneLineRow = 28;   // 工具行 / 思考块的标题行(含上下边距)
     private const double UserBubbleMax = 560;
+    private const int ThinkingEstimateChars = 4000; // 展开的思考块封顶 NcwThinkingView.MaxBodyHeight:估到这么多字早就超过了,不必量全文
 
     public double? Estimate(object item, double width) => item switch
     {
         AssistantRowViewModel a => 8 + Markdown(a.Text, width) + (a.IsStreaming ? 12 : ToolbarRow),
         UserRowViewModel u => 12 + 18 + Plain(u.Text, Math.Min(width, UserBubbleMax) - 26, BodyLine)
                               + (u.HasFiles ? HintLine + 6 : 0) + (u.HasThumbs ? 124 : u.HasImageCountOnly ? HintLine + 6 : 0) + ToolbarRow,
-        ThinkingRowViewModel t => OneLineRow + (t.IsExpanded ? Plain(t.Text, width - 22, HintLine) + 4 : 0),
+        ThinkingRowViewModel t => OneLineRow + (t.IsExpanded ? Math.Min(Plain(t.Text.Length > ThinkingEstimateChars ? t.Text[..ThinkingEstimateChars] : t.Text, width - 22, HintLine), NcwThinkingView.MaxBodyHeight) + 4 : 0),
         ToolRowViewModel t => OneLineRow + (t.IsExpanded ? (t.PreviewLines.Count + (t.HasMore ? 1 : 0)) * HintLine + 6 : 0),
         WorkGroupRowViewModel => OneLineRow,
         WidgetRowViewModel => 44 + 160,

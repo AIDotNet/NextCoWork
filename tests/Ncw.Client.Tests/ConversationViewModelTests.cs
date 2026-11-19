@@ -449,6 +449,74 @@ public class ConversationViewModelTests
         return stores;
     }
 
+    // ───────────────────────── 失败的 Run ─────────────────────────
+
+    private const string ProviderError = "{\"type\":\"error\",\"error\":{\"code\":\"provider\",\"message\":\"The model cannot turn reasoning off\",\"retryable\":false}}";
+
+    /// <summary>run-1 跑了一个工具后失败(错误落进最后一条助手消息,Run 终态也带着它);<paramref name="retried"/> 时接着 run-2 成功回答。</summary>
+    private static ClientStores FailedThenRetried(bool retried)
+    {
+        var stores = Stores();
+        var run1 = new RunRef("local", "run-1");
+        stores.Conversations.Update(c =>
+        {
+            c = ConversationReducer.ApplyMessage(c, Session, UserMsg("u1", "extract it"));
+            c = ConversationReducer.ApplyRunStarted(c, run1, "s-ncw-1", 1);
+            c = ConversationReducer.ApplyMessage(c, Session, Assistant("a1", "{\"type\":\"tool_call\",\"callId\":\"c1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.txt\"}}"));
+            c = ConversationReducer.ApplyMessage(c, Session, ToolResults("r1", ("c1", false)));
+            c = ConversationReducer.ApplyMessage(c, Session, Assistant("a2", ProviderError));
+            var failed = c.Runs[run1] with
+            {
+                Phase = RunPhase.Error,
+                Settled = true,
+                Error = new ErrorDto("provider", "The model cannot turn reasoning off", false),
+                // 镜像里还留着一个没落库的调用(消息被丢弃 / 历史被改写):收口的 Run 不能再把它画出来
+                Tools = c.Runs[run1].Tools.SetItem("c-stale", new ToolCallView("c-stale", "Bash", "{\"command\":\"wc -l a.txt\"}", ToolCallStatus.Done, "1", null)),
+            };
+            c = c with { Runs = c.Runs.SetItem(run1, failed) };
+            if (!retried)
+            {
+                return c;
+            }
+
+            var run2 = new RunRef("local", "run-2");
+            c = ConversationReducer.ApplyMessage(c, Session, UserMsg("u2", "extract it"));
+            c = ConversationReducer.ApplyRunStarted(c, run2, "s-ncw-1", 2);
+            c = ConversationReducer.ApplyMessage(c, Session, Assistant("a3", "{\"type\":\"text\",\"text\":\"done\"}"));
+            return c with { Runs = c.Runs.SetItem(run2, c.Runs[run2] with { Phase = RunPhase.Done, Settled = true }) };
+        });
+        return stores;
+    }
+
+    [Fact]
+    public void The_latest_failed_run_shows_one_retryable_card_at_the_end()
+    {
+        var rows = TranscriptBuilder.Build(FailedThenRetried(retried: false).Conversations.State, Session, null, Now);
+
+        // 消息里的 error 块让给 Run 的那一张;收口的 Run 镜像里没落库的调用不画
+        Assert.Equal(["UserRow", "ToolRow", "ErrorRow"], rows.Select(r => r.GetType().Name));
+        var card = Assert.IsType<ErrorRow>(rows[^1]);
+        Assert.Equal(("run:run-1", true), (card.Key, card.CanRetry));
+    }
+
+    [Fact]
+    public void A_later_run_clears_the_failed_run_card_and_keeps_the_error_where_it_happened()
+    {
+        var stores = FailedThenRetried(retried: true);
+        var rows = TranscriptBuilder.Build(stores.Conversations.State, Session, null, Now);
+
+        // 旧的失败只剩消息里的 error 块,在它发生的位置(重试之前);末尾是成功的回答,不再钉着旧错误
+        Assert.Equal(["UserRow", "ToolRow", "ErrorRow", "UserRow", "AssistantRow"], rows.Select(r => r.GetType().Name));
+        Assert.DoesNotContain(rows, r => r.Key.StartsWith("run:", StringComparison.Ordinal));
+        Assert.False(Assert.IsType<ErrorRow>(rows[2]).CanRetry);
+        Assert.DoesNotContain(rows, r => r is ToolRow { Key: var key } && key.Contains("c-stale", StringComparison.Ordinal));
+
+        // 重试刚发出、还在跑:旧卡片同样不在末尾
+        var run3 = new RunRef("local", "run-3");
+        stores.Conversations.Update(c => ConversationReducer.ApplyRunStarted(c, run3, "s-ncw-1", 3));
+        Assert.DoesNotContain(TranscriptBuilder.Build(stores.Conversations.State, Session, null, Now), r => r.Key.StartsWith("run:", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void A_finished_turn_folds_everything_but_the_final_text_into_a_work_group()
     {

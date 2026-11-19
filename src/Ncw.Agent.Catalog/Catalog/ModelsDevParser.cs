@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ncw.Agent.Llm;
@@ -91,48 +93,77 @@ public sealed record ParsedCatalog(IReadOnlyList<CatalogProvider> Providers, int
 /// </summary>
 public static class ModelsDevParser
 {
-    public static ParsedCatalog Parse(ReadOnlyMemory<byte> json, string fetchedAt, ModelsDevOptions? options = null)
+    /// <summary>
+    /// 内存:整份 api.json 有好几 MB,一次 <see cref="JsonDocument.Parse(ReadOnlyMemory{byte}, JsonDocumentOptions)"/> 要再分配约 2.5 倍大小的元数据表(大对象堆,
+    /// 用完要等完整 GC 才回收)。所以顶层用 <see cref="Utf8JsonReader"/> 流式走,每次只为一个供应商建文档;结果里重复出现的字符串、
+    /// 输入输出类型、推理强度、能力组合共用同一个实例(上万个模型里这些值只有几十到几百种)。
+    /// </summary>
+    public static ParsedCatalog Parse(ReadOnlyMemory<byte> json, string fetchedAt, ModelsDevOptions? options = null) =>
+        Parse(json.Span, fetchedAt, options);
+
+    /// <inheritdoc cref="Parse(ReadOnlyMemory{byte}, string, ModelsDevOptions?)"/>
+    public static ParsedCatalog Parse(ReadOnlySpan<byte> json, string fetchedAt, ModelsDevOptions? options = null)
     {
         options ??= ModelsDevOptions.Default;
-        JsonDocument document;
+        var shared = new SharedValues();
+        var providers = new List<(string Key, CatalogProvider? Provider)>();
+        var skipped = 0;
+        var nonObjectRoot = false;
         try
         {
-            document = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true });
+            var reader = new Utf8JsonReader(json, new JsonReaderOptions { AllowTrailingCommas = true });
+            if (!reader.Read())
+            {
+                throw new CatalogParseException("models.dev returned invalid JSON.");
+            }
+
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                // 先把整份读完:不是 JSON 的报「不是 JSON」,是 JSON 但根不是对象的才报「不是对象」(和整份解析时的判定顺序一致)
+                reader.Skip();
+                nonObjectRoot = true;
+            }
+            else
+            {
+                while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var key = reader.GetString()!;
+                    reader.Read();
+                    if (reader.TokenType != JsonTokenType.StartObject)
+                    {
+                        reader.Skip();
+                        skipped++;
+                        continue;
+                    }
+
+                    using var document = JsonDocument.ParseValue(ref reader);
+                    providers.Add((key, ParseProvider(key, document.RootElement, fetchedAt, options, shared, ref skipped)));
+                }
+            }
+
+            // 根值之后还有内容:读取器在这里抛 JsonException
+            if (reader.Read())
+            {
+                throw new CatalogParseException("models.dev returned invalid JSON.");
+            }
         }
         catch (JsonException e)
         {
             throw new CatalogParseException("models.dev returned invalid JSON.", e);
         }
 
-        using (document)
+        if (nonObjectRoot)
         {
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                throw new CatalogParseException("models.dev did not return an object.");
-            }
-
-            var providers = new List<CatalogProvider>();
-            var skipped = 0;
-            foreach (var entry in document.RootElement.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
-            {
-                if (entry.Value.ValueKind != JsonValueKind.Object)
-                {
-                    skipped++;
-                    continue;
-                }
-
-                var provider = ParseProvider(entry.Name, entry.Value, fetchedAt, options, ref skipped);
-                if (provider is not null)
-                {
-                    providers.Add(provider);
-                }
-            }
-
-            return new ParsedCatalog(providers, skipped);
+            throw new CatalogParseException("models.dev did not return an object.");
         }
+
+        // 供应商按 key 排序(稳定排序:重复的 key 保持文件里的先后),和整份解析时一致
+        return new ParsedCatalog(
+            [.. providers.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Provider).OfType<CatalogProvider>()],
+            skipped);
     }
 
-    private static CatalogProvider? ParseProvider(string key, JsonElement element, string fetchedAt, ModelsDevOptions options, ref int skipped)
+    private static CatalogProvider? ParseProvider(string key, JsonElement element, string fetchedAt, ModelsDevOptions options, SharedValues shared, ref int skipped)
     {
         if (!element.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Object)
         {
@@ -174,7 +205,7 @@ public static class ModelsDevParser
             }
 
             var id = string.IsNullOrEmpty(model.Id) ? modelEntry.Name : model.Id;
-            list.Add(ToCatalogModel(providerId, id, model, usd, fetchedAt));
+            list.Add(ToCatalogModel(providerId, shared.String(id), model, usd, fetchedAt, shared));
         }
 
         return new CatalogProvider(
@@ -186,10 +217,10 @@ public static class ModelsDevParser
             list.OrderBy(m => m.Id, StringComparer.Ordinal).ToList());
     }
 
-    private static CatalogModel ToCatalogModel(string providerId, string id, MdModel m, bool priced, string fetchedAt)
+    private static CatalogModel ToCatalogModel(string providerId, string id, MdModel m, bool priced, string fetchedAt, SharedValues shared)
     {
-        var input = Lower(m.Modalities?.Input);
-        var output = Lower(m.Modalities?.Output);
+        var input = shared.Modalities(m.Modalities?.Input);
+        var output = shared.Modalities(m.Modalities?.Output);
         var context = Positive(m.Limit?.Context);
         var maxOutput = Positive(m.Limit?.Output);
         // 目录校验沿用 2.x:输出上限不超过上下文窗口(聚合源偶尔两者写反)。
@@ -198,28 +229,26 @@ public static class ModelsDevParser
             maxOutput = context;
         }
 
-        var efforts = ReadEfforts(m.ReasoningOptions);
+        var efforts = shared.Efforts(ReadEfforts(m.ReasoningOptions));
         return new CatalogModel(
             providerId,
             id,
-            string.IsNullOrWhiteSpace(m.Name) ? id : m.Name!,
-            m.Family,
+            string.IsNullOrWhiteSpace(m.Name) ? id : shared.String(m.Name!),
+            shared.String(m.Family),
             context,
             maxOutput,
-            new ModelCapabilities(m.ToolCall == true, m.Reasoning == true, m.Attachment == true, m.StructuredOutput == true, input, output),
+            shared.Capabilities(new ModelCapabilities(m.ToolCall == true, m.Reasoning == true, m.Attachment == true, m.StructuredOutput == true, input, output)),
             efforts,
             priced && m.Cost is { } cost ? ReadPricing(cost, providerId, id, fetchedAt) : null,
-            m.Status,
-            m.ReleaseDate,
-            m.LastUpdated);
+            shared.String(m.Status),
+            shared.String(m.ReleaseDate),
+            shared.String(m.LastUpdated));
     }
-
-    private static string[] Lower(string[]? values) => values is null ? [] : values.Select(v => v.ToLowerInvariant()).ToArray();
 
     private static int Positive(double? value) =>
         value is { } v && double.IsFinite(v) && v > 0 ? (int)Math.Min(v, int.MaxValue) : 0;
 
-    private static IReadOnlyList<ReasoningEffort>? ReadEfforts(JsonElement? options)
+    private static List<ReasoningEffort>? ReadEfforts(JsonElement? options)
     {
         if (options is not { ValueKind: JsonValueKind.Array } array)
         {
@@ -342,6 +371,86 @@ public static class ModelsDevParser
             TiersOf(cost, baseRate),
             Source: $"{ModelsDevOptions.Url}#{providerId}/{modelId}",
             FetchedAt: fetchedAt);
+    }
+}
+
+/// <summary>
+/// 一次解析里共用的值。只在解析期间存在,解析完随之丢弃;留下的是被共用的那些实例。
+/// 共用的数组 / 列表对外是只读接口,目录里没有人改它们(改模型走 <c>with</c> 生成新记录)。
+/// </summary>
+internal sealed class SharedValues
+{
+    private readonly Dictionary<string, string> _strings = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string[]> _modalities = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ReasoningEffort[]> _efforts = new(StringComparer.Ordinal);
+    private readonly Dictionary<ModelCapabilities, ModelCapabilities> _capabilities = [];
+
+    [return: NotNullIfNotNull(nameof(value))]
+    public string? String(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(_strings, value, out var exists);
+        if (!exists)
+        {
+            slot = value;
+        }
+
+        return slot!;
+    }
+
+    /// <summary>小写化后的输入 / 输出类型(<c>["text","image"]</c> 这类组合只有几十种)。</summary>
+    public string[] Modalities(string[]? values)
+    {
+        if (values is null || values.Length == 0)
+        {
+            return [];
+        }
+
+        var lowered = new string[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            lowered[i] = String(values[i].ToLowerInvariant());
+        }
+
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(_modalities, string.Join('\n', lowered), out var exists);
+        if (!exists)
+        {
+            slot = lowered;
+        }
+
+        return slot!;
+    }
+
+    public ReasoningEffort[]? Efforts(List<ReasoningEffort>? efforts)
+    {
+        if (efforts is null)
+        {
+            return null;
+        }
+
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(_efforts, string.Join(',', efforts), out var exists);
+        if (!exists)
+        {
+            slot = [.. efforts];
+        }
+
+        return slot!;
+    }
+
+    /// <summary>记录按值相等;数组已经共用,所以同样的能力组合得到同一个实例。</summary>
+    public ModelCapabilities Capabilities(ModelCapabilities capabilities)
+    {
+        ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(_capabilities, capabilities, out var exists);
+        if (!exists)
+        {
+            slot = capabilities;
+        }
+
+        return slot!;
     }
 }
 

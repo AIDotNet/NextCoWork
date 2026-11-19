@@ -154,7 +154,7 @@ public class ConversationDtoTests
     [Fact]
     public void Every_conversation_method_declares_kind_role_capability_and_transport()
     {
-        Assert.Equal(29, ConversationMethods.All.Count);
+        Assert.Equal(30, ConversationMethods.All.Count);
         Assert.Equal(ConversationMethods.All.Count, ConversationMethods.All.Select(m => m.Name).Distinct().Count());
         foreach (var method in ConversationMethods.All)
         {

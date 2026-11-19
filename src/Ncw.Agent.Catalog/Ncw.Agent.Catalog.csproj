@@ -9,6 +9,8 @@
   -->
   <PropertyGroup>
     <RootNamespace>Ncw.Agent.Catalog</RootNamespace>
+    <!-- 目录缓存正文用内存映射读(FileCatalogStore.Load:取映射视图的指针) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Agent.Llm/Ncw.Agent.Llm.csproj" />

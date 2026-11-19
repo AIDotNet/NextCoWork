@@ -107,7 +107,7 @@ internal sealed class Rig : IAsyncDisposable
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "src", "Ncw.Agent", "bin", "Debug", "net10.0", "ncw-agent.dll");
+            var candidate = Path.Combine(dir.FullName, "src", "Ncw.Agent", "bin", "Debug", "net11.0", "ncw-agent.dll");
             if (File.Exists(candidate))
             {
                 return candidate;

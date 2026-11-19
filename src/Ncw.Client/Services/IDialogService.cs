@@ -75,6 +75,19 @@ public interface IDialogService
     Task<bool> ShowProjectIconAsync(ViewModels.ProjectIconViewModel form) => Task.FromResult(false);
 
     /// <summary>
+    /// 弹出「添加 / 编辑供应商」窗口(docs/design/07 §3「添加供应商」);保存成功或「保留并关闭」后由 <paramref name="form"/> 的
+    /// <see cref="ViewModels.ProviderEditorViewModel.Completed"/> 关闭,点「去导入」由 <see cref="ViewModels.ProviderEditorViewModel.DiscoveryRequested"/> 关闭。
+    /// 结果看 <paramref name="form"/> 的 <see cref="ViewModels.ProviderEditorViewModel.SavedProviderId"/>。没有界面的实现当作取消。
+    /// </summary>
+    Task ShowProviderEditorAsync(ViewModels.ProviderEditorViewModel form) => Task.CompletedTask;
+
+    /// <summary>
+    /// 弹出「编辑模型」窗口(docs/design/07「编辑模型」);保存成功后由 <paramref name="form"/> 的 <see cref="ViewModels.ModelEditorViewModel.Completed"/> 关闭。
+    /// 没有界面的实现当作取消。
+    /// </summary>
+    Task ShowModelEditorAsync(ViewModels.ModelEditorViewModel form) => Task.CompletedTask;
+
+    /// <summary>
     /// 让用户选一张图片做项目图标,并压缩成 <see cref="ProjectIconSpec.PixelSize"/> 见方的小图(界面层解码,按缩小后的尺寸解码以省内存)。
     /// 取消返回 null;没有界面的实现当作取消。
     /// </summary>

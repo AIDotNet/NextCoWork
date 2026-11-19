@@ -392,6 +392,20 @@ public sealed class ConversationLinkTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Compact_through_actions_puts_a_boundary_in_the_mirror_and_a_second_one_has_nothing_to_do()
+    {
+        // 输入框的 /compact:ConversationActions.CompactAsync → context.compact → 边界经会话主题(history.reset)进 Store
+        var (c, _, session, _) = await OneFinishedTurnAsync("remember the protocol decisions", "noted");
+        _llm.Then(Say("The summary of the conversation."));
+
+        Assert.Equal(CompactOutcome.Done, await c.Actions.CompactAsync(session, "keep the protocol decisions", Options));
+        await WaitUntil(() => c.State.Sessions[session].Messages.Any(m => m.PartsJson.Contains("compact_boundary", StringComparison.Ordinal)), "the boundary reached the mirror");
+
+        // 刚压过、边界之后没有新的对话:设备说没东西可压,不是失败
+        Assert.Equal(CompactOutcome.NothingToCompact, await c.Actions.CompactAsync(session, null, Options));
+    }
+
+    [Fact]
     public async Task Editing_a_question_rewrites_only_its_text_and_keeps_the_reply()
     {
         var (c, _, session, userId) = await OneFinishedTurnAsync("original question", "the answer");

@@ -645,11 +645,23 @@ public sealed partial class ProjectSettingsViewModel : ManagementPageViewModel
 
     partial void OnCompactThinkingChanged(string value) => Edit();
 
+    /// <summary>
+    /// 有没有改动 = 表单和读到的设置<b>按值</b>比,不是「动过没有」:下拉框在页面创建时可能先回写一个空值再写回原值
+    /// (页面按需创建,docs/design/03 §12,数据先于页面到达),改了又改回去也不算改动。
+    /// </summary>
     private void Edit()
     {
         if (!_syncing)
         {
-            Dirty = true;
+            Dirty = Settings is not { } dto
+                || PermissionMode != dto.PermissionMode
+                || DefaultMode != dto.DefaultMode
+                || DefaultThinking != dto.DefaultThinking
+                || WebSearch != dto.WebSearch
+                || MaxContext != dto.MaxContext
+                || ModelKey != GeneralSettingsViewModel.PickKey(dto.DefaultModel)
+                || CompactKey != GeneralSettingsViewModel.PickKey(dto.CompactModel)
+                || CompactThinking != (dto.CompactThinking ?? "");
         }
     }
 

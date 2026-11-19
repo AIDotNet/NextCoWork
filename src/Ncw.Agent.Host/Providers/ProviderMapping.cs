@@ -206,4 +206,12 @@ internal static class ProviderMapping
         return new ProtocolException(code, e.Message, retryable,
             FrameCodec.EncodePayload(new ProviderErrorDto(e.Key, new Dictionary<string, string>(e.Parameters)), PayloadShapes.GetShape<ProviderErrorDto>()));
     }
+
+    /// <summary>内置模版 → DTO。</summary>
+    public static ProviderTemplateDto ToDto(Ncw.Agent.Catalog.Templates.ProviderTemplate t) =>
+        new(t.Id, t.Service, t.Name, t.Group, t.Variant, t.Protocol.NameOf(), t.BaseUrl, t.KeyUrl, t.NeedsKey, t.Featured);
+
+    /// <summary>扫描候选 → DTO:密钥只留后四位。</summary>
+    public static DiscoveredProviderDto ToDto(Ncw.Agent.Catalog.Discovery.DiscoveryCandidate c) =>
+        new(c.Id, c.Source, c.Origin, [.. c.AlsoSeenIn], c.SuggestedId, c.Name, c.Protocol.NameOf(), c.BaseUrl, c.KeyLast4, [.. c.Models], c.Status, c.ExistingProviderId);
 }

@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.Models.ProviderDiscoveryPanel"
+             x:DataType="vm:ProviderDiscoveryViewModel">
+  <!--
+    从其他应用导入(docs/design/07 §3「供应商自动发现与导入」):设备上 Claude Code、Codex、cc-switch、opencode、环境变量里配好的供应商。
+    每条一行:勾选、名字、状态、来源与出处、地址、密钥后四位、模型;勾选后「导入所选」。密钥明文从不经过这里(导入在设备上完成)。
+    桌面详情区和手机整页共用。
+  -->
+  <StackPanel Spacing="10">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="sectionTitle" Margin="0" Text="{l:NcwText DiscoveryTitle}" />
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText DiscoveryHint}" />
+      </StackPanel>
+      <ui:NcwButton x:Name="RescanButton" Grid.Column="1" VerticalAlignment="Top" Variant="Secondary" Command="{Binding ScanCommand}" IsLoading="{Binding IsScanning}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="RefreshCw" Size="14" VerticalAlignment="Center" />
+          <TextBlock Text="{l:NcwText DiscoveryRescan}" />
+        </StackPanel>
+      </ui:NcwButton>
+    </Grid>
+
+    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsScanning}" ui:NcwMotion.ShowMotion="Fade">
+      <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+      <TextBlock Classes="hint" Text="{l:NcwText DiscoveryScanning}" />
+    </StackPanel>
+    <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" Text="{l:NcwText DiscoveryEmpty}" />
+    <TextBlock IsVisible="{Binding IsFailed}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{l:NcwText DiscoveryFailed}" />
+    <TextBlock x:Name="ImportedText" IsVisible="{Binding HasImported}" ui:NcwMotion.ShowMotion="Fade" Foreground="{arc:ArcDesignTokenResource Success}"
+               Text="{Binding LastImportedCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=DiscoveryImported}" />
+
+    <ItemsControl x:Name="Candidates" ItemsSource="{Binding Items}" IsVisible="{Binding HasItems}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:DiscoveredItemViewModel">
+          <Border Classes="card">
+            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+              <ui:NcwCheckbox VerticalAlignment="Top" Margin="0,1,0,0" IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding CanSelect}"
+                              AutomationProperties.Name="{Binding Name}" />
+              <ui:NcwProviderLogo Grid.Column="1" Classes="tile" Width="32" Height="32" VerticalAlignment="Top" Service="{Binding Logo}" FallbackText="{Binding Name}" />
+              <StackPanel Grid.Column="2" Spacing="3">
+                <WrapPanel Orientation="Horizontal">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0" />
+                  <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" /></Border>
+                  <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsImported}">
+                    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" Text="{Binding Status, Converter={x:Static cv:DiscoveryStatusTextConverter.Instance}}" />
+                  </Border>
+                  <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsConflict}">
+                    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{Binding Status, Converter={x:Static cv:DiscoveryStatusTextConverter.Instance}}" />
+                  </Border>
+                </WrapPanel>
+                <TextBlock Classes="mono" Text="{Binding BaseUrl}" TextTrimming="CharacterEllipsis" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                <WrapPanel Orientation="Horizontal">
+                  <TextBlock Classes="hint" Margin="0,0,12,0" Text="{Binding Source, Converter={x:Static cv:DiscoverySourceTextConverter.Instance}}" FontWeight="SemiBold" />
+                  <TextBlock Classes="hint mono" Margin="0,0,12,0" Text="{Binding Origin}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding HasKey}"
+                             Text="{Binding KeyLast4, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderKeyLast4}" />
+                  <TextBlock Classes="hint" Margin="0,0,12,0" IsVisible="{Binding !HasKey}" Text="{l:NcwText DiscoveryNoKey}" />
+                </WrapPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding HasModels}" TextWrapping="Wrap"
+                           Text="{Binding ModelsText, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=DiscoveryModels}" />
+                <TextBlock Classes="hint" IsVisible="{Binding HasAlsoSeenIn}"
+                           Text="{Binding AlsoSeenIn, Converter={x:Static cv:DiscoverySourceTextConverter.Instance}, ConverterParameter=DiscoveryAlsoSeen}" />
+                <TextBlock Classes="hint" IsVisible="{Binding IsConflict}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText DiscoveryConflictHint}" />
+                <TextBlock IsVisible="{Binding ErrorKey, Converter={x:Static ObjectConverters.IsNotNull}}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                           Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <ui:NcwButton x:Name="ImportButton" HorizontalAlignment="Left" Variant="Primary" Command="{Binding ImportCommand}" IsLoading="{Binding IsImporting}"
+                  IsVisible="{Binding HasImportable}" Content="{l:NcwText DiscoveryImport}" />
+  </StackPanel>
+</UserControl>

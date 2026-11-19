@@ -45,7 +45,7 @@ public class ModelListTests
     {
         foreach (var protocol in Enum.GetValues<WireProtocol>())
         {
-            Assert.Equal(protocol.PathOf().StartsWith("/v1/"), ModelList.PathOf(protocol).StartsWith("/v1/"));
+            Assert.Equal(protocol.PathOf().StartsWith("/v1/", StringComparison.Ordinal), ModelList.PathOf(protocol).StartsWith("/v1/", StringComparison.Ordinal));
         }
 
         Assert.Equal(ModelList.PathOf(WireProtocol.OpenAiChat), ModelList.PathOf(WireProtocol.OpenAiResponses));

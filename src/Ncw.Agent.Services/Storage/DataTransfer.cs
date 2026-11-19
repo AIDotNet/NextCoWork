@@ -372,6 +372,11 @@ public sealed class DataTransfer(StorageEnvironment env, SessionRepository sessi
             o["modelProviderId"] = s.ModelProviderId;
         }
 
+        if (s.PermissionMode != "ask")
+        {
+            o["permissionMode"] = s.PermissionMode;
+        }
+
         return o;
     }
 
@@ -388,7 +393,7 @@ public sealed class DataTransfer(StorageEnvironment env, SessionRepository sessi
         return new SessionRecord(
             id, workspaceId, null, Str(s, "origin") ?? "user", Str(s, "title") ?? SessionRepository.DefaultTitle, Str(s, "titleSource"), Str(s, "model") ?? "", Str(s, "modelProviderId"),
             SessionRepository.NormalizeMode(Str(s, "mode")), Str(s, "thinking") ?? "auto", Str(s, "rootPathAtCreation") ?? "", null, Flag(s, "archived"), Flag(s, "favorited"),
-            Num(s, "createdAt"), Num(s, "updatedAt"));
+            Num(s, "createdAt"), Num(s, "updatedAt"), SessionRepository.NormalizePermissionMode(Str(s, "permissionMode")));
     }
 
     private static JsonObject MessageJson(MessageRecord m)

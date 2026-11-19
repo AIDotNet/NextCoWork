@@ -22,7 +22,7 @@ namespace Ncw.UI.Tests;
 /// <summary>
 /// 动效在整套界面里的行为(docs/design/03 §9):展开 / 收起的<b>最终状态</b>在四个断点 × 深浅主题 × 动效级别(关闭 / 减弱)下完全一致,
 /// 动画<b>进行到一半</b>的那一帧(Full + Arc 的 <see cref="ManualFrameClock"/>)能被截到并断言,
-/// 以及左右栏滑动、新行出现、设置覆盖层进出这些「整窗级」的过渡。截图在 <c>bin/Debug/net10.0/screenshots/motion-*.png</c>。
+/// 以及左右栏滑动、新行出现、设置覆盖层进出这些「整窗级」的过渡。截图在 <c>bin/Debug/net11.0/screenshots/motion-*.png</c>。
 /// </summary>
 public class MotionScreenshotTests : IDisposable
 {

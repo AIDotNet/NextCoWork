@@ -19,7 +19,7 @@ namespace Ncw.UI.Tests;
 /// <summary>
 /// 设置页的管理标签(通用、项目、技能、命令、Hooks、MCP、用量、存储、网关)和侧栏「定时任务」页的 Headless 截图:
 /// 典型状态 × 四个断点(1500 / 1200 / 900 / 600)× 深浅主题;另有空状态、错误、viewer / member 只读、设备断开(未知)、二次确认、表单等场景,
-/// 每个场景在宽屏深色和窄屏浅色各拍一张。数据经脚本化后端和 Store 进来(和设备推送的形状一致),不经过连接。截图在 <c>bin/Debug/net10.0/screenshots/mgmt-*.png</c>。
+/// 每个场景在宽屏深色和窄屏浅色各拍一张。数据经脚本化后端和 Store 进来(和设备推送的形状一致),不经过连接。截图在 <c>bin/Debug/net11.0/screenshots/mgmt-*.png</c>。
 /// </summary>
 public class ManagementScreenshotTests
 {

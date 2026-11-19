@@ -77,7 +77,7 @@ public static class WidgetShell
         [hidden] { display: none !important; }
         html, body { margin: 0; padding: 0; background: transparent; }
         /* 页面自己不滚:宿主只把 WebView 摆在卡片的可见段上,用 ncw:widget:viewport 告诉页面滚到哪(脚本滚动不受 overflow:hidden 影响);
-           滚轮也就不会被困在小组件里 */
+           没被页面里的元素消费的滚轮由外壳脚本交给宿主(ncw:widget:wheel)去滚转录 */
         html, body { overflow: hidden; }
         body {
           font-family: var(--font-sans);
@@ -90,9 +90,10 @@ public static class WidgetShell
         """;
 
     /// <summary>
-    /// 页面侧运行时(外壳的脚本,<b>带本页 nonce 的唯一一段内联脚本</b>)。它做五件事:① 收宿主消息(<c>__ncwHost.recv</c>);② 把内容塞进 <c>#ncw-root</c>、
+    /// 页面侧运行时(外壳的脚本,<b>带本页 nonce 的唯一一段内联脚本</b>)。它做这几件事:① 收宿主消息(<c>__ncwHost.recv</c>);② 把内容塞进 <c>#ncw-root</c>、
     /// 逐个重建脚本并带上 nonce(按顺序:有 <c>src</c> 的等它加载完再跑下一个,Chart.js 之类的库才在内联脚本之前就绪);③ 量高度上报(量 <c>#ncw-root</c> 而不是 body,
-    /// 否则会把宿主刚设的高度量回去、无限长高);④ 提供 <c>window.ncw</c>;⑤ 把链接点击转成 <c>openUrl</c> 调用(导航本身由宿主拦下);⑥ 按宿主给的可见段起点滚动自己(<c>viewport</c>)。
+    /// 否则会把宿主刚设的高度量回去、无限长高);④ 提供 <c>window.ncw</c>;⑤ 把链接点击转成 <c>openUrl</c> 调用(导航本身由宿主拦下);⑥ 按宿主给的可见段起点滚动自己(<c>viewport</c>);
+    /// ⑦ 把页面没有消费的滚轮交给宿主(<c>wheel</c>),在小组件上滚动也能滚动转录。
     /// <para>没有 <c>sendPrompt()</c>:它是 widget 通往 Agent 主循环的输入通道,2.x 同样不给。</para>
     /// <para>手写的 JS 常量(不引入 Node / TypeScript 构建,AGENTS.md §6);没有 JS 引擎可以在单测里跑它,所以它的行为只在真实 WebView 里验证
     /// (<c>NcwWidgetSmokeTests</c>,环境变量开启)。单测只核对它自包含、消息名与 <see cref="WidgetMessages"/> 一致。</para>
@@ -103,7 +104,7 @@ public static class WidgetShell
           var M = {
             content: 'ncw:widget:content', theme: 'ncw:widget:theme', loading: 'ncw:widget:loading', env: 'ncw:widget:env', reply: 'ncw:widget:reply',
             viewport: 'ncw:widget:viewport',
-            ready: 'ncw:widget:ready', height: 'ncw:widget:height', call: 'ncw:widget:call'
+            ready: 'ncw:widget:ready', height: 'ncw:widget:height', call: 'ncw:widget:call', wheel: 'ncw:widget:wheel'
           };
           var nonceMeta = document.querySelector('meta[name="ncw-widget-nonce"]');
           var nonce = nonceMeta ? nonceMeta.getAttribute('content') : '';
@@ -135,6 +136,42 @@ public static class WidgetShell
             setTimeout(flush, 50);
           }
           if (typeof ResizeObserver === 'function') { new ResizeObserver(reportHeight).observe(root); }
+
+          // ── 滚轮:原生 WebView 把滚轮整个吃掉,外面的转录收不到。页面自己不滚(html / body overflow:hidden),
+          // 所以把「没有元素要滚、也没有脚本拦下(preventDefault,如图表缩放)」的那部分合并交给宿主,宿主滚动转录。
+          // 被动监听、从不 preventDefault:页面里能滚的元素照常滚,滚到头之后才交出去(和浏览器的滚动链一致)。双指缩放(ctrlKey)不交
+          var wheelQueue = [];
+          var wheelScheduled = false;
+          function consumedInside(target, dy) {
+            for (var el = target; el && el.nodeType === 1 && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+              var overflowY = getComputedStyle(el).overflowY;
+              if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && el.scrollHeight > el.clientHeight + 1) {
+                if (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1) { return true; }
+              }
+            }
+            return false;
+          }
+          function flushWheel() {
+            if (!wheelScheduled) { return; }
+            wheelScheduled = false;
+            var dy = 0;
+            for (var i = 0; i < wheelQueue.length; i++) {
+              if (!wheelQueue[i].event.defaultPrevented) { dy += wheelQueue[i].dy; }
+            }
+            wheelQueue = [];
+            if (Math.abs(dy) >= 0.5) { send({ type: M.wheel, dy: Math.round(dy * 100) / 100 }); }
+          }
+          window.addEventListener('wheel', function (event) {
+            if (event.ctrlKey || !event.deltaY) { return; }
+            var dy = event.deltaMode === 1 ? event.deltaY * 40 : event.deltaMode === 2 ? event.deltaY * 800 : event.deltaY;
+            if (consumedInside(event.target, dy)) { return; }
+            // 是否被页面脚本拦下要等事件分发完才知道:先排队,flush 时再看 defaultPrevented
+            wheelQueue.push({ event: event, dy: dy });
+            if (wheelScheduled) { return; }
+            wheelScheduled = true;
+            // 下一个任务就发(不等 rAF:那要多等最多一帧,滚动会跟手慢半拍);同一批里排队的事件合成一条
+            setTimeout(flushWheel, 0);
+          }, { passive: true });
 
           // ── 调用宿主 ──
           function call(method, args) {

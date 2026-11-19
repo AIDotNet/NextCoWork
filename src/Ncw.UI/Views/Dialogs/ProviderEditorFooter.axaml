@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Dialogs.ProviderEditorFooter"
+             x:DataType="vm:ProviderEditorViewModel">
+  <!-- 「添加 / 编辑供应商」的按钮行:左边是一句提示(第一步)或进度(保存中),右边「取消」+「保存并测试」(只在表单那一步)。 -->
+  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+    <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsPickStep}" Text="{l:NcwText ProviderTemplateFooterHint}" />
+    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsSaving}">
+      <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText ProviderEditorSaving}" />
+    </StackPanel>
+    <ui:NcwButton x:Name="CancelButton" Grid.Column="1" Variant="Secondary" Content="{l:NcwText Cancel}" />
+    <ui:NcwButton x:Name="SaveButton" Grid.Column="2" Variant="Primary" IsVisible="{Binding IsFormStep}" IsEnabled="{Binding CanSave}"
+                  Command="{Binding SaveCommand}" Content="{l:NcwText ProviderEditorSaveAndTest}" />
+  </Grid>
+</UserControl>

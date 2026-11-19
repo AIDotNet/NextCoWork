@@ -20,7 +20,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 
 ## 2. 技术栈(必须)
 
-- .NET 10(`global.json`);Avalonia **锁定** `12.1.5`(Arc 按这个版本构建,所有 Avalonia 包保持一致);TKCode.Arc **锁定** `1.1.0`。所有版本只写在 `Directory.Packages.props` 里。
+- .NET 11(`global.json`,SDK 11.0.100);Avalonia **锁定** `12.1.5`(Arc 按这个版本构建,所有 Avalonia 包保持一致);TKCode.Arc **锁定** `1.1.0`。所有版本只写在 `Directory.Packages.props` 里(MSBuild SDK 的版本例外,只能写在 `global.json` 的 `msbuild-sdks` 里)。
 - 唯一的例外:内联可视化的 WebView 用官方 MIT 包 `Avalonia.Controls.WebView`(版本号与 Avalonia 核心包不同步,单独锁 12.1.2,同样只写在 `Directory.Packages.props`);整个仓库只有 `src/Ncw.UI/Controls/NcwWidgetSurface.cs` 可以引用 `NativeWebView`(评估见 `docs/design/03-ui-layout.md` §8)。
 - 注册方式是 `AppBuilder.UseArc(arc => arc.UseArcControls() …)`,`App.axaml` 里不放 Fluent 或 Simple 主题。
 - 业务视图只引用 `Ncw.UI.Controls` 封装,不直接引用 `arc:` 控件(封装层自己除外)。
@@ -30,6 +30,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
   加成员,并在 `en-US.xlf`、`zh-CN.xlf` 各加一条(缺一条构建失败)。`Ncw.Core`、`Ncw.Client` 不产出界面文字,只给结构化数据。
 - 提示用 `arc:Tooltip.Tip`,不要用 Avalonia 的 `ToolTip.Tip`(在 Arc 下没有样式)。
 - 不启用 `InvariantGlobalization`。不使用依赖反射的 MVVM 和序列化,必须兼容 AOT 和裁剪。
+- C# 写法遵守 `docs/coding-style.md`;其中能机器检查的部分在 `.editorconfig`,构建时执行(`EnforceCodeStyleInBuild`,warning 级别违反即构建失败)。改规则时两处同步,升级为 warning 前先把全仓库清到零违规。
 
 ## 3. 状态统一管理(必须)
 
@@ -65,14 +66,14 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 
 ## 6. 全栈 C# 与 JS 执行(必须)
 
-- 整个仓库只用 C#(.NET 10)。不允许引入 Node、npm 包或 TypeScript 构建步骤,构建和发布工具也用 C# 写(`tools/`)。
+- 整个仓库只用 C#(.NET 11)。不允许引入 Node、npm 包或 TypeScript 构建步骤,构建和发布工具也用 C# 写(`tools/`)。
 - 需要执行 JS 时只能用 Jaunt,而且只能经过 `Ncw.Agent.Plugins` 的宿主,不允许在别处自己 `new JsEngine()`。
 - 插件代码一律设置 `JsLimits` 并使用 `JsProfile.Hardened`;宿主 API 只能显式绑定,每个绑定都要先做权限检查。
 
 ## 7. 常用命令(骨架建好后补全)
 
 - 构建:`dotnet build NextCoWork.slnx`
-- 测试:`dotnet test NextCoWork.slnx`(UI 测试的截图输出在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`)
+- 测试:`dotnet test NextCoWork.slnx`(UI 测试的截图输出在 `tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/`)
 - 桌面运行:`dotnet run --project src/Ncw.Desktop`
 - Android 宿主(需要 .NET 的 android workload + JDK + Android SDK,不在 `NextCoWork.slnx` 里;安装与回退见 `docs/design/11-mobile-hosts.md` §2):`dotnet build NextCoWork.Mobile.slnx -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=$HOME/Library/Developer/Xamarin/jdk`;模拟器冒烟(开发 / CI,默认不跑):`NCW_ANDROID_SMOKE=1 dotnet run --project tools/Ncw.MobileSmoke -- smoke`(前提:模拟器已启动、`src/Ncw.Agent` 与 Android 宿主已构建)
 - Agent 运行:`dotnet run --project src/Ncw.Agent -- --mode local`

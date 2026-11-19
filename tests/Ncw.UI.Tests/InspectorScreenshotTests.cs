@@ -26,7 +26,7 @@ namespace Ncw.UI.Tests;
 /// 右侧检查器各页签的 Headless 截图(四个断点 × 深浅两种主题)和界面结构断言。
 /// ≥ 1440(Wide)渲染完整的桌面外壳,检查器停靠在右侧;更窄的断点按设计 03 §2 检查器以抽屉形式覆盖,抽屉本身还没有实现(外壳在 &lt; 1440 时不显示检查器),
 /// 所以这几档把检查器面板单独放在对应宽度的窗口右侧(宽度取 400 / 480 / 520,即窗口变窄时抽屉的可能宽度),验证面板在各种宽度下的版式。
-/// 截图在 <c>bin/Debug/net10.0/screenshots/inspector-*.png</c>。数据全部经 Store 和脚本化后端进来(和设备推送的形状一致),不经过连接。
+/// 截图在 <c>bin/Debug/net11.0/screenshots/inspector-*.png</c>。数据全部经 Store 和脚本化后端进来(和设备推送的形状一致),不经过连接。
 /// </summary>
 public class InspectorScreenshotTests
 {
@@ -660,7 +660,7 @@ public class InspectorScreenshotTests
 
         Assert.True(composer.HasSlashQuery);
         Assert.Contains(composer.SlashCommands, c => c is { Command: "/review", IsAvailable: true });
-        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: false });
+        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: true });
         AssertFloatsAboveTheCard(window, "SlashPopup");
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(dir);

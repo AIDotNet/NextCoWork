@@ -22,7 +22,7 @@ namespace Ncw.UI.Tests;
 /// 首次启动流程、设置页「账户」标签和账户状态条的 Headless 截图(docs/design/07):
 /// 典型状态(欢迎、账户已登录)× 四个断点(1500 / 1200 / 900 / 600)× 深浅主题;其余场景(登录进行中、登录码、失败、过期、连不上 / 无法安全保存、要选团队、
 /// 二次确认、读取失败、数据 / 供应商 / 完成各步、状态条)在宽屏深色和窄屏浅色各拍一张。状态经真实的 <see cref="AccountService"/> + 假后端 + 手动时钟走出来,不是手摆的。
-/// 截图在 <c>bin/Debug/net10.0/screenshots/acct-*.png</c>。
+/// 截图在 <c>bin/Debug/net11.0/screenshots/acct-*.png</c>。
 /// </summary>
 public class AccountScreenshotTests
 {

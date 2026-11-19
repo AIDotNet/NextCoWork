@@ -267,9 +267,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnSearchQueryChanged(string value)
     {
         SearchHits.Clear();
-        foreach (var hit in SettingsSearch.Find(value, SearchIndex()))
+
+        // 查询为空时不建索引:界面建索引要先建出所有分区的页面(docs/design/03 §12),关设置时清空搜索框不该把刚释放的页面又建回来
+        if (IsSearching)
         {
-            SearchHits.Add(hit);
+            foreach (var hit in SettingsSearch.Find(value, SearchIndex()))
+            {
+                SearchHits.Add(hit);
+            }
         }
 
         OnPropertyChanged(nameof(IsSearching));

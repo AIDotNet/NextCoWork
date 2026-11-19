@@ -365,8 +365,44 @@
     <unit id="QueueRemove"><segment><source>Remove from queue</source><target state="final">Remove from queue</target></segment></unit>
     <unit id="QueueSteer"><segment><source>Steer</source><target state="final">Steer</target></segment></unit>
     <unit id="QueueSteerHint"><segment><source>Insert this message into the running task at the next turn</source><target state="final">Insert this message into the running task at the next turn</target></segment></unit>
-    <unit id="RenameAliasDescription"><segment><source>The alias is the name you pick a model by.</source><target state="final">The alias is the name you pick a model by.</target></segment></unit>
-    <unit id="RenameAliasTitle"><segment><source>Rename model alias</source><target state="final">Rename model alias</target></segment></unit>
+    <unit id="ModelEditorTitle"><segment><source>Edit model</source><target state="final">Edit model</target></segment></unit>
+    <unit id="ModelEditorDescription"><segment><source>Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</source><target state="final">Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</target></segment></unit>
+    <unit id="ModelEditorSectionBasics"><segment><source>Basics</source><target state="final">Basics</target></segment></unit>
+    <unit id="ModelEditorAlias"><segment><source>Alias</source><target state="final">Alias</target></segment></unit>
+    <unit id="ModelEditorAliasHint"><segment><source>The name you pick this model by in conversations.</source><target state="final">The name you pick this model by in conversations.</target></segment></unit>
+    <unit id="ModelEditorDisplayName"><segment><source>Display name</source><target state="final">Display name</target></segment></unit>
+    <unit id="ModelEditorDisplayNamePlaceholder"><segment><source>Same as the alias</source><target state="final">Same as the alias</target></segment></unit>
+    <unit id="ModelEditorUpstream"><segment><source>Upstream model</source><target state="final">Upstream model</target></segment></unit>
+    <unit id="ModelEditorSectionContext"><segment><source>Context</source><target state="final">Context</target></segment></unit>
+    <unit id="ModelEditorContextWindow"><segment><source>Context window (tokens)</source><target state="final">Context window (tokens)</target></segment></unit>
+    <unit id="ModelEditorMaxOutput"><segment><source>Max output (tokens)</source><target state="final">Max output (tokens)</target></segment></unit>
+    <unit id="ModelEditorSectionCapabilities"><segment><source>Capabilities and protocol</source><target state="final">Capabilities and protocol</target></segment></unit>
+    <unit id="ModelEditorVision"><segment><source>Image input</source><target state="final">Image input</target></segment></unit>
+    <unit id="ModelEditorVisionHint"><segment><source>Lets conversations send images to this model.</source><target state="final">Lets conversations send images to this model.</target></segment></unit>
+    <unit id="ModelEditorProtocol"><segment><source>Request protocol</source><target state="final">Request protocol</target></segment></unit>
+    <unit id="ModelEditorProtocolFollow"><segment><source>Follow the provider ({0})</source><target state="final">Follow the provider ({0})</target></segment></unit>
+    <unit id="ModelEditorProtocolFollowPlain"><segment><source>Follow the provider</source><target state="final">Follow the provider</target></segment></unit>
+    <unit id="ModelEditorSectionThinking"><segment><source>Thinking</source><target state="final">Thinking</target></segment></unit>
+    <unit id="ModelEditorThinkingMode"><segment><source>Thinking control</source><target state="final">Thinking control</target></segment></unit>
+    <unit id="ModelEditorThinkingModeHint"><segment><source>How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</source><target state="final">How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</target></segment></unit>
+    <unit id="ModelEditorThinkingAuto"><segment><source>Follow the model catalog</source><target state="final">Follow the model catalog</target></segment></unit>
+    <unit id="ModelEditorThinkingAutoCurrent"><segment><source>Follow the model catalog (now: {0})</source><target state="final">Follow the model catalog (now: {0})</target></segment></unit>
+    <unit id="ModelEditorThinkingUnsupported"><segment><source>Not supported</source><target state="final">Not supported</target></segment></unit>
+    <unit id="ModelEditorThinkingAlways"><segment><source>Always thinks</source><target state="final">Always thinks</target></segment></unit>
+    <unit id="ModelEditorThinkingToggle"><segment><source>On / off</source><target state="final">On / off</target></segment></unit>
+    <unit id="ModelEditorThinkingBudget"><segment><source>Token budget</source><target state="final">Token budget</target></segment></unit>
+    <unit id="ModelEditorThinkingEffort"><segment><source>Effort levels</source><target state="final">Effort levels</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabled"><segment><source>Think by default</source><target state="final">Think by default</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabledHint"><segment><source>Used when thinking is set to Auto in a conversation.</source><target state="final">Used when thinking is set to Auto in a conversation.</target></segment></unit>
+    <unit id="ModelEditorBudget"><segment><source>Default budget (tokens)</source><target state="final">Default budget (tokens)</target></segment></unit>
+    <unit id="ModelEditorEfforts"><segment><source>Supported levels</source><target state="final">Supported levels</target></segment></unit>
+    <unit id="ModelEditorEffortsHint"><segment><source>Check Off if this model can turn thinking off.</source><target state="final">Check Off if this model can turn thinking off.</target></segment></unit>
+    <unit id="ModelEditorDefaultEffort"><segment><source>Default level</source><target state="final">Default level</target></segment></unit>
+    <unit id="ModelEditorErrAliasRequired"><segment><source>Enter an alias.</source><target state="final">Enter an alias.</target></segment></unit>
+    <unit id="ModelEditorErrContextTooSmall"><segment><source>The context window must be at least 1024 tokens.</source><target state="final">The context window must be at least 1024 tokens.</target></segment></unit>
+    <unit id="ModelEditorErrOutputTooLarge"><segment><source>Max output must be between 1 and the context window.</source><target state="final">Max output must be between 1 and the context window.</target></segment></unit>
+    <unit id="ModelEditorErrBudgetTooSmall"><segment><source>The thinking budget must be at least 1024 tokens.</source><target state="final">The thinking budget must be at least 1024 tokens.</target></segment></unit>
+    <unit id="ModelEditorErrNoEffort"><segment><source>Check at least one level other than Off.</source><target state="final">Check at least one level other than Off.</target></segment></unit>
     <unit id="RenameSessionDescription"><segment><source>The new name appears in the session list.</source><target state="final">The new name appears in the session list.</target></segment></unit>
     <unit id="RenameSessionTitle"><segment><source>Rename session</source><target state="final">Rename session</target></segment></unit>
     <unit id="ScopeGlobal"><segment><source>Everywhere</source><target state="final">Everywhere</target></segment></unit>
@@ -384,6 +420,24 @@
     <unit id="SettingsModelsHint"><segment><source>Providers, credentials, model aliases and the model catalog of this device.</source><target state="final">Providers, credentials, model aliases and the model catalog of this device.</target></segment></unit>
     <unit id="ShowArchived"><segment><source>Show archived</source><target state="final">Show archived</target></segment></unit>
     <unit id="SlashComingSoon"><segment><source>Commands are coming soon</source><target state="final">Commands are coming soon</target></segment></unit>
+    <unit id="SlashGoalDescription"><segment><source>Set a goal the agent keeps working toward</source><target state="final">Set a goal the agent keeps working toward</target></segment></unit>
+    <unit id="SlashGoalHint"><segment><source>&lt;condition&gt;</source><target state="final">&lt;condition&gt;</target></segment></unit>
+    <unit id="SlashCompactDescription"><segment><source>Compact the context now</source><target state="final">Compact the context now</target></segment></unit>
+    <unit id="SlashCompactHint"><segment><source>[focus]</source><target state="final">[focus]</target></segment></unit>
+    <unit id="SlashModelDescription"><segment><source>Switch the model</source><target state="final">Switch the model</target></segment></unit>
+    <unit id="SlashModelHint"><segment><source>[name]</source><target state="final">[name]</target></segment></unit>
+    <unit id="SlashClearDescription"><segment><source>Start a new session in this project</source><target state="final">Start a new session in this project</target></segment></unit>
+    <unit id="SlashGoalUsage"><segment><source>Write the condition that ends the goal after /goal; /goal clear removes the current goal.</source><target state="final">Write the condition that ends the goal after /goal; /goal clear removes the current goal.</target></segment></unit>
+    <unit id="SlashGoalEmpty"><segment><source>The goal condition is empty.</source><target state="final">The goal condition is empty.</target></segment></unit>
+    <unit id="SlashGoalTooLong"><segment><source>The goal condition is too long (at most {0} characters).</source><target state="final">The goal condition is too long (at most {0} characters).</target></segment></unit>
+    <unit id="SlashCompactBusy"><segment><source>The session is running. Compact after it finishes.</source><target state="final">The session is running. Compact after it finishes.</target></segment></unit>
+    <unit id="SlashCompactNothing"><segment><source>Nothing new to compact since the last compaction.</source><target state="final">Nothing new to compact since the last compaction.</target></segment></unit>
+    <unit id="SlashCompactFailed"><segment><source>Compaction failed. Try again in a moment.</source><target state="final">Compaction failed. Try again in a moment.</target></segment></unit>
+    <unit id="SlashModelNotFound"><segment><source>No model matches “{0}”.</source><target state="final">No model matches “{0}”.</target></segment></unit>
+    <unit id="SlashModelAmbiguous"><segment><source>More than one model matches “{0}”. Type more of the name.</source><target state="final">More than one model matches “{0}”. Type more of the name.</target></segment></unit>
+    <unit id="SlashModelUnavailable"><segment><source>{0} is not available right now.</source><target state="final">{0} is not available right now.</target></segment></unit>
+    <unit id="SlashModelSwitched"><segment><source>Switched to {0}.</source><target state="final">Switched to {0}.</target></segment></unit>
+    <unit id="SlashUnavailable"><segment><source>This command is not available here.</source><target state="final">This command is not available here.</target></segment></unit>
     <unit id="StatusCompacting"><segment><source>Compacting the conversation…</source><target state="final">Compacting the conversation…</target></segment></unit>
     <unit id="StatusRetrying"><segment><source>The provider is retrying (attempt {0})…</source><target state="final">The provider is retrying (attempt {0})…</target></segment></unit>
     <unit id="SubagentReportRow"><segment><source>A background sub-agent reported back</source><target state="final">A background sub-agent reported back</target></segment></unit>
@@ -1773,6 +1827,35 @@
     <unit id="SettingsData"><segment><source>Data</source><target state="final">Data</target></segment></unit>
     <unit id="SettingsProvidersCatalogHint"><segment><source>Sources and automatic updates</source><target state="final">Sources and automatic updates</target></segment></unit>
     <unit id="ProviderDisabledShort"><segment><source>Disabled</source><target state="final">Disabled</target></segment></unit>
+    <unit id="DiscoveryTitle"><segment><source>Import from other apps</source><target state="final">Import from other apps</target></segment></unit>
+    <unit id="DiscoveryHint"><segment><source>Providers already set up on this device in other AI clients (Claude Code, Codex, Gemini CLI, Continue, Aider…), shell profiles, environment variables, and local services such as Ollama. Keys are imported on the device and never pass through this app.</source><target state="final">Providers already set up on this device in other AI clients (Claude Code, Codex, Gemini CLI, Continue, Aider…), shell profiles, environment variables, and local services such as Ollama. Keys are imported on the device and never pass through this app.</target></segment></unit>
+    <unit id="DiscoveryRescan"><segment><source>Scan again</source><target state="final">Scan again</target></segment></unit>
+    <unit id="DiscoveryScanning"><segment><source>Looking for configurations…</source><target state="final">Looking for configurations…</target></segment></unit>
+    <unit id="DiscoveryEmpty"><segment><source>No provider configurations were found on this device.</source><target state="final">No provider configurations were found on this device.</target></segment></unit>
+    <unit id="DiscoveryFailed"><segment><source>The scan failed.</source><target state="final">The scan failed.</target></segment></unit>
+    <unit id="DiscoveryImport"><segment><source>Import selected</source><target state="final">Import selected</target></segment></unit>
+    <unit id="DiscoveryImported"><segment><source>Imported {0} provider(s).</source><target state="final">Imported {0} provider(s).</target></segment></unit>
+    <unit id="DiscoveryStatusNew"><segment><source>New</source><target state="final">New</target></segment></unit>
+    <unit id="DiscoveryStatusImported"><segment><source>Already imported</source><target state="final">Already imported</target></segment></unit>
+    <unit id="DiscoveryStatusConflict"><segment><source>Already exists</source><target state="final">Already exists</target></segment></unit>
+    <unit id="DiscoveryConflictHint"><segment><source>A provider with this address or ID already exists. Importing creates a separate one and leaves the existing provider alone.</source><target state="final">A provider with this address or ID already exists. Importing creates a separate one and leaves the existing provider alone.</target></segment></unit>
+    <unit id="DiscoveryNoKey"><segment><source>No key</source><target state="final">No key</target></segment></unit>
+    <unit id="DiscoveryAlsoSeen"><segment><source>Also in {0}</source><target state="final">Also in {0}</target></segment></unit>
+    <unit id="DiscoveryModels"><segment><source>Models: {0}</source><target state="final">Models: {0}</target></segment></unit>
+    <unit id="DiscoverySourceClaudeCode"><segment><source>Claude Code</source><target state="final">Claude Code</target></segment></unit>
+    <unit id="DiscoverySourceCodex"><segment><source>Codex</source><target state="final">Codex</target></segment></unit>
+    <unit id="DiscoverySourceCcSwitch"><segment><source>cc-switch</source><target state="final">cc-switch</target></segment></unit>
+    <unit id="DiscoverySourceOpencode"><segment><source>opencode</source><target state="final">opencode</target></segment></unit>
+    <unit id="DiscoverySourceEnv"><segment><source>Environment variable</source><target state="final">Environment variable</target></segment></unit>
+    <unit id="DiscoverySourceGeminiCli"><segment><source>Gemini CLI</source><target state="final">Gemini CLI</target></segment></unit>
+    <unit id="DiscoverySourceQwenCode"><segment><source>Qwen Code</source><target state="final">Qwen Code</target></segment></unit>
+    <unit id="DiscoverySourceCrush"><segment><source>Crush</source><target state="final">Crush</target></segment></unit>
+    <unit id="DiscoverySourceContinue"><segment><source>Continue</source><target state="final">Continue</target></segment></unit>
+    <unit id="DiscoverySourceAider"><segment><source>Aider</source><target state="final">Aider</target></segment></unit>
+    <unit id="DiscoverySourceShell"><segment><source>Shell profile</source><target state="final">Shell profile</target></segment></unit>
+    <unit id="DiscoverySourceLocal"><segment><source>Local service</source><target state="final">Local service</target></segment></unit>
+    <unit id="ProvErrDiscoveryGone"><segment><source>This configuration changed after the scan. Scan again.</source><target state="final">This configuration changed after the scan. Scan again.</target></segment></unit>
+    <unit id="ProvErrDiscoveryAlreadyImported"><segment><source>Already imported.</source><target state="final">Already imported.</target></segment></unit>
     <unit id="SidebarProjects"><segment><source>Projects</source><target state="final">Projects</target></segment></unit>
     <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="final">Show {0} more</target></segment></unit>
     <unit id="SidebarShowLess"><segment><source>Show less</source><target state="final">Show less</target></segment></unit>
@@ -1781,5 +1864,38 @@
     <unit id="SidebarHideArchived"><segment><source>Hide archived</source><target state="final">Hide archived</target></segment></unit>
     <unit id="SidebarSignedIn"><segment><source>Signed in</source><target state="final">Signed in</target></segment></unit>
     <unit id="SidebarProjectMenu"><segment><source>Project actions</source><target state="final">Project actions</target></segment></unit>
+    <unit id="ProviderEditorPickDescription"><segment><source>Pick a service. Most only need an API key.</source><target state="final">Pick a service. Most only need an API key.</target></segment></unit>
+    <unit id="ProviderEditorFormDescription"><segment><source>Address and protocol are filled in from the template.</source><target state="final">Address and protocol are filled in from the template.</target></segment></unit>
+    <unit id="ProviderEditorCustomDescription"><segment><source>Enter the address, protocol and API key yourself.</source><target state="final">Enter the address, protocol and API key yourself.</target></segment></unit>
+    <unit id="ProviderEditorEditDescription"><segment><source>Change how this provider connects. Leave the API key empty to keep the stored one.</source><target state="final">Change how this provider connects. Leave the API key empty to keep the stored one.</target></segment></unit>
+    <unit id="ProviderTemplateSearch"><segment><source>Search services or addresses…</source><target state="final">Search services or addresses…</target></segment></unit>
+    <unit id="ProviderTemplateGroupFeatured"><segment><source>Popular</source><target state="final">Popular</target></segment></unit>
+    <unit id="ProviderTemplateGroupIntl"><segment><source>International</source><target state="final">International</target></segment></unit>
+    <unit id="ProviderTemplateGroupChina"><segment><source>China</source><target state="final">China</target></segment></unit>
+    <unit id="ProviderTemplateGroupAggregator"><segment><source>Aggregators</source><target state="final">Aggregators</target></segment></unit>
+    <unit id="ProviderTemplateGroupLocal"><segment><source>On this device</source><target state="final">On this device</target></segment></unit>
+    <unit id="ProviderTemplateGroupOther"><segment><source>Other</source><target state="final">Other</target></segment></unit>
+    <unit id="ProviderTemplateGroupResults"><segment><source>Results</source><target state="final">Results</target></segment></unit>
+    <unit id="ProviderTemplateVariantIntl"><segment><source>International</source><target state="final">International</target></segment></unit>
+    <unit id="ProviderTemplateVariantAnthropic"><segment><source>Anthropic-compatible</source><target state="final">Anthropic-compatible</target></segment></unit>
+    <unit id="ProviderTemplateCustom"><segment><source>Custom</source><target state="final">Custom</target></segment></unit>
+    <unit id="ProviderTemplateCustomHint"><segment><source>Any OpenAI- or Anthropic-compatible address</source><target state="final">Any OpenAI- or Anthropic-compatible address</target></segment></unit>
+    <unit id="ProviderTemplateNoResults"><segment><source>No template matches.</source><target state="final">No template matches.</target></segment></unit>
+    <unit id="ProviderTemplateUseCustom"><segment><source>Enter it manually</source><target state="final">Enter it manually</target></segment></unit>
+    <unit id="ProviderTemplateFooterHint"><segment><source>Not listed? Choose Custom.</source><target state="final">Not listed? Choose Custom.</target></segment></unit>
+    <unit id="ProviderDiscoveryBanner"><segment><source>Found {0} providers already set up on this device</source><target state="final">Found {0} providers already set up on this device</target></segment></unit>
+    <unit id="ProviderDiscoveryBannerAction"><segment><source>Import</source><target state="final">Import</target></segment></unit>
+    <unit id="ProviderEditorBack"><segment><source>Choose another service</source><target state="final">Choose another service</target></segment></unit>
+    <unit id="ProviderEditorGetKey"><segment><source>Get an API key</source><target state="final">Get an API key</target></segment></unit>
+    <unit id="ProviderEditorKeyStored"><segment><source>Stored on the device only. The field clears after saving.</source><target state="final">Stored on the device only. The field clears after saving.</target></segment></unit>
+    <unit id="ProviderEditorLocalTitle"><segment><source>No API key needed</source><target state="final">No API key needed</target></segment></unit>
+    <unit id="ProviderEditorLocalHint"><segment><source>Make sure {0} is running on the device's computer. Saving connects once and lists its models.</source><target state="final">Make sure {0} is running on the device's computer. Saving connects once and lists its models.</target></segment></unit>
+    <unit id="ProviderEditorAdvanced"><segment><source>Advanced</source><target state="final">Advanced</target></segment></unit>
+    <unit id="ProviderEditorSaveAndTest"><segment><source>Save and test</source><target state="final">Save and test</target></segment></unit>
+    <unit id="ProviderEditorSaving"><segment><source>Saving and testing the connection…</source><target state="final">Saving and testing the connection…</target></segment></unit>
+    <unit id="ProviderEditorTestFailed"><segment><source>Saved, but the connection test failed: {0}</source><target state="final">Saved, but the connection test failed: {0}</target></segment></unit>
+    <unit id="ProviderEditorKeep"><segment><source>Keep and close</source><target state="final">Keep and close</target></segment></unit>
+    <unit id="ProvErrKeyRequired"><segment><source>Enter an API key before saving.</source><target state="final">Enter an API key before saving.</target></segment></unit>
+    <unit id="ProvErrIdTaken"><segment><source>Another provider already uses this id.</source><target state="final">Another provider already uses this id.</target></segment></unit>
   </file>
 </xliff>

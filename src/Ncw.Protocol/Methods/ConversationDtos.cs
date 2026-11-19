@@ -81,7 +81,8 @@ public sealed record SessionDto(
     bool Archived,
     bool Favorited,
     long CreatedAt,
-    long UpdatedAt);
+    long UpdatedAt,
+    string PermissionMode = "ask");
 
 /// <summary>侧边栏的一行。运行状态不在这里:「这条会话在不在跑」只由 <c>device</c> 主题的 activeRuns 回答(一个事实一个真源)。</summary>
 public sealed record SessionListItemDto(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool SkillExtraction);
@@ -125,13 +126,16 @@ public sealed record SessionsCreateParams(
     string? Model = null,
     string? ModelProviderId = null,
     string? Mode = null,
-    string? Thinking = null);
+    string? Thinking = null,
+    string? PermissionMode = null);
 
 public sealed record SessionsRenameParams(string SessionId, string Title);
 
 public sealed record SessionsSetModeParams(string SessionId, string Mode);
 
 public sealed record SessionsSetModelParams(string SessionId, string Model, string? ModelProviderId = null);
+
+public sealed record SessionsSetPermissionModeParams(string SessionId, string PermissionMode);
 
 public sealed record SessionsArchiveParams(string SessionId, bool Archived);
 

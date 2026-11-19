@@ -114,7 +114,7 @@ public sealed class LoopTests
         var run = await rig.RunAsync(Rig.User("u1", "hi"));
 
         Assert.Equal(2, run.Llm.Requests.Count);
-        Assert.Equal(["TurnStart", "TurnEnd", "TurnStart", "TurnEnd"], run.Kinds.Where(k => k.StartsWith("Turn")));
+        Assert.Equal(["TurnStart", "TurnEnd", "TurnStart", "TurnEnd"], run.Kinds.Where(k => k.StartsWith("Turn", StringComparison.Ordinal)));
         var second = run.Llm.Requests[1].Messages;
         Pairing.AssertPaired(second);
         var result = Assert.Single(second[^1].Parts.OfType<ToolResultPart>());

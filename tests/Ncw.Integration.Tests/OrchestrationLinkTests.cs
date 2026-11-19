@@ -328,7 +328,7 @@ public sealed class OrchestrationLinkTests : IAsyncLifetime
         await WaitUntil(() => a.State.Goals.GetValueOrDefault(session) is { Goal: null, Cleared: GoalClearReason.Met } && b.State.Goals.GetValueOrDefault(session) is { Goal: null, Cleared: GoalClearReason.Met }, "the goal to be met");
         Assert.Equal(a.State.Goals[session].Rev, b.State.Goals[session].Rev);
         // 带外写的 goal_status 标记随变更替换进会话镜像(不新增消息)
-        await WaitUntil(() => a.State.Sessions[session].Messages.Count(m => m.PartsJson.Contains("goal_status")) >= 1, "the goal markers in the mirror");
+        await WaitUntil(() => a.State.Sessions[session].Messages.Any(m => m.PartsJson.Contains("goal_status", StringComparison.Ordinal)), "the goal markers in the mirror");
 
         // 设定 / 清除是幂等、可重复的意图;校验失败不是错误
         Assert.Equal(GoalOutcomes.Empty, (await a.Goals.SetAsync(session, "  ​ ")).Value!.Outcome);

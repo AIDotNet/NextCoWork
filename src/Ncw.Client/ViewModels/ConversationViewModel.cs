@@ -52,8 +52,9 @@ public sealed partial class ConversationViewModel : ObservableObject
         _subagents = subagents;
         _goals = goals;
         _clock = clock ?? TimeProvider.System;
-        Composer = new ComposerViewModel(commands, lookups, attachments: attachments);
+        Composer = new ComposerViewModel(commands, lookups, attachments: attachments, goals: goals);
         Composer.ProviderSettingsRequested += () => ProviderSettingsRequested?.Invoke();
+        Composer.NewSessionRequested += () => NewSessionRequested?.Invoke();
         stores.Conversations.Changed += Refresh;
         stores.Selection.Changed += Refresh;
         stores.Workspace.Changed += Refresh;
@@ -514,6 +515,9 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenProviderSettings() => ProviderSettingsRequested?.Invoke();
+
+    /// <summary>输入框的 <c>/clear</c>:交给外壳在当前项目里开一个新会话(和 ⌘N 同一个意图)。</summary>
+    public event Action? NewSessionRequested;
 
     /// <summary>待处理条的「其他会话」:交给外壳转到下一项(和 ⌘J 同一个意图)。</summary>
     public event Action? ElsewhereRequested;

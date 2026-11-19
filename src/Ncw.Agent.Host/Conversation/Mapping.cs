@@ -24,7 +24,7 @@ internal static class Mapping
 
     public static SessionDto ToDto(SessionRecord s) => new(
         s.Id, s.WorkspaceId, s.ParentSessionId, s.Origin, s.Title, s.TitleSource, s.Model, s.ModelProviderId, s.Mode, s.Thinking,
-        s.Archived, s.Favorited, s.CreatedAt, s.UpdatedAt);
+        s.Archived, s.Favorited, s.CreatedAt, s.UpdatedAt, s.PermissionMode);
 
     public static SessionListItemDto ToDto(SessionListItem s) => new(s.Id, s.Title, s.UpdatedAt, s.Archived, s.Favorited, s.SkillExtraction);
 
@@ -103,7 +103,7 @@ internal static class Mapping
 
         var providerId = dto.Model.Length > 0 ? dto.ModelProviderId : session.ModelProviderId;
         var thinking = Enum.TryParse<ThinkingLevel>(dto.Thinking, ignoreCase: true, out var level) ? level : ThinkingLevel.Auto;
-        var permission = dto.PermissionMode.Length > 0 ? dto.PermissionMode : "ask";
+        var permission = dto.PermissionMode.Length > 0 ? dto.PermissionMode : session.PermissionMode;
         if (!Ncw.Agent.Extensions.Permissions.PermissionModes.TryParse(permission, out _))
         {
             throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown permission mode '{permission}'.");

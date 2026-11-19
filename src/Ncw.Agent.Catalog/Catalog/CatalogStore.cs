@@ -1,3 +1,4 @@
+using System.IO.MemoryMappedFiles;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,13 +19,36 @@ public sealed record CatalogCacheMeta(
 /// <summary>最近一份有效快照的落盘。接口化是为了测试(内存实现)和云端(将来换存储)。</summary>
 public interface ICatalogStore
 {
-    (byte[] Body, CatalogCacheMeta Meta)? Load();
+    /// <summary>
+    /// 读最近一份有效快照:核对哈希后把正文交给 <paramref name="read"/>,返回它的结果和元数据;没有缓存 / 被截断或改过返回 null。
+    /// 正文<b>只在回调期间有效</b>(文件实现直接映射文件,不把几 MB 的正文读进 GC 堆),不要留着。
+    /// </summary>
+    (T Result, CatalogCacheMeta Meta)? Load<T>(Func<ReadOnlySpan<byte>, CatalogCacheMeta, T> read);
 
     /// <summary>原子地换成新的一份(快照与元数据一起)。</summary>
     void Save(byte[] body, CatalogCacheMeta meta);
 
+    /// <summary>
+    /// 新下载的一份先写进草稿(文件实现:同目录的临时文件,不经过 GC 堆),核对、解析通过后 <see cref="ICatalogDraft.Commit"/> 原子替换;
+    /// 不提交就释放 = 丢弃。
+    /// </summary>
+    ICatalogDraft BeginDraft();
+
     /// <summary>304 时只更新元数据(「上次检查时间」)。</summary>
     void SaveMeta(CatalogCacheMeta meta);
+}
+
+/// <summary>一份还没采用的新正文(<see cref="ICatalogStore.BeginDraft"/>)。</summary>
+public interface ICatalogDraft : IDisposable
+{
+    /// <summary>往里写正文(只写)。</summary>
+    Stream Body { get; }
+
+    /// <summary>写完以后读:正文只在回调期间有效(文件实现是映射)。</summary>
+    T Read<T>(Func<ReadOnlySpan<byte>, T> read);
+
+    /// <summary>原子地换成这一份(先换正文再换元数据,和 <see cref="ICatalogStore.Save"/> 一样)。</summary>
+    void Commit(CatalogCacheMeta meta);
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, UseStringEnumConverter = true)]
@@ -43,7 +67,12 @@ public sealed class FileCatalogStore(string dataRoot) : ICatalogStore
 
     private string MetaPath => Path.Combine(Directory_, "models-dev.meta.json");
 
-    public (byte[] Body, CatalogCacheMeta Meta)? Load()
+    /// <summary>
+    /// 正文用内存映射读(docs/design/03 §12 的同一类问题):整份读进 <c>byte[]</c> 会在大对象堆上留下几 MB 用过即弃的数组,
+    /// 空闲的 Agent 很久都不做完整 GC,这块就一直占着物理内存。映射的是文件页,可回收、不算进程的脏内存,用完立即解除映射。
+    /// 在 <see cref="_gate"/> 里读:<see cref="Save"/> 不会在映射期间替换文件(Windows 上映射着的文件不能被改名覆盖)。
+    /// </summary>
+    public (T Result, CatalogCacheMeta Meta)? Load<T>(Func<ReadOnlySpan<byte>, CatalogCacheMeta, T> read)
     {
         lock (_gate)
         {
@@ -55,13 +84,97 @@ public sealed class FileCatalogStore(string dataRoot) : ICatalogStore
                 }
 
                 var meta = JsonSerializer.Deserialize(File.ReadAllBytes(MetaPath), CatalogJsonContext.Default.CatalogCacheMeta);
-                var body = File.ReadAllBytes(BodyPath);
+                if (meta is null)
+                {
+                    return null;
+                }
+
                 // 哈希对不上 = 被截断或被改过:当作没有缓存,不拿一份来历不明的数据当快照。
-                return meta is not null && string.Equals(Hash(body), meta.Sha256, StringComparison.OrdinalIgnoreCase) ? (body, meta) : null;
+                return Mapped(BodyPath, body => string.Equals(Hash(body), meta.Sha256, StringComparison.OrdinalIgnoreCase)
+                    ? ((T Result, CatalogCacheMeta Meta)?)(read(body, meta), meta)
+                    : null);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
             {
                 return null;
+            }
+        }
+    }
+
+    public ICatalogDraft BeginDraft()
+    {
+        System.IO.Directory.CreateDirectory(Directory_);
+        return new Draft(this, Path.Combine(Directory_, $"models-dev.json.{Environment.ProcessId}.{Guid.NewGuid():N}.download"));
+    }
+
+    /// <summary>把整个文件映射进来交给 <paramref name="read"/>;空文件给空正文。</summary>
+    private static unsafe T Mapped<T>(string path, Func<ReadOnlySpan<byte>, T> read)
+    {
+        var length = new FileInfo(path).Length;
+        if (length == 0)
+        {
+            return read([]);
+        }
+
+        if (length > int.MaxValue)
+        {
+            throw new IOException($"{path} is too large to map.");
+        }
+
+        using var map = MemoryMappedFile.CreateFromFile(path, FileMode.Open, mapName: null, capacity: 0, MemoryMappedFileAccess.Read);
+        using var view = map.CreateViewAccessor(0, length, MemoryMappedFileAccess.Read);
+        byte* pointer = null;
+        var handle = view.SafeMemoryMappedViewHandle;
+        handle.AcquirePointer(ref pointer);
+        try
+        {
+            return read(new ReadOnlySpan<byte>(pointer + view.PointerOffset, (int)length));
+        }
+        finally
+        {
+            handle.ReleasePointer();
+        }
+    }
+
+    private sealed class Draft(FileCatalogStore store, string path) : ICatalogDraft
+    {
+        private readonly FileStream _body = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 81920);
+        private bool _committed;
+
+        public Stream Body => _body;
+
+        public T Read<T>(Func<ReadOnlySpan<byte>, T> read)
+        {
+            _body.Dispose();   // 写完了:关掉写入流再映射(它独占打开,不关映射不了)
+            return Mapped(path, read);
+        }
+
+        public void Commit(CatalogCacheMeta meta)
+        {
+            _body.Dispose();
+            lock (store._gate)
+            {
+                // 先换正文再换元数据:中途崩溃时哈希对不上,下次启动会当作没有缓存。
+                File.Move(path, store.BodyPath, overwrite: true);
+                WriteAtomic(store.MetaPath, JsonSerializer.SerializeToUtf8Bytes(meta, CatalogJsonContext.Default.CatalogCacheMeta));
+            }
+
+            _committed = true;
+        }
+
+        public void Dispose()
+        {
+            _body.Dispose();
+            if (!_committed)
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (IOException)
+                {
+                    // 删不掉的临时文件下次启动也不会被当成缓存(名字不对)
+                }
             }
         }
     }
@@ -119,11 +232,27 @@ public sealed class MemoryCatalogStore : ICatalogStore
 
     public (byte[] Body, CatalogCacheMeta Meta)? Value => _value;
 
-    public (byte[] Body, CatalogCacheMeta Meta)? Load() => _value;
+    public (T Result, CatalogCacheMeta Meta)? Load<T>(Func<ReadOnlySpan<byte>, CatalogCacheMeta, T> read) =>
+        _value is { } v ? (read(v.Body, v.Meta), v.Meta) : null;
 
     public void Save(byte[] body, CatalogCacheMeta meta) => _value = (body, meta);
 
     public void SaveMeta(CatalogCacheMeta meta) => _value = _value is { } v ? (v.Body, meta) : null;
+
+    public ICatalogDraft BeginDraft() => new Draft(this);
+
+    private sealed class Draft(MemoryCatalogStore store) : ICatalogDraft
+    {
+        private readonly MemoryStream _body = new();
+
+        public Stream Body => _body;
+
+        public T Read<T>(Func<ReadOnlySpan<byte>, T> read) => read(_body.GetBuffer().AsSpan(0, (int)_body.Length));
+
+        public void Commit(CatalogCacheMeta meta) => store._value = (_body.ToArray(), meta);
+
+        public void Dispose() => _body.Dispose();
+    }
 }
 
 // ── 用户覆盖 ──

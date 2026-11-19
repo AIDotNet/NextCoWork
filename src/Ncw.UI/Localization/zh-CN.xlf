@@ -365,8 +365,44 @@
     <unit id="QueueRemove"><segment><source>Remove from queue</source><target state="translated">从队列移除</target></segment></unit>
     <unit id="QueueSteer"><segment><source>Steer</source><target state="translated">插话</target></segment></unit>
     <unit id="QueueSteerHint"><segment><source>Insert this message into the running task at the next turn</source><target state="translated">在下一个回合把这句话插进正在运行的任务</target></segment></unit>
-    <unit id="RenameAliasDescription"><segment><source>The alias is the name you pick a model by.</source><target state="translated">别名是在会话里选择模型时用的名字。</target></segment></unit>
-    <unit id="RenameAliasTitle"><segment><source>Rename model alias</source><target state="translated">重命名模型别名</target></segment></unit>
+    <unit id="ModelEditorTitle"><segment><source>Edit model</source><target state="translated">编辑模型</target></segment></unit>
+    <unit id="ModelEditorDescription"><segment><source>Fields you change belong to this provider and stop following the model catalog; the rest keep following it.</source><target state="translated">改过的字段归这个供应商,不再跟随模型目录更新;没改的继续跟随。</target></segment></unit>
+    <unit id="ModelEditorSectionBasics"><segment><source>Basics</source><target state="translated">基本</target></segment></unit>
+    <unit id="ModelEditorAlias"><segment><source>Alias</source><target state="translated">别名</target></segment></unit>
+    <unit id="ModelEditorAliasHint"><segment><source>The name you pick this model by in conversations.</source><target state="translated">在会话里选择模型时用的名字。</target></segment></unit>
+    <unit id="ModelEditorDisplayName"><segment><source>Display name</source><target state="translated">显示名称</target></segment></unit>
+    <unit id="ModelEditorDisplayNamePlaceholder"><segment><source>Same as the alias</source><target state="translated">留空则显示别名</target></segment></unit>
+    <unit id="ModelEditorUpstream"><segment><source>Upstream model</source><target state="translated">上游模型</target></segment></unit>
+    <unit id="ModelEditorSectionContext"><segment><source>Context</source><target state="translated">上下文</target></segment></unit>
+    <unit id="ModelEditorContextWindow"><segment><source>Context window (tokens)</source><target state="translated">上下文窗口(tokens)</target></segment></unit>
+    <unit id="ModelEditorMaxOutput"><segment><source>Max output (tokens)</source><target state="translated">最大输出(tokens)</target></segment></unit>
+    <unit id="ModelEditorSectionCapabilities"><segment><source>Capabilities and protocol</source><target state="translated">能力与协议</target></segment></unit>
+    <unit id="ModelEditorVision"><segment><source>Image input</source><target state="translated">图片输入</target></segment></unit>
+    <unit id="ModelEditorVisionHint"><segment><source>Lets conversations send images to this model.</source><target state="translated">允许在会话里给这个模型发送图片。</target></segment></unit>
+    <unit id="ModelEditorProtocol"><segment><source>Request protocol</source><target state="translated">请求协议</target></segment></unit>
+    <unit id="ModelEditorProtocolFollow"><segment><source>Follow the provider ({0})</source><target state="translated">跟随供应商({0})</target></segment></unit>
+    <unit id="ModelEditorProtocolFollowPlain"><segment><source>Follow the provider</source><target state="translated">跟随供应商</target></segment></unit>
+    <unit id="ModelEditorSectionThinking"><segment><source>Thinking</source><target state="translated">思考</target></segment></unit>
+    <unit id="ModelEditorThinkingMode"><segment><source>Thinking control</source><target state="translated">思考控制方式</target></segment></unit>
+    <unit id="ModelEditorThinkingModeHint"><segment><source>How the device sends thinking parameters upstream. The level picked in a conversation is applied through this.</source><target state="translated">设备向上游发请求时怎么带思考参数;会话里选的思考档位按这里生效。</target></segment></unit>
+    <unit id="ModelEditorThinkingAuto"><segment><source>Follow the model catalog</source><target state="translated">跟随模型目录</target></segment></unit>
+    <unit id="ModelEditorThinkingAutoCurrent"><segment><source>Follow the model catalog (now: {0})</source><target state="translated">跟随模型目录(当前:{0})</target></segment></unit>
+    <unit id="ModelEditorThinkingUnsupported"><segment><source>Not supported</source><target state="translated">不支持</target></segment></unit>
+    <unit id="ModelEditorThinkingAlways"><segment><source>Always thinks</source><target state="translated">总是思考</target></segment></unit>
+    <unit id="ModelEditorThinkingToggle"><segment><source>On / off</source><target state="translated">开 / 关</target></segment></unit>
+    <unit id="ModelEditorThinkingBudget"><segment><source>Token budget</source><target state="translated">思考预算</target></segment></unit>
+    <unit id="ModelEditorThinkingEffort"><segment><source>Effort levels</source><target state="translated">强度档位</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabled"><segment><source>Think by default</source><target state="translated">默认开启思考</target></segment></unit>
+    <unit id="ModelEditorDefaultEnabledHint"><segment><source>Used when thinking is set to Auto in a conversation.</source><target state="translated">会话里思考选「自动」时按这个来。</target></segment></unit>
+    <unit id="ModelEditorBudget"><segment><source>Default budget (tokens)</source><target state="translated">默认预算(tokens)</target></segment></unit>
+    <unit id="ModelEditorEfforts"><segment><source>Supported levels</source><target state="translated">支持的强度</target></segment></unit>
+    <unit id="ModelEditorEffortsHint"><segment><source>Check Off if this model can turn thinking off.</source><target state="translated">勾上「关」表示这个模型可以关掉思考。</target></segment></unit>
+    <unit id="ModelEditorDefaultEffort"><segment><source>Default level</source><target state="translated">默认强度</target></segment></unit>
+    <unit id="ModelEditorErrAliasRequired"><segment><source>Enter an alias.</source><target state="translated">请填写别名。</target></segment></unit>
+    <unit id="ModelEditorErrContextTooSmall"><segment><source>The context window must be at least 1024 tokens.</source><target state="translated">上下文窗口至少 1024 tokens。</target></segment></unit>
+    <unit id="ModelEditorErrOutputTooLarge"><segment><source>Max output must be between 1 and the context window.</source><target state="translated">最大输出要在 1 到上下文窗口之间。</target></segment></unit>
+    <unit id="ModelEditorErrBudgetTooSmall"><segment><source>The thinking budget must be at least 1024 tokens.</source><target state="translated">思考预算至少 1024 tokens。</target></segment></unit>
+    <unit id="ModelEditorErrNoEffort"><segment><source>Check at least one level other than Off.</source><target state="translated">除了「关」,至少勾选一个强度。</target></segment></unit>
     <unit id="RenameSessionDescription"><segment><source>The new name appears in the session list.</source><target state="translated">新名称会显示在会话列表里。</target></segment></unit>
     <unit id="RenameSessionTitle"><segment><source>Rename session</source><target state="translated">重命名会话</target></segment></unit>
     <unit id="ScopeGlobal"><segment><source>Everywhere</source><target state="translated">所有项目</target></segment></unit>
@@ -384,6 +420,24 @@
     <unit id="SettingsModelsHint"><segment><source>Providers, credentials, model aliases and the model catalog of this device.</source><target state="translated">这台设备的供应商、凭据、模型别名和模型目录。</target></segment></unit>
     <unit id="ShowArchived"><segment><source>Show archived</source><target state="translated">显示已归档</target></segment></unit>
     <unit id="SlashComingSoon"><segment><source>Commands are coming soon</source><target state="translated">命令即将支持</target></segment></unit>
+    <unit id="SlashGoalDescription"><segment><source>Set a goal the agent keeps working toward</source><target state="translated">为会话设定目标,Agent 会一直推进到满足为止</target></segment></unit>
+    <unit id="SlashGoalHint"><segment><source>&lt;condition&gt;</source><target state="translated">&lt;完成条件&gt;</target></segment></unit>
+    <unit id="SlashCompactDescription"><segment><source>Compact the context now</source><target state="translated">立即压缩上下文</target></segment></unit>
+    <unit id="SlashCompactHint"><segment><source>[focus]</source><target state="translated">[侧重点]</target></segment></unit>
+    <unit id="SlashModelDescription"><segment><source>Switch the model</source><target state="translated">切换模型</target></segment></unit>
+    <unit id="SlashModelHint"><segment><source>[name]</source><target state="translated">[名称]</target></segment></unit>
+    <unit id="SlashClearDescription"><segment><source>Start a new session in this project</source><target state="translated">在当前项目开一个新会话</target></segment></unit>
+    <unit id="SlashGoalUsage"><segment><source>Write the condition that ends the goal after /goal; /goal clear removes the current goal.</source><target state="translated">在 /goal 后写上完成条件;/goal clear 清除当前目标。</target></segment></unit>
+    <unit id="SlashGoalEmpty"><segment><source>The goal condition is empty.</source><target state="translated">目标条件是空的。</target></segment></unit>
+    <unit id="SlashGoalTooLong"><segment><source>The goal condition is too long (at most {0} characters).</source><target state="translated">目标条件太长了(最多 {0} 个字符)。</target></segment></unit>
+    <unit id="SlashCompactBusy"><segment><source>The session is running. Compact after it finishes.</source><target state="translated">会话正在运行,等它结束后再压缩。</target></segment></unit>
+    <unit id="SlashCompactNothing"><segment><source>Nothing new to compact since the last compaction.</source><target state="translated">上次压缩之后还没有新的对话,无需压缩。</target></segment></unit>
+    <unit id="SlashCompactFailed"><segment><source>Compaction failed. Try again in a moment.</source><target state="translated">压缩失败,稍后再试。</target></segment></unit>
+    <unit id="SlashModelNotFound"><segment><source>No model matches “{0}”.</source><target state="translated">没有匹配「{0}」的模型。</target></segment></unit>
+    <unit id="SlashModelAmbiguous"><segment><source>More than one model matches “{0}”. Type more of the name.</source><target state="translated">有多个模型匹配「{0}」,请写得更完整些。</target></segment></unit>
+    <unit id="SlashModelUnavailable"><segment><source>{0} is not available right now.</source><target state="translated">{0} 目前不可用。</target></segment></unit>
+    <unit id="SlashModelSwitched"><segment><source>Switched to {0}.</source><target state="translated">已切换到 {0}。</target></segment></unit>
+    <unit id="SlashUnavailable"><segment><source>This command is not available here.</source><target state="translated">这里用不了这个命令。</target></segment></unit>
     <unit id="StatusCompacting"><segment><source>Compacting the conversation…</source><target state="translated">正在压缩对话……</target></segment></unit>
     <unit id="StatusRetrying"><segment><source>The provider is retrying (attempt {0})…</source><target state="translated">上游正在重试(第 {0} 次)……</target></segment></unit>
     <unit id="SubagentReportRow"><segment><source>A background sub-agent reported back</source><target state="translated">后台子代理已回传结果</target></segment></unit>
@@ -1773,6 +1827,35 @@
     <unit id="SettingsData"><segment><source>Data</source><target state="translated">数据</target></segment></unit>
     <unit id="SettingsProvidersCatalogHint"><segment><source>Sources and automatic updates</source><target state="translated">来源与自动更新</target></segment></unit>
     <unit id="ProviderDisabledShort"><segment><source>Disabled</source><target state="translated">已停用</target></segment></unit>
+    <unit id="DiscoveryTitle"><segment><source>Import from other apps</source><target state="translated">从其他应用导入</target></segment></unit>
+    <unit id="DiscoveryHint"><segment><source>Providers already set up on this device in other AI clients (Claude Code, Codex, Gemini CLI, Continue, Aider…), shell profiles, environment variables, and local services such as Ollama. Keys are imported on the device and never pass through this app.</source><target state="translated">这台设备上其他 AI 客户端(Claude Code、Codex、Gemini CLI、Continue、Aider……)、Shell 配置、环境变量里已经配好的供应商,以及 Ollama 这类本地服务。密钥在设备上直接导入,不经过这里。</target></segment></unit>
+    <unit id="DiscoveryRescan"><segment><source>Scan again</source><target state="translated">重新扫描</target></segment></unit>
+    <unit id="DiscoveryScanning"><segment><source>Looking for configurations…</source><target state="translated">正在查找…</target></segment></unit>
+    <unit id="DiscoveryEmpty"><segment><source>No provider configurations were found on this device.</source><target state="translated">这台设备上没有找到可导入的配置。</target></segment></unit>
+    <unit id="DiscoveryFailed"><segment><source>The scan failed.</source><target state="translated">扫描失败。</target></segment></unit>
+    <unit id="DiscoveryImport"><segment><source>Import selected</source><target state="translated">导入所选</target></segment></unit>
+    <unit id="DiscoveryImported"><segment><source>Imported {0} provider(s).</source><target state="translated">已导入 {0} 个供应商。</target></segment></unit>
+    <unit id="DiscoveryStatusNew"><segment><source>New</source><target state="translated">可导入</target></segment></unit>
+    <unit id="DiscoveryStatusImported"><segment><source>Already imported</source><target state="translated">已导入</target></segment></unit>
+    <unit id="DiscoveryStatusConflict"><segment><source>Already exists</source><target state="translated">已存在</target></segment></unit>
+    <unit id="DiscoveryConflictHint"><segment><source>A provider with this address or ID already exists. Importing creates a separate one and leaves the existing provider alone.</source><target state="translated">已有同地址或同 ID 的供应商。导入会另建一个,不覆盖已有的。</target></segment></unit>
+    <unit id="DiscoveryNoKey"><segment><source>No key</source><target state="translated">无密钥</target></segment></unit>
+    <unit id="DiscoveryAlsoSeen"><segment><source>Also in {0}</source><target state="translated">也见于 {0}</target></segment></unit>
+    <unit id="DiscoveryModels"><segment><source>Models: {0}</source><target state="translated">模型:{0}</target></segment></unit>
+    <unit id="DiscoverySourceClaudeCode"><segment><source>Claude Code</source><target state="translated">Claude Code</target></segment></unit>
+    <unit id="DiscoverySourceCodex"><segment><source>Codex</source><target state="translated">Codex</target></segment></unit>
+    <unit id="DiscoverySourceCcSwitch"><segment><source>cc-switch</source><target state="translated">cc-switch</target></segment></unit>
+    <unit id="DiscoverySourceOpencode"><segment><source>opencode</source><target state="translated">opencode</target></segment></unit>
+    <unit id="DiscoverySourceEnv"><segment><source>Environment variable</source><target state="translated">环境变量</target></segment></unit>
+    <unit id="DiscoverySourceGeminiCli"><segment><source>Gemini CLI</source><target state="translated">Gemini CLI</target></segment></unit>
+    <unit id="DiscoverySourceQwenCode"><segment><source>Qwen Code</source><target state="translated">Qwen Code</target></segment></unit>
+    <unit id="DiscoverySourceCrush"><segment><source>Crush</source><target state="translated">Crush</target></segment></unit>
+    <unit id="DiscoverySourceContinue"><segment><source>Continue</source><target state="translated">Continue</target></segment></unit>
+    <unit id="DiscoverySourceAider"><segment><source>Aider</source><target state="translated">Aider</target></segment></unit>
+    <unit id="DiscoverySourceShell"><segment><source>Shell profile</source><target state="translated">Shell 配置</target></segment></unit>
+    <unit id="DiscoverySourceLocal"><segment><source>Local service</source><target state="translated">本地服务</target></segment></unit>
+    <unit id="ProvErrDiscoveryGone"><segment><source>This configuration changed after the scan. Scan again.</source><target state="translated">这条配置在扫描之后变了,请重新扫描。</target></segment></unit>
+    <unit id="ProvErrDiscoveryAlreadyImported"><segment><source>Already imported.</source><target state="translated">已经导入过了。</target></segment></unit>
     <unit id="SidebarProjects"><segment><source>Projects</source><target state="translated">项目</target></segment></unit>
     <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="translated">显示更多 ({0})</target></segment></unit>
     <unit id="SidebarShowLess"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
@@ -1781,5 +1864,38 @@
     <unit id="SidebarHideArchived"><segment><source>Hide archived</source><target state="translated">隐藏已归档</target></segment></unit>
     <unit id="SidebarSignedIn"><segment><source>Signed in</source><target state="translated">已登录</target></segment></unit>
     <unit id="SidebarProjectMenu"><segment><source>Project actions</source><target state="translated">项目操作</target></segment></unit>
+    <unit id="ProviderEditorPickDescription"><segment><source>Pick a service. Most only need an API key.</source><target state="translated">选一个服务。常用的只需要填 API Key。</target></segment></unit>
+    <unit id="ProviderEditorFormDescription"><segment><source>Address and protocol are filled in from the template.</source><target state="translated">地址和协议已按模版填好。</target></segment></unit>
+    <unit id="ProviderEditorCustomDescription"><segment><source>Enter the address, protocol and API key yourself.</source><target state="translated">手动填写地址、协议和 API Key。</target></segment></unit>
+    <unit id="ProviderEditorEditDescription"><segment><source>Change how this provider connects. Leave the API key empty to keep the stored one.</source><target state="translated">修改连接信息。API Key 留空表示保留已存的。</target></segment></unit>
+    <unit id="ProviderTemplateSearch"><segment><source>Search services or addresses…</source><target state="translated">搜索服务或地址…</target></segment></unit>
+    <unit id="ProviderTemplateGroupFeatured"><segment><source>Popular</source><target state="translated">常用</target></segment></unit>
+    <unit id="ProviderTemplateGroupIntl"><segment><source>International</source><target state="translated">国际</target></segment></unit>
+    <unit id="ProviderTemplateGroupChina"><segment><source>China</source><target state="translated">国内</target></segment></unit>
+    <unit id="ProviderTemplateGroupAggregator"><segment><source>Aggregators</source><target state="translated">聚合平台</target></segment></unit>
+    <unit id="ProviderTemplateGroupLocal"><segment><source>On this device</source><target state="translated">本机</target></segment></unit>
+    <unit id="ProviderTemplateGroupOther"><segment><source>Other</source><target state="translated">其他</target></segment></unit>
+    <unit id="ProviderTemplateGroupResults"><segment><source>Results</source><target state="translated">搜索结果</target></segment></unit>
+    <unit id="ProviderTemplateVariantIntl"><segment><source>International</source><target state="translated">国际版</target></segment></unit>
+    <unit id="ProviderTemplateVariantAnthropic"><segment><source>Anthropic-compatible</source><target state="translated">Anthropic 兼容</target></segment></unit>
+    <unit id="ProviderTemplateCustom"><segment><source>Custom</source><target state="translated">自定义</target></segment></unit>
+    <unit id="ProviderTemplateCustomHint"><segment><source>Any OpenAI- or Anthropic-compatible address</source><target state="translated">任意兼容 OpenAI / Anthropic 的地址</target></segment></unit>
+    <unit id="ProviderTemplateNoResults"><segment><source>No template matches.</source><target state="translated">没有匹配的模版。</target></segment></unit>
+    <unit id="ProviderTemplateUseCustom"><segment><source>Enter it manually</source><target state="translated">改用自定义</target></segment></unit>
+    <unit id="ProviderTemplateFooterHint"><segment><source>Not listed? Choose Custom.</source><target state="translated">找不到？选「自定义」手动填写。</target></segment></unit>
+    <unit id="ProviderDiscoveryBanner"><segment><source>Found {0} providers already set up on this device</source><target state="translated">在这台设备上找到 {0} 个已配置的供应商</target></segment></unit>
+    <unit id="ProviderDiscoveryBannerAction"><segment><source>Import</source><target state="translated">去导入</target></segment></unit>
+    <unit id="ProviderEditorBack"><segment><source>Choose another service</source><target state="translated">换一个服务</target></segment></unit>
+    <unit id="ProviderEditorGetKey"><segment><source>Get an API key</source><target state="translated">获取 API Key</target></segment></unit>
+    <unit id="ProviderEditorKeyStored"><segment><source>Stored on the device only. The field clears after saving.</source><target state="translated">只保存在设备上,保存后这里会清空。</target></segment></unit>
+    <unit id="ProviderEditorLocalTitle"><segment><source>No API key needed</source><target state="translated">不需要 API Key</target></segment></unit>
+    <unit id="ProviderEditorLocalHint"><segment><source>Make sure {0} is running on the device's computer. Saving connects once and lists its models.</source><target state="translated">确认 {0} 已在设备那台电脑上运行。保存时会连一次并列出模型。</target></segment></unit>
+    <unit id="ProviderEditorAdvanced"><segment><source>Advanced</source><target state="translated">高级</target></segment></unit>
+    <unit id="ProviderEditorSaveAndTest"><segment><source>Save and test</source><target state="translated">保存并测试</target></segment></unit>
+    <unit id="ProviderEditorSaving"><segment><source>Saving and testing the connection…</source><target state="translated">正在保存并测试连接…</target></segment></unit>
+    <unit id="ProviderEditorTestFailed"><segment><source>Saved, but the connection test failed: {0}</source><target state="translated">已保存,但连接测试没通过:{0}</target></segment></unit>
+    <unit id="ProviderEditorKeep"><segment><source>Keep and close</source><target state="translated">保留并关闭</target></segment></unit>
+    <unit id="ProvErrKeyRequired"><segment><source>Enter an API key before saving.</source><target state="translated">填写 API Key 后才能保存。</target></segment></unit>
+    <unit id="ProvErrIdTaken"><segment><source>Another provider already uses this id.</source><target state="translated">这个标识已经被别的供应商用了。</target></segment></unit>
   </file>
 </xliff>

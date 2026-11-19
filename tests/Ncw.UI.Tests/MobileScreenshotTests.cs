@@ -21,7 +21,7 @@ namespace Ncw.UI.Tests;
 /// <summary>
 /// 手机壳(docs/design/03 §3、05 M5)的 Headless 截图:手机宽度 360 / 390 / 430 与平板 768,深浅两种主题。
 /// 覆盖收件箱(空 / 有待办 / 多设备 / 设备断开 / 已在另一台设备上处理)、会话页的审批卡片(长按进度)、设备页、扫码配对(预览占位 / 解析成功 / 失败 / 成功)、
-/// 设置导航栈、附件上传进度。截图在 <c>bin/Debug/net10.0/screenshots/mobile-*.png</c>。数据全部经 Store 进来,不经过连接;动画关掉(MotionLevel.Off),页面切换立即完成。
+/// 设置导航栈、附件上传进度。截图在 <c>bin/Debug/net11.0/screenshots/mobile-*.png</c>。数据全部经 Store 进来,不经过连接;动画关掉(MotionLevel.Off),页面切换立即完成。
 /// </summary>
 public class MobileScreenshotTests : IDisposable
 {

@@ -21,7 +21,7 @@ namespace Ncw.UI.Tests;
 /// <summary>
 /// 内联可视化卡片的 Headless 截图(docs/design/03 §2 的四个断点 × 深浅两种主题)。Headless 里没有原生 WebView,所以这里覆盖的是<b>外壳</b>:
 /// 「WebView 不可用 → 静态快照」「加载中」「出错」「已过期」「设备断线 unknown」几种状态的布局与结构。WebView 里的真实渲染见 <see cref="NcwWidgetSmokeTests"/>(本机真窗口,环境变量开启)。
-/// 截图在 <c>bin/Debug/net10.0/screenshots/widget-*.png</c>。
+/// 截图在 <c>bin/Debug/net11.0/screenshots/widget-*.png</c>。
 /// </summary>
 public class WidgetScreenshotTests
 {

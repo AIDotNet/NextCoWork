@@ -11,7 +11,7 @@ namespace Ncw.Client.Actions;
 /// OAuth:授权页由控制端打开——界面订阅 Store 里的 <c>DeviceProviders.OAuth</c>,Waiting 阶段带授权 URL / 配对码;
 /// <see cref="StartOAuthAsync"/> 等方法在登录结束(成功 / 失败 / 取消)时才返回,回调码经 <see cref="SubmitOAuthCodeAsync"/> 交回。
 /// </summary>
-public sealed class ProvidersActions(DeviceRegistry devices)
+public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProviderDiscoveryCommands, ViewModels.IProviderEditorCommands, ViewModels.IModelEditorCommands
 {
     // ── 供应商 ──
 
@@ -111,6 +111,29 @@ public sealed class ProvidersActions(DeviceRegistry devices)
     /// <summary>把授权页给的回调码交回设备(<c>NeedsPastedCode</c> 的登录)。</summary>
     public Task<ActionResult<Unit>> SubmitOAuthCodeAsync(string deviceId, string providerId, string code, CancellationToken ct = default) =>
         Run(deviceId, link => link.CallAsync(ProvidersMethods.OAuthSubmitCode, new OAuthSubmitCodeParams(providerId, code), ct, idem: Idem("oauth.submitCode")));
+
+    // ── 自动发现(后加的能力 providers.discovery)──
+
+    /// <summary>设备支持自动发现(老设备不报这个能力就不调)。</summary>
+    public bool SupportsDiscovery(string deviceId) =>
+        devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.ProviderDiscovery);
+
+    /// <summary>在设备上找其他客户端配好的供应商(只读;结果里没有密钥明文)。</summary>
+    public Task<ActionResult<DiscoveryScanResult>> ScanDiscoveryAsync(string deviceId, CancellationToken ct = default) =>
+        Run(deviceId, link => link.CallAsync(ProviderDiscoveryMethods.Scan, Unit.Value, ct));
+
+    /// <summary>导入勾选的候选(设备重新扫一遍,在设备上建供应商、存密钥)。</summary>
+    public Task<ActionResult<DiscoveryImportResult>> ImportDiscoveredAsync(string deviceId, IReadOnlyList<string> candidateIds, CancellationToken ct = default) =>
+        Run(deviceId, link => link.CallAsync(ProviderDiscoveryMethods.Import, new DiscoveryImportParams([.. candidateIds]), ct, idem: Idem("discovery.import")));
+
+    // ── 内置模版(后加的能力 providers.templates)──
+
+    /// <summary>设备给内置模版(老设备不报这个能力:添加供应商只有「自定义」)。</summary>
+    public bool SupportsTemplates(string deviceId) =>
+        devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.ProviderTemplates);
+
+    public Task<ActionResult<ProviderTemplatesResult>> ListTemplatesAsync(string deviceId, CancellationToken ct = default) =>
+        Run(deviceId, link => link.CallAsync(ProviderTemplatesMethods.List, Unit.Value, ct));
 
     private static string Idem(string what) => $"providers.{what}:{Guid.NewGuid():N}";
 

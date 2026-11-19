@@ -215,6 +215,19 @@ public partial class NcwWidgetHost : UserControl
                 RememberHeight(key, height);
             }
         });
+        // 页面没消费的滚轮:交给 WebView 外的滚动容器(原生视图把滚轮整个吃掉了,不转交的话在小组件上滚不动转录)
+        bridge.Wheel += dy =>
+        {
+            // 页面消息本来就在 UI 线程上到达:直接滚,少一次排队(滚动跟手)
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                ForwardWheel(surface, dy);
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(() => ForwardWheel(surface, dy));
+            }
+        };
         bridge.Locked += () => Dispatcher.UIThread.Post(() => OnSurfaceFailed(WidgetSurfaceFailure.Crashed, "locked"));
 
         SurfaceSlot.Child = surface;
@@ -229,6 +242,14 @@ public partial class NcwWidgetHost : UserControl
             }
         };
         _readyTimer.Start();
+    }
+
+    private void ForwardWheel(NcwWidgetSurface surface, double dy)
+    {
+        if (ReferenceEquals(_surface, surface))
+        {
+            surface.ForwardWheel(dy);
+        }
     }
 
     private static async Task HandleMessageAsync(WidgetBridge bridge, string body)

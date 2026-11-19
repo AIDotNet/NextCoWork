@@ -38,7 +38,7 @@ public class WidgetHostTests
     public void Only_one_file_in_the_ui_project_touches_the_native_web_view()
     {
         var offenders = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src", "Ncw.UI"), "*.*", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && (f.EndsWith(".cs") || f.EndsWith(".axaml")))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && (f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".axaml", StringComparison.Ordinal)))
             .Where(f => File.ReadAllText(f).Contains("NativeWebView", StringComparison.Ordinal) || File.ReadAllText(f).Contains("Avalonia.Controls.WebView", StringComparison.Ordinal))
             .Select(Path.GetFileName)
             .Order()

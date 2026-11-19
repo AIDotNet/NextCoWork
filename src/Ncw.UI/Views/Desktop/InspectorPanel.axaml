@@ -88,62 +88,84 @@
       </ui:NcwDropdownMenu>
     </Grid>
 
+    <!--
+      各页按需创建(docs/design/03 §12):第一次切到某页时才建出它的控件,之后常驻(终端、Git 的界面状态要留着)。
+      没打开过的页不占样式 / 绑定的内存。
+    -->
     <!-- 文件管理器(默认) -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsFiles}" ui:NcwMotion.ShowMotion="Fade">
-      <insp:FilesPane DataContext="{Binding Files}" />
-    </Panel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsFiles}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <insp:FilesPane DataContext="{Binding Files}" />
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- Git -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsGit}" ui:NcwMotion.ShowMotion="Fade">
-      <insp:GitPane DataContext="{Binding Git}" />
-    </Panel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsGit}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <insp:GitPane DataContext="{Binding Git}" />
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- 改动审查 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsReview}" ui:NcwMotion.ShowMotion="Fade">
-      <insp:ReviewPane DataContext="{Binding Review}" />
-    </Panel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsReview}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <insp:ReviewPane DataContext="{Binding Review}" />
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- 终端 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsTerminal}" ui:NcwMotion.ShowMotion="Fade">
-      <insp:TerminalPane DataContext="{Binding Terminals}" />
-    </Panel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsTerminal}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <insp:TerminalPane DataContext="{Binding Terminals}" />
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- 上下文 -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding IsContext}" ui:NcwMotion.ShowMotion="Fade">
-      <StackPanel Margin="14,6,14,14" Spacing="14">
-        <StackPanel Spacing="8">
-          <TextBlock Classes="section" Text="{l:NcwText TabContext}" />
-          <Border Classes="card">
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsContext}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <ScrollViewer>
+          <StackPanel Margin="14,6,14,14" Spacing="14">
             <StackPanel Spacing="8">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="102K / 200K" />
-                <TextBlock Grid.Column="1" Classes="hint" Text="51%" />
-              </Grid>
-              <Grid ColumnDefinitions="51*,49*" Height="6">
-                <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
-                <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
-              </Grid>
+              <TextBlock Classes="section" Text="{l:NcwText TabContext}" />
+              <Border Classes="card">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="102K / 200K" />
+                    <TextBlock Grid.Column="1" Classes="hint" Text="51%" />
+                  </Grid>
+                  <Grid ColumnDefinitions="51*,49*" Height="6">
+                    <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
+                    <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
             </StackPanel>
-          </Border>
-        </StackPanel>
-        <StackPanel Spacing="8">
-          <TextBlock Classes="section" Text="{l:NcwText Todos}" />
-          <Border Classes="card">
-            <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText TodosPlaceholder}" />
-          </Border>
-        </StackPanel>
-      </StackPanel>
-    </ScrollViewer>
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="{l:NcwText Todos}" />
+              <Border Classes="card">
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText TodosPlaceholder}" />
+              </Border>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- 历史(M4 接入) -->
-    <StackPanel Grid.Row="1" Margin="14,16" Spacing="6" IsVisible="{Binding IsHistory}" ui:NcwMotion.ShowMotion="Fade">
-      <TextBlock Text="{l:NcwText TabHistory}" FontWeight="SemiBold" />
-      <TextBlock Classes="hint" Text="{l:NcwText HistoryPlaceholder}" TextWrapping="Wrap" />
-    </StackPanel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsHistory}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <StackPanel Margin="14,16" Spacing="6">
+          <TextBlock Text="{l:NcwText TabHistory}" FontWeight="SemiBold" />
+          <TextBlock Classes="hint" Text="{l:NcwText HistoryPlaceholder}" TextWrapping="Wrap" />
+        </StackPanel>
+      </DataTemplate>
+    </ui:NcwDeferred>
 
     <!-- 子代理:状态文案、计时、能否停止都来自 SubagentView.Of;点开看只读转录 -->
-    <Panel Grid.Row="1" IsVisible="{Binding IsSubagents}" ui:NcwMotion.ShowMotion="Fade">
-      <insp:SubagentsPane />
-    </Panel>
+    <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsSubagents}" ui:NcwMotion.ShowMotion="Fade">
+      <DataTemplate x:DataType="vm:InspectorViewModel">
+        <insp:SubagentsPane />
+      </DataTemplate>
+    </ui:NcwDeferred>
   </Grid>
 </UserControl>

@@ -18,7 +18,7 @@ namespace Ncw.UI.Tests;
 /// <summary>
 /// 设置页「关于」(自更新)的 Headless 截图(docs/design/04 §3、07 §3):典型状态(有新版本、下载中)× 四个断点(1500 / 1200 / 900 / 600)× 深浅主题;
 /// 其余状态(停用、检查中、已是最新、待重启、安装中、必需更新的宽限期与阻断、签名被篡改、网络失败、已知更新之上的检查失败、测试版通道)在宽屏深色和窄屏浅色各拍一张。
-/// 状态都经真实的 <see cref="UpdateService"/> + 假引擎 + 手动时钟走出来,不是手摆的。截图在 <c>bin/Debug/net10.0/screenshots/about-*.png</c>。
+/// 状态都经真实的 <see cref="UpdateService"/> + 假引擎 + 手动时钟走出来,不是手摆的。截图在 <c>bin/Debug/net11.0/screenshots/about-*.png</c>。
 /// </summary>
 public class AboutScreenshotTests
 {

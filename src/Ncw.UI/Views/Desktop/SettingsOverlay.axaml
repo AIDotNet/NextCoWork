@@ -50,7 +50,7 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <!-- 内容区各分区:撑满内容区,内容区最宽 760(Arc 的 ContentMaxWidthMD)、贴着列表栏(主从布局里详情从左边开始,不悬在中间) -->
-    <Style Selector=":is(UserControl).page">
+    <Style Selector="ui|NcwDeferred.page">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="VerticalAlignment" Value="Top" />
     </Style>
@@ -213,47 +213,86 @@
       </DockPanel>
     </Border>
 
-    <!-- ───── 内容:只显示当前分区(切换时淡入,滚回顶部) ───── -->
+    <!--
+      ───── 内容:只显示当前分区(切换时淡入,滚回顶部) ─────
+      各分区按需创建(docs/design/03 §12):第一次显示时才建出页面;搜索时一次建出全部(要收集文字);设置页关掉后全部释放。
+    -->
     <ScrollViewer x:Name="ContentScroll" Grid.Column="2" Margin="0,40,0,0" HorizontalScrollBarVisibility="Disabled">
       <Grid x:Name="SectionPages" Margin="32,8,32,48">
         <!-- 一列:撑满到 760 为止,多出来的留在右边 -->
         <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="760" /></Grid.ColumnDefinitions>
-        <desktop:AccountSettingsPage DataContext="{Binding Account}" Classes="page" Tag="{x:Static vm:SettingsSection.Account}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Account}}" />
-        <desktop:AppearanceSettingsPage DataContext="{Binding Appearance}" Classes="page" Tag="{x:Static vm:SettingsSection.Appearance}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Appearance}}" />
-        <desktop:ShortcutsSettingsPage DataContext="{Binding Shortcuts}" Classes="page" Tag="{x:Static vm:SettingsSection.Shortcuts}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Shortcuts}}" />
-        <desktop:NotificationsSettingsPage DataContext="{Binding Notifications}" Classes="page" Tag="{x:Static vm:SettingsSection.Notifications}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Notifications}}" />
-        <desktop:AboutSettingsPage DataContext="{Binding About}" Classes="page" Tag="{x:Static vm:SettingsSection.About}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.About}}" />
-        <m:GeneralSettingsPage DataContext="{Binding Pages.General}" Classes="page" Tag="{x:Static vm:SettingsSection.General}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.General}}" />
-        <models:ModelsDetail DataContext="{Binding Models}" Classes="page" Tag="{x:Static vm:SettingsSection.Models}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Models}}" />
-        <m:SkillsPage DataContext="{Binding Pages.Skills}" Classes="page" Tag="{x:Static vm:SettingsSection.Skills}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Skills}}" />
-        <m:CommandsPage DataContext="{Binding Pages.Commands}" Classes="page" Tag="{x:Static vm:SettingsSection.Commands}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Commands}}" />
-        <m:HooksPage DataContext="{Binding Pages.Hooks}" Classes="page" Tag="{x:Static vm:SettingsSection.Hooks}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Hooks}}" />
-        <m:McpPage DataContext="{Binding Pages.Mcp}" Classes="page" Tag="{x:Static vm:SettingsSection.Mcp}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Mcp}}" />
-        <m:PluginsPage DataContext="{Binding Pages.Plugins}" Classes="page" Tag="{x:Static vm:SettingsSection.Plugins}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Plugins}}" />
-        <desktop:RemoteSettingsPage DataContext="{Binding Remote}" Classes="page" Tag="{x:Static vm:SettingsSection.Remote}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Remote}}" />
-        <m:GatewayPage DataContext="{Binding Pages.Gateway}" Classes="page" Tag="{x:Static vm:SettingsSection.Gateway}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Gateway}}" />
-        <desktop:DevicesSettingsPage DataContext="{Binding Devices}" Classes="page" Tag="{x:Static vm:SettingsSection.Devices}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Devices}}" />
-        <m:UsagePage DataContext="{Binding Pages.Usage}" Classes="page" Tag="{x:Static vm:SettingsSection.Usage}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Usage}}" />
-        <m:StoragePage DataContext="{Binding Pages.Storage}" Classes="page" Tag="{x:Static vm:SettingsSection.Storage}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Storage}}" />
-        <m:ProjectSettingsPage DataContext="{Binding Pages.Project}" Classes="page" Tag="{x:Static vm:SettingsSection.Project}" ui:NcwMotion.ShowMotion="Fade"
-             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Project}}" />
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Account}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Account}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:AccountSettingsPage DataContext="{Binding Account}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Appearance}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Appearance}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:AppearanceSettingsPage DataContext="{Binding Appearance}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Shortcuts}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Shortcuts}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:ShortcutsSettingsPage DataContext="{Binding Shortcuts}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Notifications}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Notifications}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:NotificationsSettingsPage DataContext="{Binding Notifications}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.About}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.About}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:AboutSettingsPage DataContext="{Binding About}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.General}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.General}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:GeneralSettingsPage DataContext="{Binding Pages.General}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Models}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Models}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><models:ModelsDetail DataContext="{Binding Models}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Skills}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Skills}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:SkillsPage DataContext="{Binding Pages.Skills}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Commands}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Commands}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:CommandsPage DataContext="{Binding Pages.Commands}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Hooks}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Hooks}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:HooksPage DataContext="{Binding Pages.Hooks}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Mcp}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Mcp}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:McpPage DataContext="{Binding Pages.Mcp}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Plugins}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Plugins}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:PluginsPage DataContext="{Binding Pages.Plugins}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Remote}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Remote}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:RemoteSettingsPage DataContext="{Binding Remote}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Gateway}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Gateway}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:GatewayPage DataContext="{Binding Pages.Gateway}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Devices}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Devices}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><desktop:DevicesSettingsPage DataContext="{Binding Devices}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Usage}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Usage}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:UsagePage DataContext="{Binding Pages.Usage}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Storage}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Storage}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:StoragePage DataContext="{Binding Pages.Storage}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Project}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Project}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:ProjectSettingsPage DataContext="{Binding Pages.Project}" /></DataTemplate>
+        </ui:NcwDeferred>
       </Grid>
     </ScrollViewer>
 

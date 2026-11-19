@@ -128,7 +128,12 @@
 - **文件预览 / 编辑(文件标签页)**:点文件树 / 搜索结果里的文件,在主工作区标签栏新开一个文件标签(已打开就切过去),盖在会话上;标签上有未保存的修改时显示一个点,关闭前先确认。文件页签只负责「点了哪个」(`IFileTabHost`,由 `WorkspaceViewModel` 实现),重命名 / 删除时关掉对应标签。哪个文件标签在前台是按项目记的纯 UI 状态,选中了别的会话就让位给会话。预览自己实现:Markdown 默认渲染、可切源码(编辑时一定是源码),状态栏显示语言 / 行数 / 大小,「更多」菜单有复制路径 / 显示 / 用默认程序打开 / 另存为。内容规则:≤ 2 MiB 的 UTF-8 文本一次读完,`Arc.CodeBlock` 只读着色显示;编辑用多行输入框(没有 Arc 的代码编辑组件),保存带读到的 `Revision`,对不上(`files.conflict`)时不丢编辑内容,让用户选「重新载入」或「保留我的修改」;更大的文本按 256 KiB 一块 `files.readRange` 读,只读;二进制 / 非 UTF-8 / 过大只提示,可「另存为」;图片(≤ 16 MiB)显示。「在文件管理器中显示 / 用默认程序打开 / 另存为 / 复制路径」是客户端本机的动作(`ILocalFiles`),只对「本机设备 + 本机环境」的项目开放「显示 / 打开」。
 - **终端**:本机和 SSH 项目同一条握手路径。键盘输入「没有写在途就立刻发,写在途期间的输入合成下一个命令」(`TerminalInputPump`,单次 ≤ 64 KiB,写失败丢弃攒着的输入而不是重放),大小变化只发最新的(`TerminalResizePump`)。设备断开时标签是「未知」(不判成结束、不接受输入、没有计时),重连后由连接层按游标续传(补发错过的批,续不上就整个缓冲重置显示);已退出的终端终态压过一切。
 - **子代理转录**:点开才订阅子会话(子 Run 还在跑时再订阅 `run/<childRunId>`),行由和主对话同一个 `TranscriptBuilder` 从 Store 派生;只靠回执重建的旧卡片(没有子会话 id)点不开,给明确的提示而不是静默没反应。
-- **输入区**:`@` 弹出项目文件候选(`files.suggest`,候选里已选的不再出现),选中后变成输入框上方的文件引用 chip,发送时作为 `InputPartKinds.File` 块(项目相对路径)和正文一起发出(排队 / 插话同样);`/` 弹出设备上的命令清单(`commands.list`,带说明),内置命令还没接入的保持占位;以 `/` 开头的草稿发送前先展开(Core 的 `CommandExpansion`,失败不静默地当普通文本发出)。
+- **输入区**:`@` 弹出项目文件候选(`files.suggest`,候选里已选的不再出现),选中后变成输入框上方的文件引用 chip,发送时作为 `InputPartKinds.File` 块(项目相对路径)和正文一起发出(排队 / 插话同样);`/` 弹出内置的本地动作 + 设备上的命令清单(`commands.list`,带说明;键盘上下移动高亮,Tab 补全,Enter 补全——已经打全了命令名时 Enter 直接执行);以 `/` 开头的草稿发送前先展开(Core 的 `CommandExpansion`,失败不静默地当普通文本发出)。
+  **内置本地动作**(`ComposerSlash`,2.x `Composer.tsx` 的 `localActions`):它们改的是会话状态或客户端选择,提示词展开表达不了,所以在提交时被拦下、**从不**作为文本发给模型(运行中也不进队列);和内置同名的磁盘命令不列出(执行不到)。
+  `/goal <完成条件>` → `goal.set`(`GoalActions`;条件规则同 Core 的 `GoalConditions`,清除词 `/goal clear|stop|off…` → `goal.clear`,只敲 `/goal` 给用法、草稿留成 `/goal `);
+  `/compact [侧重点]` → `context.compact`(`ConversationActions.CompactAsync`,只能在空闲时;进行中输入框显示「正在压缩」并禁止提交;边界经 `history.reset` 回到转录;`nothingToCompact` 只是告知);
+  `/model [名称]` → 精确匹配显示名 / 别名 / `供应商/别名`,再唯一子串,有歧义不猜;切换走和模型菜单同一个意图(`PickModel` → `sessions.setModel`);不带名字打开模型菜单;
+  `/clear` → 在当前项目开一个新会话(⌘N 同一个意图,旧会话原样保留)。结果提示是结构化的 `SlashNotice`(界面翻译);被拒绝时草稿还给用户。
 - **窄窗口**:检查器在 ≥ 1440 的宽度停靠(偏好 `IsInspectorOpen`);< 1440(1024–1440 和更窄)时右上角的检查器开关 / ⌘⌥I 打开的是**右侧抽屉**:盖在工作区上、靠右、宽度同检查器宽度,有遮罩(点遮罩关闭,和左侧抽屉共用一个遮罩),带滑入 / 滑出动效(§9)。抽屉开着与否是纯 UI 状态(`ShellViewModel.IsInspectorDrawerOpen`,不持久化,不改停靠偏好;窗口宽到能停靠时自动收掉)。
 
 ## 2. 响应式断点
@@ -229,6 +234,14 @@ record ProjectAppearance(ProjectRef Ref, string? Icon, string? Color, string? Al
   此前空名字 / 空类型直接进了行:本机的行也画出了标识,文字是「本机 · 」(悬空的点)。文字与「要不要画在行上」只有一份规则 `EnvBadge`(工具行与可视化卡片共用)。
 - **思考块**:只有透传载体、没有文字的思考块(redacted / 加密推理条目,有的上游每一步都发一个)**不进转录**——此前每一个都画成一行「思考了 0 秒」、展开是空的。
   标题三选一:流式中「思考中…」、有耗时「思考了 N 秒」(耗时由 Agent 记,见 [08.01](08-agent-runtime/01-llm.md))、量不出耗时(旧消息)只写「思考」。
+  **展开后的正文**(`NcwThinkingView`,2026-11):思考可能有几万字而且是流式长出来的,原来一个 `SelectableTextBlock` 装全文,每个增量整段重新排版(长会话里展开着流 16 KB 时每帧 40 多毫秒,随长度线性变慢)。现在:
+  - **限高** 240(`NcwThinkingView.MaxBodyHeight`),超出的在框里滚动;转录的高度估算同样封顶(`TranscriptHeights`,只量前 4000 字);
+  - **只建看得见的**:正文按换行切成段落块(超过 1000 字的段落在附近的空白 / 标点处再切,切点多一个换行),放进虚拟化列表;
+  - **增量**:新文字是旧文字的延续时只重切最后一块(替换最后一项、追加新项),前面的块不动;折叠着(看不见、不测量)时不切块,展开时一次补上;
+  - **跟随**:流式中停在最新内容;用户往上翻(滚动位置往上变)就不再跟,翻回底部恢复;已结束的思考展开时从头显示。
+    跟随看滚动位置本身的变化而不是 `ScrollChanged`(后者在布局后合并发出,用户往上翻和同一轮里的跟随会合成一个事件);虚拟化列表修正范围时也重新贴底。
+  - 每段是单独的可选中文字,选中不能跨段(思考是辅助信息,可以接受)。
+  测试:`Ncw.UI.Tests/ThinkingViewTests.cs`。
 - **跟随最新**(`TranscriptFollow`,纯状态机,单测直接驱动;`ConversationView` 只接线):**只认用户意图,不从偏移变化里猜**。
   虚拟化列表按估算高度排布,行被实例化后总高度和偏移都会自己漂(往上、往下,甚至漂到底),WebView 卡片报高、展开动画也一样;旧实现把「偏移往上变了」当成用户往上翻,于是会无故停止跟随,或在用户翻看时把视图拽回底部。现在:
   - 停止跟随:用户往上滚(滚轮 / 触控板向上且还没到顶、PageUp / ↑ / Home、拖滚动条往上)、展开一行、定位到某一行。
@@ -248,12 +261,16 @@ record ProjectAppearance(ProjectRef Ref, string? Icon, string? Color, string? Al
   - **没做**:回滚到这一轮(`review.undo`,要先定「只回代码 / 只回对话」的交互)、灯箱里的「另存为 / 复制图片」、助手回复里生成图片的显示。
 - **输入框**的状态机是纯函数 `ComposerLogic`:空闲时发送;运行中有文字则排队(`queue.enqueue`)或「立即插话」(`runs.steer`),没文字则停止;已排队的消息可以逐条「插话」(`queue.promote` 开关)或移除;
   设备断开 / 只读角色 / 没有模型时不能发送。发送失败不丢草稿。模型候选来自设备算好的 `providers.models.list`(含上下文窗口、图片 / 思考能力,停用的显示为不可用),
-  权限档位 `full` 只有 owner 可选,思考档位随模型声明的强度收窄。`@` 文件引用和 `/` 斜杠命令目前是占位(files.* 协议接入后出候选)。
+  权限档位 `full` 只有 owner 可选,思考档位随模型声明的强度收窄。`@` 文件引用出 `files.suggest` 的候选;`/` 斜杠命令见上文「输入区」(内置本地动作 + 设备命令清单)。
   - **模型的记忆**(2026-11 修复「选了模型不持久化、重开总是第一个」):真源是会话上的 `Model` / `ModelProviderId`(设备)。
     选模型 = `ConversationActions.SetModelAsync` 一个意图:`sessions.setModel` 记在会话上;owner 还顺带 `settings.project.update` 写成这个项目新会话的默认模型
     (2.x 的「药丸写回工作区默认值」;不是 owner 或写失败只记在会话上,不打断用户)。新建会话没指定模型时,设备按**项目默认 → 设备默认**整对取(和定时任务同一条规则),都没配留空。
     输入框显示哪个:会话上记住的变了(换会话、快照到、写回推回来、别的控制端改了)就跟它走;没变就保留刚才的选择(写回在路上 / 失败);上一个会话的选择不带到下一个会话;
     都没有才兜底第一个可用的。**兜底结果不写成项目默认值**(2.x 同样),但会话上还没记模型时发出的第一条会把真正用的那个记在会话上。
+  - **权限档位的记忆与跟随**(2026-11 修复「右下角权限选择不持久化、不跟随会话与项目」):真源是会话上的 `PermissionMode`(`sessions.json` 里的 `permissionMode`,缺省 `ask`,不动 schema)。
+    选权限档位 = `ConversationActions.SetPermissionModeAsync` 一个意图:`sessions.setPermissionMode` 记在会话上并同步重打排队里未消费消息的权限标签;
+    若当前有正在跑的顶层 Run 且是 owner,顺带调 `runs.setPermissionMode` 切实时 Run 的档位;owner 还顺带 `settings.project.update` 写成这个项目新会话的默认权限档位。
+    新建会话没指定权限档位时,设备按**项目默认 → 设备默认**继承(member 新建会话时若继承到 `full` 则夹紧为 `ask`)。输入框切换会话或收到推送时按会话记住的 `PermissionMode` 同步并按角色夹紧。
 - **输入框版式**(2026-11 重设计,方案 A「精修单卡」,原型 `docs/design/mockups/composer-options.html`):
   - 一张卡片:书写区是 Arc 的 `TokenTextEditor`(封装 `NcwTokenEditor`,它不画自己的框),只留卡片的描边;焦点在卡片内任何位置时整张卡片描边加深(`:focus-within`)。
   - **文件引用和命令是草稿里的 token**:选中 `@` 候选,草稿末尾的 `@查询` 换成 `@文件名 `(和已引用的文件重名时写项目相对路径),开头的已知 `/命令 ` 也是 token;
@@ -361,7 +378,7 @@ iOS / Android 宿主项目、相机、推送令牌、附件选择器是平台能
 
 - `Ncw.Core.Tests.ActivityInboxTests`:聚合、分组、排序、断线语义。
 - `Ncw.Client.Tests/Mobile`:`HoldGestureTests`(时间可注入)、`InboxViewModelTests`(聚合与排序、先到先得、断线、点进去定位)、`QrPairingTests`(状态机与 `DeviceActions.PairWithQrAsync`)、`AttachmentTrayTests`、`PushViewModelTests`、`MobileNavigationTests`、`DevicesAndComposerTests`(设备页、带附件发送、长按允许与版本变化)。
-- `Ncw.UI.Tests.MobileScreenshotTests`:截图在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/mobile-*.png`,断言外壳按宽度切换、页面结构、长按进度、触控版式、导航栈同步。
+- `Ncw.UI.Tests.MobileScreenshotTests`:截图在 `tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/mobile-*.png`,断言外壳按宽度切换、页面结构、长按进度、触控版式、导航栈同步。
 
 ## 8. 内联可视化(M8:WebView 评估与渲染宿主)
 
@@ -442,6 +459,7 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 | 页面 → 宿主(`invokeCSharpAction`) | `ready` | 外壳就绪(宿主关上导航放行窗口并推送) |
 | | `height` | 内容下沿(未钳制) |
 | | `call` | `{id, method, args}`:`setState` / `submit` / `runAction` / `openUrl` |
+| | `wheel` | `{dy}`:页面没消费的滚轮(CSS 像素,正 = 往下;3.0 新增,见 §8.5「滚轮」) |
 | 宿主 → 页面(`__ncwHost.recv`) | `content` / `theme` / `loading` / `env` / `reply` / `viewport` | 内容、主题 token、加载提示、环境(状态 / 数据 / 交互 / 已提交 / 动作清单)、调用结果、可见段起点(3.0 新增,见 §8.5「裁剪」) |
 
 `window.ncw`(冻结):`getState()` / `setState(v)`(↔ `widgets.getState` / `setState`)、`submit(v)`(↔ `widgets.submit`,仅 `interactive` 卡)、`runAction(id, params)`(↔ `widgets.runAction`,先弹确认框)、`openUrl(url)`、`getData()` / `onData(cb)`(↔ `visualize_update_widget`)、`actions()` / `isInteractive()` / `isSubmitted()` / `title()`。**没有 `sendPrompt()`**(同 2.x)。调用返回 Promise,失败 reject 一个带稳定英文码的 `Error`:`offline` / `unavailable` / `closed` / `not_interactive` / `already_submitted` / `declined` / `rate_limited` / `forbidden` / `invalid` / `unsupported` / `failed` / 校验码(`bad-args` / `unknown-method` / `state-too-large`……)/ 设备给的 `widgets.action.*`。
@@ -469,7 +487,16 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
   报高量的是 `#ncw-root` 的下沿 + `scrollY`,和视口大小、滚动位置无关。因此高度上限从 2.x 的 1400(超出在 WebView 里滚)放宽到 4000(只挡失控的上报,超出部分不显示)。
 - 完全看不见、或**横向**被裁(侧栏滑动时;页面宽度跟着 WebView,横向裁剪会让内容重排)就整个隐藏(页面不销毁)。
 - 卡片上次报上来的高度按「设备 + 会话 + 调用」记住(最多 256 张):虚拟化把卡片滚出去会销毁 WebView,滚回来重建时直接用上次的高度,不再先占 120 再跳(那一跳会带着列表总高度和滚动位置一起跳)。
-- **未在真机上验证**:可见段起点由脚本异步推给页面,快速滚动时卡片上沿可能有一帧内容错位;WKWebView 在页面不可滚动时是否把滚轮交还给 Avalonia(在小组件上滚动能否滚动转录)。需要在真窗口里目测。
+- **未在真机上验证**:可见段起点由脚本异步推给页面,快速滚动时卡片上沿可能有一帧内容错位。需要在真窗口里目测。
+
+**滚轮**(2026-11 修复,真机上鼠标停在小组件上滚不动转录):原生视图把滚轮事件整个吃掉,页面不可滚动时 WKWebView 也**不会**把它交还给 Avalonia(真机确认)。处理:
+- 外壳脚本在 `window` 上被动监听 `wheel`(从不 `preventDefault`),把**页面没有消费**的那部分交给宿主:`ncw:widget:wheel {dy}`(页面 → 宿主,3.0 新增,`WidgetMessages.Wheel`;行 / 页模式换算成像素)。
+  不交的:目标的祖先里有还能朝这个方向滚的元素(`overflow: auto / scroll`,滚到头之后才交,和浏览器的滚动链一致)、被页面脚本 `preventDefault`(图表缩放;分发完才判断)、双指缩放(`ctrlKey`)。
+  同一批事件合成一条,下一个任务就发(不等 rAF,少半帧延迟)。
+- 桥:滚轮是短消息,先解析;走**自己的令牌桶**(突发 240、240/s),超额直接丢、**不算违规**,不占报高的全局额度,滚得再快也不会把桥锁死。页面伪造滚轮最多能滚动转录,碰不到任何状态。
+- 宿主:`NcwWidgetSurface.ForwardWheel` 先冒泡 `WheelForwardedEvent`(转录据此把它当作用户滚动:往上翻就停止跟随最新,和真实滚轮同一条规则),没人标 `Handled` 就滚最近的 `ScrollViewer`(钳在范围内);控件不显示(空域挂起)或 WebView 整个被裁掉时丢弃。
+- 验证:桥的单测(校验、独立额度、不锁死)、Headless(滚动、钳制、先冒泡、不显示时丢弃)、真实 WKWebView 冒烟 `wheel-forwarded`(可滚的子元素 / `preventDefault` / 双指缩放留给页面,其余交出,行模式换算)。
+  真实触控板 → WKWebView → 转录的整条链路要在真窗口里目测(冒烟里的滚轮是脚本合成的事件)。
 
 ### 8.6 状态管理七条规则怎么落的
 
@@ -718,7 +745,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 
 背景全部是 Arc token(`Background`、`Border`、`Foreground`、`TextSecondary`、`TextMuted`、`Danger`),深浅两套主题都对,没有任何颜色值;文字全部走 `NcwTextKind`(43 条,中英文齐全),不依赖具体字体宽度(清单和说明都会换行)。
 
-- **标识**:中间是 NextCoWork 的品牌图标(2.x 的应用图标,`src/Ncw.UI/Assets/nextcowork-mark.png`,256 px,圆角方块自带透明边距,方块本身约 55 px;作为 `AvaloniaResource` 随程序集发布);失败时换成 `Danger` 色的 `TriangleAlert`。外壳左上角目前仍是 Lucide `Sparkles` 的占位图形,和这里不一致,换标识时一起换。外圈是 `NcwProgressArc`:弧长 = `Fraction`(已经走完了多少个阶段 / 接管步骤),走 Arc 的 `Smooth` 弹簧(无回弹,被打断时从当前位置接着走);减弱 / 关闭级别 Arc 让弹簧直接跳到终点。**还在等的整个期间**(`IsIndeterminate` = `Phase == Loading`)再叠一小段短弧,用 `NcwMotion.Busy=Spin` 旋转:弧长只表示「走完了几步」,一步本身要多久是不知道的(真实的 1.6 GB 库上接管的「备份」一步实测 37 秒,这期间弧长一动不动),所以短弧一直转,证明还在干活而不是进度条停住了(减弱级别是 Arc 的「忙」明暗呼吸,关闭级别不画——静止的一段弧会被误读成进度)。失败时外圈换成 `Danger` 色、中间换成 `TriangleAlert`。
+- **标识**:采用超维晶格核心(`Hyper-Tesseract`,由 `NcwProgressArc` 自绘):外圈是 `NcwProgressArc`,弧长 = `Fraction`(已经走完了多少个阶段 / 接管步骤),走 Arc 的 `Smooth` 弹簧(无回弹,被打断时从当前位置接着走);圆环内部实时投影 16 顶点的 4D 超正方体线框,点亮的晶格节点比例同样严格等于 `Fraction`。**还在等的整个期间**(`IsIndeterminate` = `Phase == Loading`),4D 晶格经 Arc `LiveLoop` 在 XW / ZW 双平面连续旋转,外圈再叠一小段带拖尾的扫描短弧用 `NcwMotion.Busy=Spin` 旋转:弧长只表示「走完了几步」,一步本身要多久是不知道的(真实的 1.6 GB 库上接管的「备份」一步实测 37 秒,这期间弧长一动不动),而一段不动的弧挨着一段在转的短弧会被误读成「卡住了」,所以**还在等的期间不画进度弧**(`ShowArc` = `!IsIndeterminate`;`DisplayProgress` 与晶格点亮比例照常随真实进度走),只留晶格旋转与转动的短弧证明还在干活,进度由点亮的晶格节点和清单表示;等待结束(失败 / 数据需要用户处理 / 全部完成)时进度弧才画出来;减弱级别下晶格与短弧都停转、换成 Arc 的「忙」明暗呼吸(`ArcBusyPulse`),弧长直接跳到终点;关闭级别下晶格静止在固定倾角、短弧不画(静止的一段弧会被误读成进度)——三档的最终状态完全一致。失败时外圈与晶格换成 `Danger` 色、中心叠放 `TriangleAlert`。
 - **清单**:每个阶段一行。已完成的打勾(勾的容器用 `NcwMotion.IsPresent` 淡入,遵守动效级别)并淡色;当前阶段最亮、加粗、前面是转圈图标;后续阶段暗淡。当前阶段下面是一行说明(接管时用和数据页同一套步骤文字)。**行的透明度变化是立刻的**,故意没有用 Avalonia 样式的 `Transitions`:淡出结束时覆盖层会被摘出界面树,而样式过渡在控件离开界面树时仍被时钟驱动(Headless 下复现过 `NullReferenceException`)。
 - **数据接管**:说明下面有四段小条,点亮的段数 = 真实的步骤序号(锁存,只增不减)。
 - **慢启动**:一行温和的提示(`NcwMotion.IsPresent` 上移 + 淡入),文字按当前阶段区分(Agent / 数据 / 内容 / 通用),不是错误。
@@ -792,7 +819,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 | Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(73 条,含主密钥拒绝的两个原因) |
 | Client | ViewModel + Store + Recorder + 真实的 DataGate:延迟出现、最短停留、淡出触发、释放后零通知、失败面板与重试、复制诊断、退出、数据页让位与交回、接管步骤与数据页同源、手机形态、`DeviceLink.RetryNow`;变异检查 | `Ncw.Client.Tests/StartupViewModelTests`(33 条) |
 | Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(9 条,含主密钥原因的映射);守护的 65 / 78 不重启、原因映射、重试恢复在 `SidecarSupervisorTests`,真实进程在 `RealAgentMasterKeyTests` |
-| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、主密钥缺失 / 无法使用、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(71 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
+| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、主密钥缺失 / 无法使用、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(71 条),截图在 `bin/Debug/net11.0/screenshots/startup-*.png` |
 | 真实启动(无界面) | 真实 `ncw-agent`(NativeAOT)+ 真实守护 + 真实 DeviceLink + 真实 Store:时间线(冷 / 热 / 接上)、故障注入、真实 2.x 库副本接管 | `dotnet run --project tools/StartupSmoke -- timeline|faults|takeover --agent <ncw-agent>`(结果见 §10.11) |
 | 真窗口(macOS) | 原生窗口底色读回、第一帧像素、帧间隔、淡出布局稳定、释放后空闲 CPU | `dotnet run --project tools/StartupSmoke -- window --agent <ncw-agent>`(结果见 §10.6) |
 
@@ -932,7 +959,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 - **错误码对上了**:Agent 写进消息和 Run 终态的错误码是 `MessageCodec.CodeName` 那一套(`auth` / `rate_limit` / `context_length` / `network` / `provider` / `cache_unsupported` / `no_healthy_provider` / `conflict` / `tool_failed` / `aborted`),
   界面原来只认 `rate_limited` / `context_overflow` 两个(对不上),其余一律把设备的英文诊断原样显示。现在 `ErrorTextConverter.Text(code, messageKey)` 每个码一句人话(早期的别名照认,`run.*` 消息 key 也翻),认不出来给通用说明;
   原文(错误码 · 诊断串)收在卡片的「详情」里,可选中复制。
-- **同一次失败只画一张**:失败的 Run 会把错误写进最后一条助手消息(持久化的 error 块),Run 终态也带着它;派生转录时(`TranscriptBuilder`)紧挨着的那条消息错误让给 Run 的那一张(它能重试)。
+- **同一次失败只画一张**:失败的 Run 会把错误写进最后一条助手消息(持久化的 error 块),Run 终态也带着它;派生转录时(`TranscriptBuilder`)紧挨着的那条消息错误让给 Run 的那一张(它能重试)。Run 的那一张**只给这个会话最近的一个 Run**:之后又跑了 Run(成功或还在跑),旧的失败只剩消息里的 error 块、留在它发生的位置,不再钉在转录末尾(Store 不清理收口的 Run);收口的 Run 镜像里没落库的调用(被丢弃的消息、被改写的历史)也不再画到末尾。
 - **能做的事**:可重试的有「重试」;`auth` / `no_healthy_provider` / `cache_unsupported` 是供应商配置问题,给「供应商设置」直达(`ConversationViewModel.ProviderSettingsRequested` → 外壳打开设置的「模型与供应商」)。
 - **没有可用的模型**:输入框里那行提示旁边直接给「添加供应商」按钮(同一个意图)。
 - **空会话(2026-11-17 改版:输入框居中)**:空会话时**输入框在视觉中心**(大多数人一上来就打字,视线落点就是输入框),发出第一条消息后回到底部,和有内容的会话一样。
@@ -959,7 +986,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 ### 11.6 设置页瘦身
 
 - **搜索**(07 §3 原则 4,此前没做):导航顶上一个搜索框,在每个分区的全部文字(分区名、每一项的名字和说明)里找;匹配和排序是纯函数 `SettingsSearch.Find`(每个词都要在同一分区出现,分区名命中的在前),
-  文字由设置页从界面树上按当前语言收集(`SettingsOverlay.BuildSearchIndex`,不另维护一份「哪个设置在哪」的表,页面改了文字搜索自动跟着变)。结果浮在导航上,每条是「分区名 + 命中的那一句」,点一下跳过去。
+  文字由设置页从界面树上按当前语言收集(`SettingsOverlay.BuildSearchIndex`,不另维护一份「哪个设置在哪」的表,页面改了文字搜索自动跟着变;分区页按需创建,搜索时先把没建的分区全部建出来,见 §12)。结果浮在导航上,每条是「分区名 + 命中的那一句」,点一下跳过去。
 - **骨架占位**:分区第一次打开才读数据(2026-11 起一次只显示一个分区,见 07「布局」);没读过 / 读取中的分区原来只有标题,看起来像空的或坏了,现在画三条淡色骨架(`ManagementPageViewModel.IsIdle`、`PageStatus`)。
 - **「通用」先常用后高级**:「常用」(默认模型、默认权限档位)和「个性化指令」在上面;辅助模型、目标与 Shell、账号轮换与故障转移、压缩、超时与上限、代理收进「高级」(点开才出现,纯 UI 状态)。
   调整时发现一个潜在缺陷:辅助模型下拉框在数据到达之前回写的空值会被当成用户的选择写进设备(改成「跟随默认」);原来因为下拉框在不可见的 ItemsControl 里没实例化而没暴露。
@@ -991,3 +1018,34 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 - **手机远程链路**(云端 Agent、推送、默认中继):依赖还不存在的后端,不在这一批。
 - **Windows / Linux 的系统通知与角标**(§11.2):需要真机,如实报告不支持。
 - **真实的系统通知横幅、Dock 角标、托盘菜单、关窗后藏到菜单栏**:没有自动化测试(要图形会话和打包好的 .app),只验证了代码路径和界面层。
+
+## 12. 按需创建(内存)
+
+2026-11 测量(macOS,Release 桌面端刚启动、只看主界面):托管堆约 74 MB,其中大头不是数据,是 Avalonia + Arc 的界面对象——每个控件都带着一串样式实例(`StyleInstance` / `StyleClassActivator`)和资源表达式(`DynamicResourceExpression`,Arc token 都是动态资源)。
+控件 `IsVisible=false` 只是不测量、不绘制,样式和绑定照样在,所以**看不见的整页内容常驻,和看得见的一样占内存**。当时常驻的看不见的部分:设置的 18 个分区页全部建好、只靠 `IsVisible` 切换(为了让设置搜索能从界面树上收文字),检查器的 7 个页同样如此,首次使用引导也一直在。
+
+规则:**整块的、多数时候看不见的内容按需创建**,用 `Ncw.UI.Controls.NcwDeferred`:
+
+- 内容写在 `<ui:NcwDeferred><DataTemplate x:DataType="…">…</DataTemplate></ui:NcwDeferred>` 里,`x:DataType` 是宿主所在处的 DataContext 类型;宿主照旧绑定 `IsVisible`、`ui:NcwMotion.ShowMotion`、`Tag`。
+- **第一次被测量时建出内容**:看不见的控件(自己或任何祖先不可见)不会被测量,所以「第一次被测量」就是「真的要显示了」——祖先变为可见(检查器栏展开、设置页打开)也能触发,不需要另外监听可见性。
+- 建出来以后跟着宿主显示 / 隐藏;`Release()` 丢掉内容回到空壳,`Realize()` 不看可见性直接建出内容。什么时候释放由使用方决定。
+- 模板内容在定义它的 XAML 里加载,资源查找沿用原来的位置;不要为了「省一份样式」去掉视图自己合并的 `NcwTheme` / `NcwStyles`(检查器各页的 XAML 在加载时要从 `InspectorPanel` 合并的那份里查资源,去掉后配色全丢,2026-11 试过并撤回)。
+
+现在用在:
+
+| 位置 | 何时建 | 何时释放 |
+|---|---|---|
+| 设置的各分区页(`SettingsOverlay`) | 分区第一次显示时;**搜索时一次建出全部**(搜索索引仍从界面树上收文字,§11.6) | 设置页关闭、退出动画放完(`IsPresent` 把 `IsVisible` 置为假)时全部释放,下次打开重建 |
+| 检查器的各页(`InspectorPanel`) | 第一次切到该页时 | 不释放(终端、Git、审阅的界面状态要留着) |
+| 首次使用引导(`OnboardingOverlay`) | 引导打开时 | 不释放(只出现一次) |
+
+配套:`SettingsViewModel` 在查询为空时不建搜索索引(关设置时清空搜索框不能把刚释放的页面又建回来)。
+
+按需创建后页面在数据**之后**才建,暴露了三处原来被「页面一启动就建好」掩盖的问题(2026-11 逐像素比对全部截图发现,已修):
+- 插件提示卡的文字语言:界面语言是插件页创建时才告诉 ViewModel 的,之前到达的提示按 en-US 建好后,语言变了也不重建(运行中切换语言同样如此)。现在 `PluginsViewModel.Locale` 变化时重建提示。
+- 项目设置的「保存 / 还原」:下拉框在创建时先回写空值再写回原值,`Dirty` 原来是「动过就算」。现在按值和读到的设置比较(`ProjectSettingsViewModel.Edit`)。
+- 管理页的 `IsReadOnly`(= 内容在显示 且 不能写)在 `State` 变化时没有通知:离线 / 只读时原来会多出一条过时的「设备没有连接。」,MCP 空列表的空状态原来不显示。补上通知后新旧一致。
+
+效果(headless 外壳 1500×860、mock 数据,`GC.GetTotalMemory` 前后差):外壳托管内存 88 MB → 41 MB,逻辑树节点 3145 → 987。
+
+测试:`Ncw.UI.Tests/DeferredContentTests.cs`(祖先变可见时建、建过不重复建、释放后重建;设置页只建显示过的分区、搜索时建全部、关闭后释放且**被释放的页面能被 GC 回收**(防止开关设置累积泄漏);检查器只建切到过的页)。

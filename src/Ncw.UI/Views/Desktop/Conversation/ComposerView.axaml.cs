@@ -62,6 +62,7 @@ public partial class ComposerView : UserControl
         {
             _vm.PropertyChanged -= OnViewModelChanged;
             _vm.DraftReplaced -= OnDraftReplaced;
+            _vm.ModelMenuRequested -= OnModelMenuRequested;
             _vm.SlashCommands.CollectionChanged -= OnSlashCommandsChanged;
             _vm.Models.CollectionChanged -= OnCollectionChanged;
             _vm.ThinkingChoices.CollectionChanged -= OnCollectionChanged;
@@ -73,6 +74,7 @@ public partial class ComposerView : UserControl
         {
             _vm.PropertyChanged += OnViewModelChanged;
             _vm.DraftReplaced += OnDraftReplaced;
+            _vm.ModelMenuRequested += OnModelMenuRequested;
             _vm.SlashCommands.CollectionChanged += OnSlashCommandsChanged;
             _vm.Models.CollectionChanged += OnCollectionChanged;
             _vm.ThinkingChoices.CollectionChanged += OnCollectionChanged;
@@ -87,6 +89,10 @@ public partial class ComposerView : UserControl
     /// <summary>选中了文件 / 命令:光标放到末尾并取回焦点(点候选行时焦点在弹层里的按钮上)。</summary>
     private void OnDraftReplaced(object? sender, EventArgs e) =>
         Avalonia.Threading.Dispatcher.UIThread.Post(() => Input.MoveCaretToEnd(focus: true));
+
+    /// <summary><c>/model</c> 没带名字:打开模型菜单(和点模型按钮一样)。</summary>
+    private void OnModelMenuRequested() =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => ModelMenu.Open());
 
     /// <summary>命令清单到了:文字没变也要重新解析一次,开头的 <c>/命令 </c> 才会变成 token。</summary>
     /// <summary>⌘L:把焦点放进输入框,光标到末尾。</summary>
@@ -203,6 +209,25 @@ public partial class ComposerView : UserControl
                     e.Handled = true;
                     return;
                 case Key.Enter or Key.Tab when !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && picker.AcceptSuggestion():
+                    e.Handled = true;
+                    return;
+            }
+        }
+
+        // `/` 菜单打开时:上下移动高亮,Tab 补全高亮的命令;Enter 也补全,除非已经打全了一个命令名(那就是要执行它)
+        if (_vm is { HasSlashQuery: true } slash)
+        {
+            switch (e.Key)
+            {
+                case Key.Down:
+                    slash.MoveSlash(1);
+                    e.Handled = true;
+                    return;
+                case Key.Up:
+                    slash.MoveSlash(-1);
+                    e.Handled = true;
+                    return;
+                case Key.Tab or Key.Enter when !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && slash.AcceptSlash(enter: e.Key == Key.Enter):
                     e.Handled = true;
                     return;
             }

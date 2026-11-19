@@ -389,7 +389,7 @@ public sealed class SubagentTests : IAsyncLifetime
         Assert.DoesNotContain(list, a => a.Name == "broken");
 
         var diagnostics = (await client.CallAsync(OrchestrationMethods.SubagentsDiagnostics, new SubagentsListParams(project.WorkspaceId))).Diagnostics;
-        Assert.Contains(diagnostics, d => d.Key == "agents.descriptionMissing" && d.Path.EndsWith("broken.md"));
+        Assert.Contains(diagnostics, d => d.Key == "agents.descriptionMissing" && d.Path.EndsWith("broken.md", StringComparison.Ordinal));
 
         // 启用状态进了下一个 Run 的 Task 工具描述
         _llm.On(session.Id, S.Say("one"), S.Say("two"));

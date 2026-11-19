@@ -269,7 +269,7 @@ public class ComposerFileRefTests
     }
 
     [Fact]
-    public async Task Slash_lists_the_device_commands_with_descriptions_and_keeps_the_builtin_placeholders()
+    public async Task Slash_lists_the_device_commands_with_descriptions_next_to_the_builtin_actions()
     {
         var (composer, _, _) = Create();
 
@@ -284,7 +284,7 @@ public class ComposerFileRefTests
         Assert.True(review.IsAvailable);
         Assert.Equal("Review the current diff", review.Description);
         Assert.Equal("[path]", review.ArgumentHint);
-        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: false }); // 内置命令还没接入:占位
+        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: true, Action: SlashAction.Compact }); // 内置的本地动作
         Assert.True(composer.HasSlashQuery);
 
         composer.Draft = "/rev";

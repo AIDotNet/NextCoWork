@@ -146,6 +146,19 @@ public class WidgetBridgeTests
     public void A_height_must_be_a_number(string body) =>
         Assert.Equal("bad-height", Assert.IsType<WidgetRejected>(WidgetInboundParser.Parse(body)).Reason);
 
+    [Theory]
+    [InlineData("{\"type\":\"ncw:widget:wheel\",\"dy\":\"10\"}")]
+    [InlineData("{\"type\":\"ncw:widget:wheel\"}")]
+    [InlineData("{\"type\":\"ncw:widget:wheel\",\"dy\":null}")]
+    [InlineData("{\"type\":\"ncw:widget:wheel\",\"dy\":10001}")]
+    [InlineData("{\"type\":\"ncw:widget:wheel\",\"dy\":-1e9}")]
+    public void A_wheel_delta_must_be_a_bounded_number(string body) =>
+        Assert.Equal("bad-wheel", Assert.IsType<WidgetRejected>(WidgetInboundParser.Parse(body)).Reason);
+
+    [Fact]
+    public void A_wheel_message_carries_the_delta_in_css_pixels() =>
+        Assert.Equal(-123.45, Assert.IsType<WidgetWheel>(WidgetInboundParser.Parse($"{{\"type\":\"{WidgetMessages.Wheel}\",\"dy\":-123.45}}")).DeltaY);
+
     [Fact]
     public void Heights_are_clamped_by_the_host_so_a_widget_cannot_blow_up_the_transcript()
     {
@@ -237,6 +250,7 @@ public class WidgetBridgeTests
         public WidgetFacts Facts { get; set; } = new(WidgetCall.Done, true, false, false, false, false);
         public WidgetBridge Bridge { get; }
         public List<double> Heights { get; } = [];
+        public List<double> Wheels { get; } = [];
         public int Readies { get; private set; }
 
         public Rig()
@@ -245,6 +259,7 @@ public class WidgetBridgeTests
             Bridge = new WidgetBridge(new WidgetRef("local", "s1", "c1"), new WidgetActions(new DeviceRegistry()), Confirm, () => Launch,
                 () => new WidgetBridgeContext(Facts, []), Posts.Add, Clock);
             Bridge.HeightChanged += Heights.Add;
+            Bridge.Wheel += Wheels.Add;
             Bridge.Ready += () => Readies++;
         }
 
@@ -312,6 +327,32 @@ public class WidgetBridgeTests
         Assert.Equal(before, rig.Heights.Count);
         Assert.Empty(rig.Posts);
         Assert.Equal(1, locked);
+    }
+
+    [Fact]
+    public async Task Wheel_messages_reach_the_host_on_their_own_budget_and_never_lock_the_bridge()
+    {
+        var rig = new Rig();
+        var wheel = $"{{\"type\":\"{WidgetMessages.Wheel}\",\"dy\":42.5}}";
+        await rig.Bridge.HandleAsync(wheel);
+        Assert.Equal([42.5], rig.Wheels);
+
+        // 一口气滚很多帧:超出自己那个桶的滚轮被丢掉,但不算违规、不占报高的额度
+        for (var i = 0; i < 2000; i++)
+        {
+            await rig.Bridge.HandleAsync(wheel);
+        }
+
+        Assert.InRange(rig.Wheels.Count, 200, 260);
+        Assert.Equal(0, rig.Bridge.Strikes);
+        Assert.False(rig.Bridge.IsLocked);
+        await rig.Bridge.HandleAsync($"{{\"type\":\"{WidgetMessages.Height}\",\"height\":80}}");
+        Assert.Equal([80], rig.Heights);
+
+        // 坏的滚轮消息照常算违规
+        await rig.Bridge.HandleAsync($"{{\"type\":\"{WidgetMessages.Wheel}\",\"dy\":\"x\"}}");
+        Assert.Equal(1, rig.Bridge.Strikes);
+        Assert.Empty(rig.Posts);
     }
 
     [Fact]

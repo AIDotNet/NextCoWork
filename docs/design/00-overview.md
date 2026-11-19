@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-1. **3.0 整个技术栈都用 C#(.NET 10)**:客户端、Agent、中继服务、插件运行时、构建和发布工具全部用 C# 实现,
+1. **3.0 整个技术栈都用 C#(.NET 11;2026-11 从 .NET 10 升级)**:客户端、Agent、中继服务、插件运行时、构建和发布工具全部用 C# 实现,
    仓库里不再有 Node / TypeScript 运行时依赖。需要执行 JS 的地方(插件)一律用 [Jaunt](https://github.com/AIDotNet/Jaunt)。
    - 客户端:Avalonia 12(≥ 12.1.5,< 13)+ TKCode.Arc(锁定正式版 `1.1.0`,Avalonia 锁定 `12.1.5`),一套代码覆盖
      macOS / Windows / Linux / iOS / Android。浏览器(WASM)先不做,但架构上不堵死。

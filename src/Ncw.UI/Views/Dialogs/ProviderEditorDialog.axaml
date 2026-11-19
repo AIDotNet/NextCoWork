@@ -1,0 +1,218 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Dialogs.ProviderEditorDialog"
+             x:DataType="vm:ProviderEditorViewModel">
+  <!--
+    「添加 / 编辑供应商」窗口的内容(docs/design/07 §3「添加供应商」;标题、按钮由 NcwDialogService 的 Arc Dialog 提供,窗口宽 640):
+    第一步是模版网格(顶部可能有「去导入」的提示、搜索、按分组的卡片,最后一组带「自定义」);第二步是表单(logo + 名字 + 地址、API Key 或本机说明、高级字段)。
+    中间这块自己滚动(最大高度由 code-behind 按窗口高度算),标题和按钮不动。
+  -->
+  <UserControl.Styles>
+    <!-- 模版卡片:PlainButton 的模板不画描边,描边和底色画在里面这层 Border 上 -->
+    <Style Selector="ui|PlainButton.templateCard">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+    </Style>
+    <Style Selector="ui|PlainButton.templateCard:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ui|PlainButton.templateCard Border.face">
+      <Setter Property="Padding" Value="10,9" />
+      <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+    </Style>
+    <Style Selector="ui|PlainButton.templateCard:pointerover Border.face">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
+    </Style>
+    <Style Selector="TextBlock.groupTitle">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+      <Setter Property="LetterSpacing" Value="0.4" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer x:Name="Body" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
+    <Panel>
+      <!-- ── 第一步:选模版 ── -->
+      <StackPanel x:Name="PickStep" Spacing="14" IsVisible="{Binding IsPickStep}">
+        <Border CornerRadius="{arc:ArcDesignTokenResource RadiusControl}" Padding="12,8" Background="{arc:ArcDesignTokenResource AccentSubtle}"
+                IsVisible="{Binding ShowsDiscoveryBanner}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+            <lucide:LucideIcon Kind="Import" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="{Binding DiscoverableCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderDiscoveryBanner}" />
+            <ui:NcwButton x:Name="DiscoveryButton" Grid.Column="2" Variant="Ghost" Command="{Binding GoToDiscoveryCommand}" Content="{l:NcwText ProviderDiscoveryBannerAction}" />
+          </Grid>
+        </Border>
+
+        <ui:NcwInput x:Name="SearchInput" Text="{Binding Query, Mode=TwoWay}" Placeholder="{l:NcwText ProviderTemplateSearch}"
+                     AutomationProperties.Name="{l:NcwText ProviderTemplateSearch}" />
+
+        <ItemsControl x:Name="GroupList" ItemsSource="{Binding Groups}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="16" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProviderTemplateGroupView">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="groupTitle" Text="{Binding Key, Converter={x:Static cv:TemplateGroupTextConverter.Instance}}" />
+                <ItemsControl ItemsSource="{Binding Items}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <!-- 列数随窗口宽度(code-behind 按内容宽度设:≥ 560 三列,否则两列) -->
+                      <UniformGrid Columns="{Binding $parent[UserControl].Tag, FallbackValue=3}" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProviderTemplateItem">
+                      <ui:PlainButton Classes="templateCard" Margin="0,0,8,8"
+                                      Command="{Binding $parent[UserControl].((vm:ProviderEditorViewModel)DataContext).PickCommand}" CommandParameter="{Binding}"
+                                      AutomationProperties.Name="{Binding Converter={x:Static cv:TemplateItemTextConverter.Instance}, ConverterParameter=Title}">
+                        <Border Classes="face">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                          <Panel Width="32" Height="32" VerticalAlignment="Center">
+                            <ui:NcwProviderLogo Classes="tile" Width="32" Height="32" Service="{Binding Service}" IsVisible="{Binding !IsCustom}"
+                                                FallbackText="{Binding Name}" />
+                            <Border Width="32" Height="32" CornerRadius="8" BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
+                                    IsVisible="{Binding IsCustom}">
+                              <lucide:LucideIcon Kind="Plus" Size="15" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                            </Border>
+                          </Panel>
+                          <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                            <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding Converter={x:Static cv:TemplateItemTextConverter.Instance}, ConverterParameter=Title}" />
+                            <TextBlock Classes="hint" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding Converter={x:Static cv:TemplateItemTextConverter.Instance}, ConverterParameter=Subtitle}" />
+                          </StackPanel>
+                        </Grid>
+                        </Border>
+                      </ui:PlainButton>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 搜不到 -->
+        <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,12" IsVisible="{Binding HasNoResults}">
+          <TextBlock Classes="hint" HorizontalAlignment="Center" Text="{l:NcwText ProviderTemplateNoResults}" />
+          <ui:NcwButton HorizontalAlignment="Center" Variant="Secondary" Command="{Binding PickCustomCommand}" Content="{l:NcwText ProviderTemplateUseCustom}" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- ── 第二步:表单 ── -->
+      <StackPanel x:Name="FormStep" Spacing="14" IsVisible="{Binding IsFormStep}">
+        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+          <ui:NcwButton x:Name="BackButton" Classes="icon" Variant="Ghost" VerticalAlignment="Center" Command="{Binding BackCommand}" IsVisible="{Binding ShowsBack}"
+                        IsEnabled="{Binding CanEditId}" AutomationProperties.Name="{l:NcwText ProviderEditorBack}" arc:Tooltip.Tip="{l:NcwText ProviderEditorBack}">
+            <lucide:LucideIcon Kind="ChevronLeft" Size="16" />
+          </ui:NcwButton>
+          <Panel Grid.Column="1" Width="40" Height="40">
+            <ui:NcwProviderLogo Classes="tile" Width="40" Height="40" Service="{Binding Template.Service}" FallbackText="{Binding Name}" IsVisible="{Binding !IsCustom}" />
+            <Border Width="40" Height="40" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}" IsVisible="{Binding IsCustom}">
+              <lucide:LucideIcon Kind="Server" Size="18" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            </Border>
+          </Panel>
+          <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                         Text="{Binding Name}" />
+              <Border Classes="chip" IsVisible="{Binding Template.Variant, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
+                <TextBlock Classes="hint" Text="{Binding Template.Variant, Converter={x:Static cv:TemplateVariantTextConverter.Instance}}" />
+              </Border>
+            </StackPanel>
+            <TextBlock Classes="hint" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding BaseUrl}" />
+          </StackPanel>
+        </Grid>
+
+        <!-- API Key(只写不读) -->
+        <StackPanel Spacing="6" IsVisible="{Binding NeedsKey}">
+          <ui:NcwInput x:Name="KeyInput" Label="{l:NcwText ProviderApiKey}" Text="{Binding ApiKey, Mode=TwoWay}" PasswordChar="•"
+                       AutomationProperties.Name="{l:NcwText ProviderApiKey}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton x:Name="KeyUrlButton" Variant="Ghost" Padding="0,0,10,0" IsVisible="{Binding HasKeyUrl}" arc:Tooltip.Tip="{Binding KeyUrl}">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Accent}" Text="{l:NcwText ProviderEditorGetKey}" />
+                <lucide:LucideIcon Kind="ExternalLink" Size="11" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+              </StackPanel>
+            </ui:NcwButton>
+            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsNew}" Text="{l:NcwText ProviderEditorKeyStored}" />
+            <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !IsNew}" Text="{l:NcwText ProviderApiKeyHint}" />
+          </WrapPanel>
+        </StackPanel>
+
+        <!-- 本机服务:不要 key -->
+        <Border Classes="card" IsVisible="{Binding IsLocalService}" Background="{arc:ArcDesignTokenResource SurfaceMuted}" BorderThickness="0">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <lucide:LucideIcon Kind="Info" Size="14" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock FontWeight="SemiBold" Text="{l:NcwText ProviderEditorLocalTitle}" />
+              <TextBlock Classes="hint" Text="{Binding Name, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ProviderEditorLocalHint}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- 高级:选了模版的新建默认折起来 -->
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <ui:PlainButton x:Name="AdvancedToggle" Padding="12,9" CornerRadius="12" Command="{Binding ToggleAdvancedCommand}" IsVisible="{Binding CanCollapseAdvanced}">
+              <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
+                <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding ShowAdvanced}" Kind="ChevronDown" Size="14" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{l:NcwText ProviderEditorAdvanced}" />
+                <TextBlock Grid.Column="2" Classes="hint" HorizontalAlignment="Right" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}">
+                  <Run Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" />
+                  <Run Text=" · " />
+                  <Run Text="{Binding AdvancedSummary}" />
+                </TextBlock>
+              </Grid>
+            </ui:PlainButton>
+            <ui:NcwCollapsible x:Name="Advanced" IsOpen="{Binding ShowAdvanced}">
+              <StackPanel Spacing="10" Margin="12,10,12,12">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                  <ui:NcwInput x:Name="NameInput" Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText ProviderName}" />
+                  <ui:NcwInput Grid.Column="1" Text="{Binding Id, Mode=TwoWay}" Label="{l:NcwText ProviderId}" IsEnabled="{Binding CanEditId}" />
+                </Grid>
+                <ui:NcwInput x:Name="UrlInput" Text="{Binding BaseUrl, Mode=TwoWay}" Label="{l:NcwText ProviderBaseUrl}" Placeholder="https://api.example.com/v1" />
+                <ui:NcwSelect x:Name="ProtocolSelect" Label="{l:NcwText ProviderProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{l:NcwText ProviderEnabled}" />
+                    <TextBlock Classes="hint" Text="{l:NcwText ProviderEnabledHint}" />
+                  </StackPanel>
+                  <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
+                </Grid>
+              </StackPanel>
+            </ui:NcwCollapsible>
+          </StackPanel>
+        </Border>
+
+        <!-- 保存前 / 写入失败 -->
+        <TextBlock IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                   Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
+
+        <!-- 存好了但连接测试没过:可以改了再试,或保留并关闭 -->
+        <Border Classes="card danger" IsVisible="{Binding TestFailed}" ui:NcwMotion.ShowMotion="Fade" Background="{arc:ArcDesignTokenResource DangerSubtle}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" x:Name="TestFailedText" />
+            <ui:NcwButton x:Name="KeepButton" Grid.Column="1" Variant="Secondary" VerticalAlignment="Center" Command="{Binding KeepCommand}" Content="{l:NcwText ProviderEditorKeep}" />
+          </Grid>
+        </Border>
+      </StackPanel>
+    </Panel>
+  </ScrollViewer>
+</UserControl>

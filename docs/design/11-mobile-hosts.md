@@ -10,8 +10,8 @@ iOS 宿主仍然只有设计(§9),本机没有可用的 iOS 验证条件。
 
 ```
 src/
-├─ Ncw.Mobile.Shared/     # net10.0:不依赖任何平台 workload 的宿主共用逻辑(在 NextCoWork.slnx 里,有单测)
-├─ Ncw.Mobile.Android/    # net10.0-android:Android 宿主(只在 NextCoWork.Mobile.slnx 里)
+├─ Ncw.Mobile.Shared/     # net11.0:不依赖任何平台 workload 的宿主共用逻辑(在 NextCoWork.slnx 里,有单测)
+├─ Ncw.Mobile.Android/    # net11.0-android:Android 宿主(只在 NextCoWork.Mobile.slnx 里)
 └─ (Ncw.Mobile.iOS/)      # 还没有
 tests/Ncw.Mobile.Shared.Tests/   # 44 个单测,随 `dotnet test NextCoWork.slnx` 跑
 tools/Ncw.MobileSmoke/           # 模拟器冒烟的桌面一侧(开发 / CI 工具,默认不跑)
@@ -20,7 +20,7 @@ tools/Ncw.MobileSmoke/           # 模拟器冒烟的桌面一侧(开发 / CI �
 > 命名:[01 §2](01-architecture.md) 里原来写的是 `Ncw.Android` / `Ncw.iOS`,改为 `Ncw.Mobile.iOS` / `Ncw.Mobile.Android`。
 
 依赖规则和桌面一样:宿主**只引用 `Ncw.UI`、`Ncw.Client` 和 `Ncw.Mobile.Shared`**,**不能**引用任何 `Ncw.Agent.*`、不能引用 `Ncw.Desktop`;手机不跑 Agent(02 A4)。
-`Ncw.Mobile.Shared` 引用 `Ncw.UI`(为了 `INcwBackend`),所以它不是「纯逻辑」库,但不依赖 Android / iOS 的 workload,`dotnet build NextCoWork.slnx` 在任何装了 .NET 10 SDK 的机器上都能覆盖它。
+`Ncw.Mobile.Shared` 引用 `Ncw.UI`(为了 `INcwBackend`),所以它不是「纯逻辑」库,但不依赖 Android / iOS 的 workload,`dotnet build NextCoWork.slnx` 在任何装了 .NET 11 SDK 的机器上都能覆盖它。
 
 **解决方案拆分**:`NextCoWork.slnx` 不含 Android 宿主(没有 workload 的机器上会构建失败);`NextCoWork.Mobile.slnx` = 共享项目 + `Ncw.Mobile.Shared` + `Ncw.Mobile.Android` + 它的测试,由有 workload 的 CI 任务单独构建。
 
@@ -41,7 +41,7 @@ tools/Ncw.MobileSmoke/           # 模拟器冒烟的桌面一侧(开发 / CI �
 
 | 文件 | 内容 |
 |---|---|
-| `Ncw.Mobile.Android.csproj` | `net10.0-android`、minSdk 26、`work.nextco.ncw`、64 位(默认只出 `android-arm64`,`-p:NcwAndroidRids="android-arm64;android-x64"` 加 x86_64)、`EmbedAssembliesIntoApk`(调试也嵌入,否则 `adb install` 装出来的包启动即崩)、只保留 en / zh-Hans 卫星资源、去掉 `TKCode.Arc.Terminal` 带来的 glibc 版 `libghostty-vt.so`;有 `google-services.json` 才引用 Firebase(§4) |
+| `Ncw.Mobile.Android.csproj` | `net11.0-android`、minSdk 26、`work.nextco.ncw`、64 位(默认只出 `android-arm64`,`-p:NcwAndroidRids="android-arm64;android-x64"` 加 x86_64)、`EmbedAssembliesIntoApk`(调试也嵌入,否则 `adb install` 装出来的包启动即崩)、只保留 en / zh-Hans 卫星资源、去掉 `TKCode.Arc.Terminal` 带来的 glibc 版 `libghostty-vt.so`;有 `google-services.json` 才引用 Firebase(§4) |
 | `NcwAndroidApplication` | `AvaloniaAndroidApplication<NcwApp>`:在 Application 创建之前设置 `NcwApp.BackendFactory` / `MobileHostFactory`,`UseNcw()`(和桌面同一个 `NcwAppSetup`) |
 | `MainActivity` | `AvaloniaMainActivity`(单视图,根视图是 `AdaptiveShell`):`nextcowork://` 的 intent-filter、`OnNewIntent`、前后台事件、权限 / 选择器结果;`ConfigurationChanges` 全部自己处理(旋转、折叠、深浅色、软键盘、语言、字体缩放),Activity 不重建 |
 | `Platform/AndroidHost` | 装配与全局状态(私有目录、通知渠道、后端工厂、监督器) |
@@ -70,7 +70,7 @@ NcwApp.MobileHostFactory = () => new MobileHostServices { QrScanner = scanner, P
 | 项 | 做法 | 位置 | 大小 | 回退 |
 |---|---|---|---|---|
 | .NET Android workload | 在仓库目录(SDK 10.0.401 / 特性带 10.0.400)里 `dotnet workload install android`(workload set 模式;`Microsoft.Android.Sdk` 35.0.105 + `Microsoft.Android.Ref.36` 36.1.118 + 各 RID 的运行时包 / AOT 交叉编译包) | `~/.dotnet/packs/`、`~/.dotnet/sdk-manifests/`、`~/.dotnet/metadata/workloads/10.0.400/` | `~/.dotnet` 由 16 GB 变成 19 GB(约 +3 GB) | `dotnet workload uninstall android`(在仓库目录里执行,即 10.0.400 带) |
-| JDK 17 | `dotnet build -t:InstallAndroidDependencies -f net10.0-android -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=$HOME/Library/Developer/Xamarin/jdk -p:AcceptAndroidSDKLicenses=True`(Microsoft OpenJDK 17.0.14) | `~/Library/Developer/Xamarin/jdk` | 309 MB | 删这个目录 |
+| JDK 17 | `dotnet build -t:InstallAndroidDependencies -f net11.0-android -p:AndroidSdkDirectory=$HOME/Library/Android/sdk -p:JavaSdkDirectory=$HOME/Library/Developer/Xamarin/jdk -p:AcceptAndroidSDKLicenses=True`(Microsoft OpenJDK 17.0.14) | `~/Library/Developer/Xamarin/jdk` | 309 MB | 删这个目录 |
 | Android SDK 平台与构建工具 | 同一条命令按 workload 的要求**只新增**:`platforms/android-36`、`build-tools/36.0.0`(已有的 `android-37.0`、`build-tools/37.0.0`、`cmdline-tools`、`emulator`、`platform-tools`、`system-images` 一个字节没动,安装前后逐个核对了 `package.xml` 的 MD5) | `~/Library/Android/sdk/platforms/android-36`、`…/build-tools/36.0.0` | 134 MB + 188 MB | 删这两个目录 |
 | 测试用 AVD `ncw_test` | `avdmanager create avd -n ncw_test -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_6`(用已有的系统镜像,镜像目录只读;**没有碰** `arc_video_test`) | `~/.android/avd/ncw_test.avd`、`ncw_test.ini` | 2.9 GB(运行过之后;用户数据分区) | `avdmanager delete avd -n ncw_test`(或删这两个) |
 | NuGet 缓存 | `Avalonia.Android`、`ZXing.Net`、AndroidX / Kotlin 绑定等 | `~/.nuget/packages/` | 几十 MB | `dotnet nuget locals all --clear` 会清掉所有项目的缓存(慎用) |
@@ -131,7 +131,7 @@ emulator -avd ncw_test -no-snapshot -no-audio -no-window -no-boot-anim -gpu host
 adb emu kill
 ```
 
-`global.json` 钉的是 SDK 10.0.401,workload 必须装在这一个特性带(10.0.400)上(§2 的误操作就是在仓库外用了别的 SDK)。
+`global.json` 钉的是 SDK 11.0.100(2026-11 从 10.0.401 升级),workload 必须装在这一个特性带(11.0.100)上(§2 的误操作就是在仓库外用了别的 SDK)。本机 11.0.100 带已装 android 37.2.31 / ios 27.2.11039;上表 §2 的安装记录是 10.0.400 带时期的。
 `dotnet build NextCoWork.slnx` 不依赖 Android workload,零警告。
 
 ## 6. 设计里的几个决定和在模拟器上发现的问题
@@ -253,7 +253,7 @@ NCW_ANDROID_SMOKE=1 dotnet run --project tools/Ncw.MobileSmoke -- serve     # �
 ## 10. Release 构建与裁剪
 
 ```bash
-dotnet publish src/Ncw.Mobile.Android -c Release -f net10.0-android -o <输出目录> -p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…   # 约 2 分 10 秒
+dotnet publish src/Ncw.Mobile.Android -c Release -f net11.0-android -o <输出目录> -p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…   # 约 2 分 10 秒
 ```
 
 - Release 默认开启程序集裁剪(ILLink)+ R8,APK 约 **27 MB**(Debug 嵌入程序集约 53 MB)。用的是调试证书签名,**不是发布签名**(Play 上传密钥 / 应用签名没有做)。
