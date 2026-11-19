@@ -262,7 +262,8 @@ public sealed class CatalogProvidersTests : IAsyncLifetime
         await _owner.CallAsync(CatalogMethods.OverrideRemove, new CatalogModelRefParams("anthropic", "claude-test-1"));
         Assert.Empty((await _owner.CallAsync(CatalogMethods.OverridesList, Unit.Value)).Overrides);
         Assert.Equal("Claude Test 1", (await _owner.CallAsync(CatalogMethods.Get, new CatalogGetParams("anthropic", "claude-test-1"))).Model!.Name);
-        Assert.Empty(topic.Decoded<CatalogTopicState>(CatalogEvents.Changed).Last().Overrides);
+        // 主题的增量和调用的返回值走两条路:返回了不代表「覆盖已清空」那条增量已经到了(Windows CI 上撞到过两次),所以等它
+        await topic.WaitAsync(() => topic.Decoded<CatalogTopicState>(CatalogEvents.Changed).LastOrDefault() is { } last && !last.Overrides.Any(), "the catalog topic to show no overrides");
 
         // 目录供应商列表不带模型
         var providers = await _owner.CallAsync(CatalogMethods.Providers, Unit.Value);

@@ -235,7 +235,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `extensions` | `skills.*`、`mcp.*`、`plugins.*`、`hooks.*` |
 | `settings` / `usage` / `schedules` / `storage` / `search` / `attachments` / `composer` / `widgets` / `gateway` / `websearch` | **M4 已实现**,见下面的「杂项 Agent 服务」 |
 | `diagnostics` | `diagnostics.logs`(stream)、`diagnostics.bundle` |
-| `data` | `data.status`(query,viewer)、`data.retry`(command,owner,仅本机通道)。数据没就绪时,依赖数据的方法返回 `unavailable`(可重试) |
+| `data` | `data.status`(query,viewer)、`data.retry`(command,owner,仅本机通道;状态是 `rolled-back` 时表示用户要求重新迁移)。数据没就绪时,依赖数据的方法返回 `unavailable`(可重试)。回退到 2.x(04 §5,都是 owner + 仅本机通道):`data.rollbackInfo`(query:能不能回退、有没有已登记的请求)、`data.requestRollback`(command:只登记,Agent 关库之后执行;参数必须确认数据损失,否则 `invalid_request` + key `data.rollback.notAcknowledged`;不能回退时 key `data.rollback.unavailable`)、`data.cancelRollback`(command)。`data` 主题的状态新增 `rolled-back`(协议仍是 v1:只新增方法、载荷类型和一个状态值,黄金向量 `GoldenV1DataRollback`) |
 | `cloud` / `git.credentials` | `cloud.getStatus`(query,viewer)、`cloud.clearInterrupted`(command,member):云端设备的状态、配额、用量和被休眠打断的 Run,**只有 `--mode cloud` 的设备注册并声明能力 `cloud`**(**已实现**,见下面「云端」)。`git.credentials.set` / `remove` / `list`(owner;令牌只进不出,能力 `git.credentials`,两种模式都注册) |
 | `account` / `push` | `account.attachDelegatedToken` / `detachDelegatedToken` / `getStatus`(**已实现**,仅本机通道,见下面「账户委托」)、`push.register`(**已实现**,见 §10) |
 

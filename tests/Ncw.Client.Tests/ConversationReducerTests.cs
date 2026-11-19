@@ -86,6 +86,61 @@ public class ConversationReducerTests
         Assert.Equal((RunPhase.Done, 6L), (older.Runs[Run].Phase, older.Runs[Run].Seq));
     }
 
+    /// <summary>
+    /// 快照的返回值和推送的事件走两条路,返回值可以比它之后的事件晚到(Windows CI 上撞到过:Run 已经收口,流式文本却留着)。
+    /// 迟到的旧快照只能补上镜像里没有的东西:已经被 <c>message_end</c> 清掉的流式文本不能回来,已经结束的工具不能变回运行中。
+    /// </summary>
+    [Fact]
+    public void A_late_snapshot_does_not_bring_back_streaming_text_or_a_running_tool_that_newer_events_already_finished()
+    {
+        var state = WithSession();
+        state = Apply(state, 1, new RunStartEventDto("r1", "s1", "sonnet"));
+        state = Apply(state, 2, new ToolStartEventDto("c1", "Write", "{}", new EnvRefDto(Device, "local", "Local", "local")));
+        state = Apply(state, 3, new MessageDeltaEventDto("m1", 0, "text", "All done."));
+        state = Apply(state, 4, new ToolEndEventDto("c1", "ok", null, false, null, null, false, 5));
+        state = Apply(state, 5, new MessageEndEventDto(Msg("m1"), null, null, "endTurn"));
+        state = Apply(state, 6, new RunEndEventDto("done"));
+        Assert.Empty(state.Runs[Run].Streaming);
+
+        // 在第 3 个事件那一刻拍的快照,现在才到
+        var late = ConversationReducer.ApplyRunSnapshot(state, Device, Snapshot("running", 3,
+            new SeqEventDto(1, new RunStartEventDto("r1", "s1", "sonnet")),
+            new SeqEventDto(2, new ToolStartEventDto("c1", "Write", "{}", new EnvRefDto(Device, "local", "Local", "local"))),
+            new SeqEventDto(3, new MessageDeltaEventDto("m1", 0, "text", "All done."))), 3);
+
+        var view = late.Runs[Run];
+        Assert.Equal((RunPhase.Done, 6L), (view.Phase, view.Seq));
+        Assert.Empty(view.Streaming);
+        Assert.Equal(ToolCallStatus.Done, view.Tools["c1"].Status);
+        Assert.Single(late.Sessions[Session].Messages);
+    }
+
+    /// <summary>
+    /// 「编辑并重发 / 重新生成」先把历史截断,再起新的一轮。上一轮 Run 的快照这时才到的话,不能把已经被截断掉的回复重新塞回会话:
+    /// 镜像早就收过这些事件(序号不大于已收到的 = 重放),快照里的它们同样不该再作用到会话上。
+    /// Windows CI 上撞到过:会话里是「旧回复 | 问题 | 新回复」三条。
+    /// </summary>
+    [Fact]
+    public void A_late_snapshot_of_a_finished_run_does_not_put_back_messages_that_were_truncated_since()
+    {
+        var state = WithSession();
+        state = Apply(state, 1, new RunStartEventDto("r1", "s1", "sonnet"));
+        state = Apply(state, 2, new MessageEndEventDto(Msg("old-reply"), null, null, "endTurn"));
+        state = Apply(state, 3, new RunEndEventDto("done"));
+        Assert.Single(state.Sessions[Session].Messages);
+
+        // 重新生成:历史被截断,新的一轮写进了新的提问
+        state = ConversationReducer.ApplyHistoryReset(state, Device, new SessionPageDto(Meta(), [Msg("question", "user")], false, [], [], []));
+
+        var late = ConversationReducer.ApplyRunSnapshot(state, Device, Snapshot("done", 3,
+            new SeqEventDto(1, new RunStartEventDto("r1", "s1", "sonnet")),
+            new SeqEventDto(2, new MessageEndEventDto(Msg("old-reply"), null, null, "endTurn")),
+            new SeqEventDto(3, new RunEndEventDto("done"))), 3);
+
+        Assert.Equal(["question"], late.Sessions[Session].Messages.Select(m => m.Id));
+        Assert.Equal(RunPhase.Done, late.Runs[Run].Phase);
+    }
+
     [Fact]
     public void Starting_a_run_gives_an_immediate_running_mirror_that_the_first_events_then_extend()
     {

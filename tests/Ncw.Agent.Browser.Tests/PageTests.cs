@@ -42,6 +42,8 @@ public sealed class PageTests : IAsyncLifetime
         Assert.Equal("about:blank", Assert.Single(_server.Of("Target.createTarget")).Str("url"));
         Assert.True(Assert.Single(_server.Of("Target.attachToTarget")).Params.GetProperty("flatten").GetBoolean());
         var metrics = Assert.Single(_server.Of("Emulation.setDeviceMetricsOverride"));
+        // 每个页面都开焦点模拟:没有焦点的页面收不到按键(同一个浏览器里只有一个页面真的有焦点)
+        Assert.True(Assert.Single(_server.Of("Emulation.setFocusEmulationEnabled")).Params.GetProperty("enabled").GetBoolean());
         Assert.Equal((1280, 720), ((int)metrics.Num("width")!, (int)metrics.Num("height")!));
         Assert.All(_server.Of("Page.enable").Concat(_server.Of("Emulation.setDeviceMetricsOverride")), r => Assert.Equal(_page.SessionId, r.SessionId));
     }

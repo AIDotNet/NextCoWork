@@ -65,7 +65,20 @@ public sealed class SingleInstance : IAsyncDisposable, IDisposable
         }
 
         var instance = new SingleInstance(pipeName, held, onMessage);
-        instance._loop = Task.Run(instance.RunAsync);
+        // 第一个监听在这里同步造好:返回时管道已经存在,紧接着启动的第二个进程不会因为监听循环还没被线程池调度到而连不上
+        // (满载的 Windows CI 上,3 秒的转发期限内循环都没开始过)。
+        NamedPipeServerStream first;
+        try
+        {
+            first = instance.Create();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            instance._loop = Task.FromException(e); // 和原来在循环里失败一样:仍然是主实例,只是收不到转发
+            return instance;
+        }
+
+        instance._loop = Task.Run(() => instance.RunAsync(first));
         return instance;
     }
 
@@ -96,9 +109,9 @@ public sealed class SingleInstance : IAsyncDisposable, IDisposable
     private NamedPipeServerStream Create() =>
         new(_pipe, PipeDirection.In, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
-    private async Task RunAsync()
+    private async Task RunAsync(NamedPipeServerStream first)
     {
-        var current = Create();
+        var current = first;
         try
         {
             while (!_cts.IsCancellationRequested)

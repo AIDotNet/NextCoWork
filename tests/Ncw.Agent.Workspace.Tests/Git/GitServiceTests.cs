@@ -464,7 +464,8 @@ public sealed class GitServiceTests
     public async Task A_command_that_exceeds_its_timeout_is_reported_as_a_timeout()
     {
         using var repo = InitialRepo();
-        var options = new GitServiceOptions { Timeouts = new GitTimeouts { Read = TimeSpan.FromMilliseconds(1) } };
+        // 1 个 tick:计时器在命令起来的那一刻就已经到期。写成 1 毫秒时,够快的机器上 git 会抢在计时器之前跑完(Linux 上撞到过)。
+        var options = new GitServiceOptions { Timeouts = new GitTimeouts { Read = TimeSpan.FromTicks(1) } };
 
         var e = await Fails(() => repo.Service(options: options).OverviewAsync());
 

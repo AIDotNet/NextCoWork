@@ -20,7 +20,8 @@ public sealed class ManagementPages
         Func<IDialogService> dialogs,
         Func<IUrlLauncher> launcher,
         TimeProvider clock,
-        IPluginsCommands? plugins = null)
+        IPluginsCommands? plugins = null,
+        IDataRollbackCommands? rollback = null)
     {
         Scope = new SettingsScope(stores);
         General = new GeneralSettingsViewModel(Scope, stores, settings);
@@ -30,7 +31,7 @@ public sealed class ManagementPages
         Hooks = new HooksViewModel(Scope, stores, hooks);
         Mcp = new McpViewModel(Scope, stores, mcp);
         Usage = new UsageViewModel(Scope, usage, clock);
-        Storage = new StorageViewModel(Scope, stores, storage, settings, dialogs, clock);
+        Storage = new StorageViewModel(Scope, stores, storage, settings, dialogs, clock, rollback);
         Gateway = new GatewayViewModel(Scope, stores, gateway, settings, launcher);
         Plugins = new PluginsViewModel(Scope, stores, plugins ?? UnavailablePluginsCommands.Instance, dialogs);
     }

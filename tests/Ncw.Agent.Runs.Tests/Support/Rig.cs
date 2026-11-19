@@ -263,7 +263,7 @@ public sealed class Rig : IDisposable
         Clock = new FakeClock(),
         Delayer = new NoDelay(),
         Environment = Env,
-        WorkspaceRoot = EnvPath.Posix(WorkRoot),
+        WorkspaceRoot = LocalEnvironment.PathOf(WorkRoot),
         Extensions = _options.SessionExtensions,
         Tools = new StaticToolSource(Tools),
         ResolveModel = m => m.Alias == Alias.Alias ? Alias : null,

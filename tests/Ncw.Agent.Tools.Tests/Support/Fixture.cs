@@ -20,7 +20,8 @@ public sealed class Fixture : IDisposable
 
     private readonly FileMutationQueue _queue = new();
 
-    public Fixture(bool shells = false, GrepBackends backends = GrepBackends.None, bool withRoot = true, EnvPath? writeFence = null)
+    /// <param name="clock">工具运行时的时钟。搜索类用例传一个不走的时钟:5 秒的搜索预算量的是墙上时间,runner 卡顿十几秒时(Windows CI 上出现过)与预算无关的用例也会被判「超出预算」。</param>
+    public Fixture(bool shells = false, GrepBackends backends = GrepBackends.None, bool withRoot = true, EnvPath? writeFence = null, TimeProvider? clock = null)
     {
         var raw = Path.Combine(Path.GetTempPath(), "ncw-tools-" + Guid.NewGuid().ToString("N")[..12]);
         Directory.CreateDirectory(raw);
@@ -41,6 +42,7 @@ public sealed class Fixture : IDisposable
             Shells = Shells,
             GrepBackends = backends,
             WriteFence = writeFence,
+            Clock = clock ?? TimeProvider.System,
         };
     }
 

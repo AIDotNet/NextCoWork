@@ -72,6 +72,16 @@ public sealed record DataStatus(string State, string? Step, string? Reason, Take
 /// <summary>2.x 接管完成后的摘要(欢迎页显示「已从 2.x 迁移 N 个项目、M 个会话」)。</summary>
 public sealed record TakeoverSummary(long Projects, long Sessions, long CredentialsToReenter);
 
+/// <summary>
+/// 设置 · 数据 · 回退到 2.x(docs/design/04 §5)。<see cref="Available"/>:这份数据是从 2.x 接管来的、接管前的备份还在;
+/// <see cref="Pending"/>:已经请求回退,Agent 下一次关库时(优雅退出的最后一步)执行。
+/// </summary>
+/// <param name="TakenOverAt">接管提交的时刻(Unix 毫秒);不能回退时为 null。</param>
+public sealed record DataRollbackInfo(bool Available, long? TakenOverAt, bool Pending);
+
+/// <param name="AcknowledgeDataLoss">用户确认过「迁移之后在 3.0 里写的数据不会带回 2.x」(那份库会另存,不删)。必须为 true。</param>
+public sealed record DataRollbackParams(bool AcknowledgeDataLoss);
+
 public static class DataStates
 {
     public const string Preparing = "preparing";
@@ -83,6 +93,12 @@ public static class DataStates
 
     /// <summary>出错了;接管提交前的失败已经自动回退,可以重试。</summary>
     public const string Failed = "failed";
+
+    /// <summary>
+    /// 这份数据已经回退给 2.x(设置 · 数据 · 回退到 2.x)。3.0 不自动再接管:用户明确调用 <c>data.retry</c>(界面上是「重新迁移」)才会再接管一次。
+    /// 旧控制端不认识这个值时按未知状态处理,不会误判成就绪。
+    /// </summary>
+    public const string RolledBack = "rolled-back";
 }
 
 public static class DataSteps
@@ -190,6 +206,18 @@ public static class DeviceMethods
     public static readonly MethodDef<Unit, DataStatus> DataRetry =
         new("data.retry", MethodKind.Command, Role.Owner, Transports.Local, PayloadShapes.GetShape<Unit>(), PayloadShapes.GetShape<DataStatus>());
 
+    /// <summary>能不能回退到 2.x、有没有已经请求的回退。只在本机给 owner。</summary>
+    public static readonly MethodDef<Unit, DataRollbackInfo> DataRollbackInfo = LocalOwner<Unit, DataRollbackInfo>("data.rollbackInfo", MethodKind.Query);
+
+    /// <summary>
+    /// 请求回退到 2.x:登记请求,Agent 在关库之后执行(控制端随后让 Agent 优雅退出并退出自己)。不能回退时 <c>invalid_request</c>(key <c>data.rollback.unavailable</c>),
+    /// 没确认数据损失时 <c>invalid_request</c>(key <c>data.rollback.notAcknowledged</c>)。只在本机给 owner。
+    /// </summary>
+    public static readonly MethodDef<DataRollbackParams, DataRollbackInfo> DataRequestRollback = LocalOwner<DataRollbackParams, DataRollbackInfo>("data.requestRollback", MethodKind.Command);
+
+    /// <summary>撤回还没执行的回退请求(例如退出被取消了)。只在本机给 owner。</summary>
+    public static readonly MethodDef<Unit, DataRollbackInfo> DataCancelRollback = LocalOwner<Unit, DataRollbackInfo>("data.cancelRollback", MethodKind.Command);
+
     /// <summary>配对第一步。只有远程连接、未配对也能调用。</summary>
     public static readonly MethodDef<PairBeginParams, PairBeginResult> PairBegin =
         new("pair.begin", MethodKind.Command, Role.Unpaired, Transports.Remote, PayloadShapes.GetShape<PairBeginParams>(), PayloadShapes.GetShape<PairBeginResult>());
@@ -227,7 +255,7 @@ public static class DeviceMethods
 
     public static readonly IReadOnlyList<MethodDef> All =
     [
-        Info, ProjectsList, ProjectsAdd, ProjectsRemove, DataStatus, DataRetry,
+        Info, ProjectsList, ProjectsAdd, ProjectsRemove, DataStatus, DataRetry, DataRollbackInfo, DataRequestRollback, DataCancelRollback,
         PairBegin, PairFinish, PairClaim, PairCreateQr, RemoteGetStatus, RemoteSetEnabled, RemoteRotateCode, RemoteConfigure, TrustRevoke, TrustSetRole,
     ];
 
@@ -250,6 +278,8 @@ public static class DeviceMethods
 [GenerateShapeFor<ProjectDto>]
 [GenerateShapeFor<DeviceTopicState>]
 [GenerateShapeFor<DataStatus>]
+[GenerateShapeFor<DataRollbackInfo>]
+[GenerateShapeFor<DataRollbackParams>]
 [GenerateShapeFor<PairBeginParams>]
 [GenerateShapeFor<PairBeginResult>]
 [GenerateShapeFor<PairFinishParams>]

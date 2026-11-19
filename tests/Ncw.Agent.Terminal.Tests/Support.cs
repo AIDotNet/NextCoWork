@@ -37,7 +37,15 @@ internal sealed class Collector : IAsyncDisposable
 
     public async Task WaitForAsync(string expected, int timeoutMs = 15_000)
     {
-        await Wait.UntilAsync(() => Text.Contains(expected, StringComparison.Ordinal), timeoutMs, $"output containing '{expected}'; got: {Text}");
+        try
+        {
+            await Wait.UntilAsync(() => Text.Contains(expected, StringComparison.Ordinal), timeoutMs, $"output containing '{expected}'");
+        }
+        catch (TimeoutException e)
+        {
+            // 「got」必须是超时那一刻的输出:写在上面那个插值串里的话,取到的是开始等待时的(几乎总是空的),会让人误以为终端什么都没输出
+            throw new TimeoutException($"{e.Message}; got: {Text}");
+        }
     }
 
     private async Task Pump()
@@ -78,7 +86,7 @@ internal sealed class Collector : IAsyncDisposable
 
 internal static class Wait
 {
-    public static async Task UntilAsync(Func<bool> condition, int timeoutMs = 5000, string? what = null)
+    public static async Task UntilAsync(Func<bool> condition, int timeoutMs = 30_000, string? what = null)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (!condition())

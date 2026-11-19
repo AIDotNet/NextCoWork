@@ -32,7 +32,7 @@ public sealed class Fx : IDisposable
 
     public string ProjectSkills { get; }
 
-    public EnvPath P(string path) => EnvPath.Posix(path);
+    public EnvPath P(string path) => LocalEnvironment.PathOf(path);
 
     public SkillScanInput Input(bool global = true, bool project = true, IExecutionEnvironment? projectEnvironment = null, IReadOnlyList<PluginSkillRoot>? plugins = null) =>
         new(global ? Env : null, global ? P(GlobalSkills) : null, project ? projectEnvironment ?? Env : null, project ? P(ProjectSkills) : null, plugins);

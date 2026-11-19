@@ -96,6 +96,10 @@ public class RealAgentTests
         Assert.False(tile.IsOffline);
         Snapshot(window, "real-agent-project");
 
+        // 项目是经广播出现的,「添加」这次调用的应答可能还在路上:等命令真正结束再停 Agent。
+        // 否则应答变成「Connection closed」,新建项目的流程去弹错误框,被记成这条用例的清理失败(Windows CI 上两次)。
+        await Pump(() => !vm.Sidebar.AddProjectCommand.IsRunning, "the add-project command to finish");
+
         await agentCts.CancelAsync();
         try { await agent; } catch (OperationCanceledException) { }
         Directory.Delete(root, recursive: true);

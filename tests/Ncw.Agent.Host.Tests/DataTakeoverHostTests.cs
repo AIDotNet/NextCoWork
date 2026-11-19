@@ -16,7 +16,7 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"ncwd-{Guid.NewGuid():N}"[..16]);
     private readonly string _workspace = Path.Combine(Path.GetTempPath(), $"ncw-ws-{Guid.NewGuid():N}");
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource _cts = new();
     private Task _run = Task.CompletedTask;
     private AgentHost? _host;
     private volatile bool _legacyAlive;
@@ -40,6 +40,20 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
         _run = _host.RunAsync(_cts.Token);
         return _host;
     }
+
+    /// <summary>像桌面端那样让 Agent 优雅退出(关库;有回退请求就在关库之后执行),然后在同一个数据根上再起一个。</summary>
+    private async Task<AgentHost> Restart()
+    {
+        await _cts.CancelAsync();
+        try { await _run; } catch (OperationCanceledException) { }
+        _host?.Dispose();
+        SqliteConnection.ClearAllPools();
+        _cts = new CancellationTokenSource();
+        return Start();
+    }
+
+    private static string? ErrorKey(ProtocolException e) =>
+        e.Details is { } details ? FrameCodec.DecodePayload(details, PayloadShapes.GetShape<ProviderErrorDto>()).Key : null;
 
     public async ValueTask DisposeAsync()
     {
@@ -78,7 +92,9 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
 
     private static async Task<DataStatus> WaitFor(DeviceClient client, string state)
     {
-        for (var i = 0; i < 200; i++)
+        // 按截止时间而不是固定次数:慢 CI(Windows 虚拟机上整个 Host 测试组曾跑到 4 分钟以上)里 5 秒不够接管跑完。
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < deadline)
         {
             var status = await client.CallAsync(DeviceMethods.DataStatus, Unit.Value);
             if (status.State == state) return status;
@@ -188,5 +204,88 @@ public sealed class DataTakeoverHostTests : IAsyncDisposable
         await done.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(DataStates.Ready, seen[^1]);
+    }
+
+    // ───────────────────────── 设置 · 数据 · 回退到 2.x(docs/design/04 §5) ─────────────────────────
+
+    [Fact]
+    public async Task Going_back_to_2x_runs_when_the_agent_closes_the_database_and_3x_then_waits_for_an_explicit_move()
+    {
+        SeedLegacy();
+        Start();
+        await using (var client = await Connect())
+        {
+            await WaitFor(client, DataStates.Ready);
+            var info = await client.CallAsync(DeviceMethods.DataRollbackInfo, Unit.Value);
+            Assert.True(info.Available);
+            Assert.NotNull(info.TakenOverAt);
+
+            var unconfirmed = await Assert.ThrowsAsync<ProtocolException>(() => client.CallAsync(DeviceMethods.DataRequestRollback, new DataRollbackParams(false)));
+            Assert.Equal(ErrorCodes.InvalidRequest, unconfirmed.Code);
+            Assert.Equal("data.rollback.notAcknowledged", ErrorKey(unconfirmed));
+
+            Assert.True((await client.CallAsync(DeviceMethods.DataRequestRollback, new DataRollbackParams(true))).Pending);
+            Assert.Single((await client.CallAsync(DeviceMethods.ProjectsList, Unit.Value)).Projects); // 只登记,Agent 照常可用
+        }
+
+        // 桌面端让 Agent 优雅退出:关库之后执行回退,2.9 看到的是没有所有权标记的 2.x 库
+        var host = await Restart();
+        Assert.Null(Ownership.Read(Path.Combine(_root, AgentDatabase.FileName)));
+        Assert.True(RollbackToLegacy.IsRolledBack(_root));
+
+        await using var again = await Connect();
+        var rolledBack = await WaitFor(again, DataStates.RolledBack);
+        Assert.Null(rolledBack.Reason);
+        await Task.Delay(200);
+        Assert.Equal(DataStates.RolledBack, (await again.CallAsync(DeviceMethods.DataStatus, Unit.Value)).State); // 不自动再接管
+        Assert.Null(Ownership.Read(Path.Combine(_root, AgentDatabase.FileName)));
+        var e = await Assert.ThrowsAsync<ProtocolException>(() => again.CallAsync(DeviceMethods.ProjectsList, Unit.Value));
+        Assert.Equal(ErrorCodes.Unavailable, e.Code);
+
+        // 用户点「重新迁移」
+        var moved = await again.CallAsync(DeviceMethods.DataRetry, Unit.Value);
+        Assert.Equal(DataStates.Ready, moved.State);
+        Assert.Equal(host.DeviceId, Ownership.Read(Path.Combine(_root, AgentDatabase.FileName))?.DeviceId);
+        Assert.Single((await again.CallAsync(DeviceMethods.ProjectsList, Unit.Value)).Projects);
+    }
+
+    [Fact]
+    public async Task A_request_left_by_a_killed_agent_runs_at_the_next_start_before_the_database_opens()
+    {
+        SeedLegacy();
+        Start();
+        await using (var client = await Connect())
+        {
+            await WaitFor(client, DataStates.Ready);
+        }
+
+        await Restart(); // 正常退出,没有请求:数据还是 3.0 的
+        Assert.Equal(DataStates.Ready, _host!.Data.State);
+        await _cts.CancelAsync();
+        try { await _run; } catch (OperationCanceledException) { }
+        _host.Dispose();
+        SqliteConnection.ClearAllPools();
+
+        // 模拟:请求登记了,Agent 却在关库之前被强杀(请求文件还在,库还是 3.0 的)
+        RollbackToLegacy.Request(_root, 1);
+        _cts = new CancellationTokenSource();
+        Start();
+        await using var after = await Connect();
+
+        await WaitFor(after, DataStates.RolledBack);
+        Assert.False(RollbackToLegacy.Inspect(_root).Pending);
+        Assert.Null(Ownership.Read(Path.Combine(_root, AgentDatabase.FileName)));
+    }
+
+    [Fact]
+    public async Task A_fresh_3x_root_has_nothing_to_go_back_to()
+    {
+        Start();
+        await using var client = await Connect();
+
+        Assert.False((await client.CallAsync(DeviceMethods.DataRollbackInfo, Unit.Value)).Available);
+        var e = await Assert.ThrowsAsync<ProtocolException>(() => client.CallAsync(DeviceMethods.DataRequestRollback, new DataRollbackParams(true)));
+        Assert.Equal("data.rollback.unavailable", ErrorKey(e));
+        Assert.False(File.Exists(Path.Combine(_root, RollbackToLegacy.RequestFile)));
     }
 }

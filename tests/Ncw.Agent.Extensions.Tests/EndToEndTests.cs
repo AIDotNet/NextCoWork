@@ -124,6 +124,7 @@ public sealed class EndToEndTests : IDisposable
     [Fact]
     public async Task A_dangerous_command_asks_the_user_with_the_environment_and_risk_and_runs_after_approval()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the approved command is `rm -rf build`, which the default Windows shell does not have");
         MakeBuild();
         var llm = Script(Up.Calls(("c1", "Bash", RemoveBuild())), Up.Say("done"));
         var run = StartAsync(llm);
@@ -206,6 +207,7 @@ public sealed class EndToEndTests : IDisposable
     [Fact]
     public async Task Two_controllers_answer_at_the_same_time_only_one_succeeds_and_the_run_follows_the_winner()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the approved command is `rm -rf build`, which the default Windows shell does not have");
         MakeBuild();
         var llm = Script(Up.Calls(("c1", "Bash", RemoveBuild())), Up.Say("done"));
         var run = StartAsync(llm);

@@ -44,6 +44,13 @@ public sealed class LocalEnvironment : IExecutionEnvironment
         Paths = new PathGuard(_fs, LocalFs.Style);
     }
 
+    /// <summary>
+    /// 把这台机器上的原生路径(<c>Path.Combine</c>、<c>Directory.CreateDirectory(...).FullName</c> 得到的)包成本机风格的 <see cref="EnvPath"/>:
+    /// Windows 上是 <see cref="PathStyle.Windows"/>,其它是 <see cref="PathStyle.Posix"/>。不要对原生路径用 <see cref="EnvPath.Posix"/>——
+    /// 在 Windows 上本机文件系统会以 <see cref="EnvironmentErrorCode.InvalidPath"/> 拒绝它。
+    /// </summary>
+    public static EnvPath PathOf(string nativePath) => EnvPath.Parse(nativePath, LocalFs.Style);
+
     public EnvironmentId Id { get; }
 
     public EnvironmentKind Kind => EnvironmentKind.Local;

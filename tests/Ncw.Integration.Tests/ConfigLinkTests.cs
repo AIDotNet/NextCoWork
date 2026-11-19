@@ -45,6 +45,9 @@ public sealed class ConfigLinkTests : IAsyncLifetime
 
         public DeviceLink Link { get; set; } = null!;
 
+        /// <summary>设了就让下一次(重)连先等它:测试要在「断开着」的时候做事时用。</summary>
+        public TaskCompletionSource? HoldConnect { get; set; }
+
         public DeviceRegistry Devices { get; set; } = null!;
 
         public CatalogActions Catalog { get; set; } = null!;
@@ -225,6 +228,11 @@ public sealed class ConfigLinkTests : IAsyncLifetime
         c.Link = new DeviceLink(c.Stores, c.Ui, "local-config", DeviceKind.Local, "本机",
             async ct =>
             {
+                if (c.HoldConnect is { } hold)
+                {
+                    await hold.Task.WaitAsync(ct);
+                }
+
                 var stream = new CuttableStream(await LocalTransport.ConnectAsync(Endpoint, ct));
                 c.Current = stream;
                 return stream;
@@ -384,9 +392,12 @@ public sealed class ConfigLinkTests : IAsyncLifetime
         await WaitUntil(() => _c.ProvidersState.Providers.Length == 1, "first provider");
         var versionBefore = _c.ProvidersState.Version;
 
+        // 断线期间先不让它重连:重连很快,慢的机器上「断开之后、重连之前」这个窗口可能在下面两行之间就过去了(macOS CI 上删除成功过)
+        _c.HoldConnect = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _c.Current!.Cut();
         await WaitUntil(() => !_c.CatalogState.Known && !_c.ProvidersState.Known, "unknown after the drop"); // 断开 = 未知,不沿用旧值当现状
         Assert.Equal(ActionOutcome.Unavailable, (await _c.Providers.RemoveAsync(deviceId, "a")).Outcome);
+        _c.HoldConnect.SetResult();
 
         await WaitUntil(() => _c.Link.IsConnected && _c.ProvidersState.Known && _c.CatalogState.Known, "reconnected and mirrored again", 30_000);
         Assert.Equal("a", Assert.Single(_c.ProvidersState.Providers).Id);

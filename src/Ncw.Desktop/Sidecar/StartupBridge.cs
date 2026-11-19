@@ -54,6 +54,9 @@ public static class StartupBridge
 /// <summary>启动加载界面的桌面宿主能力:重试(守护从失败 / 退避等待中立刻再来一次)和诊断(守护状态 + agent.log 的尾部)。</summary>
 public sealed class SidecarStartupHost(LocalAgentSidecar sidecar, int logTailLines = 30) : IStartupHost
 {
+    /// <summary>和更新重启同一条路(关 stdin → SIGTERM → 强杀,不管「关窗后继续运行」);Agent 在优雅退出的最后一步、关库之后执行回退。</summary>
+    public Task StopLocalAgentAsync() => sidecar.StopForUpdateAsync().AsTask();
+
     public void Retry()
     {
         // 守护在运行 / 启动中时重试没有意义,而且会留下一个多余的信号(之后一次真正的失败会被它抢先放行)

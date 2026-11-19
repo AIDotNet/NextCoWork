@@ -16,6 +16,9 @@ internal static unsafe partial class WindowsNative
 
     public const uint CreateUnicodeEnvironment = 0x00000400;
 
+    /// <summary>STARTUPINFO.dwFlags:标准句柄由 hStdInput / hStdOutput / hStdError 指定(留空 = 不沿用父进程的)。</summary>
+    public const uint StartfUseStdHandles = 0x00000100;
+
     public const nuint ProcThreadAttributePseudoConsole = 0x00020016;
 
     public const nuint ProcThreadAttributeJobList = 0x0002000D;

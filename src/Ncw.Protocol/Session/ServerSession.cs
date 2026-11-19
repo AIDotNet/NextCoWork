@@ -106,17 +106,15 @@ public sealed class MethodRouter(TimeProvider? clock = null)
     /// <summary>
     /// 方法调用前的统一闸门:角色 / 承载 / 幂等键检查之后、参数解码之前,对每个已注册方法的请求调用一次。宿主用它做「方法即能力」之外的横切前置条件
     /// (例如:参数里指向 SSH 项目的方法,先确保项目的执行环境已连接)。抛 <see cref="ProtocolException"/> = 这次请求以那个错误失败,方法实现不会被调用。
+    /// 返回的句柄(可以为 null)在方法实现结束后释放:前置条件需要在整个请求期间保持时用它(例如「环境在用,别回收」的租约)。
     /// </summary>
-    public Func<MethodDef, RequestFrame, CallContext, CancellationToken, ValueTask>? BeforeInvoke { get; set; }
+    public Func<MethodDef, RequestFrame, CallContext, CancellationToken, ValueTask<IDisposable?>>? BeforeInvoke { get; set; }
 
     public void Handle<TParams, TResult>(MethodDef<TParams, TResult> def, Func<TParams, CallContext, CancellationToken, ValueTask<TResult>> handler)
     {
         _handlers[def.Name] = (def, async (request, context, ct) =>
         {
-            if (BeforeInvoke is { } gate)
-            {
-                await gate(def, request, context, ct).ConfigureAwait(false);
-            }
+            using var scope = BeforeInvoke is { } gate ? await gate(def, request, context, ct).ConfigureAwait(false) : null;
 
             TParams parameters;
             try

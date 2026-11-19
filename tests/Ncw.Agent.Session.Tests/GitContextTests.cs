@@ -29,7 +29,7 @@ public sealed class GitContextTests : IDisposable
     {
         try
         {
-            var r = await _env.RunAsync(CommandSpec.Exec("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", .. args]) with { WorkingDirectory = EnvPath.Posix(_dir) });
+            var r = await _env.RunAsync(CommandSpec.Exec("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", .. args]) with { WorkingDirectory = LocalEnvironment.PathOf(_dir) });
             return r.Succeeded;
         }
         catch (EnvironmentException)
@@ -48,7 +48,7 @@ public sealed class GitContextTests : IDisposable
         return true;
     }
 
-    private Task<GitContext?> Read(CancellationToken ct = default) => GitContextReader.ReadAsync(_env, EnvPath.Posix(_dir), ct);
+    private Task<GitContext?> Read(CancellationToken ct = default) => GitContextReader.ReadAsync(_env, LocalEnvironment.PathOf(_dir), ct);
 
     [Fact]
     public async Task Branch_dirty_count_and_recent_commits_are_read()
@@ -132,7 +132,7 @@ public sealed class GitContextTests : IDisposable
     [Fact]
     public async Task A_missing_directory_or_a_cancelled_token_yields_null_instead_of_throwing()
     {
-        Assert.Null(await GitContextReader.ReadAsync(_env, EnvPath.Posix(Path.Combine(_dir, "nope")), CancellationToken.None));
+        Assert.Null(await GitContextReader.ReadAsync(_env, LocalEnvironment.PathOf(Path.Combine(_dir, "nope")), CancellationToken.None));
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         Assert.Null(await Read(cts.Token));
