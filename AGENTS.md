@@ -30,6 +30,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
   加成员,并在 `en-US.xlf`、`zh-CN.xlf` 各加一条(缺一条构建失败)。`Ncw.Core`、`Ncw.Client` 不产出界面文字,只给结构化数据。
 - 提示用 `arc:Tooltip.Tip`,不要用 Avalonia 的 `ToolTip.Tip`(在 Arc 下没有样式)。
 - 不启用 `InvariantGlobalization`。不使用依赖反射的 MVVM 和序列化,必须兼容 AOT 和裁剪。
+- C# 写法遵守 `docs/coding-style.md`;其中能机器检查的部分在 `.editorconfig`,构建时执行(`EnforceCodeStyleInBuild`,warning 级别违反即构建失败)。改规则时两处同步,升级为 warning 前先把全仓库清到零违规。
 
 ## 3. 状态统一管理(必须)
 

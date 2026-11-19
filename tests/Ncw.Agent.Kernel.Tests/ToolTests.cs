@@ -98,7 +98,7 @@ public sealed class ToolTests
 
         var run = await rig.RunAsync(Rig.User("u1", "go"));
 
-        var kinds = run.Kinds.Where(k => k.StartsWith("Tool")).ToList();
+        var kinds = run.Kinds.Where(k => k.StartsWith("Tool", StringComparison.Ordinal)).ToList();
         Assert.Equal(["ToolStart", "ToolStart", "ToolEnd", "ToolEnd"], kinds);
     }
 
@@ -527,7 +527,7 @@ public sealed class ToolTests
 
         var progress = run.Of<ToolProgressEvent>().Single();
         Assert.Equal(("c1", "compiling", 0.5), (progress.CallId, progress.Progress.Message, progress.Progress.Fraction));
-        var kinds = run.Kinds.Where(k => k.StartsWith("Tool")).ToList();
+        var kinds = run.Kinds.Where(k => k.StartsWith("Tool", StringComparison.Ordinal)).ToList();
         Assert.Equal(["ToolStart", "ToolProgress", "ToolEnd"], kinds);
         // 进度不进记录。
         Assert.DoesNotContain("compiling", string.Concat(run.Results.Select(r => r.Output.Content)));

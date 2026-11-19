@@ -5,6 +5,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      代码规范(.editorconfig + docs/coding-style.md):构建期执行 IDE 规则,.editorconfig 里是 warning 的规则违反即构建失败。
+      IDE0005(多余的 using)在构建期需要 GenerateDocumentationFile;生成的 XML 文档不随发布产物带出去。
+    -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishDocumentationFile>false</PublishDocumentationFile>
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
     <!-- Ncw.* 全部要能裁剪、能 NativeAOT(AGENTS.md §2)。库项目开启分析器,发布时零裁剪警告。 -->
     <IsAotCompatible Condition="'$(IsTestProject)' != 'true'">true</IsAotCompatible>
     <InvariantGlobalization>false</InvariantGlobalization>

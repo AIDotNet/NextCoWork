@@ -145,7 +145,7 @@ public sealed class GatewayHostTests : IAsyncLifetime
         Assert.DoesNotContain(key, Json(await _owner.CallAsync(GatewayMethods.GetStatus, Unit.Value), PayloadShapes.GetShape<GatewayStatusDto>()));
         var settings = await _owner.CallAsync(SettingsMethods.Get, Unit.Value);
         Assert.DoesNotContain(key, Json(settings, PayloadShapes.GetShape<DeviceSettingsState>()));
-        foreach (var file in Directory.EnumerateFiles(_rig.DataRoot, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith(".sock")))
+        foreach (var file in Directory.EnumerateFiles(_rig.DataRoot, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith(".sock", StringComparison.Ordinal)))
         {
             using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using var memory = new MemoryStream();
