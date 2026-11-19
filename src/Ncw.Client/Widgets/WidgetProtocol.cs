@@ -15,6 +15,12 @@ public static class WidgetMessages
     public const string Height = "ncw:widget:height";
     public const string Call = "ncw:widget:call";
 
+    /// <summary>
+    /// 3.0 新增(2.x 没有):页面没有消费掉的滚轮(<c>dy</c>,CSS 像素,正 = 往下)。原生 WebView 把滚轮事件整个吃掉,Avalonia 的滚动容器收不到;
+    /// 外壳把「页面里没有元素要滚、也没有脚本拦下」的那部分合并后交给宿主,宿主滚动外面的转录。见 docs/design/03 §8.5「滚轮」。
+    /// </summary>
+    public const string Wheel = "ncw:widget:wheel";
+
     // 宿主 → 页面(<c>__ncwHost.recv</c>)
     public const string Content = "ncw:widget:content";
     public const string Theme = "ncw:widget:theme";
@@ -29,7 +35,7 @@ public static class WidgetMessages
     public const string Viewport = "ncw:widget:viewport";
 
     /// <summary>外壳脚本必须出现的全部消息名(核对用)。</summary>
-    public static IReadOnlyList<string> All { get; } = [Ready, Height, Call, Content, Theme, Loading, Env, Reply, Viewport];
+    public static IReadOnlyList<string> All { get; } = [Ready, Height, Call, Wheel, Content, Theme, Loading, Env, Reply, Viewport];
 }
 
 /// <summary>桥上各通道的长度上限(字符)。超了直接拒绝、不截断:截断后的 JSON 是坏的。数值取自 2.x 的 <c>WIDGET_LIMITS</c>。</summary>
@@ -65,6 +71,12 @@ public static class WidgetLimits
 
     public const double MaxHeight = 4000;
 
+    /// <summary>一条滚轮消息的位移上限(CSS 像素,绝对值)。外壳把同一批事件合成一条,正常远小于它;超了当坏消息。</summary>
+    public const double MaxWheelDelta = 10000;
+
+    /// <summary>滚轮消息的长度上限(字符):外壳发的是 <c>{"type":"ncw:widget:wheel","dy":-123.45}</c>,够用还有余;更长的不走滚轮的快速通道。</summary>
+    public const int MaxWheelMessageChars = 128;
+
     public static double ClampHeight(double reported) =>
         double.IsFinite(reported) ? Math.Max(MinHeight, Math.Min(MaxHeight, Math.Round(reported))) : MinHeight;
 }
@@ -85,6 +97,9 @@ public sealed record WidgetReady : WidgetInbound;
 
 /// <summary>外壳报上来的内容高度(未钳制)。</summary>
 public sealed record WidgetHeight(double Value) : WidgetInbound;
+
+/// <summary>页面没有消费掉的滚轮位移(CSS 像素,正 = 往下,已校验有界)。</summary>
+public sealed record WidgetWheel(double DeltaY) : WidgetInbound;
 
 /// <summary>桥调用:<see cref="Id"/> 是页面自己的请求号,回复带回它。</summary>
 public abstract record WidgetBridgeCall(int Id) : WidgetInbound;
@@ -147,6 +162,11 @@ public static class WidgetInboundParser
                     return root.TryGetProperty("height", out var h) && h.ValueKind == JsonValueKind.Number && h.TryGetDouble(out var height) && double.IsFinite(height) && height is >= 0 and <= 1e7
                         ? new WidgetHeight(height)
                         : new WidgetRejected("bad-height");
+                case WidgetMessages.Wheel:
+                    return root.TryGetProperty("dy", out var dy) && dy.ValueKind == JsonValueKind.Number && dy.TryGetDouble(out var delta) && double.IsFinite(delta)
+                        && Math.Abs(delta) <= WidgetLimits.MaxWheelDelta
+                        ? new WidgetWheel(delta)
+                        : new WidgetRejected("bad-wheel");
                 case WidgetMessages.Call:
                     return ParseCall(root);
                 default:

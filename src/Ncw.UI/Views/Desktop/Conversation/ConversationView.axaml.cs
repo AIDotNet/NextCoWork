@@ -82,6 +82,7 @@ public partial class ConversationView : UserControl
             old.ScrollChanged -= OnScrollChanged;
             old.LayoutUpdated -= OnScrollerLayoutUpdated;
             old.RemoveHandler(PointerWheelChangedEvent, OnScrollerWheel);
+            old.RemoveHandler(NcwWidgetSurface.WheelForwardedEvent, OnWidgetWheel);
             old.RemoveHandler(KeyDownEvent, OnScrollerKeyDown);
             old.RemoveHandler(PointerPressedEvent, OnScrollerPointerPressed);
             old.RemoveHandler(PointerReleasedEvent, OnScrollerPointerReleased);
@@ -99,6 +100,8 @@ public partial class ConversationView : UserControl
         scroller.LayoutUpdated += OnScrollerLayoutUpdated;
         // 隧道 + handledEventsToo:在 ScrollViewer 自己处理(并标记已处理)之前看到用户的意图
         scroller.AddHandler(PointerWheelChangedEvent, OnScrollerWheel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // 小组件(原生 WebView)吃掉的滚轮由页面交回来,同样是用户的滚动意图;不标 Handled,滚动本身由小组件交给 ScrollViewer
+        scroller.AddHandler(NcwWidgetSurface.WheelForwardedEvent, OnWidgetWheel, RoutingStrategies.Bubble, handledEventsToo: true);
         scroller.AddHandler(KeyDownEvent, OnScrollerKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         scroller.AddHandler(PointerPressedEvent, OnScrollerPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         scroller.AddHandler(PointerReleasedEvent, OnScrollerPointerReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
@@ -116,6 +119,16 @@ public partial class ConversationView : UserControl
         {
             // Avalonia 的滚轮 Delta.Y > 0 = 往上滚
             _follow.UserScroll(Environment.TickCount64, towardTop: e.Delta.Y > 0, canMoveUp: scroller.Offset.Y > 0.5);
+            UpdateJumpButton();
+        }
+    }
+
+    private void OnWidgetWheel(object? sender, NcwWidgetWheelEventArgs e)
+    {
+        if (_scroller is { } scroller)
+        {
+            // DeltaY > 0 = 内容往下走(和 Avalonia 滚轮的符号相反)
+            _follow.UserScroll(Environment.TickCount64, towardTop: e.DeltaY < 0, canMoveUp: scroller.Offset.Y > 0.5);
             UpdateJumpButton();
         }
     }

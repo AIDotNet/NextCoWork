@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -20,6 +21,12 @@ public enum WidgetSurfaceFailure
     Crashed,
 }
 
+/// <summary>页面交出来的滚轮(<see cref="NcwWidgetSurface.WheelForwardedEvent"/>)。<see cref="DeltaY"/> 是 CSS 像素,正 = 内容往下走(滚动偏移变大)。</summary>
+public sealed class NcwWidgetWheelEventArgs(double deltaY) : RoutedEventArgs(NcwWidgetSurface.WheelForwardedEvent)
+{
+    public double DeltaY { get; } = deltaY;
+}
+
 /// <summary>
 /// 一个 widget 的 WebView 外壳——整个仓库里<b>唯一</b>引用 Avalonia 官方 <see cref="NativeWebView"/> 的地方(docs/design/03 §8 的评估:
 /// macOS WKWebView / Windows WebView2 / Linux WebKitGTK 与 WPE;MIT 包 <c>Avalonia.Controls.WebView</c>)。
@@ -31,9 +38,15 @@ public enum WidgetSurfaceFailure
 /// 不认任何祖先的裁剪——放在转录的 <c>ScrollViewer</c> 里时,滚出视口的部分会盖在输入框、标签栏、「回到最新」上。所以本控件在布局里占完整高度(列表的高度 / 滚动都按它算),
 /// 但只把 WebView 摆在<b>可见的那一段</b>(和所有裁剪祖先的交集,减去祖先声明的 <see cref="NcwWidgetClip.BottomInsetProperty"/>),再让页面滚到这一段的起点
 /// (<see cref="WidgetPush.Viewport"/>),内容看起来钉在卡片里。完全看不见、或横向被裁(侧栏滑动时;横向裁会让页面按更窄的宽度重排)就整个隐藏(页面不销毁)。</para>
+/// <para><b>滚轮</b>:原生视图把滚轮事件整个吃掉,Avalonia 的滚动容器收不到。页面把自己没消费的滚轮交出来(<see cref="WidgetMessages.Wheel"/>),
+/// 宿主调 <see cref="ForwardWheel"/>:先冒泡一个 <see cref="WheelForwardedEvent"/>(转录据此判断「用户在往上翻」、停止跟随最新),没人处理就滚最近的 <see cref="ScrollViewer"/>。</para>
 /// </summary>
 public sealed class NcwWidgetSurface : Decorator, IDisposable
 {
+    /// <summary>页面交出来的滚轮(冒泡)。处理者标 <c>Handled</c> 就表示自己滚了;没人处理时本控件滚最近的 <see cref="ScrollViewer"/>。</summary>
+    public static readonly RoutedEvent<NcwWidgetWheelEventArgs> WheelForwardedEvent =
+        RoutedEvent.Register<NcwWidgetSurface, NcwWidgetWheelEventArgs>("WheelForwarded", RoutingStrategies.Bubble);
+
     private readonly NativeWebView _web = new() { Background = Brushes.Transparent };
     private readonly WidgetNavigationPolicy _policy = new();
     private string? _pendingHtml;
@@ -224,6 +237,32 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
         if (_visible.Height >= 1)
         {
             PushViewport();
+        }
+    }
+
+    /// <summary>
+    /// 页面交出来的滚轮(已经过桥的校验与限速):冒泡 <see cref="WheelForwardedEvent"/>,没人处理就滚最近的 <see cref="ScrollViewer"/>(钳在范围内)。
+    /// 本控件不显示(空域挂起时宿主把它藏起来)、WebView 整个被裁掉、或不在视觉树上时丢弃——那时用户不可能在它上面滚。
+    /// </summary>
+    public void ForwardWheel(double deltaY)
+    {
+        if (_disposed || VisualRoot is null || !IsEffectivelyVisible || _visible.Height < 1 || !double.IsFinite(deltaY) || deltaY == 0)
+        {
+            return;
+        }
+
+        var args = new NcwWidgetWheelEventArgs(deltaY) { Source = this };
+        RaiseEvent(args);
+        if (args.Handled || this.FindAncestorOfType<ScrollViewer>() is not { } scroller)
+        {
+            return;
+        }
+
+        var max = Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height);
+        var y = Math.Clamp(scroller.Offset.Y + deltaY, 0, max);
+        if (Math.Abs(y - scroller.Offset.Y) >= 0.01)
+        {
+            scroller.Offset = new Vector(scroller.Offset.X, y);
         }
     }
 

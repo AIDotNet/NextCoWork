@@ -442,6 +442,7 @@ Ncw.UI          NcwWidgetSurface      整个仓库里唯一引用 NativeWebView 
 | 页面 → 宿主(`invokeCSharpAction`) | `ready` | 外壳就绪(宿主关上导航放行窗口并推送) |
 | | `height` | 内容下沿(未钳制) |
 | | `call` | `{id, method, args}`:`setState` / `submit` / `runAction` / `openUrl` |
+| | `wheel` | `{dy}`:页面没消费的滚轮(CSS 像素,正 = 往下;3.0 新增,见 §8.5「滚轮」) |
 | 宿主 → 页面(`__ncwHost.recv`) | `content` / `theme` / `loading` / `env` / `reply` / `viewport` | 内容、主题 token、加载提示、环境(状态 / 数据 / 交互 / 已提交 / 动作清单)、调用结果、可见段起点(3.0 新增,见 §8.5「裁剪」) |
 
 `window.ncw`(冻结):`getState()` / `setState(v)`(↔ `widgets.getState` / `setState`)、`submit(v)`(↔ `widgets.submit`,仅 `interactive` 卡)、`runAction(id, params)`(↔ `widgets.runAction`,先弹确认框)、`openUrl(url)`、`getData()` / `onData(cb)`(↔ `visualize_update_widget`)、`actions()` / `isInteractive()` / `isSubmitted()` / `title()`。**没有 `sendPrompt()`**(同 2.x)。调用返回 Promise,失败 reject 一个带稳定英文码的 `Error`:`offline` / `unavailable` / `closed` / `not_interactive` / `already_submitted` / `declined` / `rate_limited` / `forbidden` / `invalid` / `unsupported` / `failed` / 校验码(`bad-args` / `unknown-method` / `state-too-large`……)/ 设备给的 `widgets.action.*`。
@@ -469,7 +470,16 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
   报高量的是 `#ncw-root` 的下沿 + `scrollY`,和视口大小、滚动位置无关。因此高度上限从 2.x 的 1400(超出在 WebView 里滚)放宽到 4000(只挡失控的上报,超出部分不显示)。
 - 完全看不见、或**横向**被裁(侧栏滑动时;页面宽度跟着 WebView,横向裁剪会让内容重排)就整个隐藏(页面不销毁)。
 - 卡片上次报上来的高度按「设备 + 会话 + 调用」记住(最多 256 张):虚拟化把卡片滚出去会销毁 WebView,滚回来重建时直接用上次的高度,不再先占 120 再跳(那一跳会带着列表总高度和滚动位置一起跳)。
-- **未在真机上验证**:可见段起点由脚本异步推给页面,快速滚动时卡片上沿可能有一帧内容错位;WKWebView 在页面不可滚动时是否把滚轮交还给 Avalonia(在小组件上滚动能否滚动转录)。需要在真窗口里目测。
+- **未在真机上验证**:可见段起点由脚本异步推给页面,快速滚动时卡片上沿可能有一帧内容错位。需要在真窗口里目测。
+
+**滚轮**(2026-11 修复,真机上鼠标停在小组件上滚不动转录):原生视图把滚轮事件整个吃掉,页面不可滚动时 WKWebView 也**不会**把它交还给 Avalonia(真机确认)。处理:
+- 外壳脚本在 `window` 上被动监听 `wheel`(从不 `preventDefault`),把**页面没有消费**的那部分交给宿主:`ncw:widget:wheel {dy}`(页面 → 宿主,3.0 新增,`WidgetMessages.Wheel`;行 / 页模式换算成像素)。
+  不交的:目标的祖先里有还能朝这个方向滚的元素(`overflow: auto / scroll`,滚到头之后才交,和浏览器的滚动链一致)、被页面脚本 `preventDefault`(图表缩放;分发完才判断)、双指缩放(`ctrlKey`)。
+  同一批事件合成一条,下一个任务就发(不等 rAF,少半帧延迟)。
+- 桥:滚轮是短消息,先解析;走**自己的令牌桶**(突发 240、240/s),超额直接丢、**不算违规**,不占报高的全局额度,滚得再快也不会把桥锁死。页面伪造滚轮最多能滚动转录,碰不到任何状态。
+- 宿主:`NcwWidgetSurface.ForwardWheel` 先冒泡 `WheelForwardedEvent`(转录据此把它当作用户滚动:往上翻就停止跟随最新,和真实滚轮同一条规则),没人标 `Handled` 就滚最近的 `ScrollViewer`(钳在范围内);控件不显示(空域挂起)或 WebView 整个被裁掉时丢弃。
+- 验证:桥的单测(校验、独立额度、不锁死)、Headless(滚动、钳制、先冒泡、不显示时丢弃)、真实 WKWebView 冒烟 `wheel-forwarded`(可滚的子元素 / `preventDefault` / 双指缩放留给页面,其余交出,行模式换算)。
+  真实触控板 → WKWebView → 转录的整条链路要在真窗口里目测(冒烟里的滚轮是脚本合成的事件)。
 
 ### 8.6 状态管理七条规则怎么落的
 

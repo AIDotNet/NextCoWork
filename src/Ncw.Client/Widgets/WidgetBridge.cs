@@ -44,6 +44,7 @@ public sealed class WidgetBridge
     private readonly Action<string> _post;
     private readonly WidgetRateLimiter _inbound;
     private readonly WidgetRateLimiter _calls;
+    private readonly WidgetRateLimiter _wheel;
     private readonly SemaphoreSlim _confirming = new(1, 1);
     private int _strikes;
 
@@ -59,6 +60,8 @@ public sealed class WidgetBridge
         // 全部消息(含报高:ResizeObserver 经 rAF 合并,最多每帧一条);调用单独再限一道
         _inbound = new WidgetRateLimiter(clock, burst: 120, perSecond: 60);
         _calls = new WidgetRateLimiter(clock, burst: 12, perSecond: 6);
+        // 滚轮单独一个桶,不占上面的全局额度:外壳把同一批事件合成一条,触控板 / 高精度滚轮一秒一百来条;滚得再快也不该把报高挤掉、更不该攒违规把桥锁死
+        _wheel = new WidgetRateLimiter(clock, burst: 240, perSecond: 240);
     }
 
     /// <summary>页面发出「就绪」(控制端据此推送主题 / 环境 / 内容)。</summary>
@@ -66,6 +69,9 @@ public sealed class WidgetBridge
 
     /// <summary>页面报了高度(已钳制到 <see cref="WidgetLimits"/> 的区间)。</summary>
     public event Action<double>? HeightChanged;
+
+    /// <summary>页面没有消费掉的滚轮位移(CSS 像素,正 = 往下,已校验有界);界面层拿去滚动外面的转录。在调用 <see cref="HandleAsync"/> 的线程上同步触发。</summary>
+    public event Action<double>? Wheel;
 
     /// <summary>违规太多,桥已锁死(只触发一次)。</summary>
     public event Action? Locked;
@@ -82,13 +88,26 @@ public sealed class WidgetBridge
             return;
         }
 
+        // 滚轮的快速通道:只有短消息才先解析(解析的代价有上限),是滚轮就走自己的桶;超额的滚轮直接丢掉、不算违规
+        // (最坏是页面自己在滚外面的转录——它能做的也就这么多,碰不到任何状态)
+        var message = body is { Length: <= WidgetLimits.MaxWheelMessageChars } ? WidgetInboundParser.Parse(body) : null;
+        if (message is WidgetWheel wheel)
+        {
+            if (_wheel.TryTake())
+            {
+                Wheel?.Invoke(wheel.DeltaY);
+            }
+
+            return;
+        }
+
         if (!_inbound.TryTake())
         {
             Strike();
             return;
         }
 
-        var message = WidgetInboundParser.Parse(body);
+        message ??= WidgetInboundParser.Parse(body);
         switch (message)
         {
             case WidgetReady:
