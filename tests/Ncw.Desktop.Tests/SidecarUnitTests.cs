@@ -132,13 +132,16 @@ public class PathsTests
     }
 
     [Fact]
-    public void Default_data_root_keeps_the_dev_directory_and_honours_overrides()
+    public void Default_data_root_is_the_2x_data_directory_in_release_builds_and_agent_dev_in_dev_builds()
     {
-        // 2.x 数据接管做好之前不碰 ~/.next-cowork/data:这里保持现有行为。
         string? None(string _) => null;
-        Assert.EndsWith(Path.Combine(".next-cowork", "agent-dev"), SidecarPaths.DefaultDataRoot(None));
+        // 开发版用独立的 agent-dev,不碰真实的 2.x 数据
+        Assert.EndsWith(Path.Combine(".next-cowork", "agent-dev"), SidecarPaths.DefaultDataRoot(None, development: true));
+        // ★ 发行版必须是 2.x 的数据根 ~/.next-cowork/data:3.0.0 用的是 agent-dev,所以从来没接上过 2.x 的数据
+        Assert.EndsWith(Path.Combine(".next-cowork", "data"), SidecarPaths.DefaultDataRoot(None, development: false));
+        Assert.Equal(Path.Combine("/prof", "data"), SidecarPaths.DefaultDataRoot(n => n == "NCW_PROFILE_ROOT" ? "/prof" : null, development: false));
         Assert.Equal("/x/data", SidecarPaths.DefaultDataRoot(n => n == "NCW_AGENT_DATA_ROOT" ? "/x/data" : null));
-        Assert.Equal(Path.Combine("/prof", "agent-dev"), SidecarPaths.DefaultDataRoot(n => n == "NCW_PROFILE_ROOT" ? "/prof" : null));
+        Assert.Equal(Path.Combine("/prof", "agent-dev"), SidecarPaths.DefaultDataRoot(n => n == "NCW_PROFILE_ROOT" ? "/prof" : null, development: true));
         Assert.EndsWith(".next-cowork", SidecarPaths.ProfileRoot(None));
     }
 }

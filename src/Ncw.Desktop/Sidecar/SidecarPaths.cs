@@ -6,8 +6,9 @@ namespace Ncw.Desktop.Sidecar;
 /// 数据目录与 profile 目录的约定(docs/design/04 §1、§4):
 /// <list type="bullet">
 /// <item><b>profile 根</b> <c>~/.next-cowork</c>(2.x 的 Electron profile 根;<c>NCW_PROFILE_ROOT</c> 可改)。控制端自己的文件在 <c>client/</c>,Agent 的数据根在它下面。</item>
-/// <item><b>数据根</b>:Agent 的库、附件、设置。2.x 数据接管(04 §4)做好之前,桌面端用独立的 <c>agent-dev/</c>,不碰 2.x 的 <c>data/</c>;
-/// <c>NCW_AGENT_DATA_ROOT</c> 可改。接管入口(<c>DataGate</c>)在 Agent 里,这里不变。</item>
+/// <item><b>数据根</b>:Agent 的库、附件、设置。**发行版是 <c>~/.next-cowork/data</c>**——和 2.x 同一个目录,首次启动时由 Agent 里的
+/// <c>DataGate</c> 接管 2.x 的数据(04 §4)。开发版(Debug 构建)用独立的 <c>agent-dev/</c>,不碰真实的 2.x 数据。
+/// <c>NCW_AGENT_DATA_ROOT</c> 都可改。</item>
 /// <item><b>run/</b>(数据根下):<c>agent.sock</c>(本机端点)、<c>agent.lock</c>(Agent 的单实例锁)、<c>sidecar.json</c>(桌面端写的:pid、令牌、是否脱离)。</item>
 /// <item><b>logs/</b>(数据根下):<c>agent.log</c>(sidecar 的 stdout / stderr,滚动保留一份旧的),给诊断页用(07 §3)。</item>
 /// </list>
@@ -32,8 +33,26 @@ public sealed class SidecarPaths(string dataRoot)
             ? custom
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".next-cowork");
 
-    public static string DefaultDataRoot(Func<string, string?> env) =>
-        env("NCW_AGENT_DATA_ROOT") is { Length: > 0 } custom ? custom : Path.Combine(ProfileRoot(env), "agent-dev");
+    /// <summary>开发版(Debug 构建)。发行版(Release)必须读 2.x 的数据根,否则 2.x 的数据永远接不上。</summary>
+    public static bool IsDevelopmentBuild =>
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>2.x 的数据根:profile 根下的 <c>data/</c>(<c>Ncw.Agent.Storage</c> 的 <c>LegacyLayout.DataSubdirectory</c>)。</summary>
+    public const string ProductionDataDirectory = "data";
+
+    /// <summary>开发版的数据根目录名。</summary>
+    public const string DevelopmentDataDirectory = "agent-dev";
+
+    public static string DefaultDataRoot(Func<string, string?> env, bool development) =>
+        env("NCW_AGENT_DATA_ROOT") is { Length: > 0 } custom
+            ? custom
+            : Path.Combine(ProfileRoot(env), development ? DevelopmentDataDirectory : ProductionDataDirectory);
+
+    public static string DefaultDataRoot(Func<string, string?> env) => DefaultDataRoot(env, IsDevelopmentBuild);
 
     public static string DefaultDataRoot() => DefaultDataRoot(Environment.GetEnvironmentVariable);
 }

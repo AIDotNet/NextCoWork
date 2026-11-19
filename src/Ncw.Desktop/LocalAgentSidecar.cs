@@ -93,8 +93,8 @@ public sealed class LocalAgentSidecar : IAsyncDisposable
     public event Action? Spawned;
 
     /// <summary>
-    /// 开发阶段的数据根:<c>~/.next-cowork/agent-dev</c>(<c>NCW_AGENT_DATA_ROOT</c> 可改)。
-    /// 2.x 数据接管(04 §4)做好之前,不碰 2.x 的 <c>~/.next-cowork/data</c>。
+    /// 默认数据根:发行版是 2.x 的 <c>~/.next-cowork/data</c>(首次启动由 Agent 的 <c>DataGate</c> 接管,04 §4);
+    /// 开发版(Debug)是 <c>~/.next-cowork/agent-dev</c>,不碰真实的 2.x 数据。<c>NCW_AGENT_DATA_ROOT</c> 都可改。
     /// </summary>
     public static string DefaultDataRoot => SidecarPaths.DefaultDataRoot();
 
