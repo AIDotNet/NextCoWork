@@ -98,7 +98,11 @@ public static class ModelsDevParser
     /// 用完要等完整 GC 才回收)。所以顶层用 <see cref="Utf8JsonReader"/> 流式走,每次只为一个供应商建文档;结果里重复出现的字符串、
     /// 输入输出类型、推理强度、能力组合共用同一个实例(上万个模型里这些值只有几十到几百种)。
     /// </summary>
-    public static ParsedCatalog Parse(ReadOnlyMemory<byte> json, string fetchedAt, ModelsDevOptions? options = null)
+    public static ParsedCatalog Parse(ReadOnlyMemory<byte> json, string fetchedAt, ModelsDevOptions? options = null) =>
+        Parse(json.Span, fetchedAt, options);
+
+    /// <inheritdoc cref="Parse(ReadOnlyMemory{byte}, string, ModelsDevOptions?)"/>
+    public static ParsedCatalog Parse(ReadOnlySpan<byte> json, string fetchedAt, ModelsDevOptions? options = null)
     {
         options ??= ModelsDevOptions.Default;
         var shared = new SharedValues();
@@ -107,7 +111,7 @@ public static class ModelsDevParser
         var nonObjectRoot = false;
         try
         {
-            var reader = new Utf8JsonReader(json.Span, new JsonReaderOptions { AllowTrailingCommas = true });
+            var reader = new Utf8JsonReader(json, new JsonReaderOptions { AllowTrailingCommas = true });
             if (!reader.Read())
             {
                 throw new CatalogParseException("models.dev returned invalid JSON.");

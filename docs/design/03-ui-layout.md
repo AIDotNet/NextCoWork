@@ -378,7 +378,7 @@ iOS / Android 宿主项目、相机、推送令牌、附件选择器是平台能
 
 - `Ncw.Core.Tests.ActivityInboxTests`:聚合、分组、排序、断线语义。
 - `Ncw.Client.Tests/Mobile`:`HoldGestureTests`(时间可注入)、`InboxViewModelTests`(聚合与排序、先到先得、断线、点进去定位)、`QrPairingTests`(状态机与 `DeviceActions.PairWithQrAsync`)、`AttachmentTrayTests`、`PushViewModelTests`、`MobileNavigationTests`、`DevicesAndComposerTests`(设备页、带附件发送、长按允许与版本变化)。
-- `Ncw.UI.Tests.MobileScreenshotTests`:截图在 `tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/mobile-*.png`,断言外壳按宽度切换、页面结构、长按进度、触控版式、导航栈同步。
+- `Ncw.UI.Tests.MobileScreenshotTests`:截图在 `tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/mobile-*.png`,断言外壳按宽度切换、页面结构、长按进度、触控版式、导航栈同步。
 
 ## 8. 内联可视化(M8:WebView 评估与渲染宿主)
 
@@ -819,7 +819,7 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 | Core 纯函数 | 阶段、单调(重放 / 抖动 / 重试从头)、慢启动阈值与提示、每种失败原因及可用动作、失败自己消失、数据页让位、手机形态、最短停留 / 延迟出现 / 失败立即显示 / 淡出只一次、首次加载与断线重连的区分;变异检查(把锁存改成覆盖,3 条失败) | `Ncw.Core.Tests/StartupProgressTests`(73 条,含主密钥拒绝的两个原因) |
 | Client | ViewModel + Store + Recorder + 真实的 DataGate:延迟出现、最短停留、淡出触发、释放后零通知、失败面板与重试、复制诊断、退出、数据页让位与交回、接管步骤与数据页同源、手机形态、`DeviceLink.RetryNow`;变异检查 | `Ncw.Client.Tests/StartupViewModelTests`(33 条) |
 | Desktop | 守护状态 → 启动事实的映射(每个问题 key 都有标题 + 说明文字)、拉起 / 握手两个里程碑、接上不触发拉起、找不到 Agent 时重试立即生效、重试不留杂散信号、诊断含日志尾部;变异检查 | `Ncw.Desktop.Tests/StartupBridgeTests`(9 条,含主密钥原因的映射);守护的 65 / 78 不重启、原因映射、重试恢复在 `SidecarSupervisorTests`,真实进程在 `RealAgentMasterKeyTests` |
-| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、主密钥缺失 / 无法使用、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(71 条),截图在 `bin/Debug/net10.0/screenshots/startup-*.png` |
+| Headless 界面 | 四个断点 × 深浅:第一帧 / 启动 Agent / 连接 / 数据迁移(带确定进度)/ 加载首批数据 / 慢启动 / 失败(Agent 不存在、版本不匹配、主密钥缺失 / 无法使用、展开诊断)/ 数据页让位;手机壳;动画中间帧(ManualFrameClock:标识弧长、勾淡入、淡出透明度);释放;窗口外框与拖动区域;三档动效终态一致;中英文 | `Ncw.UI.Tests/StartupOverlayTests`(71 条),截图在 `bin/Debug/net11.0/screenshots/startup-*.png` |
 | 真实启动(无界面) | 真实 `ncw-agent`(NativeAOT)+ 真实守护 + 真实 DeviceLink + 真实 Store:时间线(冷 / 热 / 接上)、故障注入、真实 2.x 库副本接管 | `dotnet run --project tools/StartupSmoke -- timeline|faults|takeover --agent <ncw-agent>`(结果见 §10.11) |
 | 真窗口(macOS) | 原生窗口底色读回、第一帧像素、帧间隔、淡出布局稳定、释放后空闲 CPU | `dotnet run --project tools/StartupSmoke -- window --agent <ncw-agent>`(结果见 §10.6) |
 

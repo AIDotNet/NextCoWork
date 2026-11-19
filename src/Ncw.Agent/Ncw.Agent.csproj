@@ -1,14 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Satori GC(https://github.com/VSadov/Satori,MIT):NativeAOT 发布时换用 Satori 的 ILC 和运行时库(docs/design/04 §7.6)。
+    只在带 RID 的发布里生效(开发构建没有 RID,照旧用标准运行时);-p:UseSatoriGC=false 退回标准 GC。版本在 global.json 的 msbuild-sdks 里。
+  -->
+  <Sdk Name="PublishWithSatoriGC" />
   <!-- ncw-agent 可执行文件(local / cloud 两种模式)。发布时 NativeAOT,零裁剪警告(AGENTS.md §5)。 -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>ncw-agent</AssemblyName>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 「Satori GC 是实验性的」(SATORI002)每次发布都报;已知且接受,不当警告(警告即错误) -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);SATORI002</MSBuildWarningsAsMessages>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And '$(Configuration)' == 'Release'">
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
   </PropertyGroup>
+  <ItemGroup>
+    <!--
+      标准 GC 尽量少占内存(docs/design/04 §7.6):开发构建(JIT)和 -p:UseSatoriGC=false 的发布用标准 GC。Agent 大部分时间空闲,托管堆里活着的只有几 MB,
+      默认配置下 GC 却会多提交不少备用。取 9(最积极):标准 GC 的 NativeAOT 实测空闲 64 MB → 59–60 MB,峰值同样下降;Agent 不是吞吐敏感的服务,多做几次 GC 的代价可以忽略。
+      写进运行时配置(NativeAOT 编译进二进制),不靠环境变量。对 Satori 没有测出效果(Satori 自己的开关只能用环境变量设,见 §7.6)。
+    -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="9" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Agent.Host/Ncw.Agent.Host.csproj" />
   </ItemGroup>

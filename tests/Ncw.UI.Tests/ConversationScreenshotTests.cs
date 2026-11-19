@@ -19,7 +19,7 @@ namespace Ncw.UI.Tests;
 
 /// <summary>
 /// 对话区和模型设置页的 Headless 截图(docs/design/03 §2 的四个断点 × 深浅两种主题),并断言界面的结构:行的种类、卡片上的执行环境标识、输入框的状态。
-/// 截图在 <c>bin/Debug/net10.0/screenshots/convo-*.png</c>。数据全部经 Store 进来(和设备推送的形状一致),不经过连接。
+/// 截图在 <c>bin/Debug/net11.0/screenshots/convo-*.png</c>。数据全部经 Store 进来(和设备推送的形状一致),不经过连接。
 /// </summary>
 public class ConversationScreenshotTests
 {

@@ -328,13 +328,46 @@ public class ModelCatalogServiceTests : IDisposable
             var files = new FileCatalogStore(dir);
             var body = Encoding.UTF8.GetBytes(Samples.ModelsDev(12));
             files.Save(body, new CatalogCacheMeta("\"v1\"", null, _clock.GetUtcNow(), null, FileCatalogStore.Hash(body), 12));
-            Assert.NotNull(files.Load());
+            Assert.NotNull(files.Load((b, _) => b.Length));
 
             // 截断了正文:哈希对不上,不拿一份来历不明的数据当快照。
             File.WriteAllBytes(Path.Combine(dir, "catalog", "models-dev.json"), body[..100]);
-            Assert.Null(files.Load());
+            Assert.Null(files.Load((b, _) => b.Length));
             var service = Create(store: files);
             Assert.Equal(CatalogSource.Seed, service.Current.Source);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Downloads_go_through_a_draft_file_that_is_committed_or_discarded()
+    {
+        // 正文边下边写临时文件(不进 GC 堆);采用才替换,拒绝 / 内容没变都不留下临时文件,内容没变也不再解析
+        var dir = Path.Combine(Path.GetTempPath(), $"ncwcat-{Guid.NewGuid():N}");
+        try
+        {
+            var files = new FileCatalogStore(dir);
+            var catalogDir = Path.Combine(dir, "catalog");
+            var service = Create(store: files);
+            var first = Samples.ModelsDev(12, 3);
+
+            _http.Ok(first, etag: "\"v1\"");
+            Assert.Equal(CatalogRefreshOutcome.Updated, (await service.RefreshAsync()).Outcome);
+            Assert.Equal(first, File.ReadAllText(Path.Combine(catalogDir, "models-dev.json")));
+            Assert.Equal(15, files.Load((b, _) => ModelsDevParser.Parse(b, "x").ModelCount)!.Value.Result);
+
+            _http.Ok(first);   // 上游不支持条件请求:同样的内容再来一遍
+            var same = await service.RefreshAsync();
+            Assert.Equal((CatalogRefreshOutcome.NotModified, 15), (same.Outcome, same.ModelCount));
+
+            _http.Ok("{ not json");
+            Assert.Equal(CatalogRefreshOutcome.Rejected, (await service.RefreshAsync()).Outcome);
+            Assert.Equal(first, File.ReadAllText(Path.Combine(catalogDir, "models-dev.json")));   // 旧的一份原样留着
+
+            Assert.Equal(["models-dev.json", "models-dev.meta.json"], Directory.GetFiles(catalogDir).Select(f => Path.GetFileName(f)).Order().ToArray());
         }
         finally
         {
@@ -354,8 +387,8 @@ public class ModelCatalogServiceTests : IDisposable
             files.Save(body, meta);
             files.SaveMeta(meta with { CheckedAt = _clock.GetUtcNow() });
 
-            var loaded = files.Load()!.Value;
-            Assert.Equal(body, loaded.Body);
+            var loaded = files.Load((b, _) => b.ToArray())!.Value;
+            Assert.Equal(body, loaded.Result);
             Assert.Equal("\"e\"", loaded.Meta.ETag);
             Assert.Equal("Wed, 12 Nov 2026 00:00:00 GMT", loaded.Meta.LastModified);
             Assert.Equal(_clock.GetUtcNow(), loaded.Meta.CheckedAt);

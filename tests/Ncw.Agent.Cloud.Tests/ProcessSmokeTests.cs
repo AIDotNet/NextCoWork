@@ -133,7 +133,7 @@ public sealed class ProcessSmokeTests : IAsyncLifetime
             return (binary, ["--mode", "cloud"]);
         }
 
-        var dll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/Ncw.Agent/bin/Debug/net10.0/ncw-agent.dll"));
+        var dll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/Ncw.Agent/bin/Debug/net11.0/ncw-agent.dll"));
         Assert.True(File.Exists(dll), $"build src/Ncw.Agent first ({dll})");
         return ("dotnet", [dll, "--mode", "cloud"]);
     }

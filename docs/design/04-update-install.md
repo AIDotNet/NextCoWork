@@ -227,7 +227,7 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 **`main` 上有 2.x 的同名文件 `ci.yml` / `release.yml`(另有 `publish-packages.yml`)**,所以 3.0 合入 `main` 时这两个文件会冲突,必须有意识地处理(替换、或改名为 `v3-*.yml` 与 2.x 并存),不会悄悄覆盖。
 
 - **`ci.yml`**(push / PR 到 `v3/avalonia`、手动):macOS / Windows / Linux 三个 runner 的矩阵(`osx-arm64` / `win-x64` / `linux-x64`;NativeAOT 不能跨操作系统编译,所以一平台一 runner):
-  还原 → `dotnet build NextCoWork.slnx`(`Directory.Build.props` 里 `TreatWarningsAsErrors=true`,有警告就失败,不另加开关)→ `dotnet test`(trx)→ **上传 UI 截图**(`tests/Ncw.UI.Tests/bin/Debug/net10.0/screenshots/`,无论成败)
+  还原 → `dotnet build NextCoWork.slnx`(`Directory.Build.props` 里 `TreatWarningsAsErrors=true`,有警告就失败,不另加开关)→ `dotnet test`(trx)→ **上传 UI 截图**(`tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/`,无论成败)
   → `publish-agent`(零裁剪警告,失败即红)→ 对发布出的 `ncw-agent` 做 `verify --agent` 冒烟 → `build-relay` 与 `build-relay --aot`(发布 + 产物自检)。Linux 上先装 `clang zlib1g-dev`(NativeAOT)和 `libfontconfig1`(Headless 截图的 Skia)。
 - **`release.yml`**(`v3.*` tag 或手动;手动可选通道、`require_signing`、`mandatory`、`minimum_supported_version`、`release_notes`):`preflight`(读 `Directory.Build.props` 的版本,tag 必须是 `v<版本>`)→ 三平台矩阵按本节流水线顺序 `publish-agent` → `publish-desktop` → `bundle` → `verify` → (准备凭据)`sign` → 签名后再 `verify` → `velopack`,
   产物(`artifacts/velopack/<rid>/<channel>/`)与符号上传为 workflow artifact → 汇总任务 `manifest`(下载三个平台的包,逐个文件交给 `manifest`,有 Ed25519 密钥才签名,再 `manifest-verify`,清单与签名上传为 artifact)。
@@ -402,3 +402,39 @@ dotnet run --project tools/Ncw.Build -- manifest --scan artifacts/rehearsal/feed
 部署后的真实后端 feed(B2 / B3 已实现、本机端到端走通,但还没部署到 nextco.work);2.8 → 2.9 → 3.0 的桥接(2.9 在 `main` 上,不在本分支);「更新前有任务在运行」的真实收尾(演练里没有跑中的 Run;Agent 对被中断 Run 的修复在 Agent 启动时,有 Agent 侧测试,没在更新场景里串起来);数据库迁移随更新执行(3.0.0 与 3.0.1 之间没有新迁移,迁移在 Agent 启动时做的这条路径没被更新场景真正走到);
 界面上点按钮(演练走的是同一个 `UpdateService`,界面层由 Headless 测试覆盖)。
 
+
+### 7.6 Agent 的 GC 与空闲内存(2026-11,.NET 11)
+
+**GC 选择:Satori**(https://github.com/VSadov/Satori,MIT,实验性的低停顿 GC)。用它的 MSBuild SDK `PublishWithSatoriGC` 接入:`src/Ncw.Agent/Ncw.Agent.csproj` 里 `<Sdk Name="PublishWithSatoriGC" />`,
+版本写在 `global.json` 的 `msbuild-sdks`(MSBuild SDK 的版本只能放这里,不能进 `Directory.Packages.props`),和 SDK 的主版本对齐(.NET 11 用 `11.0.x-satori.*`)。
+它只在**带 RID 的发布**里生效:NativeAOT 发布换用 Satori 自己的 ILC 与运行时库;开发构建(没有 RID,JIT)照旧是标准运行时。`-p:UseSatoriGC=false` 退回标准 GC。
+「Satori 是实验性的」警告(`SATORI002`)每次发布都报,已知且接受,降为消息(否则警告即错误)。`publish-agent` 照旧零裁剪警告;真实 Agent 冒烟(`Ncw.Desktop.Tests` 的 `RealAgent*`,`NCW_AGENT_PATH` 指向产物)Satori / 标准两种产物都通过。
+
+**取舍是有意的**:Satori 的目标是低停顿,不是省内存。同一份代码、同一台机器(macOS arm64,NativeAOT,空闲、无客户端连接,两轮结果一致)实测空闲物理内存(`footprint`):
+
+| 产物 | 稳定 | 峰值 |
+|---|---|---|
+| 标准 GC,优化前 | 64–65 MB | 65 MB |
+| 标准 GC + 本节的优化 | 58 MB | 59 MB |
+| Satori,优化前 | 63–69 MB(各轮波动大) | 78–86 MB |
+| **Satori + 本节的优化(当前默认)** | 69–73 MB | 70–74 MB |
+
+即 Satori 比标准 GC 多占 11–15 MB;选它是为了它的低停顿设计(**本机没有测过停顿时间**,收益未经验证),内存不是唯一指标。要换回标准 GC 只改 `UseSatoriGC`。
+试过的 Satori 开关(只能用环境变量 `DOTNET_gc*` 设,没有运行时配置名):`gcTrimPeakHold=0`(不保留近期峰值)无明显效果;`gcGen0=0`、`gcReusableTarget=0`、`gcGen2Target` 能把稳定值压到 57–67 MB,
+但启动峰值冲到 90–129 MB,而且波动大,没有采用。标准 GC 的 `GCgen0size` 无效;`GCConserveMemory=9` 有效(写进运行时配置,见 csproj)。
+
+**空闲 64 MB 都是什么**(标准 GC 优化前,`footprint` / `vmmap` / `MallocStackLogging`):
+- **GC 堆约 32 MB**(Untagged),其中真正存活的托管对象只有约 7 MB(`dotnet-gcdump`,JIT 版同一份代码):模型目录 2–3 MB、`ArrayPool` 留着的缓冲约 1.8 MB,其余是 GC 的提交余量和等完整 GC 才回收的大对象。
+- **可执行文件的数据段约 18 MB**(`__DATA` 脏页):NativeAOT 把类型信息、预初始化数据放在数据段,加载时的指针重定位让这些页变脏;跟二进制体积(约 56 MB)走,不砍功能就降不下来。
+- **原生分配约 11 MB**,其中约 **8 MB 是 NativeAOT 的 TypeLoader**:PolyType 的源生成类型形状用访问者模式(`ITypeShape.Accept` 是泛型虚方法),Nerdbank.MessagePack 第一次为一个类型建转换器时,
+  每个泛型虚方法的新实例化都要在运行时构造字典并永久缓存(约 13.5 万次小分配)。触发点是 `TopicHub.Publish` 编码主题事件;客户端连上后订阅主题同样会触发,所以这是「PolyType + MessagePack + NativeAOT」的固定成本,不是空闲时的浪费。
+- 其余:线程栈、ICU(映射的只读数据文件,不算脏页)、SQLite 页缓存、运行时自身。
+
+**本节的优化**(都在 `Ncw.Agent.Catalog`):
+- 模型目录缓存正文**内存映射读**(`FileCatalogStore.Load`):原来整份读进 `byte[]`,6.7 MB 的数组用完就落在大对象堆上,空闲的 Agent 很久不做完整 GC,这块一直占着;映射的是可回收的文件页,用完立即解除。
+  `ICatalogStore.Load` 改成回调形式,正文只在回调期间有效。
+- 联网刷新(启动后 30 秒一次、之后每 6 小时)**边下边写进同目录的临时文件、边算哈希**(`ICatalogStore.BeginDraft`):上游不支持条件请求,通常每次都是完整的 7 MB;
+  哈希和已采用的一份相同就丢掉临时文件、**不再解析**(原来先解析再比哈希,白白分配约 20 MB 临时对象);有变化才映射解析,通过后原子替换,拒绝则删掉临时文件。
+- 标准 GC 的 `System.GC.ConserveMemory = 9`(见上)。
+
+测试:`Ncw.Agent.Catalog.Tests` 的 `Downloads_go_through_a_draft_file_that_is_committed_or_discarded`(采用、内容相同、非法 JSON 三种情况下文件状态正确、不留临时文件)和原有的缓存截断 / 原子落盘测试。

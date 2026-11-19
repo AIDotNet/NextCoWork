@@ -1,18 +1,7 @@
 <Project>
   <!--
-    把 NativeAOT 编译器和运行时包固定到已修补的服务版本:GHSA-p3jp-9v83-76w9 / CVE-2026-111497(.NET Brotli 解码越界写)
-    在 10.0.14 修复,而本机 SDK(10.0.401)只认得 10.0.12。不固定的话 AOT 发布会因 NU1903 失败(警告即错误)。
-    做法同 Jaunt 的 Directory.Build.targets。SDK 升级到带 10.0.14+ 的版本后可以去掉。
+    .NET 10 时期这里把 NativeAOT 编译器和运行时包钉到修补过的服务版本(GHSA-p3jp-9v83-76w9 / CVE-2026-111497,10.0.14 修复),
+    升级到 .NET 11(SDK 11.0.100 / 运行时 11.0.0,已含修复)后不再需要。以后再遇到「SDK 认得的运行时包版本有已知漏洞、还原报 NU1903」,
+    照原来的办法在这里用 KnownILCompilerPack / KnownFrameworkReference / KnownRuntimePack 按 TargetFramework 钉版本(Android 不钉,它的包版本由 workload 清单给出)。
   -->
-  <PropertyGroup>
-    <NcwPatchedRuntime10>10.0.15</NcwPatchedRuntime10>
-  </PropertyGroup>
-  <!-- Android(src/Ncw.Mobile.Android)不钉:它的运行时包版本由 android workload 清单给出(Microsoft.Android.Runtime.* 是 36.x,钉成 10.0.15 会还原失败),也不做 NativeAOT。 -->
-  <Target Name="NcwPinServicingPacks" BeforeTargets="ProcessFrameworkReferences;_ComputeToolPackInputsToProcessFrameworkReferences" Condition="'$(TargetPlatformIdentifier)' != 'android'">
-    <ItemGroup>
-      <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" Condition="'%(TargetFramework)' == 'net10.0'" ILCompilerPackVersion="$(NcwPatchedRuntime10)" />
-      <KnownFrameworkReference Update="Microsoft.NETCore.App" Condition="'%(TargetFramework)' == 'net10.0'" LatestRuntimeFrameworkVersion="$(NcwPatchedRuntime10)" />
-      <KnownRuntimePack Update="Microsoft.NETCore.App" Condition="'%(TargetFramework)' == 'net10.0'" LatestRuntimeFrameworkVersion="$(NcwPatchedRuntime10)" />
-    </ItemGroup>
-  </Target>
 </Project>

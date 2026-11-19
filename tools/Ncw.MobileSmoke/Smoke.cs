@@ -7,7 +7,7 @@ namespace Ncw.MobileSmoke;
 /// 桌面发起一轮会触发审批的 Run → 手机收件箱出现待审批 → 点开卡片 → <b>长按允许</b> → Run 继续并完成(标记文件写出、上游收到第二次请求)。
 /// 每一步打印 <c>SMOKE step … PASS|FAIL</c> 和耗时;截图写进 <c>artifacts/mobile-android/smoke-*.png</c>(被忽略目录);退出码 = 失败步数。
 /// 点击坐标按屏幕比例换算(按 Pixel 6 的 1080x2400 版式量出来的;换了屏幕尺寸 / 版式要重新量)。推送没有覆盖(需要 Firebase 配置与推送中继)。
-/// 环境变量:<c>ANDROID_HOME</c>(找 adb)、<c>NCW_ANDROID_APK</c>(默认 src/Ncw.Mobile.Android/bin/Debug/net10.0-android/work.nextco.ncw-Signed.apk)、
+/// 环境变量:<c>ANDROID_HOME</c>(找 adb)、<c>NCW_ANDROID_APK</c>(默认 src/Ncw.Mobile.Android/bin/Debug/net11.0-android/work.nextco.ncw-Signed.apk)、
 /// <c>NCW_SKIP_INSTALL=1</c>(不重装,用设备上现有的)。
 /// </summary>
 internal static class Smoke
@@ -44,7 +44,7 @@ internal static class Smoke
 
         if (Environment.GetEnvironmentVariable("NCW_SKIP_INSTALL") != "1")
         {
-            var apk = Environment.GetEnvironmentVariable("NCW_ANDROID_APK") ?? Path.Combine(repo, "src", "Ncw.Mobile.Android", "bin", "Debug", "net10.0-android", "work.nextco.ncw-Signed.apk");
+            var apk = Environment.GetEnvironmentVariable("NCW_ANDROID_APK") ?? Path.Combine(repo, "src", "Ncw.Mobile.Android", "bin", "Debug", "net11.0-android", "work.nextco.ncw-Signed.apk");
             await Step("install apk", () => Task.FromResult(Run(adb, "install", "-r", apk).Contains("Success", StringComparison.Ordinal)));
         }
 

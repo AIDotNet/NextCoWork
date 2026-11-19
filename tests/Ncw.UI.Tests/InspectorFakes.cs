@@ -113,7 +113,7 @@ public sealed record InspectorRig(ClientStores Stores, MockFiles Files, MockGit 
     public const string SampleOutput =
         "\u001b[1;32mtoken@mac\u001b[0m \u001b[1;34m~/code/NextCoWork\u001b[0m % dotnet test tests/Ncw.Client.Tests\r\n"
         + "  Determining projects to restore...\r\n"
-        + "  Ncw.Client -> src/Ncw.Client/bin/Debug/net10.0/Ncw.Client.dll\r\n"
+        + "  Ncw.Client -> src/Ncw.Client/bin/Debug/net11.0/Ncw.Client.dll\r\n"
         + "\u001b[33mwarning\u001b[0m CS8602: Dereference of a possibly null reference.\r\n"
         + "\u001b[31mFailed\u001b[0m Ncw.Client.Tests.TerminalPanelTests.Disconnect_shows_unknown\r\n"
         + "\u001b[32mPassed!\u001b[0m  - Failed: 0, Passed: 141, Skipped: 0, Total: 141\r\n"
