@@ -126,6 +126,55 @@ public sealed class ComposerHintConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>
+/// 斜杠菜单一行的说明 / 参数提示:内置的本地动作按动作翻译(应用自己的文案);设备上的命令用它自己写的说明(用户的内容,不翻译)。
+/// </summary>
+public sealed class SlashTextConverter : IValueConverter
+{
+    public static readonly SlashTextConverter Description = new(hint: false);
+    public static readonly SlashTextConverter Hint = new(hint: true);
+
+    private readonly bool _hint;
+
+    private SlashTextConverter(bool hint) => _hint = hint;
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is not SlashCommandItem item ? null : item.Action switch
+    {
+        null => _hint ? item.ArgumentHint : item.Description,
+        SlashAction.Goal => NcwTexts.Get(_hint ? NcwTextKind.SlashGoalHint : NcwTextKind.SlashGoalDescription),
+        SlashAction.Compact => NcwTexts.Get(_hint ? NcwTextKind.SlashCompactHint : NcwTextKind.SlashCompactDescription),
+        SlashAction.Model => NcwTexts.Get(_hint ? NcwTextKind.SlashModelHint : NcwTextKind.SlashModelDescription),
+        _ => _hint ? null : NcwTexts.Get(NcwTextKind.SlashClearDescription),
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>本地动作的结果提示(<see cref="SlashNotice"/>)→ 文字。</summary>
+public sealed class SlashNoticeConverter : IValueConverter
+{
+    public static readonly SlashNoticeConverter Instance = new();
+
+    public static string? Text(SlashNotice? notice) => notice is null ? null : notice.Kind switch
+    {
+        SlashNoticeKind.GoalUsage => NcwTexts.Get(NcwTextKind.SlashGoalUsage),
+        SlashNoticeKind.GoalEmpty => NcwTexts.Get(NcwTextKind.SlashGoalEmpty),
+        SlashNoticeKind.GoalTooLong => NcwTexts.Format(NcwTextKind.SlashGoalTooLong, notice.Arg ?? ""),
+        SlashNoticeKind.CompactBusy => NcwTexts.Get(NcwTextKind.SlashCompactBusy),
+        SlashNoticeKind.CompactNothing => NcwTexts.Get(NcwTextKind.SlashCompactNothing),
+        SlashNoticeKind.CompactFailed => NcwTexts.Get(NcwTextKind.SlashCompactFailed),
+        SlashNoticeKind.ModelNotFound => NcwTexts.Format(NcwTextKind.SlashModelNotFound, notice.Arg ?? ""),
+        SlashNoticeKind.ModelAmbiguous => NcwTexts.Format(NcwTextKind.SlashModelAmbiguous, notice.Arg ?? ""),
+        SlashNoticeKind.ModelUnavailable => NcwTexts.Format(NcwTextKind.SlashModelUnavailable, notice.Arg ?? ""),
+        SlashNoticeKind.ModelSwitched => NcwTexts.Format(NcwTextKind.SlashModelSwitched, notice.Arg ?? ""),
+        _ => NcwTexts.Get(NcwTextKind.SlashUnavailable),
+    };
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as SlashNotice);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>「记住」的作用域(<c>session</c> / <c>project</c> / <c>global</c>)→ 文字。</summary>
 public sealed class ScopeTextConverter : IValueConverter
 {

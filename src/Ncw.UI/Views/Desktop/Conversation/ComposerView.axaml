@@ -60,11 +60,18 @@
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
       <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowFloating}" />
     </Style>
+    <Style Selector="TextBlock.slashNotice.warn">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Warning}" />
+    </Style>
     <Style Selector="ui|PlainButton.suggestRow">
       <Setter Property="Padding" Value="8,3" />
       <Setter Property="MinHeight" Value="26" />
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <!-- 键盘高亮(`/` 与 `@` 候选):和悬停同一个底色,上下键移动时看得见落在哪一行 -->
+    <Style Selector="ui|PlainButton.suggestRow.active">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
     </Style>
   </UserControl.Styles>
   <Panel>
@@ -108,6 +115,14 @@
       </Grid>
       <TextBlock Classes="hint" IsVisible="{Binding HasFailure}" ui:NcwMotion.ShowMotion="Fade" Foreground="{arc:ArcDesignTokenResource Danger}"
                  Text="{Binding LastFailure, Converter={x:Static cv:ComposerHintConverter.Failure}}" />
+      <!-- 本地动作(/goal /compact /model)的结果:用法、切换成功是告知,其余是警告 -->
+      <TextBlock Classes="hint slashNotice" Classes.warn="{Binding !NoticeIsInfo}" IsVisible="{Binding HasNotice}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap"
+                 Text="{Binding Notice, Converter={x:Static cv:SlashNoticeConverter.Instance}}" />
+      <!-- /compact 进行中:要等一次模型调用 -->
+      <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsCompacting}" ui:NcwMotion.ShowMotion="Fade">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+        <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText StatusCompacting}" />
+      </StackPanel>
 
       <!-- 附件托盘:选好的照片 / 文件,上传进度、失败原因、重试 / 移除 -->
       <ItemsControl ItemsSource="{Binding Attachments.Items}" IsVisible="{Binding Attachments.HasItems}" ui:NcwMotion.ShowMotion="Rise">
@@ -269,7 +284,7 @@
         <ItemsControl ItemsSource="{Binding SlashCommands}" Grid.IsSharedSizeScope="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:SlashCommandItem">
-              <ui:PlainButton Classes="suggestRow" Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).InsertSlashCommand}" CommandParameter="{Binding}">
+              <ui:PlainButton Classes="suggestRow" Classes.active="{Binding IsActive}" Command="{Binding $parent[ItemsControl].((vm:ComposerViewModel)DataContext).InsertSlashCommand}" CommandParameter="{Binding}">
                 <!-- 命令列各行同宽(SharedSizeGroup),说明列对齐 -->
                 <Grid ColumnSpacing="12">
                   <Grid.ColumnDefinitions>
@@ -278,9 +293,9 @@
                   </Grid.ColumnDefinitions>
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <TextBlock Classes="mono" Text="{Binding Command}" VerticalAlignment="Center" />
-                    <TextBlock Classes="hint" Text="{Binding ArgumentHint}" VerticalAlignment="Center" />
+                    <TextBlock Classes="hint" Text="{Binding Converter={x:Static cv:SlashTextConverter.Hint}}" VerticalAlignment="Center" />
                   </StackPanel>
-                  <TextBlock Grid.Column="1" Classes="hint" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding Description}" IsVisible="{Binding IsAvailable}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="hint" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding Converter={x:Static cv:SlashTextConverter.Description}}" IsVisible="{Binding IsAvailable}" VerticalAlignment="Center" />
                   <TextBlock Grid.Column="1" Classes="hint" Text="{l:NcwText SlashComingSoon}" IsVisible="{Binding !IsAvailable}" VerticalAlignment="Center" />
                 </Grid>
               </ui:PlainButton>

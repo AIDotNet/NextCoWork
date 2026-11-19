@@ -88,6 +88,7 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Inbox.Updated += UpdatePendingElsewhere;
         Conversation.ElsewhereRequested += () => GoToNextAttention(elsewhereOnly: true);
         Conversation.ProviderSettingsRequested += () => OpenSettingsSection(SettingsSection.Models);
+        Conversation.NewSessionRequested += () => Execute(AppCommand.NewSession);
         // 当前会话改过文件:检查器自动给出「审查」页签(事实来自对话转录,检查器只拿一个布尔)
         Conversation.PropertyChanged += (_, e) =>
         {

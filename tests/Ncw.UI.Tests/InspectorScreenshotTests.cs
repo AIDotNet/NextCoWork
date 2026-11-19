@@ -660,7 +660,7 @@ public class InspectorScreenshotTests
 
         Assert.True(composer.HasSlashQuery);
         Assert.Contains(composer.SlashCommands, c => c is { Command: "/review", IsAvailable: true });
-        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: false });
+        Assert.Contains(composer.SlashCommands, c => c is { Command: "/compact", IsAvailable: true });
         AssertFloatsAboveTheCard(window, "SlashPopup");
         var dir = Path.Combine(AppContext.BaseDirectory, "screenshots");
         Directory.CreateDirectory(dir);

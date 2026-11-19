@@ -381,6 +381,24 @@
     <unit id="SettingsModelsHint"><segment><source>Providers, credentials, model aliases and the model catalog of this device.</source><target state="translated">这台设备的供应商、凭据、模型别名和模型目录。</target></segment></unit>
     <unit id="ShowArchived"><segment><source>Show archived</source><target state="translated">显示已归档</target></segment></unit>
     <unit id="SlashComingSoon"><segment><source>Commands are coming soon</source><target state="translated">命令即将支持</target></segment></unit>
+    <unit id="SlashGoalDescription"><segment><source>Set a goal the agent keeps working toward</source><target state="translated">为会话设定目标,Agent 会一直推进到满足为止</target></segment></unit>
+    <unit id="SlashGoalHint"><segment><source>&lt;condition&gt;</source><target state="translated">&lt;完成条件&gt;</target></segment></unit>
+    <unit id="SlashCompactDescription"><segment><source>Compact the context now</source><target state="translated">立即压缩上下文</target></segment></unit>
+    <unit id="SlashCompactHint"><segment><source>[focus]</source><target state="translated">[侧重点]</target></segment></unit>
+    <unit id="SlashModelDescription"><segment><source>Switch the model</source><target state="translated">切换模型</target></segment></unit>
+    <unit id="SlashModelHint"><segment><source>[name]</source><target state="translated">[名称]</target></segment></unit>
+    <unit id="SlashClearDescription"><segment><source>Start a new session in this project</source><target state="translated">在当前项目开一个新会话</target></segment></unit>
+    <unit id="SlashGoalUsage"><segment><source>Write the condition that ends the goal after /goal; /goal clear removes the current goal.</source><target state="translated">在 /goal 后写上完成条件;/goal clear 清除当前目标。</target></segment></unit>
+    <unit id="SlashGoalEmpty"><segment><source>The goal condition is empty.</source><target state="translated">目标条件是空的。</target></segment></unit>
+    <unit id="SlashGoalTooLong"><segment><source>The goal condition is too long (at most {0} characters).</source><target state="translated">目标条件太长了(最多 {0} 个字符)。</target></segment></unit>
+    <unit id="SlashCompactBusy"><segment><source>The session is running. Compact after it finishes.</source><target state="translated">会话正在运行,等它结束后再压缩。</target></segment></unit>
+    <unit id="SlashCompactNothing"><segment><source>Nothing new to compact since the last compaction.</source><target state="translated">上次压缩之后还没有新的对话,无需压缩。</target></segment></unit>
+    <unit id="SlashCompactFailed"><segment><source>Compaction failed. Try again in a moment.</source><target state="translated">压缩失败,稍后再试。</target></segment></unit>
+    <unit id="SlashModelNotFound"><segment><source>No model matches “{0}”.</source><target state="translated">没有匹配「{0}」的模型。</target></segment></unit>
+    <unit id="SlashModelAmbiguous"><segment><source>More than one model matches “{0}”. Type more of the name.</source><target state="translated">有多个模型匹配「{0}」,请写得更完整些。</target></segment></unit>
+    <unit id="SlashModelUnavailable"><segment><source>{0} is not available right now.</source><target state="translated">{0} 目前不可用。</target></segment></unit>
+    <unit id="SlashModelSwitched"><segment><source>Switched to {0}.</source><target state="translated">已切换到 {0}。</target></segment></unit>
+    <unit id="SlashUnavailable"><segment><source>This command is not available here.</source><target state="translated">这里用不了这个命令。</target></segment></unit>
     <unit id="StatusCompacting"><segment><source>Compacting the conversation…</source><target state="translated">正在压缩对话……</target></segment></unit>
     <unit id="StatusRetrying"><segment><source>The provider is retrying (attempt {0})…</source><target state="translated">上游正在重试(第 {0} 次)……</target></segment></unit>
     <unit id="SubagentReportRow"><segment><source>A background sub-agent reported back</source><target state="translated">后台子代理已回传结果</target></segment></unit>

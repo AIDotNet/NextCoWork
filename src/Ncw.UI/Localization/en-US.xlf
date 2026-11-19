@@ -381,6 +381,24 @@
     <unit id="SettingsModelsHint"><segment><source>Providers, credentials, model aliases and the model catalog of this device.</source><target state="final">Providers, credentials, model aliases and the model catalog of this device.</target></segment></unit>
     <unit id="ShowArchived"><segment><source>Show archived</source><target state="final">Show archived</target></segment></unit>
     <unit id="SlashComingSoon"><segment><source>Commands are coming soon</source><target state="final">Commands are coming soon</target></segment></unit>
+    <unit id="SlashGoalDescription"><segment><source>Set a goal the agent keeps working toward</source><target state="final">Set a goal the agent keeps working toward</target></segment></unit>
+    <unit id="SlashGoalHint"><segment><source>&lt;condition&gt;</source><target state="final">&lt;condition&gt;</target></segment></unit>
+    <unit id="SlashCompactDescription"><segment><source>Compact the context now</source><target state="final">Compact the context now</target></segment></unit>
+    <unit id="SlashCompactHint"><segment><source>[focus]</source><target state="final">[focus]</target></segment></unit>
+    <unit id="SlashModelDescription"><segment><source>Switch the model</source><target state="final">Switch the model</target></segment></unit>
+    <unit id="SlashModelHint"><segment><source>[name]</source><target state="final">[name]</target></segment></unit>
+    <unit id="SlashClearDescription"><segment><source>Start a new session in this project</source><target state="final">Start a new session in this project</target></segment></unit>
+    <unit id="SlashGoalUsage"><segment><source>Write the condition that ends the goal after /goal; /goal clear removes the current goal.</source><target state="final">Write the condition that ends the goal after /goal; /goal clear removes the current goal.</target></segment></unit>
+    <unit id="SlashGoalEmpty"><segment><source>The goal condition is empty.</source><target state="final">The goal condition is empty.</target></segment></unit>
+    <unit id="SlashGoalTooLong"><segment><source>The goal condition is too long (at most {0} characters).</source><target state="final">The goal condition is too long (at most {0} characters).</target></segment></unit>
+    <unit id="SlashCompactBusy"><segment><source>The session is running. Compact after it finishes.</source><target state="final">The session is running. Compact after it finishes.</target></segment></unit>
+    <unit id="SlashCompactNothing"><segment><source>Nothing new to compact since the last compaction.</source><target state="final">Nothing new to compact since the last compaction.</target></segment></unit>
+    <unit id="SlashCompactFailed"><segment><source>Compaction failed. Try again in a moment.</source><target state="final">Compaction failed. Try again in a moment.</target></segment></unit>
+    <unit id="SlashModelNotFound"><segment><source>No model matches “{0}”.</source><target state="final">No model matches “{0}”.</target></segment></unit>
+    <unit id="SlashModelAmbiguous"><segment><source>More than one model matches “{0}”. Type more of the name.</source><target state="final">More than one model matches “{0}”. Type more of the name.</target></segment></unit>
+    <unit id="SlashModelUnavailable"><segment><source>{0} is not available right now.</source><target state="final">{0} is not available right now.</target></segment></unit>
+    <unit id="SlashModelSwitched"><segment><source>Switched to {0}.</source><target state="final">Switched to {0}.</target></segment></unit>
+    <unit id="SlashUnavailable"><segment><source>This command is not available here.</source><target state="final">This command is not available here.</target></segment></unit>
     <unit id="StatusCompacting"><segment><source>Compacting the conversation…</source><target state="final">Compacting the conversation…</target></segment></unit>
     <unit id="StatusRetrying"><segment><source>The provider is retrying (attempt {0})…</source><target state="final">The provider is retrying (attempt {0})…</target></segment></unit>
     <unit id="SubagentReportRow"><segment><source>A background sub-agent reported back</source><target state="final">A background sub-agent reported back</target></segment></unit>

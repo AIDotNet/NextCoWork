@@ -31,6 +31,25 @@ public enum SendOutcome
 
 public readonly record struct SendResult(SendOutcome Outcome, RunRef? Run = null, string? MessageId = null);
 
+/// <summary>手动压缩(<c>/compact</c>)的结局。成功时边界消息经会话主题(历史重置)回到 Store,这里不改 Store。</summary>
+public enum CompactOutcome
+{
+    /// <summary>压缩完成,边界已落库。</summary>
+    Done,
+
+    /// <summary>会话正在运行(或正在压缩):只能在空闲时手动压缩。</summary>
+    Busy,
+
+    /// <summary>上一个边界之后还没有新的对话。</summary>
+    NothingToCompact,
+
+    /// <summary>压缩本身失败(模型出错、没有可用的压缩模型……)。</summary>
+    Failed,
+
+    /// <summary>设备没连上。</summary>
+    Unavailable,
+}
+
 public enum InteractionOutcome
 {
     /// <summary>回答被接受。</summary>
@@ -83,6 +102,13 @@ public interface IConversationCommands
     /// </summary>
     Task<bool> SetModelAsync(SessionRef session, string alias, string? providerId, string? defaultForWorkspace = null, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    /// <summary>
+    /// 立刻压缩会话的上下文(<c>/compact [说明]</c>,<c>context.compact</c>)。<paramref name="instructions"/> 接在摘要提示词的 <c>Additional focus:</c> 后面;
+    /// <paramref name="options"/> 是当前的发送档位(会话还没记模型时设备用它选压缩模型)。没有覆盖它的实现(单测里的假实现)返回 <see cref="CompactOutcome.Unavailable"/>。
+    /// </summary>
+    Task<CompactOutcome> CompactAsync(SessionRef session, string? instructions, SendOptionsDto options, CancellationToken ct = default) =>
+        Task.FromResult(CompactOutcome.Unavailable);
 
     // 带文件引用(输入框里 @ 选的文件)的重载。没有覆盖它们的实现(单测里的假实现)退化成把引用写成 `@路径` 追加在正文后面。
 
@@ -181,6 +207,36 @@ public sealed class ConversationActions(DeviceRegistry devices, InteractionLedge
         }
 
         return true;
+    }
+
+    /// <summary>手动压缩(见 <see cref="IConversationCommands.CompactAsync"/>)。设备拒绝的原因按错误码 / 消息 key 归成 <see cref="CompactOutcome"/>。</summary>
+    public async Task<CompactOutcome> CompactAsync(SessionRef session, string? instructions, SendOptionsDto options, CancellationToken ct = default)
+    {
+        if (Link(session.DeviceId) is not { } link)
+        {
+            return CompactOutcome.Unavailable;
+        }
+
+        try
+        {
+            var result = await link.CallAsync(ConversationMethods.ContextCompact,
+                new ContextCompactParams(session.SessionId, string.IsNullOrWhiteSpace(instructions) ? null : instructions, options), ct,
+                idem: $"compact:{session.SessionId}:{Ulid.New()}").ConfigureAwait(false);
+            return result switch
+            {
+                { Boundary: not null } => CompactOutcome.Done,
+                { Error.MessageKey: "compaction.nothingToCompact" } => CompactOutcome.NothingToCompact,
+                _ => CompactOutcome.Failed,
+            };
+        }
+        catch (ProtocolException e) when (e.Code == ErrorCodes.Busy)
+        {
+            return CompactOutcome.Busy;
+        }
+        catch (ProtocolException)
+        {
+            return CompactOutcome.Failed;
+        }
     }
 
     /// <summary>打开一个会话:订阅它的主题(快照进 Store,之后的变化跟着更新,断线重连后自动恢复)。</summary>
