@@ -29,6 +29,7 @@ public sealed class FakeHttpServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private readonly ConcurrentDictionary<string, StreamWriter> _streams = new();
+    private readonly SemaphoreSlim _pushGate = new(1, 1);
     private readonly object _streamGate = new();
     private StreamWriter? _legacyStream;
     private StreamWriter? _serverStream;
@@ -268,7 +269,16 @@ public sealed class FakeHttpServer : IAsyncDisposable
                 _legacyStream = writer;
             }
 
-            await writer.WriteAsync("event: endpoint\ndata: /messages?sid=1\n\n").ConfigureAwait(false);
+            // 流已经登记,推送可能同时到:和 PushAsync 用同一把锁
+            await _pushGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await writer.WriteAsync("event: endpoint\ndata: /messages?sid=1\n\n").ConfigureAwait(false);
+            }
+            finally
+            {
+                _pushGate.Release();
+            }
             try
             {
                 await Task.Delay(Timeout.Infinite, _stop.Token).ConfigureAwait(false);
@@ -299,12 +309,19 @@ public sealed class FakeHttpServer : IAsyncDisposable
             return;
         }
 
+        // 后台处理的请求会并发推送(响应可以乱序):StreamWriter 不是线程安全的,并发写会抛 InvalidOperationException 或把两个事件写交错,
+        // 那条消息就悄悄丢了、客户端一直等(Linux CI 上 The_legacy_transport_gets_list_changed_on_its_stream 超时)。一次只写一个事件。
+        await _pushGate.WaitAsync().ConfigureAwait(false);
         try
         {
             await writer.WriteAsync($"event: message\ndata: {line}\n\n").ConfigureAwait(false);
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
+        }
+        finally
+        {
+            _pushGate.Release();
         }
     }
 
