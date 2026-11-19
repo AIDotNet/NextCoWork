@@ -82,7 +82,7 @@ import { documentEngineMessage } from '../shared/i18n/document-engine'
 import { titleBarOptions, watchMaximized } from './window/title-bar'
 import { applyThemePreference, resolveTheme, setQuitRequester, setSessionWindowOpener } from './ipc/app'
 import { updateService } from './update/update-service'
-import { v3Offer } from './update/v3'
+import { setV3QuitRequester, v3Offer } from './update/v3'
 import { findV3App } from './update/v3-locate'
 import { detectNewerOwner } from './db/v3-ownership'
 import { V3_DOWNLOAD_PAGE } from '../shared/domain/v3-upgrade'
@@ -377,6 +377,7 @@ function createMainWindow(
   win.webContents.on('will-prevent-unload', () => {
     quitFlow?.veto()
     updateService.installCancelled()
+    v3Offer.installCancelled()
     /*
       需求:整次退出作废 = 应用必须**完全可用**,文档也要照常打得开。
       `veto()` 只管退出状态机,文档闸门在别处(主进程的 `acquireDocumentGuard()`,
@@ -902,6 +903,10 @@ void app
   setQuitRequester(() => { requestQuit() })
   // 「重启更新」也走同一条退出流程;安装本身在收尾最后一步(见 QuitFlow 的 `quit`)。
   updateService.setQuitRequester(async () => {
+    await documentQuitGuard.request().catch((error: unknown) => { console.error('[quit] 退出前的文档预检失败:', error) })
+    return quitFlow?.inProgress === true || quitFlow?.done === true
+  })
+  setV3QuitRequester(async () => {
     await documentQuitGuard.request().catch((error: unknown) => { console.error('[quit] 退出前的文档预检失败:', error) })
     return quitFlow?.inProgress === true || quitFlow?.done === true
   })

@@ -23,10 +23,11 @@ v3Offer.attachInstaller(new V3Installer({
   run: (command, args) => new Promise<void>((resolve, reject) => {
     execFile(command, args, (error) => (error ? reject(error) : resolve()))
   }),
-  spawnDetached: (command, args) => {
+  spawnDetached: (command, args, onError) => {
     const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true })
-    child.on('error', (error) => console.warn('[v3] 安装脚本没能启动:', error))
+    child.on('error', onError)
     child.unref()
+    return () => { try { child.kill() } catch { /* 已经结束了 */ } }
   },
   platform: process.platform,
   execPath: process.execPath,
@@ -44,14 +45,21 @@ v3Offer.attachInstaller(new V3Installer({
  */
 export async function upgradeToV3(): Promise<void> {
   // 应用内已经下好、验过:起脱离本进程的安装脚本(等 2.x 退出再换),然后走同一条退出流程。
-  // 退出被取消时进程还活着 —— 过几秒回到「可以再点」;脚本等满超时自己放弃,什么都没动。
+  // 退出被取消(未保存的文档等)时,按钮回到「可以再点」并结束那个脚本;不靠定时器猜,和 2.x 自己的「重启更新」一样读退出流程的真实状态。
   if (v3Offer.prepareInstall()) {
-    requestQuit()
-    setTimeout(() => v3Offer.installCancelled(), 8_000).unref()
+    const started = v3QuitRequester === null ? (requestQuit(), true) : await v3QuitRequester()
+    if (!started) v3Offer.installCancelled()
     return
   }
   await shell.openExternal(V3_DOWNLOAD_PAGE)
   requestQuit()
+}
+
+let v3QuitRequester: (() => Promise<boolean>) | null = null
+
+/** 装配点在 `main/index.ts`:发起应用自己的退出流程,返回退出是否真的开始了(预检被取消 = false)。 */
+export function setV3QuitRequester(request: () => Promise<boolean>): void {
+  v3QuitRequester = request
 }
 
 /** 应用内下载这个平台的 3.0(进度经 `app:v3OfferChanged` 广播)。 */

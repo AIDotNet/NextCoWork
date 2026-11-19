@@ -29,17 +29,18 @@ function rig(platform: string, data: Buffer = bytes, over: Partial<InstallerDeps
   const apps = join(root, 'Applications')
   mkdirSync(apps, { recursive: true })
   const states: V3InstallState[] = []
-  const spawned: Array<{ command: string; args: string[] }> = []
+  const spawned: Array<{ command: string; args: string[]; onError: (e: Error) => void }> = []
+  const abandoned: string[] = []
   const urls: string[] = []
   const deps: InstallerDeps = {
     fetch: async (url) => { urls.push(url); return { ok: true, body: bodyOf(data) } },
     run: async () => {},
-    spawnDetached: (command, args) => { spawned.push({ command, args }) },
+    spawnDetached: (command, args, onError) => { spawned.push({ command, args, onError }); return () => { abandoned.push(command) } },
     platform, execPath: join(apps, 'NextCoWork.app', 'Contents', 'MacOS', 'NextCoWork'), pid: 4242,
     home: join(root, 'home'), workDir: join(root, 'work'),
     onState: (s) => states.push(s), ...over
   }
-  return { installer: new V3Installer(deps), states, spawned, urls, apps }
+  return { installer: new V3Installer(deps), states, spawned, abandoned, urls, apps, workDir: deps.workDir }
 }
 
 describe('helpers', () => {
@@ -59,7 +60,10 @@ describe('helpers', () => {
   it('quotes for sh and PowerShell', () => {
     expect(shq("a'b")).toBe(`'a'\\''b'`)
     expect(psq("C:\\it's\\Setup.exe")).toBe("'C:\\it''s\\Setup.exe'")
-    expect(windowsInstallCommand(7, 'C:\\t\\Setup.exe')).toContain("Wait-Process -Id 7")
+    const command = windowsInstallCommand(7, 'C:\\t\\Setup.exe', 'C:\\t\\install.log')
+    expect(command).toContain('Wait-Process -Id 7')
+    expect(command).toContain("'C:\\t\\install.log'")
+    expect(command).toContain('installer failed to start')
   })
 })
 
@@ -152,9 +156,32 @@ describe('V3Installer.prepareInstall', () => {
     const command = spawned[0]!.args.at(-1)!
     expect(command).toContain('Wait-Process -Id 4242')
     expect(command).toContain('NextCoWork-stable-Setup.exe')
+    expect(command).toContain('install.log')
     expect(states.at(-1)).toEqual({ phase: 'installing' })
     installer.installCancelled()
     expect(states.at(-1)).toEqual({ phase: 'ready' })
+  })
+
+  it('a cancelled quit ends the waiting script (so it cannot swap 3.0 in later) and the button comes back', async () => {
+    const { installer, abandoned, states } = rig('win32')
+    await installer.download(fileFor(bytes, { kind: 'velopack-setup' }))
+    installer.prepareInstall()
+    installer.installCancelled()
+    expect(abandoned).toEqual(['powershell.exe'])
+    expect(states.at(-1)).toEqual({ phase: 'ready' })
+    installer.installCancelled() // 已经回到 ready:什么也不做
+    expect(abandoned).toHaveLength(1)
+  })
+
+  it('a script that cannot start is reported as an error and logged, instead of "nothing happens"', async () => {
+    const { installer, spawned, states, workDir } = rig('win32')
+    await installer.download(fileFor(bytes, { kind: 'velopack-setup' }))
+    installer.prepareInstall()
+    spawned[0]!.onError(new Error('spawn powershell.exe ENOENT'))
+    expect(states.at(-1)).toEqual({ phase: 'error', code: 'permission' })
+    const log = readFileSync(join(workDir, 'install.log'), 'utf8')
+    expect(log).toContain('install started')
+    expect(log).toContain('spawn failed: spawn powershell.exe ENOENT')
   })
 
   it('Linux: puts the AppImage in ~/Applications, executable, and launches it after 2.x exits', async () => {

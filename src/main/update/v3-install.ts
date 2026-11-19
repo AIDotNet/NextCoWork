@@ -14,7 +14,7 @@
  * Electron 相关的(网络、进程、退出)全部由调用方注入,本文件可以在 Node 里直接测。
  */
 import { createHash } from 'node:crypto'
-import { accessSync, constants, createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync, chmodSync, copyFileSync } from 'node:fs'
+import { accessSync, appendFileSync, constants, createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync, chmodSync, copyFileSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { v3FileKindOf, type V3File, type V3InstallErrorCode, type V3InstallState } from '../../shared/domain/v3-upgrade'
 
@@ -32,8 +32,8 @@ export interface InstallerDeps {
   fetch: (url: string, signal: AbortSignal) => Promise<FetchedBody>
   /** 同步执行外部命令(`ditto` / `codesign`),失败抛错 */
   run: (command: string, args: string[]) => Promise<void>
-  /** 起脱离本进程的后台进程 */
-  spawnDetached: (command: string, args: string[]) => void
+  /** 起脱离本进程的后台进程。返回「放弃等待」的函数(退出被取消时用它结束还在等 2.x 退出的脚本)。 */
+  spawnDetached: (command: string, args: string[], onError: (error: Error) => void) => () => void
   platform: string
   /** 本进程的可执行文件(定位正在运行的 .app) */
   execPath: string
@@ -117,11 +117,16 @@ exec "$APPIMAGE"
 }
 
 /** Windows:等 2.x 退出 → 跑 Velopack 的 Setup.exe(它装完会自己启动 3.0)。 */
-export function windowsInstallCommand(pid: number, setupPath: string): string {
-  return (
-    `Wait-Process -Id ${pid} -Timeout ${WAIT_FOR_EXIT_SECONDS} -ErrorAction SilentlyContinue; ` +
-    `if (-not (Get-Process -Id ${pid} -ErrorAction SilentlyContinue)) { Start-Process -FilePath ${psq(setupPath)} }`
-  )
+export function windowsInstallCommand(pid: number, setupPath: string, logPath: string): string {
+  return [
+    `$log = ${psq(logPath)}`,
+    `function L($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' [ps] ' + $m) }`,
+    `L 'script started, waiting for 2.x (pid ${pid}) to exit'`,
+    `Wait-Process -Id ${pid} -Timeout ${WAIT_FOR_EXIT_SECONDS} -ErrorAction SilentlyContinue`,
+    `if (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { L 'gave up: 2.x did not exit in time'; exit 1 }`,
+    `L 'starting the installer'`,
+    `try { Start-Process -FilePath ${psq(setupPath)} -ErrorAction Stop; L 'installer started' } catch { L ('installer failed to start: ' + $_) }`
+  ].join('; ')
 }
 
 export class V3Installer {
@@ -129,6 +134,8 @@ export class V3Installer {
   private inflight: AbortController | null = null
   /** 下载好的文件(`ready` 之后才有) */
   private artifact: { file: string; stage?: string; target?: string } | null = null
+  /** 正在等 2.x 退出的安装脚本的「放弃」开关 */
+  private abandonScript: (() => void) | null = null
 
   constructor(private readonly deps: InstallerDeps) {}
 
@@ -250,9 +257,14 @@ export class V3Installer {
         const script = join(deps.workDir, 'swap.sh')
         writeFileSync(script, macSwapScript(), { mode: 0o755 })
         const backup = join(deps.home, 'Library', 'Application Support', 'NextCoWork-2.x-backup', 'NextCoWork.app')
-        deps.spawnDetached('/bin/sh', [script, String(deps.pid), artifact.stage, artifact.target, backup])
+        this.abandonScript = deps.spawnDetached('/bin/sh', [script, String(deps.pid), artifact.stage, artifact.target, backup], this.onSpawnError)
       } else if (deps.platform === 'win32') {
-        deps.spawnDetached('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', windowsInstallCommand(deps.pid, artifact.file)])
+        this.log(`windows: starting powershell to run ${artifact.file} after pid ${deps.pid} exits`)
+        this.abandonScript = deps.spawnDetached(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', windowsInstallCommand(deps.pid, artifact.file, this.logPath())],
+          this.onSpawnError
+        )
       } else if (deps.platform === 'linux') {
         const dir = join(deps.home, 'Applications')
         mkdirSync(dir, { recursive: true })
@@ -261,7 +273,7 @@ export class V3Installer {
         chmodSync(appImage, 0o755)
         const script = join(deps.workDir, 'launch.sh')
         writeFileSync(script, linuxLaunchScript(), { mode: 0o755 })
-        deps.spawnDetached('/bin/sh', [script, String(deps.pid), appImage])
+        this.abandonScript = deps.spawnDetached('/bin/sh', [script, String(deps.pid), appImage], this.onSpawnError)
       } else {
         return false
       }
@@ -270,13 +282,35 @@ export class V3Installer {
       this.set({ phase: 'error', code: 'permission' })
       return false
     }
+    this.log(`install started (${deps.platform}, pid ${deps.pid}); waiting for 2.x to quit`)
     this.set({ phase: 'installing' })
     return true
   }
 
   /** 退出被用户取消时调用:脚本会等到超时自己放弃,界面回到 `ready` 可以再点。 */
   installCancelled(): void {
-    if (this.state.phase === 'installing') this.set({ phase: 'ready' })
+    if (this.state.phase !== 'installing') return
+    // 结束还在等 2.x 退出的脚本:否则用户稍后自己退出时它会突然把 3.0 换进来
+    this.abandonScript?.()
+    this.abandonScript = null
+    this.log('install cancelled: the quit did not go through; script abandoned')
+    this.set({ phase: 'ready' })
+  }
+
+  /** 安装脚本起不来(找不到 powershell、被安全软件拦截……):记下来,回到可重试 */
+  private readonly onSpawnError = (error: Error): void => {
+    this.log(`spawn failed: ${error.message}`)
+    console.warn('[v3] 安装脚本没能启动:', error)
+    if (this.state.phase === 'installing') this.set({ phase: 'error', code: 'permission' })
+  }
+
+  /** 安装过程的日志(用户反馈「点了没反应」时能看到走到了哪一步):<工作目录>/install.log */
+  private logPath(): string {
+    return join(this.deps.workDir, 'install.log')
+  }
+
+  private log(message: string): void {
+    try { appendFileSync(this.logPath(), `${new Date().toISOString()} [main] ${message}\n`) } catch { /* 日志写不了不影响安装 */ }
   }
 
   private set(next: V3InstallState): void {
