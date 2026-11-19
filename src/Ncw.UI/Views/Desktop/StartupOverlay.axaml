@@ -14,9 +14,10 @@
     启动加载界面(docs/design/03 §10):整窗覆盖层,由真实的加载状态驱动(StartupViewModel ← 启动事实 Store)。
     · 底色(Background token)从第一帧起就在;内容(标识、清单、提示)等一个很短的延迟才出现,更快就绪时内容根本不出现。
     · 顶部 40px 不拦截按下:MainWindow 用它拖动窗口;窗口按钮(Windows / Linux)在 DesktopShell 里排在本层之上。
-    · 入场(内容出现的那一刻,代码里编排,见 StartupOverlay.axaml.cs 的 BuildEntrance):标识长出来(缩放 + 淡入)、轨道从十二点钟方向被画出来、标题上移淡入、
+    · 核心图形采用超维晶格核心(Hyper-Tesseract):外圈弧长与 16 个 4D 晶格节点的点亮比例严格等于真实进度(Fraction),完整级别下双平面 4D 旋转,减弱级别明暗呼吸,关闭级别静止且终态一致。
+    · 入场(内容出现的那一刻,代码里编排,见 StartupOverlay.axaml.cs 的 BuildEntrance):标识长出来(缩放 + 淡入)、轨道与 4D 晶格从十二点钟方向同步展开、标题上移淡入、
       清单各行错峰(Arc StaggerItem)上移淡入、说明淡入、短弧最后淡入。时长 / 缓动 / 错峰全是 Arc 的 token;减弱级别只有一个短淡入,关闭级别立即。
-    · 动画只动 Opacity / RenderTransform 和一段圆弧的弧长(Arc 的 Smooth 弹簧);全部走 NcwMotion,减弱 / 关闭级别终态一致。
+    · 动画只动 Opacity / RenderTransform 和 NcwProgressArc 自绘(Arc 的 Smooth 弹簧 + LiveLoop);全部走 NcwMotion,减弱 / 关闭级别终态一致。
     · 数据接管的步骤和数据页读同一个事实;数据需要用户处理时本层整个让位给数据页(IsPresented 变假)。
   -->
   <UserControl.Styles>
@@ -51,14 +52,16 @@
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource Border}" />
     </Style>
     <Style Selector="Border.seg.on">
-      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Foreground}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}" />
     </Style>
-    <!-- 标识的外圈:平时是前景色,失败时换成危险色(颜色走样式,不写在控件上:本地值会盖过样式) -->
+    <!-- 标识的外圈与 4D 晶格核心:平时是强调色 + 次级前景色,失败时换成危险色(颜色走样式,不写在控件上:本地值会盖过样式) -->
     <Style Selector="ui|NcwProgressArc.ring">
-      <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Foreground}" />
+      <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Accent}" />
+      <Setter Property="LatticeStroke" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
     <Style Selector="Border.failed ui|NcwProgressArc.ring">
       <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Danger}" />
+      <Setter Property="LatticeStroke" Value="{arc:ArcDesignTokenResource Danger}" />
     </Style>
     <!-- 「正在进行」的短弧:只在完整 / 减弱级别画(完整:旋转;减弱:Arc 的「忙」明暗呼吸);关闭级别不画——静止的一段弧会被误读成进度。Arc 只有 :motion-full / :motion-reduced 两个伪类 -->
     <Style Selector="Panel.cometSpin">
@@ -86,25 +89,25 @@
       <!-- 内容根:内容出现之前不可见(IsVisible 由代码设置,因为要先让清单的行实例化、再编排入场);出现之后不再收起(让位时整层一起淡出) -->
       <StackPanel x:Name="ContentRoot" IsVisible="False" MaxWidth="400" Margin="24,16,24,32" Spacing="20" HorizontalAlignment="Center" VerticalAlignment="Center">
 
-        <!-- 标识:外圈的弧长 = 真实进度(走完了几步);还在等的整个期间再转一小段带拖尾的短弧(一步要多久不知道,弧长不动时也要看得出还在干活) -->
-        <Panel x:Name="Mark" Width="104" Height="104" HorizontalAlignment="Center">
+        <!-- 标识:超维晶格核心(Hyper-Tesseract) + 外圈真实进度弧(Fraction) + 等待期间旋转的扫描彗尾短弧 -->
+        <Panel x:Name="Mark" Width="136" Height="136" HorizontalAlignment="Center">
           <ui:NcwProgressArc x:Name="Ring" Classes="ring" Thickness="3" Progress="{Binding Fraction}"
+                             ShowTesseract="True" IsSpinning="{Binding IsIndeterminate}" ShowArc="{Binding !IsIndeterminate}"
                              TrackStroke="{arc:ArcDesignTokenResource Border}" />
           <Panel x:Name="CometHost" ui:NcwMotion.IsPresent="{Binding IsIndeterminate}" ui:NcwMotion.PresenceKind="Fade">
             <Panel x:Name="CometSpin" Classes="cometSpin" ui:NcwMotion.Busy="Spin">
               <!-- 拖尾:彗头后面一段逐渐变淡的弧(整段 = 拖尾 + 彗头,彗头在顺时针方向的最前面) -->
               <ui:NcwProgressArc x:Name="CometTail" Thickness="3" Progress="0.2" Opacity="0.32" RenderTransform="rotate(-72deg)"
-                                 Stroke="{arc:ArcDesignTokenResource TextSecondary}" />
+                                 Stroke="{arc:ArcDesignTokenResource Accent}" />
               <ui:NcwProgressArc x:Name="Comet" Thickness="3" Progress="0.08"
-                                 Stroke="{arc:ArcDesignTokenResource TextSecondary}" />
+                                 Stroke="{arc:ArcDesignTokenResource Accent}" />
             </Panel>
           </Panel>
-          <!-- 中间的图形:NextCoWork 的品牌标识(2.x 的图标,圆角方块自带透明边距,方块本身约 55 px);失败时换成 Danger 色的警告 -->
-          <Image x:Name="Logo" Source="avares://Ncw.UI/Assets/nextcowork-mark.png" Width="68" Height="68"
-                 HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !IsFailed}" />
-          <Border Width="52" Height="52" CornerRadius="14" HorizontalAlignment="Center" VerticalAlignment="Center"
-                  Background="{arc:ArcDesignTokenResource Foreground}" IsVisible="{Binding IsFailed}" ui:NcwMotion.ShowMotion="Fade">
-            <lucide:LucideIcon Kind="TriangleAlert" Size="26" HorizontalAlignment="Center" VerticalAlignment="Center"
+          <!-- 失败时在晶格核心中央叠放 Danger 色的警告标示 -->
+          <Border Width="48" Height="48" CornerRadius="14" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Background="{arc:ArcDesignTokenResource SurfaceRaised}" BorderBrush="{arc:ArcDesignTokenResource Danger}" BorderThickness="1"
+                  IsVisible="{Binding IsFailed}" ui:NcwMotion.ShowMotion="Fade">
+            <lucide:LucideIcon Kind="TriangleAlert" Size="24" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{arc:ArcDesignTokenResource Danger}" />
           </Border>
         </Panel>
@@ -122,10 +125,10 @@
                   <Grid Classes="step" Classes.active="{Binding IsActive}" Classes.done="{Binding IsDone}" ColumnDefinitions="22,Auto" Margin="0,4">
                     <Panel Width="16" Height="16" HorizontalAlignment="Left" VerticalAlignment="Center">
                       <Panel ui:NcwMotion.IsPresent="{Binding IsDone}" ui:NcwMotion.PresenceKind="Grow">
-                        <lucide:LucideIcon Kind="CircleCheckBig" Size="16" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                        <lucide:LucideIcon Kind="CircleCheckBig" Size="16" Foreground="{arc:ArcDesignTokenResource Accent}" />
                       </Panel>
                       <Panel ui:NcwMotion.IsPresent="{Binding IsActive}" ui:NcwMotion.PresenceKind="Fade">
-                        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" Foreground="{arc:ArcDesignTokenResource Foreground}" />
+                        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="16" Foreground="{arc:ArcDesignTokenResource Accent}" />
                       </Panel>
                       <lucide:LucideIcon Kind="Circle" Size="16" Foreground="{arc:ArcDesignTokenResource TextMuted}" IsVisible="{Binding IsPending}" />
                     </Panel>

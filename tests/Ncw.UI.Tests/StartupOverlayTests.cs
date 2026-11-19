@@ -950,9 +950,13 @@ public class StartupOverlayTests : IDisposable
         rig.AppReady();
         Frames(200);
 
+        var ring = rig.Overlay!.FindControl<NcwProgressArc>("Ring")!;
         var comet = rig.Overlay!.FindControl<NcwProgressArc>("Comet")!;
 
-        Assert.True(rig.Startup.IsIndeterminate);                           // 还在等:短弧在转
+        Assert.True(ring.ShowTesseract);
+        Assert.True(ring.IsSpinning);
+        Assert.Equal(visible, ring.TesseractPhase > 0);
+        Assert.True(rig.Startup.IsIndeterminate);                           // 还在等:4D 晶格与短弧在转(完整)/ 呼吸(减弱)
         Assert.Equal(visible, comet.IsEffectivelyVisible);
     }
 
