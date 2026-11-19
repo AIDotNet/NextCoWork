@@ -290,10 +290,9 @@
                   <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowPlainLabel}" Text="{l:NcwText ThinkingLabel}" />
                 </StackPanel>
               </ui:PlainButton>
+              <!-- 正文限高、框内滚动、流式时跟到最新,只建看得见的段落(NcwThinkingView) -->
               <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
-                <Border Margin="8,0,0,0" Padding="12,0,0,0" BorderThickness="2,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
-                  <SelectableTextBlock Classes="hint" Text="{Binding Text}" TextWrapping="Wrap" />
-                </Border>
+                <ui:NcwThinkingView Text="{Binding Text}" IsLive="{Binding IsStreaming}" />
               </ui:NcwCollapsible>
             </StackPanel>
           </DataTemplate>

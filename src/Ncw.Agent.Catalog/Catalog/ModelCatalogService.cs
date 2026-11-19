@@ -387,14 +387,15 @@ public sealed class ModelCatalogService : IDisposable
     private static async Task<byte[]?> ReadCappedAsync(HttpContent content, long max, CancellationToken ct)
     {
         await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        using var buffer = new MemoryStream();
+        // 声明了长度就按它一次分配好(几 MB 的正文边读边翻倍,会在大对象堆上留下一串用过即弃的缓冲);长度对得上时直接交出底层数组,不再拷一份
+        using var buffer = new MemoryStream(content.Headers.ContentLength is { } declared and > 0 && declared <= max ? (int)declared : 0);
         var chunk = new byte[81920];
         while (true)
         {
             var read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false);
             if (read == 0)
             {
-                return buffer.ToArray();
+                return buffer.Length == buffer.Capacity ? buffer.GetBuffer() : buffer.ToArray();
             }
 
             if (buffer.Length + read > max)

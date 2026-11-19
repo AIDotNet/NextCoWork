@@ -323,6 +323,21 @@ public sealed class ProjectSettingsTests
     }
 
     [Fact]
+    public async Task Changing_a_field_and_back_is_not_an_edit()
+    {
+        // 下拉框在页面创建时可能先回写空值再写回原值(页面按需创建,数据先到):按值比较,不留「保存 / 还原」
+        var kit = new ManagementKit();
+        await kit.Pages.Project.ActivateAsync();
+        var page = kit.Pages.Project;
+        var model = page.ModelKey;
+
+        page.ModelKey = "";
+        Assert.True(page.Dirty);
+        page.ModelKey = model;
+        Assert.False(page.Dirty);
+    }
+
+    [Fact]
     public async Task A_member_can_read_but_not_save()
     {
         var kit = new ManagementKit("member");

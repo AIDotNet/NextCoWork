@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="Ncw.UI.Controls.NcwThinkingView">
+  <!--
+    思考块展开后的正文(docs/design/03 §6「思考块」):限高、框内滚动、流式时跟到最新;文字切成段落块放进虚拟化列表,只建看得见的那几块。
+  -->
+  <Border Margin="8,0,0,0" Padding="12,0,0,0" BorderThickness="2,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+    <ScrollViewer x:Name="Scroll" HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl x:Name="Chunks">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <SelectableTextBlock Classes="hint" Text="{Binding}" TextWrapping="Wrap" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Border>
+</UserControl>

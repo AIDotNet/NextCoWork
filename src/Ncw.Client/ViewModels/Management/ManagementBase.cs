@@ -290,7 +290,7 @@ public abstract partial class ManagementPageViewModel : ObservableObject
     protected Need ReadNeed { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsIdle), nameof(IsLoading), nameof(IsReady), nameof(IsError), nameof(IsUnknown), nameof(IsForbidden), nameof(ShowsContent))]
+    [NotifyPropertyChangedFor(nameof(IsIdle), nameof(IsLoading), nameof(IsReady), nameof(IsError), nameof(IsUnknown), nameof(IsForbidden), nameof(ShowsContent), nameof(IsReadOnly))]
     public partial PageState State { get; protected set; } = PageState.Idle;
 
     /// <summary>还没读过(设置页里还没滚到这一段):画骨架占位,不让分区看起来是空的(docs/design/03 §11.6)。</summary>

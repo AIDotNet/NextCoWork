@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Controls;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -57,17 +58,46 @@ public partial class SettingsOverlay : UserControl
         }
     }
 
+    /// <summary>各分区的按需创建宿主(docs/design/03 §12)。</summary>
+    private IEnumerable<NcwDeferred> PageHosts => SectionPages.Children.OfType<NcwDeferred>();
+
+    /// <summary>设置页里已经建出来的分区(测试用)。</summary>
+    public IReadOnlyList<SettingsSection> RealizedSections =>
+        [.. PageHosts.Where(h => h.IsRealized).Select(h => (SettingsSection)h.Tag!)];
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        // 关闭动画放完(IsPresent 在退出结束后才把 IsVisible 置为假)才释放各分区的页面,下次打开重新建
+        if (change.Property == IsVisibleProperty && !IsVisible)
+        {
+            foreach (var host in PageHosts)
+            {
+                host.Release();
+            }
+        }
+    }
+
     /// <summary>
     /// 搜索索引:每个分区里此刻的全部文字(标题、每一项的名字、说明;当前语言)。直接从界面树上收,不另维护一份「哪个设置在哪」的表——
-    /// 页面改了文字,搜索自动跟着变。还没打开过的分区也有它的静态文字(名字和说明都是词条)。模型与供应商还收列表栏里的文字(供应商名)。
+    /// 页面改了文字,搜索自动跟着变。分区按需创建,所以搜索时先把还没建出来的分区全部建出来(到设置页关掉为止);
+    /// 还没打开过的分区也有它的静态文字(名字和说明都是词条)。模型与供应商还收列表栏里的文字(供应商名)。
     /// </summary>
-    private IReadOnlyList<(SettingsSection Section, string Title, IReadOnlyList<string> Texts)> BuildSearchIndex() =>
-        [.. SectionPages.Children.Append(ProviderList)
+    private IReadOnlyList<(SettingsSection Section, string Title, IReadOnlyList<string> Texts)> BuildSearchIndex()
+    {
+        foreach (var host in PageHosts)
+        {
+            host.Realize();
+        }
+
+        return [.. SectionPages.Children.Append(ProviderList)
             .Where(c => c.Tag is SettingsSection)
             .GroupBy(c => (SettingsSection)c.Tag!)
             .Select(g => (g.Key, Converters.SettingsSectionTitleConverter.Text(g.Key),
                 (IReadOnlyList<string>)[.. g.SelectMany(c => Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(c).OfType<TextBlock>())
                     .Select(t => t.Text ?? "").Where(s => s.Length > 1).Distinct()]))];
+    }
 
     private void OnHitClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

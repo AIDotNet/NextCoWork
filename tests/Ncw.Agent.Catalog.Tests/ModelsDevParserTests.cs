@@ -99,6 +99,51 @@ public class ModelsDevParserTests
     }
 
     [Fact]
+    public void Content_after_the_root_object_is_rejected()
+    {
+        Assert.Throws<CatalogParseException>(() => Parse("""{"x":{"models":{}}} {"y":1}"""));
+        Assert.Throws<CatalogParseException>(() => Parse("""{"x":{"models":{"m":{"id":"m"}}}"""));
+        Assert.Throws<CatalogParseException>(() => Parse(""));
+    }
+
+    [Fact]
+    public void Providers_are_ordered_by_key_and_trailing_commas_are_accepted()
+    {
+        var parsed = Parse("""{"zeta":{"models":{"a":{"id":"a"},}},"alpha":{"models":{"b":{"id":"b"}}},}""");
+        Assert.Equal(["alpha", "zeta"], parsed.Providers.Select(p => p.Id).ToArray());
+    }
+
+    [Fact]
+    public void Repeated_values_across_models_share_one_instance()
+    {
+        // 上万个模型里输入输出类型、推理强度、能力组合、家族名只有少数几种:共用实例,不是每个模型一份
+        var json = """
+        {"a":{"models":{"m1":{"id":"m1","family":"fam","reasoning":true,"modalities":{"input":["Text","image"],"output":["text"]},"reasoning_options":[{"type":"effort","values":["low","high"]}]}}},
+         "b":{"models":{"m1":{"id":"m1","family":"fam","reasoning":true,"modalities":{"input":["text","IMAGE"],"output":["text"]},"reasoning_options":[{"type":"effort","values":["low","high"]}]}}}}
+        """;
+        var parsed = Parse(json);
+        var first = parsed.Providers[0].Models[0];
+        var second = parsed.Providers[1].Models[0];
+        Assert.Same(first.Id, second.Id);
+        Assert.Same(first.Family, second.Family);
+        Assert.Same(first.Capabilities, second.Capabilities);
+        Assert.Same(first.ReasoningEfforts, second.ReasoningEfforts);
+        Assert.Equal(["text", "image"], first.Capabilities.InputModalities);
+    }
+
+    [Fact]
+    public void Find_prefers_first_party_among_duplicate_ids_and_keeps_provider_order_within_a_rank()
+    {
+        var parsed = Parse("""{"agg1":{"models":{"m":{"id":"m"}}},"agg2":{"models":{"m":{"id":"m"}}},"openai":{"models":{"m":{"id":"m"}}}}""");
+        var snapshot = new CatalogSnapshot(1, CatalogSource.Cache, null, parsed.Providers);
+        Assert.Equal("openai", snapshot.Find(null, "m")!.ProviderId);
+        Assert.Equal("openai", snapshot.Find(null, "M")!.ProviderId);
+
+        var aggregators = new CatalogSnapshot(1, CatalogSource.Cache, null, [.. parsed.Providers.Where(p => p.Id != "openai")]);
+        Assert.Equal("agg1", aggregators.Find(null, "m")!.ProviderId);
+    }
+
+    [Fact]
     public void An_output_limit_above_the_context_window_is_clamped()
     {
         // 聚合源偶尔两者写反。

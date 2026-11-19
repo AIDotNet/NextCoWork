@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Ncw.Agent.Llm.Pricing;
 using Ncw.Agent.Llm.Thinking;
 
@@ -121,8 +122,9 @@ public sealed record CatalogRefreshResult(CatalogRefreshOutcome Outcome, Catalog
 public sealed class CatalogSnapshot
 {
     private readonly Dictionary<string, CatalogProvider> _providers;
-    private readonly Dictionary<string, List<CatalogModel>> _byModelId;
-    private readonly Dictionary<string, List<CatalogModel>> _byLowerModelId;
+    // 上万个模型里绝大多数 id 只出现一次:桶里先放一个,重名时才建列表
+    private readonly Dictionary<string, Bucket> _byModelId;
+    private readonly Dictionary<string, Bucket> _byLowerModelId;
 
     public CatalogSnapshot(
         long version,
@@ -146,15 +148,25 @@ public sealed class CatalogSnapshot
             }
         }
 
-        static void Add(Dictionary<string, List<CatalogModel>> map, string key, CatalogModel model)
+        static void Add(Dictionary<string, Bucket> map, string key, CatalogModel model)
         {
-            if (!map.TryGetValue(key, out var list))
+            ref var bucket = ref CollectionsMarshal.GetValueRefOrAddDefault(map, key, out var exists);
+            if (!exists)
             {
-                map[key] = list = [];
+                bucket = new Bucket(model);
             }
-
-            list.Add(model);
+            else
+            {
+                (bucket.Rest ??= []).Add(model);
+            }
         }
+    }
+
+    private struct Bucket(CatalogModel first)
+    {
+        public readonly CatalogModel First = first;
+
+        public List<CatalogModel>? Rest;
     }
 
     public static CatalogSnapshot Empty { get; } = new(0, CatalogSource.Seed, null, []);
@@ -215,8 +227,28 @@ public sealed class CatalogSnapshot
     }
 
     /// <summary>一手厂商排在聚合站前面;同一档内按目录里的供应商顺序(本身按 id 排序),结果是确定的。</summary>
-    private static CatalogModel Preferred(List<CatalogModel> models) =>
-        models.Count == 1 ? models[0] : models.OrderBy(m => FirstParty.RankOf(m.ProviderId)).First();
+    private static CatalogModel Preferred(Bucket bucket)
+    {
+        if (bucket.Rest is not { } rest)
+        {
+            return bucket.First;
+        }
+
+        // 同一档取先出现的那个(供应商顺序),和稳定排序后取第一个一样
+        var best = bucket.First;
+        var bestRank = FirstParty.RankOf(best.ProviderId);
+        foreach (var model in rest)
+        {
+            var rank = FirstParty.RankOf(model.ProviderId);
+            if (rank < bestRank)
+            {
+                best = model;
+                bestRank = rank;
+            }
+        }
+
+        return best;
+    }
 
     public IReadOnlyList<CatalogModel> Query(CatalogQuery query)
     {
