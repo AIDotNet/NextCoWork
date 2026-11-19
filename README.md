@@ -1,6 +1,7 @@
-# NextCoWork 3.0(Avalonia 分支)
+# NextCoWork 3.0
 
-这是 NextCoWork **3.0** 的独立分支(`v3/avalonia`,孤儿分支,和 2.x 的 `main` 没有共同历史)。
+`main` 就是 NextCoWork **3.0**(2026-11 起;此前 3.0 在孤儿分支 `v3/avalonia` 上开发,和 2.x 没有共同历史)。
+2.x(Electron)的代码在 `archive/main-2.x`(替换前的 `main`),2.x 的后续补丁在 `release/2.9` 上发。
 
 3.0 全栈 C#(.NET 11):客户端用 **Avalonia 12 + [TKCode.Arc](https://docs.tkcode.si/llms.txt)** 重写,覆盖桌面端(macOS / Windows / Linux)和移动端(iOS / Android);
 Agent 运行时也用 C# 重写,发布为 NativeAOT 原生可执行文件 `ncw-agent`(同目录带 e_sqlite3 原生库)。两者分成两个进程,只通过「设备协议」通信。

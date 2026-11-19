@@ -1,4 +1,4 @@
-# AGENTS.md(3.0 / Avalonia 分支)
+# AGENTS.md(NextCoWork 3.0,main 分支)
 
 本文件是在本分支工作的 Agent(以及人)的**硬性约束**。标注「必须」的条目是合并的前提条件。
 

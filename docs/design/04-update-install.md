@@ -260,10 +260,10 @@ bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件�
 `Mcp` 3、`Extensions` 2、`Desktop` 2,以及 `Browser` / `Tools` / `UI` 各 1。它们依赖 POSIX shell、POSIX PTY、符号链接或 Unix 权限位;**这些路径在 Windows 上没有被验证**,「CI 绿」不覆盖它们。
 ConPTY 本身(`WindowsConPtyTests`:起 cmd、回显、退出码、调整大小、杀进程)在 Windows runner 上通过。
 
-两个文件,只用 .NET SDK(`global.json` 固定版本)和 `tools/Ncw.Build`,不装 Node / npm(AGENTS.md §6)。当前分支(`v3/avalonia`)上本来没有 `.github`;
+两个文件,只用 .NET SDK(`global.json` 固定版本)和 `tools/Ncw.Build`,不装 Node / npm(AGENTS.md §6)。3.0 的开发分支(当时是孤儿分支 `v3/avalonia`,2026-11 起就是 `main`)上本来没有 `.github`;
 **`main` 上有 2.x 的同名文件 `ci.yml` / `release.yml`(另有 `publish-packages.yml`)**,所以 3.0 合入 `main` 时这两个文件会冲突,必须有意识地处理(替换、或改名为 `v3-*.yml` 与 2.x 并存),不会悄悄覆盖。
 
-- **`ci.yml`**(push / PR 到 `v3/avalonia`、手动):macOS / Windows / Linux 三个 runner 的矩阵(`osx-arm64` / `win-x64` / `linux-x64`;NativeAOT 不能跨操作系统编译,所以一平台一 runner):
+- **`ci.yml`**(push / PR 到 `main`、手动;3.0 成为 `main` 之前是 `v3/avalonia`):macOS / Windows / Linux 三个 runner 的矩阵(`osx-arm64` / `win-x64` / `linux-x64`;NativeAOT 不能跨操作系统编译,所以一平台一 runner):
   还原 → `dotnet build NextCoWork.slnx`(`Directory.Build.props` 里 `TreatWarningsAsErrors=true`,有警告就失败,不另加开关)→ `dotnet test`(trx)→ **上传 UI 截图**(`tests/Ncw.UI.Tests/bin/Debug/net11.0/screenshots/`,无论成败)
   → `publish-agent`(零裁剪警告,失败即红)→ 对发布出的 `ncw-agent` 做 `verify --agent` 冒烟 → `build-relay` 与 `build-relay --aot`(发布 + 产物自检)。Linux 上先装 `clang zlib1g-dev`(NativeAOT)和 `libfontconfig1`(Headless 截图的 Skia)。
 - **`release.yml`**(`v3.*` tag 或手动;手动可选通道、`require_signing`、`mandatory`、`minimum_supported_version`、`release_notes`、`upload`):`preflight`(读 `Directory.Build.props` 的版本,tag 必须是 `v<版本>`)→ 三平台矩阵按本节流水线顺序 `publish-agent` → `publish-desktop` → `bundle` → `verify` → (准备凭据)`sign` → 签名后再 `verify` → `velopack` → (macOS)从 vpk 的包里解出 `.app` 核对签名与公证,

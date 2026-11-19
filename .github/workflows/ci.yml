@@ -10,9 +10,9 @@ name: ci
 
 on:
   push:
-    branches: [v3/avalonia]
+    branches: [main]
   pull_request:
-    branches: [v3/avalonia]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
