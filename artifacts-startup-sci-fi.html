@@ -1,0 +1,1849 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NextCoWork 启动加载设计方案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  [hidden] { display: none !important; }
+  /* Layout: 顶部方案与真实状态模拟器控制台 + 仿真桌面窗口画布(4 套科幻启动加载方案实时 Canvas 渲染与对比) + 底部阶段里程碑说明 */
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --surface: #12161f;
+    --surface-raised: #181d29;
+    --surface-muted: #1e2534;
+    --fg: #edf2f7;
+    --text-secondary: #9aa6b8;
+    --text-muted: #5e6b7e;
+    --border: #232b3a;
+    --border-subtle: #19202c;
+    --accent: #38bdf8;
+    --accent-dim: rgba(56, 189, 248, 0.14);
+    --accent-glow: rgba(56, 189, 248, 0.42);
+    --secondary-sci: #818cf8;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --danger-dim: rgba(248, 113, 113, 0.14);
+    --win-bg: #0d1017;
+    --grid-line: rgba(148, 163, 184, 0.05);
+    --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg: #f3f5f9;
+      --surface: #ffffff;
+      --surface-raised: #f8fafc;
+      --surface-muted: #eef2f7;
+      --fg: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #8492a6;
+      --border: #dce3ed;
+      --border-subtle: #e9eef5;
+      --accent: #0284c7;
+      --accent-dim: rgba(2, 132, 199, 0.10);
+      --accent-glow: rgba(2, 132, 199, 0.28);
+      --secondary-sci: #4f46e5;
+      --success: #059669;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --danger-dim: rgba(220, 38, 38, 0.10);
+      --win-bg: #f8fafc;
+      --grid-line: rgba(15, 23, 42, 0.045);
+    }
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f3f5f9;
+    --surface: #ffffff;
+    --surface-raised: #f8fafc;
+    --surface-muted: #eef2f7;
+    --fg: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #8492a6;
+    --border: #dce3ed;
+    --border-subtle: #e9eef5;
+    --accent: #0284c7;
+    --accent-dim: rgba(2, 132, 199, 0.10);
+    --accent-glow: rgba(2, 132, 199, 0.28);
+    --secondary-sci: #4f46e5;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --danger-dim: rgba(220, 38, 38, 0.10);
+    --win-bg: #f8fafc;
+    --grid-line: rgba(15, 23, 42, 0.045);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 36px;
+    overflow-x: hidden;
+  }
+
+  .app-shell {
+    max-width: 1240px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* 顶部栏 */
+  .top-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .brand-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid var(--accent-glow);
+    white-space: nowrap;
+  }
+
+  .brand-title h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  .brand-sub {
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+
+  /* 方案选择器 */
+  .variant-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 10px;
+  }
+
+  .variant-card {
+    appearance: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+    color: var(--fg);
+    cursor: pointer;
+    transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.12s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .variant-card:hover {
+    background: var(--surface-raised);
+    border-color: var(--text-muted);
+  }
+
+  .variant-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .variant-card.active {
+    background: var(--surface-raised);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-glow);
+  }
+
+  .variant-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .variant-id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .variant-tag {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-muted);
+  }
+
+  .variant-name {
+    font-family: var(--font-display);
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+
+  .variant-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  /* 控制面板 */
+  .control-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .control-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .control-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: 2px;
+  }
+
+  .seg-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    background: var(--bg);
+    padding: 3px;
+    border-radius: 7px;
+    border: 1px solid var(--border-subtle);
+    gap: 2px;
+  }
+
+  .seg-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .seg-btn:hover {
+    color: var(--fg);
+  }
+
+  .seg-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .seg-btn.active {
+    background: var(--surface-muted);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+
+  .seg-btn.danger-active.active {
+    background: var(--danger-dim);
+    color: var(--danger);
+  }
+
+  .action-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.12s ease, background-color 0.12s ease;
+  }
+
+  .action-btn:hover {
+    background: var(--surface-muted);
+    border-color: var(--text-muted);
+  }
+
+  .action-btn.primary {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  /* 仿真应用窗口容器 */
+  .sim-viewport {
+    position: relative;
+    background: var(--win-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 600px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 22px 50px -12px rgba(0, 0, 0, 0.45);
+    transition: max-width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .sim-viewport.compact-mode {
+    max-width: 410px;
+  }
+
+  /* 顶部 40px 窗口拖拽栏(对应 docs/design/03 §10.7) */
+  .window-titlebar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    z-index: 20;
+    user-select: none;
+    background: rgba(13, 16, 23, 0.45);
+    backdrop-filter: blur(8px);
+  }
+
+  :root[data-theme="light"] .window-titlebar {
+    background: rgba(248, 250, 252, 0.65);
+  }
+
+  .traffic-lights {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .traffic-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .traffic-dot.close { background: #ef4444; }
+  .traffic-dot.min { background: #f59e0b; }
+  .traffic-dot.max { background: #10b981; }
+
+  .titlebar-telemetry {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .telemetry-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .pulse-dot.err {
+    background: var(--danger);
+    box-shadow: 0 0 8px var(--danger);
+  }
+
+  /* 全屏覆盖层画布区 */
+  .startup-stage-area {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px 32px;
+    overflow: hidden;
+  }
+
+  /* 科幻背景网格与光晕 */
+  .sci-backdrop-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(circle at 50% 42%, black 25%, transparent 80%);
+    -webkit-mask-image: radial-gradient(circle at 50% 42%, black 25%, transparent 80%);
+    pointer-events: none;
+  }
+
+  .sci-ambient-glow {
+    position: absolute;
+    width: 440px;
+    height: 440px;
+    top: 36%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, var(--accent-dim) 0%, transparent 68%);
+    pointer-events: none;
+    transition: background 0.3s ease;
+  }
+
+  .sim-viewport.is-failed .sci-ambient-glow {
+    background: radial-gradient(circle, var(--danger-dim) 0%, transparent 68%);
+  }
+
+  /* 四角 HUD 坐标装饰 */
+  .hud-corner {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-color: var(--border);
+    pointer-events: none;
+    opacity: 0.75;
+  }
+  .hud-corner.tl { top: 14px; left: 14px; border-top: 1.5px solid var(--accent); border-left: 1.5px solid var(--accent); }
+  .hud-corner.tr { top: 14px; right: 14px; border-top: 1.5px solid var(--accent); border-right: 1.5px solid var(--accent); }
+  .hud-corner.bl { bottom: 14px; left: 14px; border-bottom: 1.5px solid var(--accent); border-left: 1.5px solid var(--accent); }
+  .hud-corner.br { bottom: 14px; right: 14px; border-bottom: 1.5px solid var(--accent); border-right: 1.5px solid var(--accent); }
+
+  .hud-meta-left,
+  .hud-meta-right {
+    position: absolute;
+    bottom: 14px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-meta-left { left: 26px; }
+  .hud-meta-right { right: 26px; }
+
+  .compact-mode .hud-meta-left,
+  .compact-mode .hud-meta-right {
+    display: none;
+  }
+
+  /* 中心内容根 (对应 ContentRoot MaxWidth=400) */
+  .startup-content-root {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+
+  /* 核心视觉 Canvas 容器 */
+  .mark-stage {
+    position: relative;
+    width: 210px;
+    height: 210px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  canvas#sciCanvas {
+    width: 210px;
+    height: 210px;
+    display: block;
+  }
+
+  .mark-center-readout {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    gap: 2px;
+  }
+
+  .mark-logo-glyph {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: 0.06em;
+    color: var(--fg);
+    text-shadow: 0 0 16px var(--accent-glow);
+  }
+
+  .mark-fraction-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sim-viewport.is-failed .mark-fraction-num {
+    color: var(--danger);
+  }
+
+  /* 标题与副标题 */
+  .startup-header-block {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .startup-app-title {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .startup-sys-code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+  }
+
+  /* 5 阶段清单 (宽窗口显示,窄窗口收起) */
+  .steps-container {
+    width: 100%;
+    background: rgba(18, 22, 31, 0.62);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    backdrop-filter: blur(6px);
+  }
+
+  :root[data-theme="light"] .steps-container {
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  .compact-mode .steps-container {
+    display: none;
+  }
+
+  .step-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    opacity: 0.42;
+    transition: opacity 0.16s ease, background-color 0.16s ease;
+  }
+
+  .step-row.done {
+    opacity: 0.72;
+  }
+
+  .step-row.active {
+    opacity: 1;
+    background: var(--accent-dim);
+    font-weight: 600;
+  }
+
+  .step-icon-box {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .step-spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--accent);
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  .motion-reduced .step-spinner,
+  .motion-off .step-spinner {
+    animation: none;
+    border-right-color: var(--accent);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .step-tag-mono {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-row.active .step-tag-mono {
+    color: var(--accent);
+  }
+
+  .step-row.done .step-tag-mono {
+    color: var(--success);
+  }
+
+  /* 当前阶段说明 + 数据接管四段进度 */
+  .detail-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .compact-stage-name {
+    display: none;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--fg);
+  }
+
+  .compact-mode .compact-stage-name {
+    display: block;
+  }
+
+  .detail-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-height: 20px;
+  }
+
+  /* 接管四段进度条 (SubStep 1..4) */
+  .takeover-segments {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .takeover-seg {
+    width: 44px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .takeover-seg.on {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  .slow-hint-pill {
+    font-size: 12px;
+    color: var(--warning);
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    padding: 5px 12px;
+    border-radius: 999px;
+    text-align: center;
+  }
+
+  /* 失败面板 (对应 FailurePanel) */
+  .failure-panel {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .failure-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--danger);
+    margin: 0;
+  }
+
+  .failure-hint {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .failure-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .diag-drawer {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* 四宫格全览对比模式 */
+  .quad-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    width: 100%;
+    z-index: 5;
+  }
+
+  .quad-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+
+  .quad-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .quad-canvas-wrap {
+    position: relative;
+    width: 150px;
+    height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .quad-canvas {
+    width: 150px;
+    height: 150px;
+    display: block;
+  }
+
+  .quad-title {
+    font-family: var(--font-display);
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .quad-sub {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  /* 底部设计落地映射说明 */
+  .spec-footer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  .spec-item h3 {
+    margin: 0 0 4px;
+    font-size: 12.5px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+
+  .spec-item p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 640px) {
+    .control-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .sim-viewport {
+      min-height: 540px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <!-- 顶部标题与主题切换 -->
+  <header class="top-header">
+    <div class="brand-title">
+      <span class="brand-badge">NCW 3.0 // STARTUP OVERLAY</span>
+      <div>
+        <h1>NextCoWork 首次进入加载动画 · 科幻视觉重设计</h1>
+        <div class="brand-sub">严格对接 StartupViewModel 的 5 阶段锁存里程碑、2.x 数据接管 4 子步骤、Arc 动效降级与错误诊断</div>
+      </div>
+    </div>
+    <div class="control-group">
+      <button type="button" class="action-btn primary" id="btnAllQuad">四方案同屏对比</button>
+      <button type="button" class="action-btn" id="btnReplayEntrance">重播入场编排 (t=0..480ms)</button>
+      <button type="button" class="action-btn" id="btnToggleTheme">切换深浅主题</button>
+    </div>
+  </header>
+
+  <!-- 4 个科幻版本切换卡 -->
+  <section class="variant-grid" aria-label="视觉方案选择">
+    <button type="button" class="variant-card active" data-variant="orbital">
+      <div class="variant-card-top">
+        <span class="variant-id">VER 01 // ORBITAL TELEMETRY</span>
+        <span class="variant-tag">精密星轨遥测</span>
+      </div>
+      <div class="variant-name">量子星轨仪表 (Orbital Core)</div>
+      <div class="variant-desc">双层逆向精密刻度环 + 5 枚阶段方位信标 + 等离子彗尾扫描弧,直接演进自现有 NcwProgressArc。</div>
+    </button>
+
+    <button type="button" class="variant-card" data-variant="tesseract">
+      <div class="variant-card-top">
+        <span class="variant-id">VER 02 // HYPER-TESSERACT</span>
+        <span class="variant-tag">四维超正方体</span>
+      </div>
+      <div class="variant-name">超维晶格核心 (4D Tesseract)</div>
+      <div class="variant-desc">实时 3D/4D 线框投影旋转 + 八面体能量场脉冲,随阶段推进逐步锁定晶格节点与激光扫描平面。</div>
+    </button>
+
+    <button type="button" class="variant-card" data-variant="synapse">
+      <div class="variant-card-top">
+        <span class="variant-id">VER 03 // NEURAL SYNAPSE</span>
+        <span class="variant-tag">神经脉冲星图</span>
+      </div>
+      <div class="variant-name">Agent 突触星团 (Synapse Mesh)</div>
+      <div class="variant-desc">中心 Kernel 与 5 大子系统节点构成引力拓扑网,握手与同步期间沿连线高频发射双向数据包光子。</div>
+    </button>
+
+    <button type="button" class="variant-card" data-variant="gate">
+      <div class="variant-card-top">
+        <span class="variant-id">VER 04 // CHRONO APERTURE</span>
+        <span class="variant-tag">引力跃迁光圈</span>
+      </div>
+      <div class="variant-name">跃迁光阑矩阵 (Aperture Gate)</div>
+      <div class="variant-desc">多瓣机械光学光圈叶片 + 径向能量声呐波纹,在阶段完成瞬间触发高能聚束锁定。</div>
+    </button>
+  </section>
+
+  <!-- 状态与阶段模拟器控制栏 -->
+  <section class="control-bar" aria-label="真实状态模拟器">
+    <div class="control-group">
+      <span class="control-label">真实阶段 (StartupStage)</span>
+      <div class="seg-group" id="stageSelector">
+        <button type="button" class="seg-btn" data-stage="0">① 准备应用</button>
+        <button type="button" class="seg-btn active" data-stage="1">② 启动 Agent</button>
+        <button type="button" class="seg-btn" data-stage="2">③ 连接设备</button>
+        <button type="button" class="seg-btn" data-stage="3">④ 2.x 数据接管</button>
+        <button type="button" class="seg-btn" data-stage="4">⑤ 加载内容</button>
+        <button type="button" class="seg-btn danger-active" data-stage="5">⚠ 凭据密钥缺失</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <button type="button" class="action-btn" id="btnAutoCycle">▶ 自动演练冷启动</button>
+      <div class="seg-group" id="layoutSelector" title="响应式断点切换">
+        <button type="button" class="seg-btn active" data-layout="wide">桌面宽窗 (≥720px)</button>
+        <button type="button" class="seg-btn" data-layout="compact">窄窗 / 手机壳 (&lt;720px)</button>
+      </div>
+      <div class="seg-group" id="motionSelector" title="ArcMotionLevel">
+        <button type="button" class="seg-btn active" data-motion="full">完整动效</button>
+        <button type="button" class="seg-btn" data-motion="reduced">减弱</button>
+        <button type="button" class="seg-btn" data-motion="off">关闭</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 仿真桌面窗口 -->
+  <main class="sim-viewport" id="simViewport">
+    <!-- 顶部 40px 拖拽区 -->
+    <div class="window-titlebar">
+      <div class="traffic-lights">
+        <span class="traffic-dot close"></span>
+        <span class="traffic-dot min"></span>
+        <span class="traffic-dot max"></span>
+      </div>
+      <div class="titlebar-telemetry">
+        <span id="telemetryVariantLabel">SYS.HUD // ORBITAL_TELEMETRY</span>
+        <span class="telemetry-pill">
+          <span class="pulse-dot" id="telemetryPulse"></span>
+          <span id="telemetryStateCode">PHASE: LOADING</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- 覆盖层主体 -->
+    <div class="startup-stage-area">
+      <div class="sci-backdrop-grid"></div>
+      <div class="sci-ambient-glow"></div>
+
+      <div class="hud-corner tl"></div>
+      <div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div>
+      <div class="hud-corner br"></div>
+      <div class="hud-meta-left" id="hudMetaLeft">LOCAL_IPC // TLS1.3_PINNED // AOT_NATIVE</div>
+      <div class="hud-meta-right" id="hudMetaRight">DWELL: 600ms // DELAY: 250ms</div>
+
+      <!-- 单方案详细视图 -->
+      <div class="startup-content-root" id="singleViewRoot">
+        <!-- 科幻核心图形区 -->
+        <div class="mark-stage" id="markStage">
+          <canvas id="sciCanvas" width="420" height="420"></canvas>
+          <div class="mark-center-readout">
+            <div class="mark-logo-glyph" id="centerGlyph">NCW</div>
+            <div class="mark-fraction-num" id="centerFraction">40%</div>
+          </div>
+        </div>
+
+        <!-- 品牌标题 -->
+        <div class="startup-header-block">
+          <h2 class="startup-app-title">
+            <span>NextCoWork</span>
+          </h2>
+          <div class="startup-sys-code" id="sysSubCode">AGENT KERNEL // INITIALIZING WORKSPACE</div>
+        </div>
+
+        <!-- 正常加载面板 -->
+        <div id="loadingPanel" style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+          <!-- 五阶段清单 -->
+          <div class="steps-container" id="stepsList" role="region" aria-label="启动进度">
+            <!-- JS 渲染 5 行 -->
+          </div>
+
+          <!-- 当前阶段说明 + 数据接管 4 段条 -->
+          <div class="detail-stack">
+            <div class="compact-stage-name" id="compactStageName">启动本机 Agent</div>
+            <div class="detail-text" id="detailText" aria-live="polite">正在等待 Agent 响应…</div>
+            <div class="takeover-segments" id="takeoverSegments" hidden>
+              <div class="takeover-seg" data-seg="1"></div>
+              <div class="takeover-seg" data-seg="2"></div>
+              <div class="takeover-seg" data-seg="3"></div>
+              <div class="takeover-seg" data-seg="4"></div>
+            </div>
+            <div class="slow-hint-pill" id="slowHintPill" hidden>升级数据可能需要几分钟，请不要关闭应用。</div>
+          </div>
+        </div>
+
+        <!-- 失败诊断面板 -->
+        <div class="failure-panel" id="failurePanel" hidden>
+          <h3 class="failure-title" id="failureTitle">找不到凭据主密钥</h3>
+          <p class="failure-hint" id="failureHint">
+            找不到这份数据对应的凭据主密钥 (credential.key)。为了不让已有的凭据变得无法解密，NextCoWork 没有自动创建新的。请把它放回数据目录后点「重试」。
+          </p>
+          <div class="failure-actions">
+            <button type="button" class="action-btn primary" id="btnFailRetry">重试</button>
+            <button type="button" class="action-btn" id="btnToggleDiag">查看诊断</button>
+            <button type="button" class="action-btn" id="btnCopyDiag">复制诊断信息</button>
+          </div>
+          <div class="diag-drawer" id="diagDrawer" hidden>ncw-agent startup-failed agent.masterKey.missing credential.key
+data_root: ~/.next-cowork/data
+exit_code: 65 (no_backoff_restart)
+supervisor: Failed (MasterKeyMissing)</div>
+        </div>
+      </div>
+
+      <!-- 四宫格同屏对比视图 -->
+      <div class="quad-grid" id="quadViewRoot" hidden>
+        <div class="quad-card" data-pick="orbital">
+          <div class="quad-canvas-wrap">
+            <canvas class="quad-canvas" id="quadCanvas0" width="300" height="300"></canvas>
+          </div>
+          <div class="quad-title">01 · 量子星轨仪表</div>
+          <div class="quad-sub">刻度环 + 5 枚阶段信标 + 扫描彗尾 (点击放大)</div>
+        </div>
+        <div class="quad-card" data-pick="tesseract">
+          <div class="quad-canvas-wrap">
+            <canvas class="quad-canvas" id="quadCanvas1" width="300" height="300"></canvas>
+          </div>
+          <div class="quad-title">02 · 超维晶格核心</div>
+          <div class="quad-sub">4D 超正方体旋转投影 + 激光扫描面 (点击放大)</div>
+        </div>
+        <div class="quad-card" data-pick="synapse">
+          <div class="quad-canvas-wrap">
+            <canvas class="quad-canvas" id="quadCanvas2" width="300" height="300"></canvas>
+          </div>
+          <div class="quad-title">03 · Agent 突触星团</div>
+          <div class="quad-sub">中心 Kernel 与 5 子系统脉冲传输 (点击放大)</div>
+        </div>
+        <div class="quad-card" data-pick="gate">
+          <div class="quad-canvas-wrap">
+            <canvas class="quad-canvas" id="quadCanvas3" width="300" height="300"></canvas>
+          </div>
+          <div class="quad-title">04 · 跃迁光阑矩阵</div>
+          <div class="quad-sub">精密机械光圈叶片 + 径向能量波 (点击放大)</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 底部：如何落回 Avalonia / NcwProgressArc 说明 -->
+  <section class="spec-footer" aria-label="Avalonia 实现对齐说明">
+    <div class="spec-item">
+      <h3>01 // 真实进度驱动 (StartupProgress)</h3>
+      <p>外圈主弧长严格等于 <code>Fraction</code>（已完成阶段数 + 2.x 数据接管子步骤 / 5），由 Arc <code>Smooth</code> 弹簧驱动；等待期间叠加旋转或脉冲扫描，绝不走假百分比。</p>
+    </div>
+    <div class="spec-item">
+      <h3>02 // 零额外布局开销 (Skia DrawingContext)</h3>
+      <p>四个版本的中心图形均只依赖单控件自绘（扩展 <code>NcwProgressArc.Render</code>）与 <code>Opacity / RenderTransform</code>，在虚拟化树外独立运行，淡出完成立即从视觉树摘除。</p>
+    </div>
+    <div class="spec-item">
+      <h3>03 // 完整遵守 ArcMotionLevel</h3>
+      <p>上方可切换「完整 / 减弱 / 关闭」三档：减弱级别下停止旋转循环并改为明暗呼吸（<code>ArcBusyPulse</code>），位置与弧长直接跳到终态；关闭级别全部静止且终态完全一致。</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const STAGES = [
+      {
+        key: 'App',
+        name: '准备应用',
+        code: 'STAGE_01 // APP_BOOTSTRAP',
+        detail: '正在准备窗口和偏好设置…',
+        fraction: 0.15,
+        subStep: 0,
+        slow: false
+      },
+      {
+        key: 'Agent',
+        name: '启动本机 Agent',
+        code: 'STAGE_02 // SIDECAR_HANDSHAKE',
+        detail: '正在等待 Agent 响应…',
+        fraction: 0.35,
+        subStep: 0,
+        slow: false
+      },
+      {
+        key: 'Connect',
+        name: '连接设备',
+        code: 'STAGE_03 // DEVICE_LINK_TLS',
+        detail: '正在建立本机连接…',
+        fraction: 0.55,
+        subStep: 0,
+        slow: false
+      },
+      {
+        key: 'Data',
+        name: '准备数据',
+        code: 'STAGE_04 // DATA_TAKEOVER_2X',
+        detail: '正在备份数据，历史较多时可能需要一分钟。',
+        fraction: 0.70,
+        subStep: 2,
+        slow: true
+      },
+      {
+        key: 'Content',
+        name: '加载项目与会话',
+        code: 'STAGE_05 // WORKSPACE_SYNC',
+        detail: '正在读取项目和会话…',
+        fraction: 0.92,
+        subStep: 0,
+        slow: false
+      },
+      {
+        key: 'Failed',
+        name: '启动受阻',
+        code: 'ERR_65 // MASTER_KEY_MISSING',
+        detail: '找不到凭据主密钥 (credential.key)',
+        fraction: 0.60,
+        subStep: 0,
+        slow: false,
+        failed: true
+      }
+    ];
+
+    const state = {
+      variant: 'orbital',
+      stageIndex: 1,
+      displayFraction: 0.35,
+      entranceSweep: 1,
+      entranceStart: 0,
+      layout: 'wide',
+      motion: 'full',
+      quadMode: false,
+      autoPlayTimer: null,
+      TakeoverInterval: null
+    };
+
+    const simViewport = document.getElementById('simViewport');
+    const singleViewRoot = document.getElementById('singleViewRoot');
+    const quadViewRoot = document.getElementById('quadViewRoot');
+    const stepsList = document.getElementById('stepsList');
+    const detailText = document.getElementById('detailText');
+    const compactStageName = document.getElementById('compactStageName');
+    const takeoverSegments = document.getElementById('takeoverSegments');
+    const slowHintPill = document.getElementById('slowHintPill');
+    const loadingPanel = document.getElementById('loadingPanel');
+    const failurePanel = document.getElementById('failurePanel');
+    const centerGlyph = document.getElementById('centerGlyph');
+    const centerFraction = document.getElementById('centerFraction');
+    const sysSubCode = document.getElementById('sysSubCode');
+    const telemetryVariantLabel = document.getElementById('telemetryVariantLabel');
+    const telemetryStateCode = document.getElementById('telemetryStateCode');
+    const telemetryPulse = document.getElementById('telemetryPulse');
+    const mainCanvas = document.getElementById('sciCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+
+    const quadCanvases = [
+      { id: 'orbital', ctx: document.getElementById('quadCanvas0').getContext('2d') },
+      { id: 'tesseract', ctx: document.getElementById('quadCanvas1').getContext('2d') },
+      { id: 'synapse', ctx: document.getElementById('quadCanvas2').getContext('2d') },
+      { id: 'gate', ctx: document.getElementById('quadCanvas3').getContext('2d') }
+    ];
+
+    function getThemeColors() {
+      const style = getComputedStyle(document.documentElement);
+      return {
+        fg: style.getPropertyValue('--fg').trim() || '#edf2f7',
+        textSec: style.getPropertyValue('--text-secondary').trim() || '#9aa6b8',
+        textMuted: style.getPropertyValue('--text-muted').trim() || '#5e6b7e',
+        border: style.getPropertyValue('--border').trim() || '#232b3a',
+        accent: style.getPropertyValue('--accent').trim() || '#38bdf8',
+        secondarySci: style.getPropertyValue('--secondary-sci').trim() || '#818cf8',
+        success: style.getPropertyValue('--success').trim() || '#34d399',
+        danger: style.getPropertyValue('--danger').trim() || '#f87171'
+      };
+    }
+
+    function renderDomState() {
+      const currentStage = STAGES[state.stageIndex];
+      const isFailed = !!currentStage.failed;
+
+      simViewport.classList.toggle('is-failed', isFailed);
+      simViewport.classList.toggle('compact-mode', state.layout === 'compact');
+      simViewport.classList.toggle('motion-reduced', state.motion === 'reduced');
+      simViewport.classList.toggle('motion-off', state.motion === 'off');
+
+      singleViewRoot.hidden = state.quadMode;
+      quadViewRoot.hidden = !state.quadMode;
+
+      telemetryVariantLabel.textContent = 'SYS.HUD // ' + state.variant.toUpperCase();
+      telemetryStateCode.textContent = isFailed ? 'PHASE: FAILED (EXIT 65)' : 'PHASE: ' + currentStage.key.toUpperCase();
+      telemetryPulse.classList.toggle('err', isFailed);
+
+      centerGlyph.textContent = isFailed ? '!' : 'NCW';
+      centerGlyph.style.color = isFailed ? 'var(--danger)' : 'var(--fg)';
+      centerFraction.textContent = isFailed ? 'ERR_KEY' : Math.round(currentStage.fraction * 100) + '%';
+      sysSubCode.textContent = currentStage.code;
+
+      loadingPanel.hidden = isFailed;
+      failurePanel.hidden = !isFailed;
+
+      if (!isFailed) {
+        stepsList.innerHTML = '';
+        for (let i = 0; i < 5; i++) {
+          const s = STAGES[i];
+          const isDone = i < state.stageIndex;
+          const isActive = i === state.stageIndex;
+          const row = document.createElement('div');
+          row.className = 'step-row' + (isDone ? ' done' : '') + (isActive ? ' active' : '');
+
+          let iconHtml = '<span style="color:var(--text-muted)">○</span>';
+          if (isDone) {
+            iconHtml = '<span style="color:var(--success)">✓</span>';
+          } else if (isActive) {
+            iconHtml = '<span class="step-spinner"></span>';
+          }
+
+          let statusTag = 'PENDING';
+          if (isDone) statusTag = 'LOCKED';
+          else if (isActive) statusTag = i === 3 ? 'STEP ' + state.subStep + '/4' : 'ACTIVE';
+
+          row.innerHTML =
+            '<div class="step-icon-box">' + iconHtml + '</div>' +
+            '<div>' + s.name + '</div>' +
+            '<div class="step-tag-mono">' + statusTag + '</div>';
+          stepsList.appendChild(row);
+        }
+
+        compactStageName.textContent = currentStage.name;
+
+        if (state.stageIndex === 3) {
+          const stepTexts = [
+            '正在备份数据，历史较多时可能需要一分钟。',
+            '正在升级数据库 schema…',
+            '正在提交事务并校验完整性…',
+            '正在转换 NCK1 加密凭据…'
+          ];
+          detailText.textContent = stepTexts[(state.subStep - 1) % 4];
+          takeoverSegments.hidden = false;
+          const segs = takeoverSegments.querySelectorAll('.takeover-seg');
+          segs.forEach((seg, idx) => {
+            seg.classList.toggle('on', idx < state.subStep);
+          });
+        } else {
+          detailText.textContent = currentStage.detail;
+          takeoverSegments.hidden = true;
+        }
+
+        slowHintPill.hidden = !currentStage.slow;
+      }
+    }
+
+    // 切换阶段
+    function setStage(idx) {
+      state.stageIndex = idx;
+      state.subStep = STAGES[idx].subStep || 1;
+      if (state.TakeoverInterval) {
+        clearInterval(state.TakeoverInterval);
+        state.TakeoverInterval = null;
+      }
+      if (idx === 3) {
+        state.TakeoverInterval = setInterval(() => {
+          state.subStep = (state.subStep % 4) + 1;
+          STAGES[3].fraction = 0.6 + state.subStep * 0.05;
+          renderDomState();
+        }, 1600);
+      }
+      renderDomState();
+    }
+
+    // 方案 01: 量子星轨遥测仪 (Orbital Telemetry)
+    function drawOrbital(ctx, w, h, t, frac, sweep, isFailed, colors, motion) {
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const cy = h / 2;
+      const rOuter = w * 0.41;
+      const rMain = w * 0.34;
+      const rInner = w * 0.25;
+      const activeColor = isFailed ? colors.danger : colors.accent;
+
+      const rotSpeed = motion === 'full' ? t * 0.0007 : 0;
+      const pulse = motion === 'off' ? 1 : 0.65 + 0.35 * Math.sin(t * 0.004);
+
+      // 1. 外层精密刻度环 (60 刻度, 顺时针被 sweep 画出)
+      const totalTicks = 60;
+      const visibleTicks = Math.floor(totalTicks * sweep);
+      for (let i = 0; i < visibleTicks; i++) {
+        const angle = -Math.PI / 2 + (i / totalTicks) * Math.PI * 2 + rotSpeed * 0.3;
+        const isMajor = i % 12 === 0;
+        const len = isMajor ? 8 : 4;
+        const x1 = cx + Math.cos(angle) * (rOuter - len);
+        const y1 = cy + Math.sin(angle) * (rOuter - len);
+        const x2 = cx + Math.cos(angle) * rOuter;
+        const y2 = cy + Math.sin(angle) * rOuter;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = isMajor ? activeColor : colors.border;
+        ctx.globalAlpha = isMajor ? 0.75 : 0.45;
+        ctx.lineWidth = isMajor ? 2 : 1.2;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // 2. 主轨道底环 (对应 NcwProgressArc TrackStroke)
+      ctx.beginPath();
+      ctx.arc(cx, cy, rMain, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * sweep);
+      ctx.strokeStyle = colors.border;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // 3. 真实进度弧 (Smooth Spring 弧长)
+      const progAngle = Math.PI * 2 * Math.min(frac, sweep);
+      if (progAngle > 0.01) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, rMain, -Math.PI / 2, -Math.PI / 2 + progAngle);
+        ctx.strokeStyle = activeColor;
+        ctx.shadowColor = activeColor;
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 4. 5 枚阶段方位信标节点
+      for (let s = 0; s < 5; s++) {
+        const sAngle = -Math.PI / 2 + (s / 5) * Math.PI * 2;
+        const nx = cx + Math.cos(sAngle) * rMain;
+        const ny = cy + Math.sin(sAngle) * rMain;
+        const reached = frac >= (s + 0.5) / 5;
+
+        ctx.beginPath();
+        ctx.arc(nx, ny, reached ? 4.2 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = reached ? activeColor : colors.border;
+        ctx.fill();
+      }
+
+      // 5. 逆向内层虚线环 + 等离子扫描彗尾 (CometSpin)
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-rotSpeed * 1.8);
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath();
+      ctx.arc(0, 0, rInner, 0, Math.PI * 2 * sweep);
+      ctx.strokeStyle = colors.textMuted;
+      ctx.globalAlpha = 0.4 * pulse;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+
+      if (!isFailed && motion !== 'off') {
+        const cometHead = motion === 'full' ? (t * 0.0038) % (Math.PI * 2) : -Math.PI / 4;
+        const tailLen = 1.15;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, rInner, cometHead - tailLen, cometHead);
+        ctx.strokeStyle = activeColor;
+        ctx.globalAlpha = motion === 'reduced' ? pulse * 0.7 : 0.85;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // 彗头亮点
+        const hx = cx + Math.cos(cometHead) * rInner;
+        const hy = cy + Math.sin(cometHead) * rInner;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = colors.fg;
+        ctx.shadowColor = activeColor;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 方案 02: 超维晶格核心 (4D Tesseract)
+    function drawTesseract(ctx, w, h, t, frac, sweep, isFailed, colors, motion) {
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const cy = h / 2;
+      const rRing = w * 0.39;
+      const activeColor = isFailed ? colors.danger : colors.accent;
+      const secColor = isFailed ? colors.danger : colors.secondarySci;
+
+      // 外围约束环与真实进度弧
+      ctx.beginPath();
+      ctx.arc(cx, cy, rRing, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(frac, sweep));
+      ctx.strokeStyle = activeColor;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, rRing, 0, Math.PI * 2 * sweep);
+      ctx.strokeStyle = colors.border;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // 4D 超正方体 16 顶点生成与双旋转投影
+      const angleA = motion === 'full' ? t * 0.0011 : 0.6;
+      const angleB = motion === 'full' ? t * 0.0008 : 0.4;
+      const scale = w * 0.175 * sweep;
+
+      const vertices2D = [];
+      for (let i = 0; i < 16; i++) {
+        let x = (i & 1) ? 1 : -1;
+        let y = (i & 2) ? 1 : -1;
+        let z = (i & 4) ? 1 : -1;
+        let w4 = (i & 8) ? 1 : -1;
+
+        // XW 平面 4D 旋转
+        const x1 = x * Math.cos(angleA) - w4 * Math.sin(angleA);
+        const w1 = x * Math.sin(angleA) + w4 * Math.cos(angleA);
+
+        // ZW 平面 4D 旋转
+        const z2 = z * Math.cos(angleB) - w1 * Math.sin(angleB);
+        const w2 = z * Math.sin(angleB) + w1 * Math.cos(angleB);
+
+        // 4D -> 3D 透视
+        const d4 = 2.6 / (2.6 - w2 * 0.65);
+        const x3 = x1 * d4;
+        const y3 = y * d4;
+        const z3 = z2 * d4;
+
+        // 3D 旋转
+        const rx = x3 * Math.cos(angleB) - z3 * Math.sin(angleB);
+        const rz = x3 * Math.sin(angleB) + z3 * Math.cos(angleB);
+        const ry = y3 * Math.cos(0.45) - rz * Math.sin(0.45);
+
+        vertices2D.push({
+          px: cx + rx * scale,
+          py: cy + ry * scale,
+          w: w2
+        });
+      }
+
+      // 连接相差 1 个 bit 的边 (共 32 条边)
+      ctx.lineWidth = 1.35;
+      for (let i = 0; i < 16; i++) {
+        for (let bit = 0; bit < 4; bit++) {
+          const j = i ^ (1 << bit);
+          if (i < j) {
+            const p1 = vertices2D[i];
+            const p2 = vertices2D[j];
+            ctx.beginPath();
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+            ctx.strokeStyle = bit === 3 ? secColor : activeColor;
+            ctx.globalAlpha = bit === 3 ? 0.42 : 0.72;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 顶点高光
+      vertices2D.forEach((v, idx) => {
+        const lit = (idx / 16) <= frac;
+        ctx.beginPath();
+        ctx.arc(v.px, v.py, lit ? 3.2 : 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = lit ? activeColor : colors.textMuted;
+        ctx.globalAlpha = lit ? 0.95 : 0.4;
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // 方案 03: Agent 突触星团 (Neural Synapse)
+    function drawSynapse(ctx, w, h, t, frac, sweep, isFailed, colors, motion) {
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const cy = h / 2;
+      const rRing = w * 0.37;
+      const activeColor = isFailed ? colors.danger : colors.accent;
+
+      // 5 个真实阶段卫星节点 + 5 个辅助拓扑节点
+      const nodes = [];
+      const count = 10;
+      for (let i = 0; i < count; i++) {
+        const isPrimary = i % 2 === 0;
+        const baseAngle = -Math.PI / 2 + (i / count) * Math.PI * 2;
+        const drift = motion === 'full' ? Math.sin(t * 0.0018 + i * 1.3) * 0.06 : 0;
+        const radius = (isPrimary ? rRing : rRing * 0.68) * sweep;
+        const a = baseAngle + drift;
+        nodes.push({
+          x: cx + Math.cos(a) * radius,
+          y: cy + Math.sin(a) * radius,
+          isPrimary,
+          stageIdx: Math.floor(i / 2),
+          active: (i / count) <= frac
+        });
+      }
+
+      // 绘制拓扑网格连线与光子脉冲
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        const next = nodes[(i + 1) % nodes.length];
+        const next2 = nodes[(i + 2) % nodes.length];
+
+        [next, next2].forEach((target) => {
+          ctx.beginPath();
+          ctx.moveTo(n.x, n.y);
+          ctx.lineTo(target.x, target.y);
+          ctx.strokeStyle = n.active ? activeColor : colors.border;
+          ctx.globalAlpha = n.active ? 0.42 : 0.22;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        });
+
+        // 连向中心 Agent Kernel
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(n.x, n.y);
+        ctx.strokeStyle = n.active ? activeColor : colors.border;
+        ctx.globalAlpha = n.active ? 0.5 : 0.18;
+        ctx.lineWidth = n.isPrimary ? 1.6 : 1;
+        ctx.stroke();
+
+        // 沿连线运动的数据光子脉冲
+        if (motion === 'full' && !isFailed && (n.active || i === Math.floor(frac * count))) {
+          const p = ((t * 0.0015 + i * 0.23) % 1);
+          const px = cx + (n.x - cx) * p;
+          const py = cy + (n.y - cy) * p;
+          ctx.beginPath();
+          ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+          ctx.fillStyle = colors.fg;
+          ctx.globalAlpha = 0.95;
+          ctx.fill();
+        }
+      }
+
+      // 绘制节点本体
+      nodes.forEach((n) => {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.isPrimary ? 5.5 : 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = n.active ? activeColor : colors.border;
+        ctx.globalAlpha = 1;
+        ctx.fill();
+
+        if (n.isPrimary && n.active) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, 9.5, 0, Math.PI * 2);
+          ctx.strokeStyle = activeColor;
+          ctx.globalAlpha = 0.35;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      });
+
+      // 外圈真实进度弧
+      ctx.beginPath();
+      ctx.arc(cx, cy, w * 0.43, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(frac, sweep));
+      ctx.strokeStyle = activeColor;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 方案 04: 跃迁光阑矩阵 (Chrono Aperture Gate)
+    function drawGate(ctx, w, h, t, frac, sweep, isFailed, colors, motion) {
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const cy = h / 2;
+      const rOuter = w * 0.40;
+      const activeColor = isFailed ? colors.danger : colors.accent;
+
+      // 1. 径向声呐脉冲环
+      if (motion === 'full' && !isFailed) {
+        for (let wv = 0; wv < 2; wv++) {
+          const waveProg = ((t * 0.0006 + wv * 0.5) % 1);
+          const waveR = w * 0.16 + waveProg * (rOuter - w * 0.14);
+          ctx.beginPath();
+          ctx.arc(cx, cy, waveR, 0, Math.PI * 2);
+          ctx.strokeStyle = activeColor;
+          ctx.globalAlpha = (1 - waveProg) * 0.42;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      // 2. 8 瓣机械光学光圈叶片
+      const blades = 8;
+      const openFactor = 0.48 + frac * 0.25;
+      const rot = motion === 'full' ? Math.sin(t * 0.0015) * 0.18 + frac * 0.6 : 0;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      for (let i = 0; i < blades; i++) {
+        ctx.save();
+        ctx.rotate((i / blades) * Math.PI * 2);
+        ctx.beginPath();
+        const rIn = w * 0.18 * openFactor * sweep;
+        const rOut = w * 0.33 * sweep;
+        ctx.moveTo(rIn, -6);
+        ctx.lineTo(rOut, -14);
+        ctx.lineTo(rOut * 0.92, 10);
+        ctx.closePath();
+        ctx.strokeStyle = i < Math.ceil(frac * blades) ? activeColor : colors.border;
+        ctx.fillStyle = i < Math.ceil(frac * blades) ? activeColor : colors.border;
+        ctx.globalAlpha = i < Math.ceil(frac * blades) ? 0.22 : 0.08;
+        ctx.fill();
+        ctx.globalAlpha = i < Math.ceil(frac * blades) ? 0.85 : 0.45;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+
+      // 3. 外圈 5 段装甲状能量槽 (对应 5 阶段)
+      const segGap = 0.08;
+      const segSpan = (Math.PI * 2) / 5 - segGap;
+      for (let s = 0; s < 5; s++) {
+        const startA = -Math.PI / 2 + s * (segSpan + segGap);
+        const segFill = Math.max(0, Math.min(1, (frac * 5) - s)) * sweep;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, rOuter, startA, startA + segSpan * sweep);
+        ctx.strokeStyle = colors.border;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'butt';
+        ctx.stroke();
+
+        if (segFill > 0) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, rOuter, startA, startA + segSpan * segFill);
+          ctx.strokeStyle = activeColor;
+          ctx.globalAlpha = 0.95;
+          ctx.lineWidth = 5;
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function renderVariantToCanvas(variantId, ctx, w, h, now) {
+      const currentStage = STAGES[state.stageIndex];
+      const colors = getThemeColors();
+      const isFailed = !!currentStage.failed;
+
+      if (variantId === 'orbital') {
+        drawOrbital(ctx, w, h, now, state.displayFraction, state.entranceSweep, isFailed, colors, state.motion);
+      } else if (variantId === 'tesseract') {
+        drawTesseract(ctx, w, h, now, state.displayFraction, state.entranceSweep, isFailed, colors, state.motion);
+      } else if (variantId === 'synapse') {
+        drawSynapse(ctx, w, h, now, state.displayFraction, state.entranceSweep, isFailed, colors, state.motion);
+      } else if (variantId === 'gate') {
+        drawGate(ctx, w, h, now, state.displayFraction, state.entranceSweep, isFailed, colors, state.motion);
+      }
+    }
+
+    function tick(now) {
+      const targetFrac = STAGES[state.stageIndex].fraction;
+      if (state.motion === 'off' || state.motion === 'reduced') {
+        state.displayFraction = targetFrac;
+        state.entranceSweep = 1;
+      } else {
+        state.displayFraction += (targetFrac - state.displayFraction) * 0.12;
+        if (state.entranceStart > 0) {
+          const elapsed = now - state.entranceStart;
+          state.entranceSweep = Math.min(1, elapsed / 480);
+          if (state.entranceSweep >= 1) state.entranceStart = 0;
+        }
+      }
+
+      if (state.quadMode) {
+        quadCanvases.forEach((item) => {
+          renderVariantToCanvas(item.id, item.ctx, 300, 300, now);
+        });
+      } else {
+        renderVariantToCanvas(state.variant, mainCtx, 420, 420, now);
+      }
+
+      requestAnimationFrame(tick);
+    }
+
+    document.querySelectorAll('.variant-card').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.quadMode = false;
+        document.getElementById('btnAllQuad').textContent = '四方案同屏对比';
+        state.variant = btn.getAttribute('data-variant');
+        document.querySelectorAll('.variant-card').forEach((b) => b.classList.toggle('active', b === btn));
+        playEntrance();
+        renderDomState();
+      });
+    });
+
+    document.querySelectorAll('.quad-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const pick = card.getAttribute('data-pick');
+        state.quadMode = false;
+        document.getElementById('btnAllQuad').textContent = '四方案同屏对比';
+        state.variant = pick;
+        document.querySelectorAll('.variant-card').forEach((b) => {
+          b.classList.toggle('active', b.getAttribute('data-variant') === pick);
+        });
+        renderDomState();
+      });
+    });
+
+    document.querySelectorAll('#stageSelector .seg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        stopAutoCycle();
+        const idx = parseInt(btn.getAttribute('data-stage'), 10);
+        document.querySelectorAll('#stageSelector .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        setStage(idx);
+      });
+    });
+
+    document.querySelectorAll('#layoutSelector .seg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.layout = btn.getAttribute('data-layout');
+        document.querySelectorAll('#layoutSelector .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        renderDomState();
+      });
+    });
+
+    document.querySelectorAll('#motionSelector .seg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.motion = btn.getAttribute('data-motion');
+        document.querySelectorAll('#motionSelector .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        renderDomState();
+      });
+    });
+
+    function playEntrance() {
+      if (state.motion === 'full') {
+        state.entranceSweep = 0;
+        state.entranceStart = performance.now();
+      } else {
+        state.entranceSweep = 1;
+      }
+    }
+
+    document.getElementById('btnReplayEntrance').addEventListener('click', playEntrance);
+
+    document.getElementById('btnAllQuad').addEventListener('click', () => {
+      state.quadMode = !state.quadMode;
+      document.getElementById('btnAllQuad').textContent = state.quadMode ? '返回单方案详情' : '四方案同屏对比';
+      renderDomState();
+    });
+
+    document.getElementById('btnToggleTheme').addEventListener('click', () => {
+      const root = document.documentElement;
+      const cur = root.getAttribute('data-theme');
+      const next = cur === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+    });
+
+    function stopAutoCycle() {
+      if (state.autoPlayTimer) {
+        clearInterval(state.autoPlayTimer);
+        state.autoPlayTimer = null;
+        document.getElementById('btnAutoCycle').textContent = '▶ 自动演练冷启动';
+      }
+    }
+
+    document.getElementById('btnAutoCycle').addEventListener('click', () => {
+      if (state.autoPlayTimer) {
+        stopAutoCycle();
+        return;
+      }
+      document.getElementById('btnAutoCycle').textContent = '⏹ 停止演练';
+      let step = 0;
+      playEntrance();
+      const applyStep = (idx) => {
+        document.querySelectorAll('#stageSelector .seg-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+        setStage(idx);
+      };
+      applyStep(0);
+      state.autoPlayTimer = setInterval(() => {
+        step = (step + 1) % 5;
+        applyStep(step);
+      }, 1500);
+    });
+
+    document.getElementById('btnToggleDiag').addEventListener('click', (e) => {
+      const drawer = document.getElementById('diagDrawer');
+      drawer.hidden = !drawer.hidden;
+      e.currentTarget.textContent = drawer.hidden ? '查看诊断' : '收起诊断';
+    });
+
+    document.getElementById('btnFailRetry').addEventListener('click', () => {
+      const stageBtns = document.querySelectorAll('#stageSelector .seg-btn');
+      stageBtns.forEach((b, i) => b.classList.toggle('active', i === 1));
+      playEntrance();
+      setStage(1);
+    });
+
+    document.getElementById('btnCopyDiag').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      const text = document.getElementById('diagDrawer').textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {});
+      }
+      btn.textContent = '已复制';
+      setTimeout(() => { btn.textContent = '复制诊断信息'; }, 1200);
+    });
+
+    setStage(1);
+    requestAnimationFrame(tick);
+  })();
+</script>
+</body>
+</html>

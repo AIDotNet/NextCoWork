@@ -177,7 +177,7 @@
   - **设备 / 项目切换器只有一份**:设备切换器在导航的「设备」分组标题下面,项目切换器在「项目」分组标题下面;各页页头里的切换器在设置页里用样式关掉(`PageHeader.ShowSwitchers`)。
     「模型与供应商」页原来自带一个设备切换器,在桌面设置页里改为跟随这一份(`SettingsViewModel` 把 `Pages.Scope.DeviceId` 同步给 `Models.DeviceId`)。
   - **模型与供应商的主从**:列表栏第一项「模型目录」,下面是供应商(状态点 + 名字 + 一行摘要),选中项是纯 UI 状态 `ModelsSettingsViewModel.SelectedProviderId`(null = 模型目录);
-    供应商被删掉时回到「模型目录」。新建 / 编辑表单、导入模型、OAuth 进度、操作失败这些提示放在详情区顶部,和选中哪一项无关。手机端仍用原来的整页卡片(同一个 ViewModel)。
+    供应商被删掉时回到「模型目录」。导入模型、OAuth 进度、操作失败这些提示放在详情区顶部,和选中哪一项无关;**新建 / 编辑供应商是弹窗**(见下文「添加供应商」,2026-11 起替代详情区顶部的展开表单)。手机端仍用原来的整页卡片(同一个 ViewModel,同一个弹窗)。
   - **窄窗口**:窄于 760px 时导航收成 56px 的图标栏(文字、分组标题、切换器藏起来,图标有提示);窄于 1000px 时列表栏收窄到 200px。
   危险操作(删除数据、回退)放在每页最底下的「危险区」里,需要二次确认。
 - 手机端:分组列表,点击后推入详情页(仍按原来的分区,不受导航项合并影响)。设备作用域的页面顶部同样有设备切换器。
@@ -190,6 +190,64 @@
 模型别名(启停、重命名、删除、从上游导入)、模型目录状态(来源、上次更新、手动「立即更新」、自动更新开关与间隔)。OAuth 的授权页和配对码由**控制端**展示并打开浏览器(设备可能在另一台电脑上)。
 设备的事实都在 Store(`providers` / `catalog` 主题的镜像),页面不缓存配置;凭据摘要(后四位)是按需读取的一次性结果。非 owner 角色只读。「默认模型」(对话 / 子代理 / 标题生成)和别名的高级字段(协议覆盖、思考配置)随 Agent 配置页一起做。
 
+### 供应商自动发现与导入(2026-11)
+
+用户多半已经在别的客户端里配好了 key。设备(Agent)在**它自己那台机器上**找这些配置,控制端只看到摘要,导入也在设备上完成——**密钥明文从不经过协议**(09 `providers.discovery.*`)。
+
+- **来源**(只读,找不到 / 读不了 / 格式不对就跳过,不报错):
+  | 来源 | 位置 | 读什么 |
+  |---|---|---|
+  | Claude Code | `~/.claude/settings.json` 的 `env` | `ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL` 等模型变量(DeepSeek、Kimi、智谱的 Anthropic 兼容端点就是这样配进 Claude Code 的) |
+  | Claude Code | `~/.claude.json` 的 `primaryApiKey` | 用 Console 登录时 Claude Code 生成的 API Key |
+  | Codex | `~/.codex/config.toml` + `~/.codex/auth.json` | `model_providers.<id>` 的 `base_url` / `env_key` / `wire_api`、`model`;`auth.json` 的 `OPENAI_API_KEY`;`env_key` 指向的环境变量 |
+  | cc-switch | `~/.cc-switch/config.json` | 它为 Claude Code / Codex 存的每一套供应商(国内用户常用来切 DeepSeek、Kimi、智谱……) |
+  | opencode | `~/.local/share/opencode/auth.json` | `type: "api"` 的条目(按 opencode 的供应商 id 对上已知服务的地址) |
+  | Gemini CLI | `~/.gemini/.env` | `GEMINI_API_KEY` / `GOOGLE_API_KEY`、`GEMINI_MODEL` |
+  | Qwen Code | `~/.qwen/.env`、`~/.qwen/settings.json` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL`;`settings.json` 里 `security.auth` 的 `apiKey` / `baseUrl`、`model.name` |
+  | Crush | `~/.config/crush/crush.json`、`~/.local/share/crush/crush.json` | `providers.<id>` 的 `type`、`base_url`、`api_key`(`$NAME` 换成环境变量)、`models[].id` |
+  | Continue | `~/.continue/config.json`、`~/.continue/config.yaml` | `models[]` 的 `provider`、`model`、`apiKey`、`apiBase` |
+  | Aider | `~/.aider.conf.yml` | `openai-api-key` + `openai-api-base`、`anthropic-api-key`、`api-key: [<供应商>=<key>, …]`、`model` |
+  | Shell 配置 | `~/.zshenv`、`~/.zprofile`、`~/.zshrc`、`~/.bash_profile`、`~/.bashrc`、`~/.profile`、`~/.env`、`~/.config/fish/config.fish` | `export NAME=值` / fish 的 `set -gx NAME 值`,只认字面值(含 `$`、反引号的跳过,不执行任何东西);同名后面的文件为准。**这一来源同时补给其他来源查环境变量**(Codex 的 `env_key`、Crush 的 `$NAME`、opencode 的 `{env:NAME}`),解决 macOS 桌面应用拿不到 shell 变量的问题 |
+  | 环境变量 | Agent 进程的环境 | `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`(+`OPENAI_BASE_URL`)、`ANTHROPIC_API_KEY`(+`ANTHROPIC_BASE_URL`)、`MOONSHOT_API_KEY`、`OPENROUTER_API_KEY`、`DASHSCOPE_API_KEY`、`ZHIPUAI_API_KEY`、`SILICONFLOW_API_KEY`、`GROQ_API_KEY`、`XAI_API_KEY`、`GEMINI_API_KEY`,以及 Mistral、Together、Fireworks、Cerebras、Perplexity、NVIDIA、阶跃、混元、千帆、魔搭、零一万物、百川、火山方舟、MiniMax 的 `*_API_KEY`(一家可以有几个常见名字,例如 `KIMI_API_KEY`、`GLM_API_KEY`、`ARK_API_KEY`) |
+  | 本地服务 | `~/.ollama`、`~/.lmstudio` 目录存在 | Ollama(`http://localhost:11434/v1`)、LM Studio(`http://localhost:1234/v1`),不要 key;只看目录在不在,不探测端口 |
+- **不导入订阅登录**:Claude Code 的 Claude 订阅 OAuth、Codex 的 ChatGPT 登录令牌不读也不搬(那是别的应用的登录会话,不是 API Key);Codex 的 ChatGPT 账号走我们自己的 `codex` 账号登录。
+- **地址 → 名字和协议**:已知服务一张表(DeepSeek、Kimi、智谱、通义、OpenRouter、SiliconFlow……,按主机名认;本机地址按端口认 Ollama 11434 / LM Studio 1234),认不出的用主机名当名字。各客户端自己的供应商名(Continue 的 `provider`、opencode / Crush 的 id、Aider 的 `api-key` 前缀)按同一张表的别名对上。Anthropic 兼容端点用 `anthropic` 协议,其余按来源(Codex 的 `wire_api = responses` → `openai-responses`)。
+- **去重**:同一地址 + 同一把 key 只出现一次(多个来源都有时保留第一个来源,其余记进「也见于」);和已有供应商地址相同、key 也相同 → `imported`(不能再导);地址相同 key 不同或建议的 id 被占 → `conflict`(导入时 id 加后缀,不覆盖已有的)。比较 key 只在设备上做。
+- **界面**:模型页列表栏「模型目录」下面一项「从其他应用导入」,有可导入的候选时带个数;打开模型页(owner、设备支持这个能力)时自动扫一次。详情里每条候选一行:来源、名字、地址、`••••后四位`、模型提示、状态;勾选后「导入所选」,导入完成选中第一个新供应商。可「重新扫描」。手机整页里同样一张卡片。
+- **环境变量的局限**:macOS 上从访达启动的应用拿不到 shell 配置文件里 `export` 的变量,所以「环境变量」这一来源在桌面上经常是空的;「Shell 配置」来源直接读那几个文件来补(只认字面值,`source` 别的文件、`$(…)` 算出来的读不到)。
+- **cc-switch 的局限**:只读它的 `config.json`;新版本如果把配置搬进了 SQLite 库,这一来源就读不到(其余来源不受影响)。
+- **鉴权头**:导入的 Anthropic 兼容端点按我们 `anthropic` 协议的约定发 `x-api-key`;Claude Code 里用 `ANTHROPIC_AUTH_TOKEN`(Bearer)配的第三方端点多数两种都认,不认的导入后连通性测试会报出来。
+- 实现:Agent `Ncw.Agent.Catalog/Providers/Discovery/`(`DiscoveryReaders` 各来源的纯函数、`KnownServices`、`ProviderDiscovery` 扫描 / 导入;读文件经 `IDiscoveryHost`,测试换成内存的);
+  协议 `ProviderDiscoveryMethods`;客户端 `ProviderDiscoveryViewModel`(候选是一次性查询结果,不进 Store)、界面 `Models/ProviderDiscoveryPanel`。
+- 测试:`Ncw.Agent.Catalog.Tests/ProviderDiscoveryTests`(各来源、去重、状态、导入、坏文件、订阅令牌不读)、`Ncw.Protocol.Tests/ProviderDiscoveryDtoTests`(冻结向量、方法表、DTO 里没有能装 key 的字段)、
+  `Ncw.Client.Tests/ProviderDiscoveryViewModelTests`、`Ncw.Integration.Tests/ConfigLinkTests.Discovered_providers_*`(真 Agent:线上字节里没有明文、导入后 key 在设备上)、`Ncw.UI.Tests/SettingsTests`(截图 `settings-models-discovery-*`)。
+
+
+### 添加供应商(2026-11)
+
+列表栏「供应商」旁的「+」(手机整页是「添加供应商」按钮)打开弹窗;「编辑」用同一个弹窗。方案是在可交互的方案页里选定的:**两步式布局 + 卡片网格 + 顶部导入提示 + 一个端点一个模版 + 保存并测试**。
+
+- **模版**:真源在 Agent(`providers.templates.list`,09 §8.4),和自动发现共用同一张已知服务表(`KnownServices`),每家补上分组、拿 key 的地址、其余端点(`ProviderTemplates`;新加的已知服务没补就在类型初始化时失败,测试先撞上)。
+  **一个端点一个模版**:DeepSeek、Kimi、智谱、Z.ai、MiniMax 的 Anthropic 兼容端点,Kimi、通义、MiniMax、硅基流动的国际站,各是一张卡片,副标题写端点标签(「Anthropic 兼容」「国际版」)+ 主机名。
+  控制端每次打开模型页查一次(一次性结果,不进 Store);老设备不报能力时弹窗直接是「自定义」表单。暂不含账号登录(OAuth)类的模版:各家登录实现还没移植(`docs/parity.md`)。
+- **宽度**:640(三列卡片、表单两列字段都放得下)。Arc 的 `Dialog.Size` 只有 360 / 440 / 560,这里在这个弹窗上覆盖 Large 档的 `DialogSurface.PanelWidthLG` token;
+  窗口窄时 Arc 自己收到「窗口宽 − 32」,内容宽度 < 560 时网格变两列。两步之间宽度不变。
+- **高度**:标题栏和按钮行不动,中间一块自己滚动,最大高度 = 窗口高 − 260(下限 240),按钮行永远在窗口里。
+- **第一步(选模版)**:顶部一行「在这台设备上找到 N 个已配置的供应商 · 去导入」(只在自动发现有可导入的候选时出现;点了关弹窗、切到「从其他应用导入」),
+  搜索框(按名字、id、地址、端点标签,不分大小写),分组网格:常用 → 国际 → 国内 → 聚合平台 → 本机 → 其他(认不出的分组 + 最后一张「自定义」)。搜不到时给「改用自定义」。
+- **第二步(表单)**:页头是返回、logo、名字(带端点标签)、地址;要 key 的模版只露一个 API Key 输入框 + 「获取 API Key」(浏览器打开模版给的地址);本机服务换成一句「不需要 API Key,确认它在设备那台电脑上运行」。
+  名字、标识、地址、协议、启用收在「高级」里(折起来时右边写「协议 · 主机名」);「自定义」和编辑一直展开。标识按模版 id 建议,已被占用就加 `-2`、`-3`(纯函数 `ProviderTemplateMatch.SuggestId`)。
+- **保存并测试**:写供应商 → 存 key(只写不读,送出就清空)→ 测一次连接(`providers.test`)。通过就关弹窗、在列表里选中它;没通过时原因留在弹窗里(「已保存,但连接测试没通过:……」),
+  可以改了再试(同一个标识,是更新),或「保留并关闭」。新建要 key 的模版不填 key 先拦住(自定义不拦:有的网关不要 key);标识被占在客户端就拦住。
+  表单有改动时点遮罩不关,Esc 和「取消」照常关。
+- **logo**:`Assets/ProviderLogos/<服务>.svg`,取自 models.dev 的单色 logo(MIT,许可证在同目录);`NcwProviderLogo` 只解析 logo 里用到的那部分 SVG(path 的填充 / 描边 / 透明度 / 变换),
+  不引入 SVG 库,**颜色跟随 Arc 前景 token**,不带品牌色(深浅主题和强调色预设下一致)。没有 logo 的服务(百川、零一万物、混元、千帆)和认不出的地址画名字首字母。
+  列表栏、详情页头、发现候选、弹窗共用;已有供应商的 logo 按地址对上模版(纯函数 `ProviderTemplateMatch.Find`:完整地址 → 同主机同协议 → 同主机,本机按端口),停用的变淡。
+- 实现:Agent `Ncw.Agent.Catalog/Providers/Templates/ProviderTemplates`;协议 `ProviderTemplatesMethods`;Core `ProviderTemplateMatch`;客户端 `ProviderEditorViewModel`(模版分组 `ProviderTemplateItems.Group` 是纯函数)、
+  `ModelsSettingsViewModel.NewProviderAsync` / `EditAsync`、`IDialogService.ShowProviderEditorAsync`;界面 `Views/Dialogs/ProviderEditorDialog` + `ProviderEditorFooter`、`Controls/NcwProviderLogo`。
+- 测试:`Ncw.Agent.Catalog.Tests/ProviderTemplatesTests`(每个已知服务都有默认模版、id 唯一、一个端点一条、分组和地址)、`Ncw.Protocol.Tests/ProviderTemplatesDtoTests`(冻结向量、方法表)、
+  `Ncw.Core.Tests/ProviderTemplateMatchTests`、`Ncw.Client.Tests/ProviderEditorViewModelTests`(分组、搜索、填表、拦截、保存并测试、失败不关、编辑、老设备)、
+  `Ncw.Integration.Tests/ConfigLinkTests`(真 Agent 给模版、两边常量一致)、`Ncw.UI.Tests/ProviderEditorDialogTests`(内置 logo 都能解析、宽 640 / 窄窗口、截图 `provider-editor-*`)。
 
 ### 设备 / 项目作用域的管理页(已实现的部分)
 

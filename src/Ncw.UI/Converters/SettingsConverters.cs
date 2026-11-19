@@ -70,3 +70,35 @@ public sealed class SettingsSectionIconConverter : IValueConverter
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>供应商自动发现的来源 → 名字(<c>claude-code</c> → Claude Code;一组来源用「、」/ 逗号连起来)。认不出的原样显示。</summary>
+public sealed class DiscoverySourceTextConverter : IValueConverter
+{
+    public static readonly DiscoverySourceTextConverter Instance = new();
+
+    public static string Text(string? source) => KeyText.Get("DiscoverySource", source);
+
+    /// <param name="parameter">可选:一个格式词条名(<see cref="NcwTextKind"/>),把名字填进去(「也见于 {0}」)。</param>
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var text = value switch
+        {
+            string s => Text(s),
+            IEnumerable<string> list => string.Join(", ", list.Select(Text)),
+            _ => "",
+        };
+        return parameter is string name && Enum.TryParse<NcwTextKind>(name, out var kind) ? NcwTexts.Format(kind, text) : text;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>候选的状态(<c>new</c> / <c>imported</c> / <c>conflict</c>)→ 文字。</summary>
+public sealed class DiscoveryStatusTextConverter : IValueConverter
+{
+    public static readonly DiscoveryStatusTextConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => KeyText.Get("DiscoveryStatus", value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}

@@ -152,6 +152,64 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
         }
     }
 
+    /// <summary>
+    /// 「添加 / 编辑供应商」(docs/design/07 §3「添加供应商」):Arc Dialog 包住 <see cref="ProviderEditorDialog"/>,宽 640(Arc 只有 360 / 440 / 560 三档,
+    /// 这里在这个弹窗上覆盖 Large 档的宽度 token;窗口窄时 Arc 自己收到「窗口宽 − 32」)。保存成功、「保留并关闭」、「去导入」都由 ViewModel 的事件关窗口。
+    /// 表单里有改动时点遮罩不关(防误触),Esc 和「取消」照常关。
+    /// </summary>
+    public async Task ShowProviderEditorAsync(ProviderEditorViewModel form)
+    {
+        var content = new ProviderEditorDialog { DataContext = form, Launcher = new NcwUrlLauncher(owner) };
+        var footer = new ProviderEditorFooter { DataContext = form };
+        var dialog = new Dialog
+        {
+            Title = NcwTexts.Get(form.IsNew ? NcwTextKind.AddProvider : NcwTextKind.ProviderEditTitle),
+            Content = content,
+            Actions = footer,
+            Size = ControlSize.Large,
+        };
+        dialog.Resources[TKCode.Arc.DesignTokens.DialogSurfaceTokenKind.PanelWidthLG] = ProviderEditorWidth;
+        UpdateDescription();
+        void UpdateDescription() => dialog.Description = NcwTexts.Get(form switch
+        {
+            { IsNew: false } => NcwTextKind.ProviderEditorEditDescription,
+            { IsPickStep: true } => NcwTextKind.ProviderEditorPickDescription,
+            { IsCustom: true } => NcwTextKind.ProviderEditorCustomDescription,
+            _ => NcwTextKind.ProviderEditorFormDescription,
+        });
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(ProviderEditorViewModel.Step) or nameof(ProviderEditorViewModel.Template))
+            {
+                UpdateDescription();
+            }
+            else if (e.PropertyName is nameof(ProviderEditorViewModel.IsDirty))
+            {
+                dialog.CloseOnOutsidePress = !form.IsDirty; // 填了东西就不让点遮罩误关;Esc、取消照常
+            }
+        }
+
+        void Close() => dialog.Close(true);
+        footer.Cancel.Click += (_, _) => dialog.Close(false);
+        form.PropertyChanged += OnChanged;
+        form.Completed += Close;
+        form.DiscoveryRequested += Close;
+        dialog.Opened += (_, _) => Dispatcher.UIThread.Post(content.FocusStep, DispatcherPriority.Input);
+        try
+        {
+            await dialog.ShowAsync(owner);
+        }
+        finally
+        {
+            form.PropertyChanged -= OnChanged;
+            form.Completed -= Close;
+            form.DiscoveryRequested -= Close;
+        }
+    }
+
+    /// <summary>「添加供应商」弹窗的宽度:三列模版卡片、表单两列字段都放得下(docs/design/07 §3)。</summary>
+    internal const double ProviderEditorWidth = 640;
+
     /// <summary>选一张图片并压缩成项目图标(<see cref="NcwIconImages"/>);取消返回 null。</summary>
     public async Task<PickedIcon?> PickIconImageAsync()
     {

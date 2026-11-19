@@ -43,6 +43,15 @@
   <Style Selector="Border.card.danger">
     <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Danger}" />
   </Style>
+  <!-- 供应商 logo 的底板(列表栏、详情页头、发现候选、添加供应商弹窗共用);标志本身跟随前景色 -->
+  <Style Selector="ui|NcwProviderLogo.tile">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+  </Style>
+  <!-- 停用的供应商:logo 变淡 -->
+  <Style Selector="ui|NcwProviderLogo.tile.off">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
   <Style Selector="Border.chip">
     <Setter Property="Padding" Value="6,1" />
     <Setter Property="CornerRadius" Value="6" />

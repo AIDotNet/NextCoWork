@@ -280,6 +280,10 @@ public sealed class ProviderErrorTextConverter : IValueConverter
         "providers.unknownProvider" or "providers.unknownAlias" or "NotFound" => NcwTextKind.ProvErrNotFound,
         "Unavailable" => NcwTextKind.ProvErrUnavailable,
         "Conflict" => NcwTextKind.ProvErrConflict,
+        "providers.discovery.gone" => NcwTextKind.ProvErrDiscoveryGone,
+        "providers.discovery.alreadyImported" => NcwTextKind.ProvErrDiscoveryAlreadyImported,
+        "providers.editor.keyRequired" => NcwTextKind.ProvErrKeyRequired,
+        "providers.editor.idTaken" => NcwTextKind.ProvErrIdTaken,
         _ => NcwTextKind.ProvErrGeneric,
     });
 

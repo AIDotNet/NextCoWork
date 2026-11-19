@@ -38,6 +38,9 @@ public interface IClientText
     string RenameAliasTitle { get; }
 
     string RenameAliasDescription { get; }
+
+    /// <summary>模版端点标签(<c>intl</c> / <c>anthropic</c>)的文字,「添加供应商」的搜索也按它匹配。默认原样返回。</summary>
+    string TemplateVariant(string variant) => variant;
 }
 
 /// <summary>没有接 UI 时(单测)的默认文字。</summary>

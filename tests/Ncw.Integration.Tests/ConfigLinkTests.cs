@@ -30,6 +30,7 @@ public sealed class ConfigLinkTests : IAsyncLifetime
     private readonly CancellationTokenSource _agentCts = new();
     private readonly FakeUpstream _up = new();
     private readonly FakeLogin _login = new();
+    private readonly FakeDiscoveryHost _discovery = new();
     private Task _agent = Task.CompletedTask;
     private AgentHost _host = null!;
     private Controller _c = null!;
@@ -55,6 +56,19 @@ public sealed class ConfigLinkTests : IAsyncLifetime
         public DeviceCatalog CatalogState { get { lock (Ui.Gate) { return Stores.Catalog.State.Of(Link.DeviceId); } } }
 
         public DeviceProviders ProvidersState { get { lock (Ui.Gate) { return Stores.Providers.State.Of(Link.DeviceId); } } }
+    }
+
+    private sealed class FakeDiscoveryHost : Ncw.Agent.Catalog.Discovery.IDiscoveryHost
+    {
+        public Dictionary<string, string> Files { get; } = new(StringComparer.Ordinal);
+
+        public string Home => "/discovery-home";
+
+        public string? ReadFile(string path) => Files.GetValueOrDefault(path.Replace('\\', '/'));
+
+        public string? Env(string name) => null;
+
+        public bool DirectoryExists(string path) => false;
     }
 
     private sealed class LockedDispatcher : IUiDispatcher
@@ -183,6 +197,7 @@ public sealed class ConfigLinkTests : IAsyncLifetime
                 CatalogDelayer = new NeverDelay(),
                 CatalogStore = new MemoryCatalogStore(),
                 OAuthLogins = issuer => issuer == "chatgpt" ? _login : null,
+                DiscoveryHost = _discovery, // 不读开发机真实的家目录
             });
         _agent = _host.RunAsync(_agentCts.Token);
         return ValueTask.CompletedTask;
@@ -291,6 +306,73 @@ public sealed class ConfigLinkTests : IAsyncLifetime
         // 删供应商:别名跟着走
         Assert.True((await _c.Providers.RemoveAsync(deviceId, "gw")).IsOk);
         await WaitUntil(() => _c.ProvidersState is { Providers.IsEmpty: true, Aliases.IsEmpty: true, Options.IsEmpty: true }, "provider removed everywhere");
+    }
+
+    [Fact]
+    public void The_agent_and_the_protocol_name_discovery_sources_the_same_way()
+    {
+        // Agent 层不引用协议:来源名在两边各写一份,这里守它们一致(控制端按协议的值翻译)
+        Assert.Equal(DiscoverySources.All, Ncw.Agent.Catalog.Discovery.DiscoveryReaders.Order);
+        Assert.Equal((DiscoveryStatus.New, DiscoveryStatus.Imported, DiscoveryStatus.Conflict),
+            (Ncw.Agent.Catalog.Discovery.ProviderDiscovery.StatusNew, Ncw.Agent.Catalog.Discovery.ProviderDiscovery.StatusImported, Ncw.Agent.Catalog.Discovery.ProviderDiscovery.StatusConflict));
+        Assert.Equal((DiscoveryErrorKeys.Gone, DiscoveryErrorKeys.AlreadyImported),
+            (Ncw.Agent.Catalog.Discovery.ProviderDiscovery.ErrorGone, Ncw.Agent.Catalog.Discovery.ProviderDiscovery.ErrorAlreadyImported));
+    }
+
+    [Fact]
+    public async Task Discovered_providers_are_listed_without_their_keys_and_imported_on_the_device()
+    {
+        const string DiscoveredSecret = "sk-DISCOVERED-SECRET-7788";
+        _discovery.Files["/discovery-home/.claude/settings.json"] =
+            $$"""{ "env": { "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "{{DiscoveredSecret}}", "ANTHROPIC_MODEL": "deepseek-chat" } }""";
+        _c = await StartControllerAsync();
+        var deviceId = _c.Link.DeviceId;
+        Assert.True(_c.Providers.SupportsDiscovery(deviceId)); // 设备在 welcome.features 里报了这个能力
+
+        var scan = await _c.Providers.ScanDiscoveryAsync(deviceId);
+        var candidate = Assert.Single(scan.Value!.Candidates);
+        Assert.Equal(("deepseek-anthropic", "anthropic", "7788", DiscoverySources.ClaudeCode, DiscoveryStatus.New),
+            (candidate.SuggestedId, candidate.Protocol, candidate.KeyLast4, candidate.Source, candidate.Status));
+        // 线上载荷里没有明文(控制端收到的就是这些字节)
+        var wire = Encoding.UTF8.GetString(Ncw.Protocol.Wire.FrameCodec.EncodePayload(scan.Value, PayloadShapes.GetShape<DiscoveryScanResult>()));
+        Assert.DoesNotContain("SECRET", wire, StringComparison.Ordinal);
+
+        var imported = await _c.Providers.ImportDiscoveredAsync(deviceId, [candidate.Id]);
+        Assert.Equal("deepseek-anthropic", Assert.Single(imported.Value!.Items).ProviderId);
+        await WaitUntil(() => _c.ProvidersState.Providers.Any(p => p.Id == "deepseek-anthropic" && p.HasCredential)
+            && _c.ProvidersState.Aliases.Any(a => a.ProviderId == "deepseek-anthropic" && a.UpstreamModel == "deepseek-chat"), "imported provider mirrored");
+        Assert.DoesNotContain("SECRET", _c.ProvidersState.ToString(), StringComparison.Ordinal);
+
+        // key 存在设备上(只有本机 owner 的 reveal 能取回来)
+        Assert.Equal(DiscoveredSecret, (await _c.Providers.RevealCredentialAsync(deviceId, "deepseek-anthropic")).Value!.ApiKey);
+        Assert.Equal(DiscoveryStatus.Imported, Assert.Single((await _c.Providers.ScanDiscoveryAsync(deviceId)).Value!.Candidates).Status);
+    }
+
+    [Fact]
+    public void The_agent_and_the_protocol_name_template_groups_and_variants_the_same_way()
+    {
+        // Agent 层不引用协议:分组 / 端点标签在两边各写一份,这里守它们一致(控制端按协议的值翻译)
+        Assert.Equal(ProviderTemplateGroups.All, Ncw.Agent.Catalog.Templates.ProviderTemplateGroups.All);
+        Assert.Equal(ProviderTemplateVariants.All, Ncw.Agent.Catalog.Templates.ProviderTemplateVariants.All);
+    }
+
+    [Fact]
+    public async Task The_device_hands_out_its_built_in_templates_and_they_match_its_providers()
+    {
+        _c = await StartControllerAsync();
+        var deviceId = _c.Link.DeviceId;
+        Assert.True(_c.Providers.SupportsTemplates(deviceId)); // 设备在 welcome.features 里报了这个能力
+
+        var templates = (await _c.Providers.ListTemplatesAsync(deviceId)).Value!.Templates;
+
+        Assert.Equal(Ncw.Agent.Catalog.Templates.ProviderTemplates.All.Count, templates.Length);
+        var deepseek = Assert.Single(templates, t => t.Id == "deepseek-anthropic");
+        Assert.Equal(("deepseek", ProviderTemplateVariants.Anthropic, "anthropic", "https://api.deepseek.com/anthropic"),
+            (deepseek.Service, deepseek.Variant, deepseek.Protocol, deepseek.BaseUrl));
+        Assert.Contains(templates, t => t is { Id: "ollama", NeedsKey: false, KeyUrl: null });
+        // 已有供应商的 logo 从同一份模版派生(按地址)
+        var refs = templates.Select(t => new Ncw.Core.Domain.TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol)).ToList();
+        Assert.Equal("moonshot", Ncw.Core.Domain.ProviderTemplateMatch.Find("https://api.moonshot.ai/v1/", "openai-chat", refs)?.Service);
     }
 
     [Fact]

@@ -18,6 +18,8 @@
   <ItemGroup>
     <!-- 品牌标识(2.x 的 NextCoWork 图标,256 px,圆角方块自带透明边距);启动加载界面用。 -->
     <AvaloniaResource Include="Assets/nextcowork-mark.png" />
+    <!-- 供应商 logo(models.dev 的单色 logo,MIT,许可证在同目录):NcwProviderLogo 按服务 id 读,颜色跟随 Arc token。 -->
+    <AvaloniaResource Include="Assets/ProviderLogos/*.svg" />
   </ItemGroup>
   <ItemGroup>
     <!-- 运行时才确定的 Lucide 图标必须在这里声明,否则画不出来(ARCL002)。 -->

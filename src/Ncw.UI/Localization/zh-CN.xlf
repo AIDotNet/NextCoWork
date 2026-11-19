@@ -1763,6 +1763,35 @@
     <unit id="SettingsData"><segment><source>Data</source><target state="translated">数据</target></segment></unit>
     <unit id="SettingsProvidersCatalogHint"><segment><source>Sources and automatic updates</source><target state="translated">来源与自动更新</target></segment></unit>
     <unit id="ProviderDisabledShort"><segment><source>Disabled</source><target state="translated">已停用</target></segment></unit>
+    <unit id="DiscoveryTitle"><segment><source>Import from other apps</source><target state="translated">从其他应用导入</target></segment></unit>
+    <unit id="DiscoveryHint"><segment><source>Providers already set up on this device in other AI clients (Claude Code, Codex, Gemini CLI, Continue, Aider…), shell profiles, environment variables, and local services such as Ollama. Keys are imported on the device and never pass through this app.</source><target state="translated">这台设备上其他 AI 客户端(Claude Code、Codex、Gemini CLI、Continue、Aider……)、Shell 配置、环境变量里已经配好的供应商,以及 Ollama 这类本地服务。密钥在设备上直接导入,不经过这里。</target></segment></unit>
+    <unit id="DiscoveryRescan"><segment><source>Scan again</source><target state="translated">重新扫描</target></segment></unit>
+    <unit id="DiscoveryScanning"><segment><source>Looking for configurations…</source><target state="translated">正在查找…</target></segment></unit>
+    <unit id="DiscoveryEmpty"><segment><source>No provider configurations were found on this device.</source><target state="translated">这台设备上没有找到可导入的配置。</target></segment></unit>
+    <unit id="DiscoveryFailed"><segment><source>The scan failed.</source><target state="translated">扫描失败。</target></segment></unit>
+    <unit id="DiscoveryImport"><segment><source>Import selected</source><target state="translated">导入所选</target></segment></unit>
+    <unit id="DiscoveryImported"><segment><source>Imported {0} provider(s).</source><target state="translated">已导入 {0} 个供应商。</target></segment></unit>
+    <unit id="DiscoveryStatusNew"><segment><source>New</source><target state="translated">可导入</target></segment></unit>
+    <unit id="DiscoveryStatusImported"><segment><source>Already imported</source><target state="translated">已导入</target></segment></unit>
+    <unit id="DiscoveryStatusConflict"><segment><source>Already exists</source><target state="translated">已存在</target></segment></unit>
+    <unit id="DiscoveryConflictHint"><segment><source>A provider with this address or ID already exists. Importing creates a separate one and leaves the existing provider alone.</source><target state="translated">已有同地址或同 ID 的供应商。导入会另建一个,不覆盖已有的。</target></segment></unit>
+    <unit id="DiscoveryNoKey"><segment><source>No key</source><target state="translated">无密钥</target></segment></unit>
+    <unit id="DiscoveryAlsoSeen"><segment><source>Also in {0}</source><target state="translated">也见于 {0}</target></segment></unit>
+    <unit id="DiscoveryModels"><segment><source>Models: {0}</source><target state="translated">模型:{0}</target></segment></unit>
+    <unit id="DiscoverySourceClaudeCode"><segment><source>Claude Code</source><target state="translated">Claude Code</target></segment></unit>
+    <unit id="DiscoverySourceCodex"><segment><source>Codex</source><target state="translated">Codex</target></segment></unit>
+    <unit id="DiscoverySourceCcSwitch"><segment><source>cc-switch</source><target state="translated">cc-switch</target></segment></unit>
+    <unit id="DiscoverySourceOpencode"><segment><source>opencode</source><target state="translated">opencode</target></segment></unit>
+    <unit id="DiscoverySourceEnv"><segment><source>Environment variable</source><target state="translated">环境变量</target></segment></unit>
+    <unit id="DiscoverySourceGeminiCli"><segment><source>Gemini CLI</source><target state="translated">Gemini CLI</target></segment></unit>
+    <unit id="DiscoverySourceQwenCode"><segment><source>Qwen Code</source><target state="translated">Qwen Code</target></segment></unit>
+    <unit id="DiscoverySourceCrush"><segment><source>Crush</source><target state="translated">Crush</target></segment></unit>
+    <unit id="DiscoverySourceContinue"><segment><source>Continue</source><target state="translated">Continue</target></segment></unit>
+    <unit id="DiscoverySourceAider"><segment><source>Aider</source><target state="translated">Aider</target></segment></unit>
+    <unit id="DiscoverySourceShell"><segment><source>Shell profile</source><target state="translated">Shell 配置</target></segment></unit>
+    <unit id="DiscoverySourceLocal"><segment><source>Local service</source><target state="translated">本地服务</target></segment></unit>
+    <unit id="ProvErrDiscoveryGone"><segment><source>This configuration changed after the scan. Scan again.</source><target state="translated">这条配置在扫描之后变了,请重新扫描。</target></segment></unit>
+    <unit id="ProvErrDiscoveryAlreadyImported"><segment><source>Already imported.</source><target state="translated">已经导入过了。</target></segment></unit>
     <unit id="SidebarProjects"><segment><source>Projects</source><target state="translated">项目</target></segment></unit>
     <unit id="SidebarShowMore"><segment><source>Show {0} more</source><target state="translated">显示更多 ({0})</target></segment></unit>
     <unit id="SidebarShowLess"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
@@ -1771,5 +1800,38 @@
     <unit id="SidebarHideArchived"><segment><source>Hide archived</source><target state="translated">隐藏已归档</target></segment></unit>
     <unit id="SidebarSignedIn"><segment><source>Signed in</source><target state="translated">已登录</target></segment></unit>
     <unit id="SidebarProjectMenu"><segment><source>Project actions</source><target state="translated">项目操作</target></segment></unit>
+    <unit id="ProviderEditorPickDescription"><segment><source>Pick a service. Most only need an API key.</source><target state="translated">选一个服务。常用的只需要填 API Key。</target></segment></unit>
+    <unit id="ProviderEditorFormDescription"><segment><source>Address and protocol are filled in from the template.</source><target state="translated">地址和协议已按模版填好。</target></segment></unit>
+    <unit id="ProviderEditorCustomDescription"><segment><source>Enter the address, protocol and API key yourself.</source><target state="translated">手动填写地址、协议和 API Key。</target></segment></unit>
+    <unit id="ProviderEditorEditDescription"><segment><source>Change how this provider connects. Leave the API key empty to keep the stored one.</source><target state="translated">修改连接信息。API Key 留空表示保留已存的。</target></segment></unit>
+    <unit id="ProviderTemplateSearch"><segment><source>Search services or addresses…</source><target state="translated">搜索服务或地址…</target></segment></unit>
+    <unit id="ProviderTemplateGroupFeatured"><segment><source>Popular</source><target state="translated">常用</target></segment></unit>
+    <unit id="ProviderTemplateGroupIntl"><segment><source>International</source><target state="translated">国际</target></segment></unit>
+    <unit id="ProviderTemplateGroupChina"><segment><source>China</source><target state="translated">国内</target></segment></unit>
+    <unit id="ProviderTemplateGroupAggregator"><segment><source>Aggregators</source><target state="translated">聚合平台</target></segment></unit>
+    <unit id="ProviderTemplateGroupLocal"><segment><source>On this device</source><target state="translated">本机</target></segment></unit>
+    <unit id="ProviderTemplateGroupOther"><segment><source>Other</source><target state="translated">其他</target></segment></unit>
+    <unit id="ProviderTemplateGroupResults"><segment><source>Results</source><target state="translated">搜索结果</target></segment></unit>
+    <unit id="ProviderTemplateVariantIntl"><segment><source>International</source><target state="translated">国际版</target></segment></unit>
+    <unit id="ProviderTemplateVariantAnthropic"><segment><source>Anthropic-compatible</source><target state="translated">Anthropic 兼容</target></segment></unit>
+    <unit id="ProviderTemplateCustom"><segment><source>Custom</source><target state="translated">自定义</target></segment></unit>
+    <unit id="ProviderTemplateCustomHint"><segment><source>Any OpenAI- or Anthropic-compatible address</source><target state="translated">任意兼容 OpenAI / Anthropic 的地址</target></segment></unit>
+    <unit id="ProviderTemplateNoResults"><segment><source>No template matches.</source><target state="translated">没有匹配的模版。</target></segment></unit>
+    <unit id="ProviderTemplateUseCustom"><segment><source>Enter it manually</source><target state="translated">改用自定义</target></segment></unit>
+    <unit id="ProviderTemplateFooterHint"><segment><source>Not listed? Choose Custom.</source><target state="translated">找不到？选「自定义」手动填写。</target></segment></unit>
+    <unit id="ProviderDiscoveryBanner"><segment><source>Found {0} providers already set up on this device</source><target state="translated">在这台设备上找到 {0} 个已配置的供应商</target></segment></unit>
+    <unit id="ProviderDiscoveryBannerAction"><segment><source>Import</source><target state="translated">去导入</target></segment></unit>
+    <unit id="ProviderEditorBack"><segment><source>Choose another service</source><target state="translated">换一个服务</target></segment></unit>
+    <unit id="ProviderEditorGetKey"><segment><source>Get an API key</source><target state="translated">获取 API Key</target></segment></unit>
+    <unit id="ProviderEditorKeyStored"><segment><source>Stored on the device only. The field clears after saving.</source><target state="translated">只保存在设备上,保存后这里会清空。</target></segment></unit>
+    <unit id="ProviderEditorLocalTitle"><segment><source>No API key needed</source><target state="translated">不需要 API Key</target></segment></unit>
+    <unit id="ProviderEditorLocalHint"><segment><source>Make sure {0} is running on the device's computer. Saving connects once and lists its models.</source><target state="translated">确认 {0} 已在设备那台电脑上运行。保存时会连一次并列出模型。</target></segment></unit>
+    <unit id="ProviderEditorAdvanced"><segment><source>Advanced</source><target state="translated">高级</target></segment></unit>
+    <unit id="ProviderEditorSaveAndTest"><segment><source>Save and test</source><target state="translated">保存并测试</target></segment></unit>
+    <unit id="ProviderEditorSaving"><segment><source>Saving and testing the connection…</source><target state="translated">正在保存并测试连接…</target></segment></unit>
+    <unit id="ProviderEditorTestFailed"><segment><source>Saved, but the connection test failed: {0}</source><target state="translated">已保存,但连接测试没通过:{0}</target></segment></unit>
+    <unit id="ProviderEditorKeep"><segment><source>Keep and close</source><target state="translated">保留并关闭</target></segment></unit>
+    <unit id="ProvErrKeyRequired"><segment><source>Enter an API key before saving.</source><target state="translated">填写 API Key 后才能保存。</target></segment></unit>
+    <unit id="ProvErrIdTaken"><segment><source>Another provider already uses this id.</source><target state="translated">这个标识已经被别的供应商用了。</target></segment></unit>
   </file>
 </xliff>

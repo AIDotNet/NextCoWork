@@ -48,37 +48,6 @@
         </WrapPanel>
       </StackPanel>
     </Border>
-    <!-- 新建 / 编辑表单 -->
-    <ui:NcwCollapsible IsOpen="{Binding Editor.IsOpen}">
-      <Border Classes="card">
-        <StackPanel Spacing="10" DataContext="{Binding Editor}" x:DataType="vm:ProviderEditorViewModel">
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText ProviderNewTitle}" />
-          <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsNew}" Text="{l:NcwText ProviderEditTitle}" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-            <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText ProviderName}" />
-            <ui:NcwInput Grid.Column="1" Text="{Binding Id, Mode=TwoWay}" Label="{l:NcwText ProviderId}" IsEnabled="{Binding IsNew}" />
-          </Grid>
-          <ui:NcwSelect x:Name="ProtocolSelect" Label="{l:NcwText ProviderProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
-          <ui:NcwInput Text="{Binding BaseUrl, Mode=TwoWay}" Label="{l:NcwText ProviderBaseUrl}" PlaceholderText="https://api.example.com" />
-          <!-- 密钥只写不读:留空 = 不改;保存后输入立即清空,列表只显示后四位 -->
-          <ui:NcwInput Text="{Binding ApiKey, Mode=TwoWay}" Label="{l:NcwText ProviderApiKey}" PasswordChar="•" Description="{l:NcwText ProviderApiKeyHint}" />
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:NcwText ProviderEnabled}" />
-              <TextBlock Classes="hint" Text="{l:NcwText ProviderEnabledHint}" />
-            </StackPanel>
-            <ui:NcwSwitch Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
-          </Grid>
-          <TextBlock IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
-                     Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
-          <WrapPanel Orientation="Horizontal">
-            <ui:NcwButton x:Name="SaveProviderButton" Margin="0,0,8,0" Variant="Primary" IsEnabled="{Binding CanSave}" Content="{l:NcwText Save}" />
-            <ui:NcwButton x:Name="CancelProviderButton" Variant="Ghost" Content="{l:NcwText Cancel}" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
-    </ui:NcwCollapsible>
-
     <!-- 导入:从上游拉模型列表,勾选后整表替换这家的别名 -->
     <ui:NcwCollapsible IsOpen="{Binding Import.IsOpen}">
       <Border Classes="card">

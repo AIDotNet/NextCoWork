@@ -162,7 +162,22 @@ internal static class ProviderHandlers
             runtime().Providers.SubmitOAuthCode(p.ProviderId, p.Code);
             return Unit.Value;
         }));
+
+        // ── providers.discovery(后加的能力):在这台设备上找其他客户端的配置;明文 key 只在设备上,DTO 只带后四位 ──
+        router.Handle(ProviderDiscoveryMethods.Scan, (_, _, ct) => GuardAsync(async () =>
+            new DiscoveryScanResult([.. (await runtime().Discovery.ScanAsync(ct).ConfigureAwait(false)).Select(ProviderMapping.ToDto)])));
+        router.Handle(ProviderDiscoveryMethods.Import, (p, _, ct) => GuardAsync(async () =>
+        {
+            var outcomes = await runtime().Discovery.ImportAsync(p.Ids, ct).ConfigureAwait(false);
+            runtime().PublishProviders();
+            return new DiscoveryImportResult([.. outcomes.Select(o => new DiscoveryImportItemDto(o.CandidateId, o.ProviderId, o.ErrorKey))]);
+        }));
+
+        // ── providers.templates(后加的能力):添加供应商的内置模版(静态数据,和自动发现共用已知服务表) ──
+        router.Handle(ProviderTemplatesMethods.List, (_, _, _) => Sync(() => Templates));
     }
+
+    private static readonly ProviderTemplatesResult Templates = new([.. Ncw.Agent.Catalog.Templates.ProviderTemplates.All.Select(ProviderMapping.ToDto)]);
 
     // ───────────────────────── catalog ─────────────────────────
 

@@ -90,6 +90,7 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
             OAuthLogins = services.OAuthLogins ?? (_ => null),
         };
         Config = new ProviderConfigSource(Providers, Catalog, deviceSettings is null ? null : () => deviceSettings.Current().Failover);
+        Discovery = new Ncw.Agent.Catalog.Discovery.ProviderDiscovery(Providers, services.DiscoveryHost ?? Ncw.Agent.Catalog.Discovery.LocalDiscoveryHost.Instance);
         Presets = services.Presets ?? BuiltinProviderPresets.Instance;
         Router = new LlmRouter(
             Config, http, new CredentialResolver(vault, services.OAuth ?? new OAuthRegistry([]), http, clock, Providers.OnCredentialChanged), clock,
@@ -106,6 +107,9 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
     public ModelCatalogService Catalog { get; }
 
     public ProviderService Providers { get; }
+
+    /// <summary>供应商自动发现与导入(在这台设备上读其他客户端的配置)。</summary>
+    public Ncw.Agent.Catalog.Discovery.ProviderDiscovery Discovery { get; }
 
     public ProviderConfigSource Config { get; }
 

@@ -23,6 +23,18 @@
       </Grid>
     </ui:PlainButton>
 
+    <!-- 从其他应用导入:设备支持、能写才有;还有能导入的就带个数 -->
+    <ui:PlainButton x:Name="DiscoveryItem" Classes="listItem" Classes.active="{Binding ShowsDiscovery}" Command="{Binding SelectDiscoveryCommand}"
+                    IsVisible="{Binding ShowsDiscoveryEntry}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+        <lucide:LucideIcon Kind="Import" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+        <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{l:NcwText DiscoveryTitle}" TextTrimming="CharacterEllipsis" />
+        <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center" IsVisible="{Binding Discovery.HasImportable}">
+          <TextBlock Classes="hint" Text="{Binding Discovery.ImportableCount}" />
+        </Border>
+      </Grid>
+    </ui:PlainButton>
+
     <Grid ColumnDefinitions="*,Auto" Margin="10,12,4,2">
       <TextBlock Classes="listGroup" Text="{l:NcwText ProvidersTitle}" VerticalAlignment="Center" />
       <ui:NcwButton x:Name="AddProviderButton" Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding NewProviderCommand}" IsVisible="{Binding CanEdit}"
@@ -41,11 +53,13 @@
         <DataTemplate x:DataType="vm:ProviderItemViewModel">
           <ui:PlainButton Classes="listItem" Classes.active="{Binding IsSelected}" Command="{Binding SelectCommand}" arc:Tooltip.Tip="{Binding Name}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <Panel Width="15" VerticalAlignment="Center">
-                <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center"
-                        Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsEnabled}" />
-                <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center"
-                        BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}" IsVisible="{Binding !IsEnabled}" />
+              <!-- logo,右下角是启用状态点(实心 = 启用,空心 = 停用) -->
+              <Panel Width="26" Height="26" VerticalAlignment="Center">
+                <ui:NcwProviderLogo Classes="tile" Width="26" Height="26" Service="{Binding Logo}" FallbackText="{Binding Name}" Classes.off="{Binding !IsEnabled}" />
+                <Border Width="10" Height="10" CornerRadius="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3"
+                        BorderThickness="2" BorderBrush="{arc:ArcDesignTokenResource Background}" Background="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding IsEnabled}" />
+                <Border Width="10" Height="10" CornerRadius="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3"
+                        BorderThickness="2" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}" Background="{arc:ArcDesignTokenResource Background}" IsVisible="{Binding !IsEnabled}" />
               </Panel>
               <StackPanel Grid.Column="1" Spacing="1">
                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
