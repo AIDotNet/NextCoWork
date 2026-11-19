@@ -121,7 +121,8 @@ internal sealed class ManifestVerifyCommand : IBuildCommand
             var dirs = args.GetAll("dir").Append(Path.GetDirectoryName(Path.GetFullPath(path))!).ToArray();
             foreach (var artifact in manifest.Artifacts)
             {
-                var file = dirs.Select(d => Path.Combine(d, artifact.FileName)).FirstOrDefault(File.Exists)
+                // 各平台会产出同名文件(如 releases.stable.json,内容不同):先找属于该平台的目录(目录名是 RID 或以 -RID 结尾,如 velopack-osx-arm64),再找其余目录。
+                var file = dirs.OrderBy(d => IsPlatformDir(d, artifact.Platform) ? 0 : 1).Select(d => Path.Combine(d, artifact.FileName)).FirstOrDefault(File.Exists)
                     ?? throw new BuildException($"Artifact missing: {artifact.FileName} (searched {string.Join(", ", dirs)})");
 
                 if (Hashing.Sha256(file) != artifact.Sha256)
@@ -134,6 +135,12 @@ internal sealed class ManifestVerifyCommand : IBuildCommand
         }
 
         return Task.FromResult(0);
+    }
+
+    private static bool IsPlatformDir(string dir, string platform)
+    {
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(dir));
+        return name.Equals(platform, StringComparison.Ordinal) || name.EndsWith("-" + platform, StringComparison.Ordinal);
     }
 }
 

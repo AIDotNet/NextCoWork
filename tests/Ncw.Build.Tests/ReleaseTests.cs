@@ -172,6 +172,32 @@ public class ManifestTests
     }
 
     [Fact]
+    public async Task Verify_matches_same_named_files_of_different_platforms_by_their_own_platform_directory()
+    {
+        // 回归:三个平台各自产出同名的 releases.stable.json(内容不同)。验证以前只按文件名取第一个存在的文件,
+        // 第二、第三个平台的记录就拿别的平台的文件比哈希,报 hash mismatch。
+        using var dir = new TempDir();
+        var (priv, pub) = Ed25519.Generate();
+        var log = new MemoryBuildLog();
+        var ctx = TestKit.Context(dir, new FakeRunner(), log, TestKit.MacArm, new Dictionary<string, string> { [Ed25519.KeyEnv] = priv, [Ed25519.KeyIdEnv] = "k1" });
+        var linux = dir.Write("in/velopack-linux-x64/releases.stable.json", "{\"linux\":1}");
+        var mac = dir.Write("in/velopack-osx-arm64/releases.stable.json", "{\"mac\":2}");
+        var win = dir.Write("in/velopack-win-x64/releases.stable.json", "{\"win\":3}");
+        var manifest = dir.Sub("rel", "release-manifest.json");
+        Assert.Equal(0, await Program.RunAsync(
+            ["manifest", "--artifact", $"linux-x64::{linux}", "--artifact", $"osx-arm64::{mac}", "--artifact", $"win-x64::{win}", "--out", dir.Sub("rel")], ctx, default));
+
+        Assert.Equal(0, await Program.RunAsync(
+            ["manifest-verify", "--manifest", manifest, "--public-key", pub,
+                "--dir", dir.Sub("in", "velopack-linux-x64"), "--dir", dir.Sub("in", "velopack-osx-arm64"), "--dir", dir.Sub("in", "velopack-win-x64")], ctx, default));
+
+        File.WriteAllText(mac, "tampered");
+        Assert.Equal(1, await Program.RunAsync(
+            ["manifest-verify", "--manifest", manifest, "--public-key", pub,
+                "--dir", dir.Sub("in", "velopack-linux-x64"), "--dir", dir.Sub("in", "velopack-osx-arm64"), "--dir", dir.Sub("in", "velopack-win-x64")], ctx, default));
+    }
+
+    [Fact]
     public async Task Keygen_refuses_to_write_inside_the_repository_or_overwrite()
     {
         using var dir = new TempDir();
