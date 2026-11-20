@@ -37,6 +37,7 @@
     <ProjectReference Include="../Ncw.Agent.Catalog/Ncw.Agent.Catalog.csproj" />
     <ProjectReference Include="../Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
     <ProjectReference Include="../Ncw.Agent.Subagents/Ncw.Agent.Subagents.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Workflows/Ncw.Agent.Workflows.csproj" />
     <ProjectReference Include="../Ncw.Agent.Services/Ncw.Agent.Services.csproj" />
     <ProjectReference Include="../Ncw.Agent.Gateway/Ncw.Agent.Gateway.csproj" />
     <ProjectReference Include="../Ncw.Agent.Workspace/Ncw.Agent.Workspace.csproj" />

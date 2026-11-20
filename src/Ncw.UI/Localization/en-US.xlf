@@ -1962,5 +1962,56 @@
     <unit id="RemoveProjectFailedTitle"><segment><source>Couldn't remove the project</source><target state="final">Couldn't remove the project</target></segment></unit>
     <unit id="ProjectRemoveOffline"><segment><source>The device this project is on isn't connected. Connect it and try again.</source><target state="final">The device this project is on isn't connected. Connect it and try again.</target></segment></unit>
     <unit id="ProjectRemoveFailed"><segment><source>The device couldn't remove this project. Try again later.</source><target state="final">The device couldn't remove this project. Try again later.</target></segment></unit>
+    <unit id="Workflows"><segment><source>Workflows</source><target state="final">Workflows</target></segment></unit>
+    <unit id="WorkflowNew"><segment><source>New workflow</source><target state="final">New workflow</target></segment></unit>
+    <unit id="WorkflowTemplates"><segment><source>Templates</source><target state="final">Templates</target></segment></unit>
+    <unit id="WorkflowRecentRuns"><segment><source>Recent runs</source><target state="final">Recent runs</target></segment></unit>
+    <unit id="WorkflowEditMode"><segment><source>Edit</source><target state="final">Edit</target></segment></unit>
+    <unit id="WorkflowRunMode"><segment><source>Monitor</source><target state="final">Monitor</target></segment></unit>
+    <unit id="WorkflowAutoArrange"><segment><source>Auto arrange</source><target state="final">Auto arrange</target></segment></unit>
+    <unit id="WorkflowSave"><segment><source>Save</source><target state="final">Save</target></segment></unit>
+    <unit id="WorkflowRun"><segment><source>Run</source><target state="final">Run</target></segment></unit>
+    <unit id="WorkflowStop"><segment><source>Stop</source><target state="final">Stop</target></segment></unit>
+    <unit id="WorkflowResume"><segment><source>Resume</source><target state="final">Resume</target></segment></unit>
+    <unit id="WorkflowToggleDirection"><segment><source>Switch layout direction</source><target state="final">Switch layout direction</target></segment></unit>
+    <unit id="WorkflowNodeDetails"><segment><source>Node details</source><target state="final">Node details</target></segment></unit>
+    <unit id="WorkflowNoTemplates"><segment><source>No saved workflows yet</source><target state="final">No saved workflows yet</target></segment></unit>
+    <unit id="WorkflowNoRuns"><segment><source>No workflow runs yet</source><target state="final">No workflow runs yet</target></segment></unit>
+    <unit id="WorkflowAddNode"><segment><source>Add step</source><target state="final">Add step</target></segment></unit>
+    <unit id="WorkflowDeleteNode"><segment><source>Delete step</source><target state="final">Delete step</target></segment></unit>
+    <unit id="WorkflowApplyNode"><segment><source>Apply</source><target state="final">Apply</target></segment></unit>
+    <unit id="WorkflowRetryNode"><segment><source>Retry from this step</source><target state="final">Retry from this step</target></segment></unit>
+    <unit id="WorkflowUndo"><segment><source>Undo</source><target state="final">Undo</target></segment></unit>
+    <unit id="WorkflowRedo"><segment><source>Redo</source><target state="final">Redo</target></segment></unit>
+    <unit id="WorkflowOpenCanvas"><segment><source>Open in canvas</source><target state="final">Open in canvas</target></segment></unit>
+    <unit id="WorkflowNodeTitle"><segment><source>Title</source><target state="final">Title</target></segment></unit>
+    <unit id="WorkflowNodeDescription"><segment><source>Description</source><target state="final">Description</target></segment></unit>
+    <unit id="WorkflowNodePrompt"><segment><source>Prompt template</source><target state="final">Prompt template</target></segment></unit>
+    <unit id="WorkflowNodeToolName"><segment><source>Tool name</source><target state="final">Tool name</target></segment></unit>
+    <unit id="WorkflowNodeExpression"><segment><source>Condition expression</source><target state="final">Condition expression</target></segment></unit>
+    <unit id="WorkflowNodeOutputTemplate"><segment><source>Output template</source><target state="final">Output template</target></segment></unit>
+    <unit id="WorkflowNodePermission"><segment><source>Permission mode</source><target state="final">Permission mode</target></segment></unit>
+    <unit id="WorkflowNodeKindAgent"><segment><source>Subagent</source><target state="final">Subagent</target></segment></unit>
+    <unit id="WorkflowNodeKindTool"><segment><source>Tool</source><target state="final">Tool</target></segment></unit>
+    <unit id="WorkflowNodeKindCondition"><segment><source>Condition</source><target state="final">Condition</target></segment></unit>
+    <unit id="WorkflowNodeKindApproval"><segment><source>Approval</source><target state="final">Approval</target></segment></unit>
+    <unit id="WorkflowNodeKindJoin"><segment><source>Join</source><target state="final">Join</target></segment></unit>
+    <unit id="WorkflowNodeKindOutput"><segment><source>Output</source><target state="final">Output</target></segment></unit>
+    <unit id="WorkflowNodeKindTrigger"><segment><source>Trigger</source><target state="final">Trigger</target></segment></unit>
+    <unit id="WorkflowNodeKindPlugin"><segment><source>Plugin</source><target state="final">Plugin</target></segment></unit>
+    <unit id="WorkflowStatusPending"><segment><source>Pending</source><target state="final">Pending</target></segment></unit>
+    <unit id="WorkflowStatusRunning"><segment><source>Running</source><target state="final">Running</target></segment></unit>
+    <unit id="WorkflowStatusWaitingApproval"><segment><source>Waiting approval</source><target state="final">Waiting approval</target></segment></unit>
+    <unit id="WorkflowStatusCompleted"><segment><source>Completed</source><target state="final">Completed</target></segment></unit>
+    <unit id="WorkflowStatusFailed"><segment><source>Failed</source><target state="final">Failed</target></segment></unit>
+    <unit id="WorkflowStatusCancelled"><segment><source>Cancelled</source><target state="final">Cancelled</target></segment></unit>
+    <unit id="WorkflowStatusSkipped"><segment><source>Skipped</source><target state="final">Skipped</target></segment></unit>
+    <unit id="WorkflowStatusUnknown"><segment><source>Unknown</source><target state="final">Unknown</target></segment></unit>
+    <unit id="WorkflowNodeInput"><segment><source>Input / Prompt</source><target state="final">Input / Prompt</target></segment></unit>
+    <unit id="WorkflowNodeOutput"><segment><source>Output</source><target state="final">Output</target></segment></unit>
+    <unit id="WorkflowNodeError"><segment><source>Error</source><target state="final">Error</target></segment></unit>
+    <unit id="WorkflowNodeNoOutput"><segment><source>No output yet.</source><target state="final">No output yet.</target></segment></unit>
+    <unit id="WorkflowNodeCopyOutput"><segment><source>Copy output</source><target state="final">Copy output</target></segment></unit>
+    <unit id="WorkflowNodeClose"><segment><source>Close</source><target state="final">Close</target></segment></unit>
   </file>
 </xliff>

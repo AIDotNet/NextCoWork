@@ -1962,5 +1962,56 @@
     <unit id="RemoveProjectFailedTitle"><segment><source>Couldn't remove the project</source><target state="translated">无法移除项目</target></segment></unit>
     <unit id="ProjectRemoveOffline"><segment><source>The device this project is on isn't connected. Connect it and try again.</source><target state="translated">这个项目所在的设备没有连接,连上之后再移除。</target></segment></unit>
     <unit id="ProjectRemoveFailed"><segment><source>The device couldn't remove this project. Try again later.</source><target state="translated">设备没能移除这个项目,请稍后再试。</target></segment></unit>
+    <unit id="Workflows"><segment><source>Workflows</source><target state="translated">工作流</target></segment></unit>
+    <unit id="WorkflowNew"><segment><source>New workflow</source><target state="translated">新建工作流</target></segment></unit>
+    <unit id="WorkflowTemplates"><segment><source>Templates</source><target state="translated">模板</target></segment></unit>
+    <unit id="WorkflowRecentRuns"><segment><source>Recent runs</source><target state="translated">最近运行</target></segment></unit>
+    <unit id="WorkflowEditMode"><segment><source>Edit</source><target state="translated">编辑</target></segment></unit>
+    <unit id="WorkflowRunMode"><segment><source>Monitor</source><target state="translated">监控</target></segment></unit>
+    <unit id="WorkflowAutoArrange"><segment><source>Auto arrange</source><target state="translated">自动排版</target></segment></unit>
+    <unit id="WorkflowSave"><segment><source>Save</source><target state="translated">保存</target></segment></unit>
+    <unit id="WorkflowRun"><segment><source>Run</source><target state="translated">运行</target></segment></unit>
+    <unit id="WorkflowStop"><segment><source>Stop</source><target state="translated">停止</target></segment></unit>
+    <unit id="WorkflowResume"><segment><source>Resume</source><target state="translated">续跑</target></segment></unit>
+    <unit id="WorkflowToggleDirection"><segment><source>Switch layout direction</source><target state="translated">切换排布方向</target></segment></unit>
+    <unit id="WorkflowNodeDetails"><segment><source>Node details</source><target state="translated">节点详情</target></segment></unit>
+    <unit id="WorkflowNoTemplates"><segment><source>No saved workflows yet</source><target state="translated">还没有保存的工作流</target></segment></unit>
+    <unit id="WorkflowNoRuns"><segment><source>No workflow runs yet</source><target state="translated">还没有运行记录</target></segment></unit>
+    <unit id="WorkflowAddNode"><segment><source>Add step</source><target state="translated">添加节点</target></segment></unit>
+    <unit id="WorkflowDeleteNode"><segment><source>Delete step</source><target state="translated">删除节点</target></segment></unit>
+    <unit id="WorkflowApplyNode"><segment><source>Apply</source><target state="translated">应用修改</target></segment></unit>
+    <unit id="WorkflowRetryNode"><segment><source>Retry from this step</source><target state="translated">从此节点重试</target></segment></unit>
+    <unit id="WorkflowUndo"><segment><source>Undo</source><target state="translated">撤销</target></segment></unit>
+    <unit id="WorkflowRedo"><segment><source>Redo</source><target state="translated">重做</target></segment></unit>
+    <unit id="WorkflowOpenCanvas"><segment><source>Open in canvas</source><target state="translated">在画布打开</target></segment></unit>
+    <unit id="WorkflowNodeTitle"><segment><source>Title</source><target state="translated">节点标题</target></segment></unit>
+    <unit id="WorkflowNodeDescription"><segment><source>Description</source><target state="translated">描述</target></segment></unit>
+    <unit id="WorkflowNodePrompt"><segment><source>Prompt template</source><target state="translated">提示词模板</target></segment></unit>
+    <unit id="WorkflowNodeToolName"><segment><source>Tool name</source><target state="translated">工具名称</target></segment></unit>
+    <unit id="WorkflowNodeExpression"><segment><source>Condition expression</source><target state="translated">条件表达式</target></segment></unit>
+    <unit id="WorkflowNodeOutputTemplate"><segment><source>Output template</source><target state="translated">输出模板</target></segment></unit>
+    <unit id="WorkflowNodePermission"><segment><source>Permission mode</source><target state="translated">权限档位</target></segment></unit>
+    <unit id="WorkflowNodeKindAgent"><segment><source>Subagent</source><target state="translated">子代理</target></segment></unit>
+    <unit id="WorkflowNodeKindTool"><segment><source>Tool</source><target state="translated">工具</target></segment></unit>
+    <unit id="WorkflowNodeKindCondition"><segment><source>Condition</source><target state="translated">条件判断</target></segment></unit>
+    <unit id="WorkflowNodeKindApproval"><segment><source>Approval</source><target state="translated">人工审批</target></segment></unit>
+    <unit id="WorkflowNodeKindJoin"><segment><source>Join</source><target state="translated">分支汇合</target></segment></unit>
+    <unit id="WorkflowNodeKindOutput"><segment><source>Output</source><target state="translated">汇总输出</target></segment></unit>
+    <unit id="WorkflowNodeKindTrigger"><segment><source>Trigger</source><target state="translated">入口</target></segment></unit>
+    <unit id="WorkflowNodeKindPlugin"><segment><source>Plugin</source><target state="translated">插件</target></segment></unit>
+    <unit id="WorkflowStatusPending"><segment><source>Pending</source><target state="translated">等待中</target></segment></unit>
+    <unit id="WorkflowStatusRunning"><segment><source>Running</source><target state="translated">运行中</target></segment></unit>
+    <unit id="WorkflowStatusWaitingApproval"><segment><source>Waiting approval</source><target state="translated">等待审批</target></segment></unit>
+    <unit id="WorkflowStatusCompleted"><segment><source>Completed</source><target state="translated">已完成</target></segment></unit>
+    <unit id="WorkflowStatusFailed"><segment><source>Failed</source><target state="translated">失败</target></segment></unit>
+    <unit id="WorkflowStatusCancelled"><segment><source>Cancelled</source><target state="translated">已取消</target></segment></unit>
+    <unit id="WorkflowStatusSkipped"><segment><source>Skipped</source><target state="translated">已跳过</target></segment></unit>
+    <unit id="WorkflowStatusUnknown"><segment><source>Unknown</source><target state="translated">未知</target></segment></unit>
+    <unit id="WorkflowNodeInput"><segment><source>Input / Prompt</source><target state="translated">输入 / 提示词</target></segment></unit>
+    <unit id="WorkflowNodeOutput"><segment><source>Output</source><target state="translated">执行输出</target></segment></unit>
+    <unit id="WorkflowNodeError"><segment><source>Error</source><target state="translated">错误信息</target></segment></unit>
+    <unit id="WorkflowNodeNoOutput"><segment><source>No output yet.</source><target state="translated">暂无输出。</target></segment></unit>
+    <unit id="WorkflowNodeCopyOutput"><segment><source>Copy output</source><target state="translated">复制输出</target></segment></unit>
+    <unit id="WorkflowNodeClose"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
   </file>
 </xliff>

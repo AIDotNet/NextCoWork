@@ -62,6 +62,12 @@ public enum RunOrigin
 
     /// <summary>定时任务。同样走 <c>Launch</c>(2.x 里它绕过了入口,3.0 不再允许)。</summary>
     Scheduled,
+
+    /// <summary>工作流总控 Run(docs/design/12-workflows.md)。</summary>
+    Workflow,
+
+    /// <summary>工作流内的 Agent 节点子 Run(独立子会话,挂在工作流总控 Run 下)。</summary>
+    WorkflowNode,
 }
 
 /// <summary>

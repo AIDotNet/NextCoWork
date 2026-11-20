@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Ncw.Client.Services;
@@ -358,6 +359,61 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
             Description = message,
             Actions = Dialog.BuildActions([new DialogAction(NcwTexts.Get(NcwTextKind.Ok), true, ButtonVariant.Primary)]),
         };
+        await dialog.ShowAsync(owner);
+    }
+
+    /// <summary>工作流节点点击后的详细消息弹窗:展示状态、耗时、错误、输入/提示词、完整执行输出及重试/复制操作。</summary>
+    public static async Task ShowWorkflowNodeDetailsAsync(Visual owner, WorkflowRunCardViewModel vm)
+    {
+        var node = vm.SelectedNodeDef;
+        if (node is null)
+        {
+            return;
+        }
+
+        var content = new WorkflowNodeDetailDialog { DataContext = vm };
+        var buttons = new List<Control>();
+
+        if (!string.IsNullOrWhiteSpace(vm.SelectedNodeOutputText ?? vm.SelectedNodeRun?.Error))
+        {
+            var copyText = vm.SelectedNodeOutputText ?? vm.SelectedNodeRun?.Error ?? "";
+            var copy = new NcwButton { Variant = ButtonVariant.Ghost, Content = NcwTexts.Get(NcwTextKind.WorkflowNodeCopyOutput) };
+            copy.Click += async (_, _) =>
+            {
+                if (TopLevel.GetTopLevel(owner)?.Clipboard is { } clipboard)
+                {
+                    await clipboard.SetTextAsync(copyText);
+                }
+            };
+            buttons.Add(copy);
+        }
+
+        Dialog? dialog = null;
+        if (vm.CanRetrySelectedNode)
+        {
+            var retry = new NcwButton { Variant = ButtonVariant.Secondary, Content = NcwTexts.Get(NcwTextKind.WorkflowRetryNode) };
+            retry.Click += (_, _) =>
+            {
+                vm.RetrySelectedNodeCommand.Execute(null);
+                dialog?.Close(true);
+            };
+            buttons.Add(retry);
+        }
+
+        var close = new NcwButton { Variant = ButtonVariant.Primary, Content = NcwTexts.Get(NcwTextKind.WorkflowNodeClose) };
+        Dialog.SetResult(close, false);
+        buttons.Add(close);
+
+        dialog = new Dialog
+        {
+            Title = node.Title,
+            Description = vm.Title,
+            Content = content,
+            Actions = ActionRow([.. buttons]),
+            Size = ControlSize.Large,
+        };
+        dialog.Resources[TKCode.Arc.DesignTokens.DialogSurfaceTokenKind.PanelWidthLG] = 680.0;
+
         await dialog.ShowAsync(owner);
     }
 }

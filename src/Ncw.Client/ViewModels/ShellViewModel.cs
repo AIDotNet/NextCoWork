@@ -53,7 +53,8 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Conversation = new ConversationViewModel(stores, Conversations, Subagents, Goals, clock ?? TimeProvider.System, lookups ?? new ComposerLookups(Files, Extensions.Commands),
             new AttachmentTrayViewModel(attachmentUploader ?? Attachments, () => Host.AttachmentPicker),
             new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock),
-            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments), inspectorServices.Git);
+            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments), inspectorServices.Git,
+            new WorkflowActions(Devices, stores));
         Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspectorServices);
         // 文件在主工作区里作为标签页打开:文件页签只负责「点了哪个」,预览与编辑在标签里
         Workspace = new WorkspaceViewModel(stores, Sessions, inspectorServices.Files, () => Dialogs, () => Inspector.Text, () => Inspector.LocalFiles);

@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Dialogs.WorkflowNodeDetailDialog"
+             x:DataType="vm:WorkflowRunCardViewModel"
+             HorizontalAlignment="Stretch">
+  <!-- 工作流节点详情弹窗内容:自适应 Dialog 宽度,不设固定 MinWidth 避免左右裁切 -->
+  <ScrollViewer MaxHeight="520"
+                HorizontalAlignment="Stretch"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="12" Margin="0,4,10,4" HorizontalAlignment="Stretch">
+      <!-- 状态与元信息条 -->
+      <WrapPanel ItemSpacing="8" LineSpacing="6">
+        <Border Classes="chip">
+          <TextBlock Classes="hint" Text="{Binding SelectedNodeRun.Status, Converter={x:Static cv:WorkflowStatusConverter.Instance}}" />
+        </Border>
+        <Border Classes="chip" IsVisible="{Binding SelectedNodeDurationText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <lucide:LucideIcon Kind="Clock" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <TextBlock Classes="hint" Text="{Binding SelectedNodeDurationText}" />
+          </StackPanel>
+        </Border>
+        <Border Classes="chip" IsVisible="{Binding SelectedNodeDef.Id, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Classes="hint" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" Text="{Binding SelectedNodeDef.Id}" />
+        </Border>
+      </WrapPanel>
+
+      <!-- 错误信息 -->
+      <Border Padding="12,10" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+              BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource Danger}"
+              IsVisible="{Binding HasSelectedNodeError}">
+        <StackPanel Spacing="6">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon Kind="CircleAlert" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Danger}" />
+            <TextBlock Text="{l:NcwText WorkflowNodeError}" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource Danger}" />
+          </StackPanel>
+          <SelectableTextBlock Text="{Binding SelectedNodeRun.Error}"
+                               Foreground="{arc:ArcDesignTokenResource Danger}"
+                               FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}"
+                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                               TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <!-- 输入 / 提示词 -->
+      <Border Padding="12,10" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+              BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+              IsVisible="{Binding HasSelectedNodeInput}">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="hint" Text="{l:NcwText WorkflowNodeInput}" FontWeight="SemiBold" />
+          <SelectableTextBlock Text="{Binding SelectedNodeInputText}"
+                               FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}"
+                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                               TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <!-- 执行输出 -->
+      <Border Padding="12,10" CornerRadius="8" Background="{arc:ArcDesignTokenResource Surface}"
+              BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+              ClipToBounds="True">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="hint" Text="{l:NcwText WorkflowNodeOutput}" FontWeight="SemiBold" />
+
+          <!-- Agent / Output 节点用 Markdown 渲染完整消息 -->
+          <Panel IsVisible="{Binding HasSelectedNodeOutput}">
+            <ui:NcwStreamingMarkdown Source="{Binding SelectedNodeOutputText}"
+                                     IsLive="False"
+                                     IsVisible="{Binding IsSelectedNodeMarkdown}" />
+            <SelectableTextBlock Text="{Binding SelectedNodeOutputText}"
+                                 FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}"
+                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                 TextWrapping="Wrap"
+                                 IsVisible="{Binding !IsSelectedNodeMarkdown}" />
+          </Panel>
+
+          <TextBlock Classes="hint" Text="{l:NcwText WorkflowNodeNoOutput}" IsVisible="{Binding IsSelectedNodeEmpty}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

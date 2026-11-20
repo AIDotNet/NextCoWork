@@ -25,6 +25,8 @@ public static class NcwAppSetup
                    .UseArcMobile()
                    // AI 专用组件(TKCode.Arc.Special):输入框上下文环点开的上下文窗口卡片
                    .UseArcSpecial()
+                   // DAG 工作流画布(TKCode.Arc.Workflow):由 NcwWorkflowCanvas 薄封装使用
+                   .UseArcWorkflow()
                    // 本程序集的 Arc 资源(界面文字的语言包)
                    .UsePackage("Ncw.UI", static p => TKCode.Arc.Generated.NcwUI.ArcGeneratedAssets.AddTo(p))
                    // 默认深色(docs/design/03 §4);设置页可改为跟随系统和其他强调色(M4)。

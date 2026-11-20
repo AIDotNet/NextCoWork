@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ncw.Agent.Workflows/Ncw.Agent.Workflows.csproj" />
+    <ProjectReference Include="../../src/Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+  </ItemGroup>
+</Project>

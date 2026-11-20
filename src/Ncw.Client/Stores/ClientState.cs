@@ -156,6 +156,9 @@ public sealed class ClientStores
     /// <summary>各设备的定时任务与运行镜像(<c>schedules</c> 主题,全量权威)。</summary>
     public Store<SchedulesMirror> Schedules { get; } = new(SchedulesMirror.Empty);
 
+    /// <summary>各设备的工作流定义目录与运行镜像(<c>workflow/&lt;id&gt;</c> 主题,key 带 deviceId)。</summary>
+    public Store<WorkflowMirror> Workflows { get; } = new(WorkflowMirror.Empty);
+
     /// <summary>各设备扩展域(Skills / 命令 / Hooks)的修订号镜像(<c>extensions</c> 主题):修订号前进 = 别处改了配置,持有这些列表的镜像据此重拉。</summary>
     public Store<ExtensionRevisionsMirror> ExtensionRevisions { get; } = new(ExtensionRevisionsMirror.Empty);
 

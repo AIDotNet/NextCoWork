@@ -14,6 +14,7 @@
     <Project Path="src/Ncw.Agent.Planning/Ncw.Agent.Planning.csproj" />
     <Project Path="src/Ncw.Agent.Widgets/Ncw.Agent.Widgets.csproj" />
     <Project Path="src/Ncw.Agent.Subagents/Ncw.Agent.Subagents.csproj" />
+    <Project Path="src/Ncw.Agent.Workflows/Ncw.Agent.Workflows.csproj" />
     <Project Path="src/Ncw.Agent.Mcp/Ncw.Agent.Mcp.csproj" />
     <Project Path="src/Ncw.Agent.Plugins/Ncw.Agent.Plugins.csproj" />
     <Project Path="src/Ncw.Agent.Hooks/Ncw.Agent.Hooks.csproj" />
@@ -49,6 +50,7 @@
     <Project Path="tests/Ncw.Agent.Parity.Tests/Ncw.Agent.Parity.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Widgets.Tests/Ncw.Agent.Widgets.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Subagents.Tests/Ncw.Agent.Subagents.Tests.csproj" />
+    <Project Path="tests/Ncw.Agent.Workflows.Tests/Ncw.Agent.Workflows.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Mcp.Tests/Ncw.Agent.Mcp.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Plugins.Tests/Ncw.Agent.Plugins.Tests.csproj" />
     <Project Path="tests/Ncw.Agent.Hooks.Tests/Ncw.Agent.Hooks.Tests.csproj" />

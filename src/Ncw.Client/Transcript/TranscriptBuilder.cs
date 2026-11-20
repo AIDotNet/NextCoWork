@@ -379,10 +379,149 @@ public static class TranscriptBuilder
         return data;
     }
 
-    private static TranscriptRow ToolOrWidgetRow(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive, WidgetContext widgets) =>
-        IsWidgetTool(call.Name ?? live?.Name ?? "")
+    private static TranscriptRow ToolOrWidgetRow(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive, WidgetContext widgets)
+    {
+        var name = call.Name ?? live?.Name ?? "";
+        if (string.Equals(name, "RunWorkflow", StringComparison.OrdinalIgnoreCase))
+        {
+            return WorkflowRowOf(call, result, live, fallbackEnv, anyRunActive);
+        }
+
+        return IsWidgetTool(name)
             ? WidgetRowOf(call, result, live, fallbackEnv, anyRunActive, widgets)
             : ToolRowOf(call, result, live, fallbackEnv, approvals, anyRunActive);
+    }
+
+    private static WorkflowRow WorkflowRowOf(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, bool anyRunActive)
+    {
+        var callId = call.CallId ?? Guid.NewGuid().ToString("N");
+        var input = call.InputJson ?? live?.InputJson ?? "{}";
+        var (runId, detailTitle) = ReadWorkflowDetails(result?.DetailsJson) is { RunId: not null } resDetails
+            ? resDetails
+            : ReadWorkflowDetails(live?.DetailsJson);
+
+        var (fallbackDef, inputTitle) = ParseWorkflowFallback(input, callId);
+        var title = !string.IsNullOrWhiteSpace(detailTitle)
+            ? detailTitle
+            : !string.IsNullOrWhiteSpace(inputTitle) ? inputTitle : "Workflow";
+
+        ToolRowStatus status;
+        if (result is not null)
+        {
+            status = result.IsError ? ToolRowStatus.Failed : ToolRowStatus.Done;
+        }
+        else if (live is not null && live.Status != ToolCallStatus.Running)
+        {
+            status = live.Status == ToolCallStatus.Failed ? ToolRowStatus.Failed : ToolRowStatus.Done;
+        }
+        else
+        {
+            status = anyRunActive || live is { Status: ToolCallStatus.Running } ? ToolRowStatus.Running : ToolRowStatus.Interrupted;
+        }
+
+        return new WorkflowRow($"call:{callId}", callId, runId, title, fallbackDef, status, ResolveEnv(live?.Environment, fallbackEnv));
+    }
+
+    private static (string? RunId, string? Title) ReadWorkflowDetails(string? detailsJson)
+    {
+        if (string.IsNullOrWhiteSpace(detailsJson))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(detailsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return (null, null);
+            }
+
+            var runId = doc.RootElement.TryGetProperty("runId", out var rEl) && rEl.ValueKind == JsonValueKind.String ? rEl.GetString() : null;
+            var title = doc.RootElement.TryGetProperty("title", out var tEl) && tEl.ValueKind == JsonValueKind.String ? tEl.GetString() : null;
+            return (runId, title);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+    }
+
+    private static (WorkflowDefinition? Definition, string? Title) ParseWorkflowFallback(string inputJson, string callId)
+    {
+        if (string.IsNullOrWhiteSpace(inputJson))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return (null, null);
+            }
+
+            var title = root.TryGetProperty("title", out var tEl) && tEl.ValueKind == JsonValueKind.String ? tEl.GetString() : null;
+            if (!root.TryGetProperty("steps", out var stepsEl) || stepsEl.ValueKind != JsonValueKind.Array || stepsEl.GetArrayLength() == 0)
+            {
+                return (null, title);
+            }
+
+            var nodes = new List<WorkflowNodeDef>();
+            var edges = new List<WorkflowEdgeDef>();
+            var edgeIndex = 1;
+            foreach (var step in stepsEl.EnumerateArray())
+            {
+                if (step.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var id = step.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() : null;
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                var stepTitle = step.TryGetProperty("title", out var stEl) && stEl.ValueKind == JsonValueKind.String ? stEl.GetString()
+                    : step.TryGetProperty("label", out var lbEl) && lbEl.ValueKind == JsonValueKind.String ? lbEl.GetString()
+                    : null;
+                if (string.IsNullOrWhiteSpace(stepTitle))
+                {
+                    stepTitle = id;
+                }
+
+                var kindStr = step.TryGetProperty("kind", out var kEl) && kEl.ValueKind == JsonValueKind.String ? kEl.GetString() : "agent";
+                var kind = Enum.TryParse<WorkflowNodeKind>(kindStr, ignoreCase: true, out var parsed) ? parsed : WorkflowNodeKind.Agent;
+                var desc = step.TryGetProperty("description", out var dEl) && dEl.ValueKind == JsonValueKind.String ? dEl.GetString() : null;
+                nodes.Add(new WorkflowNodeDef(id, kind, stepTitle, desc));
+
+                if (step.TryGetProperty("depends_on", out var depsEl) && depsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var dep in depsEl.EnumerateArray())
+                    {
+                        if (dep.ValueKind == JsonValueKind.String && dep.GetString() is { Length: > 0 } src)
+                        {
+                            edges.Add(new WorkflowEdgeDef($"e{edgeIndex++}", src, id));
+                        }
+                    }
+                }
+            }
+
+            if (nodes.Count == 0)
+            {
+                return (null, title);
+            }
+
+            return (new WorkflowDefinition($"wf-call-{callId}", title ?? "Workflow", nodes, edges), title);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+    }
 
     private static WidgetRow WidgetRowOf(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, bool anyRunActive, WidgetContext widgets)
     {
@@ -761,13 +900,26 @@ internal static class MessageParts
         return parts;
     }
 
-    /// <summary>输出里的 <c>details</c>(2.x 叫 <c>card</c>),只在它是 widget 卡 / 数据卡时取原文。</summary>
+    /// <summary>输出里的 <c>details</c>(2.x 叫 <c>card</c>),保留 widget 卡 / 数据卡和工作流运行卡的原文。</summary>
     private static string? WidgetDetails(JsonElement output)
     {
         var details = output.TryGetProperty("details", out var d) ? d : output.TryGetProperty("card", out var c) ? c : default;
-        return details.ValueKind == JsonValueKind.Object && details.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() is "widget" or "widgetData"
-            ? details.GetRawText()
-            : null;
+        if (details.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (details.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() is "widget" or "widgetData")
+        {
+            return details.GetRawText();
+        }
+
+        if (details.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.GetString() == "workflow_run")
+        {
+            return details.GetRawText();
+        }
+
+        return null;
     }
 
     private static long? Long(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : null;

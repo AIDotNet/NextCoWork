@@ -305,6 +305,9 @@
           <DataTemplate DataType="vm:SubagentRowViewModel">
             <conv:SubagentCard />
           </DataTemplate>
+          <DataTemplate DataType="vm:WorkflowRunCardViewModel">
+            <conv:WorkflowRunCard />
+          </DataTemplate>
           <DataTemplate DataType="vm:InteractionRowViewModel">
             <conv:InteractionCard />
           </DataTemplate>

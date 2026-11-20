@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    DAG 工作流编排引擎(docs/design/12-workflows.md):JSON 模板加载、拓扑调度、分支跳过传播、节点执行器、断点续跑与 RunWorkflow 内置工具。
+    依赖规则:不引用 Ncw.Protocol、Avalonia、客户端项目、Ncw.Agent.Host;不直接用 System.IO / Process,文件与进程一律经 IExecutionEnvironment。
+  -->
+  <PropertyGroup>
+    <RootNamespace>Ncw.Agent.Workflows</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ncw.Core/Ncw.Core.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Kernel/Ncw.Agent.Kernel.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Runs/Ncw.Agent.Runs.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Extensions/Ncw.Agent.Extensions.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Storage/Ncw.Agent.Storage.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Tools/Ncw.Agent.Tools.csproj" />
+    <ProjectReference Include="../Ncw.Agent.Environments/Ncw.Agent.Environments.csproj" />
+    <InternalsVisibleTo Include="Ncw.Agent.Workflows.Tests" />
+  </ItemGroup>
+</Project>

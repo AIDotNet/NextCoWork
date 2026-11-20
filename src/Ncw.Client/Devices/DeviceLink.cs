@@ -619,6 +619,34 @@ public sealed class DeviceLink : IAsyncDisposable
         }
     }
 
+    /// <summary>订阅单个工作流运行的实时快照与增量事件(<c>workflow/&lt;runId&gt;</c> 主题)。</summary>
+    public async Task WatchWorkflowRunAsync(string runId, CancellationToken ct = default)
+    {
+        if (Volatile.Read(ref _client) is not { } client)
+        {
+            return;
+        }
+
+        var deviceId = DeviceId;
+        var topic = new TopicDef<WorkflowRunSnapshotDto>(WorkflowMethods.RunTopic(runId), PayloadShapes.GetShape<WorkflowRunSnapshotDto>());
+        try
+        {
+            await client.SubscribeAsync(
+                topic,
+                (snapshot, _) => _ui.Post(() => _stores.Workflows.Update(w => WorkflowReducer.ApplySnapshot(w, deviceId, snapshot))),
+                evt =>
+                {
+                    var dto = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<WorkflowRunEventDto>());
+                    _ui.Post(() => _stores.Workflows.Update(w => WorkflowReducer.ApplyEvent(w, deviceId, dto)));
+                },
+                ct == default ? _lifetime.Token : ct).ConfigureAwait(false);
+        }
+        catch (ProtocolException e) when (e.Code == ErrorCodes.NotFound)
+        {
+            // 尚未创建或已结束时忽略
+        }
+    }
+
     private void SetConnection(DeviceConnection connection)
     {
         _ui.Post(() => _stores.Workspace.Update(state =>

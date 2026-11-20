@@ -26,6 +26,8 @@ public sealed partial class ConversationViewModel : ObservableObject
     private readonly IMessageCommands? _messages;
     private readonly IImageSource? _images;
     private readonly IGitCommands? _git;
+    private readonly IWorkflowCommands? _workflows;
+    private SessionRef? _workflowsLoadedFor;
     private readonly TimeProvider _clock;
     private readonly Ncw.Client.Widgets.WidgetHostContext? _widgets;
     private string _lastUserText = "";
@@ -41,12 +43,14 @@ public sealed partial class ConversationViewModel : ObservableObject
     private SessionRef? _gitProbed;
 
     public ConversationViewModel(ClientStores stores, IConversationCommands commands, SubagentActions? subagents = null, GoalActions? goals = null, TimeProvider? clock = null, IComposerLookups? lookups = null,
-        AttachmentTrayViewModel? attachments = null, Ncw.Client.Widgets.WidgetHostContext? widgets = null, IMessageCommands? messages = null, IImageSource? images = null, IGitCommands? git = null)
+        AttachmentTrayViewModel? attachments = null, Ncw.Client.Widgets.WidgetHostContext? widgets = null, IMessageCommands? messages = null, IImageSource? images = null, IGitCommands? git = null,
+        IWorkflowCommands? workflows = null)
     {
         _messages = messages;
         _git = git;
         _images = images;
         _widgets = widgets;
+        _workflows = workflows;
         _stores = stores;
         _commands = commands;
         _subagents = subagents;
@@ -276,6 +280,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         NeedsTick = !unknown && rows.OfType<SubagentRow>().Any(r => r.View.IsActive);
 
         Todo = view?.Todo is { } todo && !(Todo?.View.Equals(todo) ?? false) ? new TodoPanelViewModel(todo) : view?.Todo is null ? null : Todo;
+        EnsureSessionWorkflowsLoaded(session);
         var goal = conversations.GoalOf(session);
         Goal = goal is null ? null : new GoalBarViewModel(goal, unknown, ClearGoalCommand);
 
@@ -545,6 +550,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot),
         WorkGroupRow r => new WorkGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnWorkGroupToggled),
         WidgetRow r => new WidgetRowViewModel(r, () => _session ?? default, _widgets, DeviceName),
+        WorkflowRow r => CreateWorkflowCard(r),
         SubagentRow r => new SubagentRowViewModel(r, StopSubagentCommand, OpenSubagentCommand),
         SubagentReportRow r => new ReportRowViewModel(r),
         CompactRow r => new CompactRowViewModel(r),
@@ -554,6 +560,38 @@ public sealed partial class ConversationViewModel : ObservableObject
         InteractionRow r => new InteractionRowViewModel(r, _session?.DeviceId ?? "", _commands, DeviceName, OnHandled, _clock),
         _ => throw new InvalidOperationException($"Unknown transcript row {row.GetType().Name}"),
     };
+
+    private void EnsureSessionWorkflowsLoaded(SessionRef session)
+    {
+        if (_workflows is not null && _workflowsLoadedFor != session)
+        {
+            _workflowsLoadedFor = session;
+            _ = LoadSessionWorkflowsAsync(session);
+        }
+    }
+
+    private async Task LoadSessionWorkflowsAsync(SessionRef session)
+    {
+        if (_workflows is null)
+        {
+            return;
+        }
+
+        var list = await _workflows.ListSessionRunsAsync(session.DeviceId, session.SessionId).ConfigureAwait(false);
+        if (!list.IsOk || list.Value is null || list.Value.Runs.Length == 0)
+        {
+            return;
+        }
+
+        // 订阅并拉取本会话最近一次工作流的权威快照
+        await _workflows.WatchRunAsync(session.DeviceId, list.Value.Runs[0].RunId).ConfigureAwait(false);
+    }
+
+    private WorkflowRunCardViewModel CreateWorkflowCard(WorkflowRow row)
+    {
+        var deviceId = _session?.DeviceId ?? "";
+        return new WorkflowRunCardViewModel(_stores, deviceId, row.RunId, _workflows, row.Key, row);
+    }
 
     /// <summary>这条用户消息里的图片引用 → 缩略图(会话镜像里找消息;图片字节按需向设备取,不进 Store)。</summary>
     private IReadOnlyList<ImageThumbViewModel> ImagesOf(UserRow row)

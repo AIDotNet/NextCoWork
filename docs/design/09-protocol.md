@@ -523,6 +523,10 @@ public interface ITransportListener            // 设备:每种承载一个监�
 
 **会话层的取消**:控制端取消一个调用(`cancel` 帧)会真的送到设备上正在等的处理器(`DeviceClient` 此前在取消时可能不发取消帧,本批修复并有测试守)。`MethodRouter.BeforeInvoke` 是路由统一的前置闸门(角色 / 承载 / 幂等键之后、参数解码之前),宿主用它做「项目的执行环境先就绪」这类横切前置条件。
 
+### 8.7 工作流(设计中)
+
+能力 `workflows`,承载 本机 + 远程,方法表与 `workflow/<workflowRunId>` 订阅主题见 [12 §7](12-workflows.md#7-设备协议ncwprotocolmethodsworkflowmethodscs)(含 `workflows.list / get / save / delete / validate / run / cancel / resume / retryNode / runs.list / runs.get` 与黄金向量 `GoldenV1Workflows`)。
+
 ## 9. 中继(M6,**已实现**:`Ncw.Relay` + `RelayTransport`)
 
 3.0 先上线局域网直连;中继是第三种字节流承载,**只新增承载,不改 L1 以上任何东西**(帧、会话、方法表、黄金向量一个字节没动):

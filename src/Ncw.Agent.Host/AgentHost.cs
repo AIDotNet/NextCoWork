@@ -10,6 +10,7 @@ using Ncw.Agent.Host.Plugins;
 using Ncw.Agent.Host.Providers;
 using Ncw.Agent.Host.Services;
 using Ncw.Agent.Host.Terminals;
+using Ncw.Agent.Host.Workflows;
 using Ncw.Agent.Host.Workspace;
 using Ncw.Agent.Kernel.Loop;
 using Ncw.Agent.Storage;
@@ -37,6 +38,7 @@ public sealed class AgentHost : IDisposable
     private ProviderRuntime? _providerRuntime;
     private WorkspaceToolsRuntime? _workspaceTools;
     private DeviceServices? _deviceServices;
+    private WorkflowService? _workflows;
 
     /// <summary>测试缝:开放网关的运行时(数据就绪之前为 null)。</summary>
     internal Ncw.Agent.Host.Services.GatewayRuntime? GatewayRuntime => _deviceServices?.Gateway;
@@ -132,6 +134,9 @@ public sealed class AgentHost : IDisposable
         _topics.Register(EnvironmentsMethods.Topic, () => Volatile.Read(ref _conversation)?.Environments.State() ?? new EnvironmentsTopicState(0, "local", []));
         // 搜索提供方:全量权威(首帧与 websearch.changed 同一个类型,带单调 Version);数据没就绪时是空状态(Version 0),就绪后发一次 changed。
         _topics.Register(WebSearchMethods.Topic, () => Volatile.Read(ref _conversation)?.Web.State() ?? new WebSearchTopicState(0, []));
+        // 工作流运行(前缀主题 workflow/<runId>):支持先订阅再启动。
+        _topics.RegisterPrefix(WorkflowMethods.RunTopicPrefix, PayloadShapes.GetShape<WorkflowRunSnapshotDto>(),
+            name => Volatile.Read(ref _workflows)?.RunSnapshot(name[WorkflowMethods.RunTopicPrefix.Length..]));
         _remote = new RemoteService(_identity, _router, _topics, Version, time, pairingFailureDelay, relayOptions);
         if (cloud is not null)
         {
@@ -158,6 +163,7 @@ public sealed class AgentHost : IDisposable
             var deviceServices = new DeviceServices(database, _options.DataRoot, Version, time, _topics, deviceSettings, proxyPassword, proxy, Conversation(), _log, _router, providerRuntime,
                 onDataReplaced: () => _topics.Publish(DeviceMethods.DeviceTopic.Name, DeviceEvents.ProjectsChanged, projects.List(), PayloadShapes.GetShape<ProjectsListResult>()));
             Volatile.Write(ref _deviceServices, deviceServices);
+            Volatile.Write(ref _workflows, new WorkflowService(database, Conversation(), _topics, time));
             // 推送令牌登记(只存不发,发送由后端推送中继负责)
             Volatile.Write(ref _push, new PushRegistrations(database));
             // 工作区工具(files / git / review / terminals)和对话链路同生命周期:项目解析、环境、模型(提交信息)都取自它们。
@@ -201,6 +207,7 @@ public sealed class AgentHost : IDisposable
         Ncw.Agent.Host.Accounts.AccountHandlers.Register(_router, account, time);
         ConversationHandlers.Register(_router, Conversation);
         OrchestrationHandlers.Register(_router, Conversation);
+        WorkflowHandlers.Register(_router, Workflows);
         ProviderHandlers.Register(_router, Providers);
         ServiceHandlers.Register(_router, Services);
         StorageHandlers.Register(_router, Services);
@@ -492,6 +499,10 @@ public sealed class AgentHost : IDisposable
     /// <summary>设置 / 用量 / 定时任务等杂项服务:数据没就绪时是可重试的 <c>unavailable</c>。</summary>
     private DeviceServices Services() =>
         Volatile.Read(ref _deviceServices) ?? throw new ProtocolException(ErrorCodes.Unavailable, "Device data is not ready", retryable: true);
+
+    /// <summary>工作流服务:数据没就绪时是可重试的 <c>unavailable</c>。</summary>
+    private WorkflowService Workflows() =>
+        Volatile.Read(ref _workflows) ?? throw new ProtocolException(ErrorCodes.Unavailable, "Device data is not ready", retryable: true);
 
     /// <summary>目录与供应商:数据没就绪时是可重试的 <c>unavailable</c>。</summary>
     private ProviderRuntime Providers() =>

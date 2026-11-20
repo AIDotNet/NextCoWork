@@ -13,6 +13,7 @@
     <PackageReference Include="TKCode.Arc.Mobile" />
     <PackageReference Include="TKCode.Arc.Special" />
     <PackageReference Include="TKCode.Arc.Terminal" />
+    <PackageReference Include="TKCode.Arc.Workflow" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Client/Ncw.Client.csproj" />

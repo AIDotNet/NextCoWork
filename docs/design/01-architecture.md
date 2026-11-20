@@ -68,6 +68,7 @@
 │  ├─ Ncw.Agent.Extensions/      # 扩展接口 + 一方扩展:权限、Hooks、计划模式、待办、目标、子代理、Skills、MCP
 │  ├─ Ncw.Agent.Planning/        # 一方扩展:计划模式、待办、目标(命名空间 Ncw.Agent.Extensions.Planning);在会话层、编排层(Runs)、权限与交互扩展之上,详见 08-agent-runtime/05 §6–§7、06 §5
 │  ├─ Ncw.Agent.Subagents/       # 子代理(命名空间 Ncw.Agent.Kernel.Subagents):`Task` 工具、定义加载(内置 + markdown)、子 Run 创建、并发队列、回执持久化、后台报告;依赖 Runs / Extensions / Session / Storage / Catalog,详见 08-agent-runtime/05 §5
+│  ├─ Ncw.Agent.Workflows/       # (设计中,见 12-workflows.md)DAG 工作流编排:JSON 模板加载、拓扑调度、独立子会话 Agent 节点、条件分支与审批闸门、断点续跑;依赖 Runs / Extensions / Environments / Storage / Tools / Subagents
 │  ├─ Ncw.Agent.Plugins/         # 插件:清单、权限、生命周期;Jaunt 宿主(realm、预算、宿主 API 绑定)
 │  ├─ Ncw.Agent.Terminal/        # 终端:本机 PTY(POSIX 用 posix_openpt + posix_spawn,Windows 用 ConPTY)和 TerminalManager(会话表、输出环形缓冲与游标、远程环境逐个批准、限额);只依赖 Ncw.Agent.Environments,详见 06 §9
 │  ├─ Ncw.Agent.Host/            # 服务:RPC 路由、事件流、配对、租约、推送、开放网关(Kestrel 最小 API)

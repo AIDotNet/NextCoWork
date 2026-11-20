@@ -364,6 +364,7 @@ pi 没有这一层;它对应 2.x 的 `run-registry.ts`、`services/agent.ts`、`
 | `RunRegistry.DeliverInternal(sessionId, InternalInput)` | 后台子代理报告、目标检查 | 见 §3 实现注 |
 | `RunRegistry.AcquireOperation / Activity / ForceSettleSessions / ForgetSessionsAsync` | 手动压缩、会话删除 | 见 §1、§8 实现注 |
 | `IRunRequestFactory`、`ISessionDirectory`、`IRunDriver`、`IQueueStore` | Host(装配)、测试 | 请求由 Host 装配(设置快照、模式提示词);会话对象按会话缓存;驱动可替换(测看门狗);队列存档可包一层注入失败 |
+| `RunOrigin.Workflow` / `WorkflowNode`、`TodoOptions.YieldTo` | 工作流编排(`Ncw.Agent.Workflows`,设计见 [12 工作流](../12-workflows.md)) | 确定性与智能体混合的 DAG 编排:复用 `RunRegistry`、独立子会话、并发队列、权限收窄与 `InteractionGate`,并在运行期间让待办补报让路 |
 
 ## 11. 不变量与测试对照
 

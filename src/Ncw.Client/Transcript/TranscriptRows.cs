@@ -63,6 +63,16 @@ public sealed record ToolRow(
 /// <summary>子代理卡片(<c>Task</c> 调用)。状态文案、计时、能否停止都来自 Core 的 <see cref="SubagentView"/>,这里只带结果。</summary>
 public sealed record SubagentRow(string Key, SubagentRef Ref, SubagentViewState View, string? Summary, string? Color, bool Unknown) : TranscriptRow(Key);
 
+/// <summary>对话内 Agent 动态工作流卡片(<c>RunWorkflow</c> 调用):不被折叠进工作区分组,直接用 <c>TKCode.Arc.Workflow</c> 渲染。</summary>
+public sealed record WorkflowRow(
+    string Key,
+    string CallId,
+    string? RunId,
+    string Title,
+    WorkflowDefinition? FallbackDefinition,
+    ToolRowStatus Status,
+    EnvRefDto? Env) : TranscriptRow(Key);
+
 /// <summary>汇报行:后台子代理的结果回传到了主代理。</summary>
 public sealed record SubagentReportRow(string Key, string CallId, string ChildRunId, string? Summary) : TranscriptRow(Key);
 

@@ -1,0 +1,83 @@
+<ui:NcwPage xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:l="using:Ncw.UI.Localization"
+            xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+            xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+            xmlns:ui="using:Ncw.UI.Controls"
+            xmlns:mvm="using:Ncw.Client.ViewModels.Mobile"
+            x:Class="Ncw.UI.Views.Mobile.WorkflowRunPage"
+            x:DataType="mvm:MobileWorkflowViewModel">
+  <!-- 移动端(< 720px)工作流监控页(docs/design/12-workflows.md §9.3):顶部只读缩略画布 + 下方拓扑序步骤时间线 -->
+  <ui:NcwPage.Header>
+    <ui:NcwNavbar Title="{Binding Title}">
+      <ui:NcwNavbar.Trailing>
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <ui:PlainButton Height="44" Padding="10,0" Command="{Binding StopCommand}" IsVisible="{Binding CanStop}"
+                          AutomationProperties.Name="{l:NcwText WorkflowStop}">
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" VerticalAlignment="Center" Text="{l:NcwText WorkflowStop}" />
+          </ui:PlainButton>
+          <ui:PlainButton Height="44" Padding="10,0" Command="{Binding ResumeCommand}" IsVisible="{Binding CanResume}"
+                          AutomationProperties.Name="{l:NcwText WorkflowResume}">
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Accent}" VerticalAlignment="Center" Text="{l:NcwText WorkflowResume}" />
+          </ui:PlainButton>
+        </StackPanel>
+      </ui:NcwNavbar.Trailing>
+    </ui:NcwNavbar>
+  </ui:NcwPage.Header>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="14,10,14,24" Spacing="12">
+      <!-- 状态摘要栏 -->
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <lucide:LucideIcon Kind="Workflow" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+        <TextBlock Grid.Column="1" Text="{Binding DerivedStatus}" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Border Grid.Column="2" Classes="chip">
+          <TextBlock Classes="hint" Text="{Binding ProgressText}" />
+        </Border>
+      </Grid>
+
+      <!-- 只读缩略画布(支持手势平移缩放) -->
+      <Border Height="190" CornerRadius="10" ClipToBounds="True"
+              BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <ui:NcwWorkflowCanvas Definition="{Binding Definition}"
+                              Run="{Binding Run}"
+                              IsEditable="False"
+                              IsPanZoomEnabled="True"
+                              ShowChrome="False" />
+      </Border>
+
+      <!-- 垂直拓扑步骤时间线 -->
+      <ItemsControl ItemsSource="{Binding Steps}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Spacing="8" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="mvm:MobileWorkflowStepItem">
+            <Border Classes="card" Padding="12,10">
+              <StackPanel Spacing="4">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="hint" Text="{Binding DurationText}"
+                               IsVisible="{Binding DurationText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <Border Classes="chip">
+                      <TextBlock Classes="hint" Text="{Binding Status}" />
+                    </Border>
+                  </StackPanel>
+                </Grid>
+                <TextBlock Classes="hint" Text="{Binding Summary}" TextWrapping="Wrap"
+                           IsVisible="{Binding Summary, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Text="{Binding Error}" Foreground="{arc:ArcDesignTokenResource Danger}" FontSize="{arc:ArcDesignTokenResource TypeXS}" TextWrapping="Wrap"
+                           IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Text="{Binding OutputPreview}" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" FontSize="{arc:ArcDesignTokenResource TypeXS}" TextWrapping="Wrap"
+                           IsVisible="{Binding OutputPreview, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</ui:NcwPage>
