@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Interactivity;
 using Ncw.Client.ViewModels;
 
 namespace Ncw.UI.Controls;
@@ -48,9 +49,23 @@ public class NcwTokenEditor : TKCode.Arc.TokenTextEditor
     /// <summary>键盘焦点在不在书写区里(测试与键盘处理用)。</summary>
     public bool IsEditing => _textBox?.IsFocused == true;
 
+    /// <summary>内部文本框即将从剪贴板粘贴内容(设 <c>e.Handled = true</c> 可接管图片 / 文件粘贴)。</summary>
+    public event EventHandler<RoutedEventArgs>? PastingFromClipboard;
+
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
+        if (_textBox is not null)
+        {
+            _textBox.PastingFromClipboard -= OnTextBoxPasting;
+        }
+
         base.OnApplyTemplate(e);
         _textBox = e.NameScope.Find<TextBox>(TextBoxPart);
+        if (_textBox is not null)
+        {
+            _textBox.PastingFromClipboard += OnTextBoxPasting;
+        }
     }
+
+    private void OnTextBoxPasting(object? sender, RoutedEventArgs e) => PastingFromClipboard?.Invoke(this, e);
 }

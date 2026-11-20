@@ -45,7 +45,7 @@ public static class ComposerLogic
     /// <summary>权限档位(<see cref="SendOptionsDto.PermissionMode"/>)。<c>full</c> 只有 owner 能用。</summary>
     public static readonly IReadOnlyList<string> PermissionModes = ["ask", "auto", "full"];
 
-    public static ComposerState Of(string draft, bool hasSession, SessionActivity activity, DeviceConnection connection, string? role, bool hasModel)
+    public static ComposerState Of(string draft, bool hasSession, SessionActivity activity, DeviceConnection connection, string? role, bool hasModel, bool hasAttachments = false)
     {
         var block = !hasSession ? ComposerBlock.NoSession
             : connection != DeviceConnection.Connected || activity == SessionActivity.Unknown ? ComposerBlock.DeviceUnavailable
@@ -57,12 +57,12 @@ public static class ComposerLogic
             return new ComposerState(false, false, false, false, block);
         }
 
-        var hasText = !string.IsNullOrWhiteSpace(draft);
+        var hasContent = !string.IsNullOrWhiteSpace(draft) || hasAttachments;
         var running = activity == SessionActivity.Running;
         return new ComposerState(
-            CanSend: hasText && !running,
-            CanQueue: hasText && running,
-            CanSteer: hasText && running,
+            CanSend: hasContent && !running,
+            CanQueue: hasContent && running,
+            CanSteer: hasContent && running,
             CanStop: running,
             Block: ComposerBlock.None);
     }

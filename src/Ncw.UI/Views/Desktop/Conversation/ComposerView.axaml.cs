@@ -19,14 +19,19 @@ namespace Ncw.UI.Views.Desktop.Conversation;
 public partial class ComposerView : UserControl
 {
     private ComposerViewModel? _vm;
+    private Task _pasteTask = Task.CompletedTask;
 
     public ComposerView()
     {
         InitializeComponent();
         // 隧道阶段先看 Enter:Arc 的多行输入框自己会把 Enter 当换行
         Input.AddHandler(KeyDownEvent, OnInputKeyDown, RoutingStrategies.Tunnel);
+        Input.PastingFromClipboard += OnInputPasting;
         SizeChanged += (_, e) => ApplyCompact(e.NewSize.Width);
     }
+
+    /// <summary>最近一次粘贴处理结束时完成(测试用)。</summary>
+    internal Task WhenPasted => _pasteTask;
 
     /// <summary>窄于它(或触控模式)时工具行收成紧凑版:只留图标(纯 UI 状态)。</summary>
     public const double CompactBelow = 480;
@@ -238,10 +243,53 @@ public partial class ComposerView : UserControl
             }
         }
 
+        if (OperatingSystem.IsMacOS() && e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control && !Input.IsReadOnly)
+        {
+            StartPaste();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && _vm is { } vm && vm.State.Primary is ComposerPrimary.Send or ComposerPrimary.Queue)
         {
             vm.SubmitCommand.Execute(null);
             e.Handled = true;
+        }
+    }
+
+    private void OnInputPasting(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null || Input.IsReadOnly || TopLevel.GetTopLevel(this)?.Clipboard is null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        StartPaste();
+    }
+
+    private void StartPaste() => _pasteTask = PasteFromClipboardAsync();
+
+    private async Task PasteFromClipboardAsync()
+    {
+        if (_vm is not { } vm || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            return;
+        }
+
+        try
+        {
+            using var data = await clipboard.TryGetDataAsync();
+            if (data is null)
+            {
+                return;
+            }
+
+            await ComposerClipboard.PasteAsync(data, vm, Input.InsertText);
+        }
+        catch (Exception)
+        {
+            // 剪贴板不可用或平台读取异常时不崩界面
         }
     }
 

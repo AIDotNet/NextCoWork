@@ -82,7 +82,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         Attachments = attachments ?? new AttachmentTrayViewModel();
         Attachments.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(AttachmentTrayViewModel.IsUploading))
+            if (e.PropertyName is nameof(AttachmentTrayViewModel.IsUploading) or nameof(AttachmentTrayViewModel.HasItems))
             {
                 RefreshState();
             }
@@ -350,7 +350,9 @@ public sealed partial class ComposerViewModel : ObservableObject
 
     private void RefreshState()
     {
-        State = ComposerLogic.Of(Draft, _session is not null, _activity, _connection, _role, hasModel: SelectedModel is not null || _rememberedModel.Length > 0);
+        State = ComposerLogic.Of(Draft, _session is not null, _activity, _connection, _role,
+            hasModel: SelectedModel is not null || _rememberedModel.Length > 0,
+            hasAttachments: Attachments.Ready().Count > 0);
         if (IsCompacting)
         {
             // 手动压缩在进行:会话被设备锁着,现在发出去只会被拒绝

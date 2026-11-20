@@ -111,6 +111,26 @@ public class DevicesAndComposerTests
     }
 
     [Fact]
+    public async Task An_uploaded_attachment_can_be_sent_even_when_the_draft_is_empty()
+    {
+        var (composer, commands, uploader) = MakeComposer();
+        Assert.False(composer.State.CanSend);
+
+        var upload = composer.Attachments.AddAsync(new PickedAttachment("clip.png", "image/png", 100, _ => Task.FromResult(new byte[4])));
+        Assert.False(composer.State.CanSend);
+
+        uploader.Uploads[0].Done.SetResult(FakeUploader.Ok("a1", "clip.png", "image/png", 100));
+        await upload;
+
+        Assert.True(composer.State.CanSend);
+        await composer.SubmitCommand.ExecuteAsync(null);
+        var sent = Assert.Single(commands.Sent);
+        Assert.Equal("", sent.Text);
+        Assert.Equal("ncw://attachments/sessions/s1/a1", Assert.Single(sent.Files).Path);
+        Assert.Empty(composer.Attachments.Items);
+    }
+
+    [Fact]
     public async Task Sending_waits_for_uploads_in_flight_so_an_attachment_is_never_silently_dropped()
     {
         var (composer, _, uploader) = MakeComposer();
