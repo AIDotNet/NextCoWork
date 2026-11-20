@@ -7,6 +7,8 @@
     <PackageReference Include="Avalonia.Controls.WebView" />
     <PackageReference Include="TKCode.Arc" />
     <PackageReference Include="TKCode.Arc.Fonts" />
+    <PackageReference Include="TKCode.Arc.Markdown" />
+    <PackageReference Include="TKCode.Arc.Highlighting" />
     <PackageReference Include="TKCode.Arc.Icons.Lucide" />
     <PackageReference Include="TKCode.Arc.Mobile" />
     <PackageReference Include="TKCode.Arc.Special" />

@@ -1623,6 +1623,12 @@
     <unit id="WidgetActionConfirm"><segment><source>Run</source><target state="translated">运行</target></segment></unit>
     <unit id="SettingsAppearance"><segment><source>Appearance</source><target state="translated">外观</target></segment></unit>
     <unit id="SettingsAppearanceHint"><segment><source>How the app looks and moves. These settings apply to this app only.</source><target state="translated">界面的外观与动效。这些设置只影响本应用。</target></segment></unit>
+    <unit id="AppearanceThemeTitle"><segment><source>Theme</source><target state="translated">主题</target></segment></unit>
+    <unit id="AppearanceThemeHint"><segment><source>Choose Light, Dark, or follow the system appearance. You can also toggle light and dark from the sidebar footer.</source><target state="translated">选择浅色、深色或跟随系统外观。侧边栏底部也可以一键切换明暗。</target></segment></unit>
+    <unit id="ThemeSystem"><segment><source>Follow system</source><target state="translated">跟随系统</target></segment></unit>
+    <unit id="ThemeLight"><segment><source>Light</source><target state="translated">浅色</target></segment></unit>
+    <unit id="ThemeDark"><segment><source>Dark</source><target state="translated">深色</target></segment></unit>
+    <unit id="ToggleTheme"><segment><source>Switch theme</source><target state="translated">切换主题</target></segment></unit>
     <unit id="AppearanceMotionTitle"><segment><source>Motion</source><target state="translated">动效</target></segment></unit>
     <unit id="AppearanceMotionHint"><segment><source>Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</source><target state="translated">展开收起、出现消失、页面切换等过渡。「减弱」只保留短淡入淡出,「关闭」让所有变化立即生效;各级别的最终状态完全一致。</target></segment></unit>
     <unit id="MotionSystem"><segment><source>Follow system</source><target state="translated">跟随系统</target></segment></unit>
@@ -1650,7 +1656,7 @@
     <unit id="ChangeProjectIcon"><segment><source>Change icon…</source><target state="translated">更改图标…</target></segment></unit>
     <unit id="ProjectIconTitle"><segment><source>Project icon</source><target state="translated">项目图标</target></segment></unit>
     <unit id="ProjectIconDescription"><segment><source>How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</source><target state="translated">「{0}」在项目栏里的样子。只改本应用的布局,不影响设备上的文件夹。</target></segment></unit>
-    <unit id="ProjectIconInitials"><segment><source>Initials</source><target state="translated">首字母</target></segment></unit>
+    <unit id="ProjectIconNone"><segment><source>None</source><target state="translated">无</target></segment></unit>
     <unit id="ProjectIconText"><segment><source>Text</source><target state="translated">文字</target></segment></unit>
     <unit id="ProjectIconImage"><segment><source>Image</source><target state="translated">图片</target></segment></unit>
     <unit id="ProjectIconTextLabel"><segment><source>Text or emoji</source><target state="translated">文字或 emoji</target></segment></unit>
@@ -1897,5 +1903,64 @@
     <unit id="ProviderEditorKeep"><segment><source>Keep and close</source><target state="translated">保留并关闭</target></segment></unit>
     <unit id="ProvErrKeyRequired"><segment><source>Enter an API key before saving.</source><target state="translated">填写 API Key 后才能保存。</target></segment></unit>
     <unit id="ProvErrIdTaken"><segment><source>Another provider already uses this id.</source><target state="translated">这个标识已经被别的供应商用了。</target></segment></unit>
+    <unit id="ProviderEditorTest"><segment><source>Test</source><target state="translated">测试</target></segment></unit>
+    <unit id="ProviderDebugTitle"><segment><source>Debug {0}</source><target state="translated">调试 · {0}</target></segment></unit>
+    <unit id="ProviderDebugDescription"><segment><source>Send one real request with the model and protocol you pick, and see the full request, response and event stream.</source><target state="translated">用选定的模型和协议发一条真实请求,查看完整的请求、响应和事件流。</target></segment></unit>
+    <unit id="ProviderDebugModel"><segment><source>Model</source><target state="translated">模型</target></segment></unit>
+    <unit id="ProviderDebugModelPlaceholder"><segment><source>Pick from the list or type a model id</source><target state="translated">从列表选,或手动输入模型 id</target></segment></unit>
+    <unit id="ProviderDebugModelList"><segment><source>Models from the upstream list</source><target state="translated">上游列表里的模型</target></segment></unit>
+    <unit id="ProviderDebugModelsLoading"><segment><source>Fetching the model list…</source><target state="translated">正在拉取模型列表…</target></segment></unit>
+    <unit id="ProviderDebugModelsFetched"><segment><source>Upstream list · {0} models</source><target state="translated">上游列表 · {0} 个</target></segment></unit>
+    <unit id="ProviderDebugModelsUnavailable"><segment><source>Couldn't fetch the model list ({0}). Type a model id.</source><target state="translated">拉不到模型列表({0}),请手动输入模型 id。</target></segment></unit>
+    <unit id="ProviderDebugModelsRefresh"><segment><source>Fetch again</source><target state="translated">重新拉取</target></segment></unit>
+    <unit id="ProviderDebugProtocol"><segment><source>Protocol</source><target state="translated">协议</target></segment></unit>
+    <unit id="ProviderDebugUrl"><segment><source>Request URL</source><target state="translated">最终地址</target></segment></unit>
+    <unit id="ProviderDebugPrompt"><segment><source>Prompt</source><target state="translated">提示词</target></segment></unit>
+    <unit id="ProviderDebugPromptPlaceholder"><segment><source>Leave empty to ask for a two-letter reply (OK)</source><target state="translated">留空 = 让模型只回复 OK</target></segment></unit>
+    <unit id="ProviderDebugThinking"><segment><source>Thinking</source><target state="translated">思考</target></segment></unit>
+    <unit id="ProviderDebugThinkingAuto"><segment><source>Model default</source><target state="translated">跟随模型</target></segment></unit>
+    <unit id="ProviderDebugThinkingOff"><segment><source>Off</source><target state="translated">关</target></segment></unit>
+    <unit id="ProviderDebugThinkingLow"><segment><source>Low</source><target state="translated">低</target></segment></unit>
+    <unit id="ProviderDebugThinkingMedium"><segment><source>Medium</source><target state="translated">中</target></segment></unit>
+    <unit id="ProviderDebugThinkingHigh"><segment><source>High</source><target state="translated">高</target></segment></unit>
+    <unit id="ProviderDebugMaxOutput"><segment><source>Max output tokens</source><target state="translated">最大输出 token</target></segment></unit>
+    <unit id="ProviderDebugWithTool"><segment><source>Include a tool</source><target state="translated">带一个工具</target></segment></unit>
+    <unit id="ProviderDebugWithToolHint"><segment><source>Checks that the endpoint accepts tool definitions.</source><target state="translated">验证端点接不接受工具定义。</target></segment></unit>
+    <unit id="ProviderDebugSend"><segment><source>Send</source><target state="translated">发送</target></segment></unit>
+    <unit id="ProviderDebugStop"><segment><source>Stop</source><target state="translated">停止</target></segment></unit>
+    <unit id="ProviderDebugTabReply"><segment><source>Reply</source><target state="translated">回复</target></segment></unit>
+    <unit id="ProviderDebugTabRequest"><segment><source>Request</source><target state="translated">请求</target></segment></unit>
+    <unit id="ProviderDebugTabResponse"><segment><source>Response</source><target state="translated">响应</target></segment></unit>
+    <unit id="ProviderDebugTabEvents"><segment><source>Events</source><target state="translated">事件流</target></segment></unit>
+    <unit id="ProviderDebugEmpty"><segment><source>Pick a model and a protocol, then send a request.</source><target state="translated">选好模型和协议,点「发送」。</target></segment></unit>
+    <unit id="ProviderDebugRunning"><segment><source>Waiting for the response…</source><target state="translated">正在等待响应…</target></segment></unit>
+    <unit id="ProviderDebugStopped"><segment><source>Stopped. The events received so far are kept.</source><target state="translated">已停止,保留已经收到的事件。</target></segment></unit>
+    <unit id="ProviderDebugOk"><segment><source>Works</source><target state="translated">通过</target></segment></unit>
+    <unit id="ProviderDebugFailed"><segment><source>Failed</source><target state="translated">失败</target></segment></unit>
+    <unit id="ProviderDebugFirstToken"><segment><source>First token {0} ms</source><target state="translated">首字 {0} ms</target></segment></unit>
+    <unit id="ProviderDebugTotal"><segment><source>Total {0} ms</source><target state="translated">共 {0} ms</target></segment></unit>
+    <unit id="ProviderDebugTokens"><segment><source>{0} in · {1} out tokens</source><target state="translated">输入 {0} · 输出 {1} tokens</target></segment></unit>
+    <unit id="ProviderDebugStopReason"><segment><source>Stop: {0}</source><target state="translated">停止原因:{0}</target></segment></unit>
+    <unit id="ProviderDebugToolCalls"><segment><source>Tool calls</source><target state="translated">工具调用</target></segment></unit>
+    <unit id="ProviderDebugNoReply"><segment><source>The reply has no text.</source><target state="translated">回复里没有文字。</target></segment></unit>
+    <unit id="ProviderDebugNoResponse"><segment><source>Nothing came back from the address.</source><target state="translated">这个地址没有任何响应。</target></segment></unit>
+    <unit id="ProviderDebugEventsTruncated"><segment><source>Only the first {0} events are shown.</source><target state="translated">只显示前 {0} 条事件。</target></segment></unit>
+    <unit id="ProviderDebugUseProtocol"><segment><source>Use this protocol</source><target state="translated">使用这个协议</target></segment></unit>
+    <unit id="ProviderDebugFailRejected"><segment><source>The upstream rejected the credential. Check the API key; some gateways only accept the other protocol's auth header.</source><target state="translated">鉴权被拒:检查 API Key;有的网关只认另一种协议的鉴权头。</target></segment></unit>
+    <unit id="ProviderDebugFailNotFound"><segment><source>Not found (404). This address doesn't serve this protocol's path, or the model id is wrong.</source><target state="translated">找不到(404):这个地址不提供这个协议的路径,或者模型名不对。</target></segment></unit>
+    <unit id="ProviderDebugFailHttp"><segment><source>The upstream returned an error.</source><target state="translated">上游返回了错误。</target></segment></unit>
+    <unit id="ProviderDebugFailNetwork"><segment><source>Couldn't connect to the address.</source><target state="translated">连不上这个地址。</target></segment></unit>
+    <unit id="ProviderDebugFailTimeout"><segment><source>No response in time.</source><target state="translated">等了太久没有响应。</target></segment></unit>
+    <unit id="ProviderDebugFailIncomplete"><segment><source>The connection closed before the reply finished.</source><target state="translated">回复没收完连接就断了。</target></segment></unit>
+    <unit id="ProviderDebugFailStream"><segment><source>The upstream reported an error in the stream.</source><target state="translated">上游在流里报了错。</target></segment></unit>
+    <unit id="ProviderDebugFailLocal"><segment><source>The request couldn't be built on the device.</source><target state="translated">请求在设备上就组不出来。</target></segment></unit>
+    <unit id="ProvErrDebugModelRequired"><segment><source>Pick or type a model.</source><target state="translated">选一个模型,或手动输入。</target></segment></unit>
+    <unit id="ProviderEditorSavingOnly"><segment><source>Saving…</source><target state="translated">正在保存…</target></segment></unit>
+    <unit id="RemoveProjectTitle"><segment><source>Remove project</source><target state="translated">移除项目</target></segment></unit>
+    <unit id="RemoveProjectMessage"><segment><source>Remove “{0}” from the sidebar? The files in the folder are not deleted, but this project's conversations will no longer be shown, even if you add the same folder again.</source><target state="translated">从侧边栏移除「{0}」?文件夹里的文件不会删除,但这个项目的会话以后不会再显示(重新添加同一个文件夹也不会回来)。</target></segment></unit>
+    <unit id="RemoveProjectLabel"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="RemoveProjectFailedTitle"><segment><source>Couldn't remove the project</source><target state="translated">无法移除项目</target></segment></unit>
+    <unit id="ProjectRemoveOffline"><segment><source>The device this project is on isn't connected. Connect it and try again.</source><target state="translated">这个项目所在的设备没有连接,连上之后再移除。</target></segment></unit>
+    <unit id="ProjectRemoveFailed"><segment><source>The device couldn't remove this project. Try again later.</source><target state="translated">设备没能移除这个项目,请稍后再试。</target></segment></unit>
   </file>
 </xliff>

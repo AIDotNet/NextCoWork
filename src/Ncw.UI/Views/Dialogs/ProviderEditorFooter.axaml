@@ -7,15 +7,25 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Dialogs.ProviderEditorFooter"
              x:DataType="vm:ProviderEditorViewModel">
-  <!-- 「添加 / 编辑供应商」的按钮行:左边是一句提示(第一步)或进度(保存中),右边「取消」+「保存并测试」(只在表单那一步)。 -->
-  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+  <!--
+    「添加 / 编辑供应商」的按钮行:左边是一句提示(第一步)或进度(保存中),右边「测试」(表单那一步、设备支持调试时:打开调试弹窗测草稿)+「取消」+「保存」。
+    设备不支持调试(老设备)时没有「测试」,「保存」是「保存并测试」。
+  -->
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
     <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsPickStep}" Text="{l:NcwText ProviderTemplateFooterHint}" />
     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsSaving}">
       <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
-      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText ProviderEditorSaving}" />
+      <TextBlock x:Name="SavingText" Classes="hint" VerticalAlignment="Center" />
     </StackPanel>
-    <ui:NcwButton x:Name="CancelButton" Grid.Column="1" Variant="Secondary" Content="{l:NcwText Cancel}" />
-    <ui:NcwButton x:Name="SaveButton" Grid.Column="2" Variant="Primary" IsVisible="{Binding IsFormStep}" IsEnabled="{Binding CanSave}"
-                  Command="{Binding SaveCommand}" Content="{l:NcwText ProviderEditorSaveAndTest}" />
+    <ui:NcwButton x:Name="TestButton" Grid.Column="1" Variant="Secondary" IsVisible="{Binding DebugEnabled}" IsEnabled="{Binding CanTest}"
+                  Command="{Binding TestCommand}">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <lucide:LucideIcon Kind="FlaskConical" Size="13" VerticalAlignment="Center" />
+        <TextBlock VerticalAlignment="Center" Text="{l:NcwText ProviderEditorTest}" />
+      </StackPanel>
+    </ui:NcwButton>
+    <ui:NcwButton x:Name="CancelButton" Grid.Column="2" Variant="Secondary" Content="{l:NcwText Cancel}" />
+    <ui:NcwButton x:Name="SaveButton" Grid.Column="3" Variant="Primary" IsVisible="{Binding IsFormStep}" IsEnabled="{Binding CanSave}"
+                  Command="{Binding SaveCommand}" />
   </Grid>
 </UserControl>

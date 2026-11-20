@@ -1,5 +1,7 @@
 using Ncw.Agent.Host;
+using Ncw.Client.Actions;
 using Ncw.Client.Devices;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
 using Ncw.Protocol.Session;
@@ -124,6 +126,94 @@ public sealed class DeviceLinkTests : IAsyncLifetime
         {
             Assert.True(_stores.Workspace.State.Projects.ContainsKey(project));
         }
+    }
+
+    private sealed class ConfirmingDialogs(bool confirm) : IDialogService
+    {
+        public List<string> Errors { get; } = [];
+
+        public int Confirms { get; private set; }
+
+        public Task ShowErrorAsync(string title, string message)
+        {
+            Errors.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> ConfirmAsync(string title, string message, string confirmLabel)
+        {
+            Confirms++;
+            return Task.FromResult(confirm);
+        }
+
+        public Task<string?> PromptTextAsync(string title, string description, string label, string? initial) => Task.FromResult<string?>(null);
+
+        public Task<string?> PickFolderAsync(string title) => Task.FromResult<string?>(null);
+    }
+
+    [Fact]
+    public async Task Removing_a_project_unregisters_it_on_the_device_so_it_does_not_come_back_after_a_restart()
+    {
+        _link.Start();
+        await WaitUntil(() => Device?.Connection == DeviceConnection.Connected, "connected");
+        var project = await _link.AddProjectAsync(_workspace);
+        await WaitUntil(() => _stores.Workspace.State.Projects.ContainsKey(project), "project in store");
+        _stores.Layout.Update(s => s with { Appearance = s.Appearance.SetItem(project, new ProjectAppearance("🐙", "#0F766E")) });
+        var devices = new DeviceRegistry { Local = _link };
+
+        // 取消确认:什么都不动
+        var cancel = new ConfirmingDialogs(confirm: false);
+        await new ProjectActions(_stores, devices, () => cancel, () => DefaultClientText.Instance).RemoveAsync(project);
+        Assert.Equal(1, cancel.Confirms);
+        Assert.Contains(project, _stores.Layout.State.Rail.Projects());
+
+        var dialogs = new ConfirmingDialogs(confirm: true);
+        await new ProjectActions(_stores, devices, () => dialogs, () => DefaultClientText.Instance).RemoveAsync(project);
+
+        Assert.Empty(dialogs.Errors);
+        await WaitUntil(() => !_stores.Workspace.State.Projects.ContainsKey(project), "device broadcast drops the project");
+        lock (_ui.Gate)
+        {
+            Assert.DoesNotContain(project, _stores.Layout.State.Rail.Projects());
+            Assert.False(_stores.Layout.State.Appearance.ContainsKey(project));
+            Assert.NotEqual(project, _stores.Selection.State.Project);
+        }
+
+        Assert.True(Directory.Exists(_workspace)); // 文件夹不动
+
+        // 以前的 bug:只改本地布局,重连后设备推送项目列表又把它追加回来
+        await StopAgent();
+        await WaitUntil(() => Device?.Connection is DeviceConnection.Connecting or DeviceConnection.Offline, "disconnected");
+        StartAgent();
+        await WaitUntil(() => Device?.Connection == DeviceConnection.Connected, "reconnected");
+        await Task.Delay(300);
+        lock (_ui.Gate)
+        {
+            Assert.False(_stores.Workspace.State.Projects.ContainsKey(project));
+            Assert.DoesNotContain(project, _stores.Layout.State.Rail.Projects());
+        }
+    }
+
+    [Fact]
+    public async Task A_stale_project_is_dropped_from_the_sidebar_without_asking_and_an_offline_device_refuses()
+    {
+        var stale = new ProjectRef("gone-device", "ws_gone");
+        _stores.Layout.Update(s => s with { Rail = Ncw.Core.Layout.RailLayoutOps.Reconcile(s.Rail, [stale]) });
+        var dialogs = new ConfirmingDialogs(confirm: true);
+        var actions = new ProjectActions(_stores, new DeviceRegistry(), () => dialogs, () => DefaultClientText.Instance);
+
+        await actions.RemoveAsync(stale);
+
+        Assert.Equal(0, dialogs.Confirms); // 设备上已经没有的失效项目:直接拿掉
+        Assert.DoesNotContain(stale, _stores.Layout.State.Rail.Projects());
+
+        // 设备上有、但设备没连上:不能移除,说明原因,布局不动
+        var offline = new ProjectRef("offline-device", "ws_1");
+        _stores.Workspace.Update(s => s with { Projects = s.Projects.SetItem(offline, new ProjectInfo(offline, "proj", "/p", EnvironmentKind.Local, null, null, true, null)) });
+        _stores.Layout.Update(s => s with { Rail = Ncw.Core.Layout.RailLayoutOps.Reconcile(s.Rail, [offline]) });
+        await actions.RemoveAsync(offline);
+        Assert.Equal([DefaultClientText.Instance.ProjectRemoveOffline], dialogs.Errors);
+        Assert.Contains(offline, _stores.Layout.State.Rail.Projects());
     }
 
     [Fact]

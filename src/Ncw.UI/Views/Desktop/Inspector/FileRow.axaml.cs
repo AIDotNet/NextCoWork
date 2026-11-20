@@ -4,6 +4,8 @@ using Avalonia.VisualTree;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
+using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Inspector;
 
@@ -34,32 +36,32 @@ public partial class FileRow : UserControl
         List<NcwMenus.Item> items = [];
         if (node.IsDirectory)
         {
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesNewFile), panel.NewFileCommand, node) { IsDisabled = !panel.CanWrite });
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesNewFolder), panel.NewFolderCommand, node) { IsDisabled = !panel.CanWrite });
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesNewFile), panel.NewFileCommand, node) { IsDisabled = !panel.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FilePlus) });
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesNewFolder), panel.NewFolderCommand, node) { IsDisabled = !panel.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FolderPlus) });
         }
         else
         {
-            items.Add(new(NcwTexts.Get(NcwTextKind.FileOpen), panel.OpenFileCommand, node));
+            items.Add(new(NcwTexts.Get(NcwTextKind.FileOpen), panel.OpenFileCommand, node) { Glyph = Lucide.Geometry(LucideIconKind.FileText) });
         }
 
-        items.Add(new(NcwTexts.Get(NcwTextKind.Rename), panel.RenameCommand, node, SeparatorBefore: true) { IsDisabled = !panel.CanWrite });
-        items.Add(new(NcwTexts.Get(NcwTextKind.FilesCopyPath), panel.CopyPathCommand, node));
-        items.Add(new(NcwTexts.Get(NcwTextKind.FilesCopyRelativePath), panel.CopyRelativePathCommand, node));
+        items.Add(new(NcwTexts.Get(NcwTextKind.Rename), panel.RenameCommand, node, SeparatorBefore: true) { IsDisabled = !panel.CanWrite, Glyph = ArcIcons.Pencil });
+        items.Add(new(NcwTexts.Get(NcwTextKind.FilesCopyPath), panel.CopyPathCommand, node) { Glyph = ArcIcons.Copy });
+        items.Add(new(NcwTexts.Get(NcwTextKind.FilesCopyRelativePath), panel.CopyRelativePathCommand, node) { Glyph = Lucide.Geometry(LucideIconKind.ClipboardCopy) });
         if (panel.CanOpenLocally)
         {
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesReveal), panel.RevealCommand, node, SeparatorBefore: true));
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesReveal), panel.RevealCommand, node, SeparatorBefore: true) { Glyph = ArcIcons.FolderOpen });
             if (node.IsFile)
             {
-                items.Add(new(NcwTexts.Get(NcwTextKind.FilesOpenWith), panel.OpenExternallyCommand, node));
+                items.Add(new(NcwTexts.Get(NcwTextKind.FilesOpenWith), panel.OpenExternallyCommand, node) { Glyph = Lucide.Geometry(LucideIconKind.ExternalLink) });
             }
         }
 
         if (node.IsFile)
         {
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesSaveAs), panel.SaveAsCommand, node));
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesSaveAs), panel.SaveAsCommand, node) { Glyph = Lucide.Geometry(LucideIconKind.Save) });
         }
 
-        items.Add(new(NcwTexts.Get(NcwTextKind.FilesMoveToTrash), panel.DeleteCommand, node, IsDestructive: true, SeparatorBefore: true) { IsDisabled = !panel.CanWrite });
+        items.Add(new(NcwTexts.Get(NcwTextKind.FilesMoveToTrash), panel.DeleteCommand, node, IsDestructive: true, SeparatorBefore: true) { IsDisabled = !panel.CanWrite, Glyph = ArcIcons.Trash2 });
         NcwMenus.Attach(this, items);
     }
 }

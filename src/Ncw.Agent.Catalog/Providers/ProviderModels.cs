@@ -138,6 +138,7 @@ public static class ProviderErrorKeys
     public const string NoLoginInProgress = "providers.noLoginInProgress";
     public const string LoginFailed = "providers.loginFailed";
     public const string LoginCancelled = "providers.loginCancelled";
+    public const string DebugModelRequired = "providers.debug.modelRequired";
 }
 
 /// <summary>供应商服务的业务错误:只带稳定的 <see cref="Key"/>、英文诊断和结构化参数,界面文字由控制端翻译。</summary>

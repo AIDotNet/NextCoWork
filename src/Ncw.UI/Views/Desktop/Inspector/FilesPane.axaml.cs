@@ -7,6 +7,7 @@ using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Inspector;
 
@@ -166,9 +167,9 @@ public partial class FilesPane : UserControl
 
         NcwMenus.Populate(MoreMenu,
         [
-            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFile), vm.NewFileCommand, null) { IsDisabled = !vm.CanWrite },
-            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFolder), vm.NewFolderCommand, null) { IsDisabled = !vm.CanWrite },
-            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesShowIgnored), vm.ToggleShowIgnoredCommand, null, SeparatorBefore: true) { IsChecked = vm.Tree.ShowIgnored },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFile), vm.NewFileCommand, null) { IsDisabled = !vm.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FilePlus) },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFolder), vm.NewFolderCommand, null) { IsDisabled = !vm.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FolderPlus) },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesShowIgnored), vm.ToggleShowIgnoredCommand, null, SeparatorBefore: true) { IsChecked = vm.Tree.ShowIgnored, Glyph = Lucide.Geometry(vm.Tree.ShowIgnored ? LucideIconKind.Eye : LucideIconKind.EyeOff) },
         ]);
     }
 

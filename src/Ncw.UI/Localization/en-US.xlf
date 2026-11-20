@@ -1623,6 +1623,12 @@
     <unit id="WidgetActionConfirm"><segment><source>Run</source><target state="final">Run</target></segment></unit>
     <unit id="SettingsAppearance"><segment><source>Appearance</source><target state="final">Appearance</target></segment></unit>
     <unit id="SettingsAppearanceHint"><segment><source>How the app looks and moves. These settings apply to this app only.</source><target state="final">How the app looks and moves. These settings apply to this app only.</target></segment></unit>
+    <unit id="AppearanceThemeTitle"><segment><source>Theme</source><target state="final">Theme</target></segment></unit>
+    <unit id="AppearanceThemeHint"><segment><source>Choose Light, Dark, or follow the system appearance. You can also toggle light and dark from the sidebar footer.</source><target state="final">Choose Light, Dark, or follow the system appearance. You can also toggle light and dark from the sidebar footer.</target></segment></unit>
+    <unit id="ThemeSystem"><segment><source>Follow system</source><target state="final">Follow system</target></segment></unit>
+    <unit id="ThemeLight"><segment><source>Light</source><target state="final">Light</target></segment></unit>
+    <unit id="ThemeDark"><segment><source>Dark</source><target state="final">Dark</target></segment></unit>
+    <unit id="ToggleTheme"><segment><source>Switch theme</source><target state="final">Switch theme</target></segment></unit>
     <unit id="AppearanceMotionTitle"><segment><source>Motion</source><target state="final">Motion</target></segment></unit>
     <unit id="AppearanceMotionHint"><segment><source>Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</source><target state="final">Expand and collapse, appear and disappear, page transitions. Reduced keeps only short fades; Off shows every change immediately. The end state is the same at every level.</target></segment></unit>
     <unit id="MotionSystem"><segment><source>Follow system</source><target state="final">Follow system</target></segment></unit>
@@ -1650,7 +1656,7 @@
     <unit id="ChangeProjectIcon"><segment><source>Change icon…</source><target state="final">Change icon…</target></segment></unit>
     <unit id="ProjectIconTitle"><segment><source>Project icon</source><target state="final">Project icon</target></segment></unit>
     <unit id="ProjectIconDescription"><segment><source>How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</source><target state="final">How “{0}” looks in the project rail. This only changes this app&#x27;s layout, not the folder on the device.</target></segment></unit>
-    <unit id="ProjectIconInitials"><segment><source>Initials</source><target state="final">Initials</target></segment></unit>
+    <unit id="ProjectIconNone"><segment><source>None</source><target state="final">None</target></segment></unit>
     <unit id="ProjectIconText"><segment><source>Text</source><target state="final">Text</target></segment></unit>
     <unit id="ProjectIconImage"><segment><source>Image</source><target state="final">Image</target></segment></unit>
     <unit id="ProjectIconTextLabel"><segment><source>Text or emoji</source><target state="final">Text or emoji</target></segment></unit>
@@ -1897,5 +1903,64 @@
     <unit id="ProviderEditorKeep"><segment><source>Keep and close</source><target state="final">Keep and close</target></segment></unit>
     <unit id="ProvErrKeyRequired"><segment><source>Enter an API key before saving.</source><target state="final">Enter an API key before saving.</target></segment></unit>
     <unit id="ProvErrIdTaken"><segment><source>Another provider already uses this id.</source><target state="final">Another provider already uses this id.</target></segment></unit>
+    <unit id="ProviderEditorTest"><segment><source>Test</source><target state="final">Test</target></segment></unit>
+    <unit id="ProviderDebugTitle"><segment><source>Debug {0}</source><target state="final">Debug {0}</target></segment></unit>
+    <unit id="ProviderDebugDescription"><segment><source>Send one real request with the model and protocol you pick, and see the full request, response and event stream.</source><target state="final">Send one real request with the model and protocol you pick, and see the full request, response and event stream.</target></segment></unit>
+    <unit id="ProviderDebugModel"><segment><source>Model</source><target state="final">Model</target></segment></unit>
+    <unit id="ProviderDebugModelPlaceholder"><segment><source>Pick from the list or type a model id</source><target state="final">Pick from the list or type a model id</target></segment></unit>
+    <unit id="ProviderDebugModelList"><segment><source>Models from the upstream list</source><target state="final">Models from the upstream list</target></segment></unit>
+    <unit id="ProviderDebugModelsLoading"><segment><source>Fetching the model list…</source><target state="final">Fetching the model list…</target></segment></unit>
+    <unit id="ProviderDebugModelsFetched"><segment><source>Upstream list · {0} models</source><target state="final">Upstream list · {0} models</target></segment></unit>
+    <unit id="ProviderDebugModelsUnavailable"><segment><source>Couldn't fetch the model list ({0}). Type a model id.</source><target state="final">Couldn't fetch the model list ({0}). Type a model id.</target></segment></unit>
+    <unit id="ProviderDebugModelsRefresh"><segment><source>Fetch again</source><target state="final">Fetch again</target></segment></unit>
+    <unit id="ProviderDebugProtocol"><segment><source>Protocol</source><target state="final">Protocol</target></segment></unit>
+    <unit id="ProviderDebugUrl"><segment><source>Request URL</source><target state="final">Request URL</target></segment></unit>
+    <unit id="ProviderDebugPrompt"><segment><source>Prompt</source><target state="final">Prompt</target></segment></unit>
+    <unit id="ProviderDebugPromptPlaceholder"><segment><source>Leave empty to ask for a two-letter reply (OK)</source><target state="final">Leave empty to ask for a two-letter reply (OK)</target></segment></unit>
+    <unit id="ProviderDebugThinking"><segment><source>Thinking</source><target state="final">Thinking</target></segment></unit>
+    <unit id="ProviderDebugThinkingAuto"><segment><source>Model default</source><target state="final">Model default</target></segment></unit>
+    <unit id="ProviderDebugThinkingOff"><segment><source>Off</source><target state="final">Off</target></segment></unit>
+    <unit id="ProviderDebugThinkingLow"><segment><source>Low</source><target state="final">Low</target></segment></unit>
+    <unit id="ProviderDebugThinkingMedium"><segment><source>Medium</source><target state="final">Medium</target></segment></unit>
+    <unit id="ProviderDebugThinkingHigh"><segment><source>High</source><target state="final">High</target></segment></unit>
+    <unit id="ProviderDebugMaxOutput"><segment><source>Max output tokens</source><target state="final">Max output tokens</target></segment></unit>
+    <unit id="ProviderDebugWithTool"><segment><source>Include a tool</source><target state="final">Include a tool</target></segment></unit>
+    <unit id="ProviderDebugWithToolHint"><segment><source>Checks that the endpoint accepts tool definitions.</source><target state="final">Checks that the endpoint accepts tool definitions.</target></segment></unit>
+    <unit id="ProviderDebugSend"><segment><source>Send</source><target state="final">Send</target></segment></unit>
+    <unit id="ProviderDebugStop"><segment><source>Stop</source><target state="final">Stop</target></segment></unit>
+    <unit id="ProviderDebugTabReply"><segment><source>Reply</source><target state="final">Reply</target></segment></unit>
+    <unit id="ProviderDebugTabRequest"><segment><source>Request</source><target state="final">Request</target></segment></unit>
+    <unit id="ProviderDebugTabResponse"><segment><source>Response</source><target state="final">Response</target></segment></unit>
+    <unit id="ProviderDebugTabEvents"><segment><source>Events</source><target state="final">Events</target></segment></unit>
+    <unit id="ProviderDebugEmpty"><segment><source>Pick a model and a protocol, then send a request.</source><target state="final">Pick a model and a protocol, then send a request.</target></segment></unit>
+    <unit id="ProviderDebugRunning"><segment><source>Waiting for the response…</source><target state="final">Waiting for the response…</target></segment></unit>
+    <unit id="ProviderDebugStopped"><segment><source>Stopped. The events received so far are kept.</source><target state="final">Stopped. The events received so far are kept.</target></segment></unit>
+    <unit id="ProviderDebugOk"><segment><source>Works</source><target state="final">Works</target></segment></unit>
+    <unit id="ProviderDebugFailed"><segment><source>Failed</source><target state="final">Failed</target></segment></unit>
+    <unit id="ProviderDebugFirstToken"><segment><source>First token {0} ms</source><target state="final">First token {0} ms</target></segment></unit>
+    <unit id="ProviderDebugTotal"><segment><source>Total {0} ms</source><target state="final">Total {0} ms</target></segment></unit>
+    <unit id="ProviderDebugTokens"><segment><source>{0} in · {1} out tokens</source><target state="final">{0} in · {1} out tokens</target></segment></unit>
+    <unit id="ProviderDebugStopReason"><segment><source>Stop: {0}</source><target state="final">Stop: {0}</target></segment></unit>
+    <unit id="ProviderDebugToolCalls"><segment><source>Tool calls</source><target state="final">Tool calls</target></segment></unit>
+    <unit id="ProviderDebugNoReply"><segment><source>The reply has no text.</source><target state="final">The reply has no text.</target></segment></unit>
+    <unit id="ProviderDebugNoResponse"><segment><source>Nothing came back from the address.</source><target state="final">Nothing came back from the address.</target></segment></unit>
+    <unit id="ProviderDebugEventsTruncated"><segment><source>Only the first {0} events are shown.</source><target state="final">Only the first {0} events are shown.</target></segment></unit>
+    <unit id="ProviderDebugUseProtocol"><segment><source>Use this protocol</source><target state="final">Use this protocol</target></segment></unit>
+    <unit id="ProviderDebugFailRejected"><segment><source>The upstream rejected the credential. Check the API key; some gateways only accept the other protocol's auth header.</source><target state="final">The upstream rejected the credential. Check the API key; some gateways only accept the other protocol's auth header.</target></segment></unit>
+    <unit id="ProviderDebugFailNotFound"><segment><source>Not found (404). This address doesn't serve this protocol's path, or the model id is wrong.</source><target state="final">Not found (404). This address doesn't serve this protocol's path, or the model id is wrong.</target></segment></unit>
+    <unit id="ProviderDebugFailHttp"><segment><source>The upstream returned an error.</source><target state="final">The upstream returned an error.</target></segment></unit>
+    <unit id="ProviderDebugFailNetwork"><segment><source>Couldn't connect to the address.</source><target state="final">Couldn't connect to the address.</target></segment></unit>
+    <unit id="ProviderDebugFailTimeout"><segment><source>No response in time.</source><target state="final">No response in time.</target></segment></unit>
+    <unit id="ProviderDebugFailIncomplete"><segment><source>The connection closed before the reply finished.</source><target state="final">The connection closed before the reply finished.</target></segment></unit>
+    <unit id="ProviderDebugFailStream"><segment><source>The upstream reported an error in the stream.</source><target state="final">The upstream reported an error in the stream.</target></segment></unit>
+    <unit id="ProviderDebugFailLocal"><segment><source>The request couldn't be built on the device.</source><target state="final">The request couldn't be built on the device.</target></segment></unit>
+    <unit id="ProvErrDebugModelRequired"><segment><source>Pick or type a model.</source><target state="final">Pick or type a model.</target></segment></unit>
+    <unit id="ProviderEditorSavingOnly"><segment><source>Saving…</source><target state="final">Saving…</target></segment></unit>
+    <unit id="RemoveProjectTitle"><segment><source>Remove project</source><target state="final">Remove project</target></segment></unit>
+    <unit id="RemoveProjectMessage"><segment><source>Remove “{0}” from the sidebar? The files in the folder are not deleted, but this project's conversations will no longer be shown, even if you add the same folder again.</source><target state="final">Remove “{0}” from the sidebar? The files in the folder are not deleted, but this project's conversations will no longer be shown, even if you add the same folder again.</target></segment></unit>
+    <unit id="RemoveProjectLabel"><segment><source>Remove</source><target state="final">Remove</target></segment></unit>
+    <unit id="RemoveProjectFailedTitle"><segment><source>Couldn't remove the project</source><target state="final">Couldn't remove the project</target></segment></unit>
+    <unit id="ProjectRemoveOffline"><segment><source>The device this project is on isn't connected. Connect it and try again.</source><target state="final">The device this project is on isn't connected. Connect it and try again.</target></segment></unit>
+    <unit id="ProjectRemoveFailed"><segment><source>The device couldn't remove this project. Try again later.</source><target state="final">The device couldn't remove this project. Try again later.</target></segment></unit>
   </file>
 </xliff>

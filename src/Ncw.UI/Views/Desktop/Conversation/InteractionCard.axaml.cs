@@ -4,6 +4,7 @@ using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Converters;
 using Ncw.UI.Localization;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Conversation;
 
@@ -61,7 +62,10 @@ public partial class InteractionCard : UserControl
         }
 
         NcwMenus.Populate(AlwaysMenu, row.Scopes.Select(scope => new NcwMenus.Item(
-            NcwTexts.Format(NcwTextKind.ApprovalAlwaysAllowIn, ScopeTextConverter.Text(scope)), row.AlwaysAllowInCommand, scope)));
+            NcwTexts.Format(NcwTextKind.ApprovalAlwaysAllowIn, ScopeTextConverter.Text(scope)), row.AlwaysAllowInCommand, scope)
+        {
+            Glyph = Lucide.Geometry(LucideIconKind.ShieldCheck),
+        }));
         AllowGesture.Text = ShortcutText.Format(ShortcutText.CurrentGesture(Ncw.Client.Shortcuts.AppCommand.ApproveFirst));
     }
 

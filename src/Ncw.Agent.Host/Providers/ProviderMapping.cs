@@ -214,4 +214,71 @@ internal static class ProviderMapping
     /// <summary>扫描候选 → DTO:密钥只留后四位。</summary>
     public static DiscoveredProviderDto ToDto(Ncw.Agent.Catalog.Discovery.DiscoveryCandidate c) =>
         new(c.Id, c.Source, c.Origin, [.. c.AlsoSeenIn], c.SuggestedId, c.Name, c.Protocol.NameOf(), c.BaseUrl, c.KeyLast4, [.. c.Models], c.Status, c.ExistingProviderId);
+    // ───────────────────────── 调试 ─────────────────────────
+
+    /// <summary>列表端点的族名:Anthropic 一族叫 <c>anthropic</c>,OpenAI 族(Chat 与 Responses 共用 <c>/models</c>)叫 <c>openai</c>。</summary>
+    public static string FamilyName(WireProtocol family) => family == WireProtocol.Anthropic ? "anthropic" : "openai";
+
+    public static ProviderDebugModelsResult ToDto(ModelListing listing) => new(
+        [.. listing.Attempts.Select(a => new DebugListAttemptDto(FamilyName(a.Family), a.Url, a.Ok, a.Status, a.Count, a.ErrorKey, a.Detail))],
+        [.. listing.Models.Select(m => new DebugModelDto(m.Id, m.DisplayName, [.. m.Families.Select(FamilyName).Distinct(StringComparer.Ordinal)]))]);
+
+    public static ThinkingLevel ParseDebugThinking(string? name) => name switch
+    {
+        null or "" or DebugThinking.Auto => ThinkingLevel.Auto,
+        DebugThinking.Off => ThinkingLevel.Off,
+        DebugThinking.Low => ThinkingLevel.Low,
+        DebugThinking.Medium => ThinkingLevel.Medium,
+        DebugThinking.High => ThinkingLevel.High,
+        _ => throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown thinking level '{name}'."),
+    };
+
+    /// <summary>枚举名 → 线上的 camelCase(<c>NotFound</c> → <c>notFound</c>)。</summary>
+    private static string Camel(string name) => name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name[1..];
+
+    public static string DebugKindName(Ncw.Agent.Llm.Diagnostics.ProbeEventKind kind) => kind switch
+    {
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Request => DebugEventKinds.Request,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Response => DebugEventKinds.Response,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Sse => DebugEventKinds.Sse,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Text => DebugEventKinds.Text,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Thinking => DebugEventKinds.Thinking,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.ToolCall => DebugEventKinds.ToolCall,
+        Ncw.Agent.Llm.Diagnostics.ProbeEventKind.End => DebugEventKinds.End,
+        _ => DebugEventKinds.Error,
+    };
+
+    public static ProviderDebugEventDto ToDto(Ncw.Agent.Llm.Diagnostics.ProbeEvent ev) => new(
+        ev.Seq,
+        ev.ElapsedMs,
+        DebugKindName(ev.Kind),
+        // 结束事件的停止原因、错误事件的失败类别在线上是 camelCase(和结果里的 StopReason / Failure 同一套写法)
+        ev.Kind is Ncw.Agent.Llm.Diagnostics.ProbeEventKind.End or Ncw.Agent.Llm.Diagnostics.ProbeEventKind.Error && ev.Name is not null ? Camel(ev.Name!) : ev.Name,
+        ev.Data);
+
+    public static ProviderDebugResultDto ToDto(string runId, Ncw.Agent.Llm.Diagnostics.ProbeResult r) => new(
+        runId,
+        r.Ok,
+        r.Protocol.NameOf(),
+        r.Model,
+        r.Method,
+        r.Url,
+        [.. r.RequestHeaders.Select(h => new DebugHeaderDto(h.Name, h.Value))],
+        r.RequestBody,
+        r.Status,
+        [.. r.ResponseHeaders.Select(h => new DebugHeaderDto(h.Name, h.Value))],
+        r.ResponseBody,
+        [.. r.Events.Select(ToDto)],
+        r.EventsTruncated,
+        r.Text,
+        r.Thinking,
+        [.. r.ToolCalls],
+        r.Stop is { } stop ? Camel(stop.ToString()) : null,
+        r.Usage is { } u ? new DebugUsageDto(u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens, u.ReasoningTokens) : null,
+        r.ResponseModel,
+        r.FirstTokenMs,
+        r.TotalMs,
+        r.Failure is { } f ? Camel(f.Kind.ToString()) : null,
+        r.Failure?.Code is { } code ? Camel(code.ToString()) : null,
+        r.Failure?.Message);
 }

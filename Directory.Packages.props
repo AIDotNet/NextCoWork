@@ -3,39 +3,42 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Arc 1.1.0 按 Avalonia 12.1.5 构建:所有 Avalonia 包必须保持在同一个版本。 -->
+    <!-- Arc 1.3.0 要求 Avalonia ≥ 12.1.6(按 12.1.6 构建):所有 Avalonia 包必须保持在同一个版本。 -->
     <!-- 远程连接:TLS 1.3 双向认证 + SRP-6a 配对(纯托管,各平台同一实现,见 docs/design/09 §4) -->
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.7.0" />
-    <PackageVersion Include="Avalonia" Version="12.1.5" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.1.5" />
-    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.5" />
-    <PackageVersion Include="Avalonia.Skia" Version="12.1.5" />
-    <!-- Android 宿主(src/Ncw.Mobile.Android,不在主解决方案里):同样锁 12.1.5。 -->
-    <PackageVersion Include="Avalonia.Android" Version="12.1.5" />
-    <PackageVersion Include="Avalonia.Headless" Version="12.1.5" />
-    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.5" />
-    <PackageVersion Include="TKCode.Arc" Version="1.1.0" />
-    <PackageVersion Include="TKCode.Arc.Blocks" Version="1.1.0" />
-    <PackageVersion Include="TKCode.Arc.Fonts" Version="1.1.0" />
-    <PackageVersion Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
+    <PackageVersion Include="Avalonia" Version="12.1.6" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <PackageVersion Include="Avalonia.Skia" Version="12.1.6" />
+    <!-- Android 宿主(src/Ncw.Mobile.Android,不在主解决方案里):同样锁 12.1.6。 -->
+    <PackageVersion Include="Avalonia.Android" Version="12.1.6" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.6" />
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.6" />
+    <PackageVersion Include="TKCode.Arc" Version="1.3.0" />
+    <PackageVersion Include="TKCode.Arc.Blocks" Version="1.3.0" />
+    <!-- 1.2.0 起 Markdown(含流式)和语法高亮从 TKCode.Arc 拆成独立包;StreamMark 由它们带入(1.3.0 起是 TKCode.Arc.StreamMark)。 -->
+    <PackageVersion Include="TKCode.Arc.Markdown" Version="1.3.0" />
+    <PackageVersion Include="TKCode.Arc.Highlighting" Version="1.3.0" />
+    <PackageVersion Include="TKCode.Arc.Fonts" Version="1.3.0" />
+    <PackageVersion Include="TKCode.Arc.Icons.Lucide" Version="1.3.0" />
     <!-- 手机壳的触控组件(NavigationStack / Page / Navbar / Tabbar / Sheet / PullToRefresh)。文档注明「尚未在真机上验证」,业务视图只经 Ncw.UI.Controls 的封装使用。 -->
-    <PackageVersion Include="TKCode.Arc.Mobile" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Mobile" Version="1.3.0" />
     <!-- AI 专用组件(上下文窗口卡片 ContextWindow);和 TKCode.Arc 同版本、同一个 StreamMark 0.1.2 -->
-    <PackageVersion Include="TKCode.Arc.Special" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Special" Version="1.3.0" />
     <!-- 终端页签:TerminalView + libghostty-vt 状态机(原生库随包带,各平台同一份;只在桌面 UI 里用)。 -->
-    <PackageVersion Include="TKCode.Arc.Terminal" Version="1.1.0" />
+    <PackageVersion Include="TKCode.Arc.Terminal" Version="1.3.0" />
     <!--
       内联可视化的 WebView 外壳(M8,评估见 docs/design/03-ui-layout.md §8):Avalonia 官方的 NativeWebView(MIT,AvaloniaUI OÜ;macOS WKWebView / Windows WebView2 / Linux WebKitGTK + WPE)。
-      这个包的版本号和 Avalonia 核心包<b>不同步</b>(12.1.2 依赖 Avalonia >= 12.0.0,解析到下面锁定的 12.1.5),所以「所有 Avalonia 包保持一致」指的是核心包(Avalonia / Desktop / Skia / Headless / Fonts),WebView 包单独锁版本。
+      这个包的版本号和 Avalonia 核心包<b>不同步</b>(12.1.2 依赖 Avalonia >= 12.0.0,解析到下面锁定的 12.1.6),所以「所有 Avalonia 包保持一致」指的是核心包(Avalonia / Desktop / Skia / Headless / Fonts),WebView 包单独锁版本。
     -->
     <PackageVersion Include="Avalonia.Controls.WebView" Version="12.1.2" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- 设备协议的编解码:PolyType 源生成,NativeAOT 零警告(MessagePack-CSharp 3.x 在 AOT 下有警告且多态帧不可用,已实测排除)。 -->
     <PackageVersion Include="Nerdbank.MessagePack" Version="1.4.104" />
-    <!-- 10.0.15 依赖 SQLitePCLRaw 2.1.13;10.0.0 带的 2.1.11 有已知漏洞(GHSA-2m69-gcr7-jv3q)。NativeAOT 下实测零警告。 -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <!-- 11.0.0 依赖 SQLitePCLRaw 3.0.5(10.0.0 带的 2.1.11 有已知漏洞 GHSA-2m69-gcr7-jv3q)。NativeAOT 零警告见 publish-agent。 -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <!-- 执行环境的 SSH 客户端(纯托管,NativeAOT 零警告已实测)。2026.0.0 依赖 BouncyCastle.Cryptography >= 2.7.0,所以上面的 BouncyCastle 同步升到 2.7.0。 -->
-    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.1" />
     <!-- 插件宿主(Ncw.Agent.Plugins,仓库里唯一引用它的项目):纯托管、NativeAOT 兼容的 JS 引擎;评估结论见 docs/design/02-agent.md A7.1。1.0.3 = 2026-11-11 发布的当前稳定版。 -->
     <PackageVersion Include="Jaunt" Version="1.0.3" />
     <!-- 更新(M7 桌面端接入;现在只有 tools/Ncw.Build 在用 vpk 打包):运行时库必须和 .config/dotnet-tools.json 里的 vpk 同一个版本,tests/Ncw.Build.Tests 核对。 -->
@@ -45,8 +48,8 @@
     <!-- Android 的 FCM 推送:只在 src/Ncw.Mobile.Android 里有 google-services.json(不进仓库)时才引用,默认构建不拉它。 -->
     <PackageVersion Include="Xamarin.Firebase.Messaging" Version="125.1.3" />
     <!-- 测试 -->
-    <!-- Avalonia.Headless.XUnit 12.1.5 基于 xunit v3(extensibility 3.2.x),测试统一用 xunit v3 3.2.x。 -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <!-- Avalonia.Headless.XUnit 12.1.6 基于 xunit v3(extensibility 3.2.x),测试统一用 xunit v3 3.2.x。 -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>

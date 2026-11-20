@@ -175,6 +175,47 @@ internal static class ProviderHandlers
 
         // ── providers.templates(后加的能力):添加供应商的内置模版(静态数据,和自动发现共用已知服务表) ──
         router.Handle(ProviderTemplatesMethods.List, (_, _, _) => Sync(() => Templates));
+
+        // ── providers.debug(后加的能力):调试弹窗。草稿 key 只用于这一次请求;结果与进度里的凭据已脱敏 ──
+        router.Handle(ProviderDebugMethods.Models, (p, _, ct) => GuardAsync(async () =>
+            ProviderMapping.ToDto(await runtime().Providers.ListModelsAsync(ToTarget(p.Target), ct).ConfigureAwait(false))));
+        router.Handle(ProviderDebugMethods.Run, (p, _, ct) => GuardAsync(async () =>
+        {
+            if (!ProviderDebugRuns.IsValidRunId(p.RunId))
+            {
+                throw new ProtocolException(ErrorCodes.InvalidRequest, "The debug run id must be 1-64 letters, digits, '-' or '_'.");
+            }
+
+            var protocol = WireProtocols.Parse(p.Protocol) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{p.Protocol}'.");
+            var request = new DebugRequest(ToTarget(p.Target), protocol, p.Model, p.Prompt, p.MaxOutputTokens, ProviderMapping.ParseDebugThinking(p.Thinking), p.WithTool);
+            var rt = runtime();
+            rt.DebugRuns.Start(p.RunId);
+            try
+            {
+                var result = await rt.Providers.DebugAsync(request, ev => rt.DebugRuns.Add(p.RunId, ProviderMapping.ToDto(ev)), ct).ConfigureAwait(false);
+                return ProviderMapping.ToDto(p.RunId, result);
+            }
+            finally
+            {
+                rt.DebugRuns.Finish(p.RunId);
+            }
+        }));
+    }
+
+    private static DebugTarget ToTarget(ProviderDebugTargetDto target)
+    {
+        WireProtocol? protocol = null;
+        if (target.Protocol is { } name)
+        {
+            protocol = WireProtocols.Parse(name) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{name}'.");
+        }
+
+        if (target.ProviderId is null && string.IsNullOrWhiteSpace(target.BaseUrl))
+        {
+            throw new ProtocolException(ErrorCodes.InvalidRequest, "A debug target needs a saved provider id or an API address.");
+        }
+
+        return new DebugTarget(target.ProviderId, string.IsNullOrWhiteSpace(target.BaseUrl) ? null : target.BaseUrl, protocol, target.ApiKey);
     }
 
     private static readonly ProviderTemplatesResult Templates = new([.. Ncw.Agent.Catalog.Templates.ProviderTemplates.All.Select(ProviderMapping.ToDto)]);

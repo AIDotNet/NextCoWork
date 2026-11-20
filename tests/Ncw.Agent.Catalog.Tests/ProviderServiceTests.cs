@@ -377,7 +377,9 @@ public sealed class ProviderServiceTests : IDisposable
     {
         using var fx = new ProviderFixture(new ProviderServiceOptions { FetchTimeout = TimeSpan.FromMilliseconds(80) });
         fx.AddProvider();
-        fx.Http.Hang().Throw(new HttpRequestException("failed: -----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----"));
+        // 每次拉取会试两族列表端点(这家协议那一族没拉到才试另一族),所以每种结局各排两次
+        var leaked = new HttpRequestException("failed: -----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----");
+        fx.Http.Hang().Hang().Throw(leaked).Throw(leaked);
 
         Assert.Equal(ProviderErrorKeys.FetchTimeout, (await Assert.ThrowsAsync<ProviderException>(() => fx.Service.FetchModelsAsync("gw"))).Key);
         var refused = await Assert.ThrowsAsync<ProviderException>(() => fx.Service.FetchModelsAsync("gw"));
@@ -392,6 +394,117 @@ public sealed class ProviderServiceTests : IDisposable
         _fx.Http.Hang();
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Service.FetchModelsAsync("gw", cts.Token));
+    }
+
+    [Fact]
+    public async Task When_the_protocols_own_list_endpoint_fails_the_other_familys_is_tried()
+    {
+        // Anthropic 兼容中转常常没有 /v1/models,但 OpenAI 族的 /models 在
+        _fx.AddProvider("relay", WireProtocol.Anthropic, baseUrl: "https://relay.example.com/anthropic");
+        await Service.SetApiKeyAsync("relay", "sk-relay");
+        _fx.Http.Status(HttpStatusCode.NotFound).Ok("""{"data":[{"id":"claude-a"},{"id":"glm-4"}]}""");
+
+        var models = await Service.FetchModelsAsync("relay");
+
+        Assert.Equal(["claude-a", "glm-4"], models.Select(m => m.Id).ToArray());
+        Assert.Equal(2, _fx.Http.Requests.Count);
+        Assert.StartsWith("https://relay.example.com/anthropic/v1/models", _fx.Http.Requests[0].Url);
+        Assert.Equal("sk-relay", _fx.Http.Requests[0].Header("x-api-key"));
+        Assert.Equal("https://relay.example.com/anthropic/models", _fx.Http.Requests[1].Url);
+        Assert.Equal("Bearer sk-relay", _fx.Http.Requests[1].Header("authorization"));
+    }
+
+    [Fact]
+    public async Task When_both_families_fail_the_error_is_the_protocols_own()
+    {
+        _fx.AddProvider("relay", WireProtocol.Anthropic, baseUrl: "https://relay.example.com/anthropic");
+        _fx.Http.Status(HttpStatusCode.Unauthorized, """{"error":{"message":"who are you"}}""").Status(HttpStatusCode.NotFound);
+
+        var error = await Assert.ThrowsAsync<ProviderException>(() => Service.FetchModelsAsync("relay"));
+
+        Assert.Equal(ProviderErrorKeys.FetchRejected, error.Key);
+        Assert.Equal("who are you", error.Parameters["detail"]);
+    }
+
+    // ── 调试(providers.debug)──
+
+    [Fact]
+    public async Task Debug_candidates_try_both_families_merge_them_and_report_every_attempt()
+    {
+        _fx.AddProvider();
+        await Service.SetApiKeyAsync("gw", "sk-gw-1234567890");
+        _fx.Http.Fallback = (request, _) => Task.FromResult(request.Headers.Contains("x-api-key") // 两族的 URL 在 …/v1 地址上是同一个,按鉴权头分
+            ? FakeHttp.Json(HttpStatusCode.OK, """{"data":[{"id":"claude-a","display_name":"Claude A"},{"id":"shared"}]}""")
+            : FakeHttp.Json(HttpStatusCode.OK, """{"data":[{"id":"gpt-x"},{"id":"shared"}]}"""));
+
+        var listing = await Service.ListModelsAsync(new DebugTarget("gw"));
+
+        Assert.Equal(2, listing.Attempts.Count);
+        Assert.All(listing.Attempts, a => Assert.True(a.Ok));
+        // 先这家协议那一族(OpenAI 族),再另一族;两族都报的模型带两个族
+        Assert.Equal(["gpt-x", "shared", "claude-a"], listing.Models.Select(m => m.Id).ToArray());
+        Assert.Equal([WireProtocol.OpenAiChat, WireProtocol.Anthropic], listing.Models.Single(m => m.Id == "shared").Families.ToArray());
+        Assert.Equal("Claude A", listing.Models.Single(m => m.Id == "claude-a").DisplayName);
+    }
+
+    [Fact]
+    public async Task A_draft_target_uses_its_own_address_and_key_and_failures_do_not_echo_the_key()
+    {
+        _fx.Http.Fallback = (_, _) => Task.FromResult(FakeHttp.Json(HttpStatusCode.Unauthorized, """{"error":{"message":"bad key sk-draft-abcdef123456"}}"""));
+
+        var listing = await Service.ListModelsAsync(new DebugTarget(null, " https://draft.example.com/v1 ", WireProtocol.OpenAiChat, "sk-draft-abcdef123456"));
+
+        Assert.Empty(listing.Models);
+        Assert.All(listing.Attempts, a => Assert.Equal(ProviderErrorKeys.FetchRejected, a.ErrorKey));
+        Assert.All(listing.Attempts, a => Assert.DoesNotContain("sk-draft", a.Detail));
+        Assert.Contains(_fx.Http.Requests, r => r.Url == "https://draft.example.com/v1/models" && r.Header("authorization") == "Bearer sk-draft-abcdef123456");
+        Assert.Empty(Service.Providers); // 草稿不落盘
+        Assert.Equal(ProviderErrorKeys.InvalidBaseUrl, (await Assert.ThrowsAsync<ProviderException>(() => Service.ListModelsAsync(new DebugTarget(null)))).Key);
+        Assert.Equal(ProviderErrorKeys.InvalidBaseUrl, (await Assert.ThrowsAsync<ProviderException>(() => Service.ListModelsAsync(new DebugTarget(null, "ftp://x")))).Key);
+    }
+
+    private static HttpResponseMessage ChatSse(string text) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(
+            "data: {\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + text + "\"}}]}\n\n"
+            + "data: {\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+            + "data: [DONE]\n\n",
+            System.Text.Encoding.UTF8,
+            "text/event-stream"),
+    };
+
+    [Fact]
+    public async Task Debugging_a_saved_provider_sends_one_request_with_the_chosen_protocol_and_the_aliases_upstream_model()
+    {
+        _fx.AddProvider("gw", WireProtocol.Anthropic, baseUrl: "https://gw.example.com/v1");
+        await Service.SetApiKeyAsync("gw", "sk-saved-1234567890");
+        Service.SetAliases("gw", ["upstream-model"]);
+        Service.RenameAlias("gw", "upstream-model", "nice");
+        _fx.Http.Reply((_, _) => Task.FromResult(ChatSse("OK")));
+        var events = new List<Ncw.Agent.Llm.Diagnostics.ProbeEvent>();
+
+        var result = await Service.DebugAsync(
+            new DebugRequest(new DebugTarget("gw"), WireProtocol.OpenAiChat, "nice", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false), events.Add);
+
+        Assert.True(result.Ok, result.Failure?.Message);
+        Assert.Equal("OK", result.Text);
+        var seen = Assert.Single(_fx.Http.Requests);
+        Assert.Equal("POST", seen.Method);
+        Assert.Equal("https://gw.example.com/v1/chat/completions", seen.Url);
+        Assert.Equal("Bearer sk-saved-1234567890", seen.Header("authorization"));
+        Assert.Contains("\"upstream-model\"", result.RequestBody); // 别名 → 上游模型名
+        Assert.DoesNotContain("sk-saved", string.Join("\n", result.RequestHeaders.Select(h => h.Value)));
+        Assert.Equal(result.Events, events);
+    }
+
+    [Fact]
+    public async Task Debugging_needs_a_model()
+    {
+        _fx.AddProvider();
+        var error = await Assert.ThrowsAsync<ProviderException>(() =>
+            Service.DebugAsync(new DebugRequest(new DebugTarget("gw"), WireProtocol.OpenAiChat, "  ", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false)));
+        Assert.Equal(ProviderErrorKeys.DebugModelRequired, error.Key);
+        Assert.Empty(_fx.Http.Requests);
     }
 
     // ── 连通性测试 ──

@@ -192,6 +192,48 @@ public class DesktopShellTests
         Assert.True(vm.Palette.IsOpen);
     }
 
+    /// <summary>侧边栏底部的主题切换按钮:点一次切到浅色,再点一次切回深色,偏好和 Arc 主题同步。</summary>
+    [AvaloniaFact]
+    public void Clicking_theme_switcher_toggles_appearance_preference()
+    {
+        var (window, shell, vm) = Render(1500);
+        try
+        {
+            Ncw.UI.Controls.NcwAppearance.Apply(Ncw.Client.Stores.UiThemePreference.Dark);
+            Dispatch();
+            var switcher = shell.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwThemeSwitcher>().Single();
+
+            switcher.Toggle();
+            Dispatch();
+            Assert.Equal(Ncw.Client.Stores.UiThemePreference.Light, vm.Settings.Appearance.Theme);
+
+            switcher.Toggle();
+            Dispatch();
+            Assert.Equal(Ncw.Client.Stores.UiThemePreference.Dark, vm.Settings.Appearance.Theme);
+        }
+        finally
+        {
+            Ncw.UI.Controls.NcwAppearance.Apply(Ncw.Client.Stores.UiThemePreference.Dark);
+        }
+    }
+
+    /// <summary>右侧面板「+」菜单的每一项都要有非空图标。</summary>
+    [AvaloniaFact]
+    public void Inspector_add_menu_items_all_have_icons()
+    {
+        var (window, shell, _) = Render(1500);
+        var panel = shell.FindControl<InspectorPanel>("Inspector")!;
+        var entries = panel.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("AddMenu")!.ItemsSource!
+            .OfType<TKCode.Arc.MenuEntry>()
+            .ToList();
+        Assert.NotEmpty(entries);
+        Assert.All(entries, entry =>
+        {
+            var geometry = Assert.IsAssignableFrom<Avalonia.Media.Geometry>(entry.Icon);
+            Assert.False(geometry.Bounds.Width <= 0 && geometry.Bounds.Height <= 0);
+        });
+    }
+
     private static IEnumerable<Avalonia.Visual> TopLevelPopups(Window window) =>
         window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
             .Where(p => p.Child is not null)

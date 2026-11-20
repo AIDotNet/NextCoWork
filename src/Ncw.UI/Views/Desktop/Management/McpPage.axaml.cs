@@ -2,6 +2,8 @@ using Avalonia.Controls;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
+using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Management;
 
@@ -16,11 +18,11 @@ public partial class McpPage : UserControl
         {
             NcwMenus.Populate(menu,
             [
-                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpBrowse), row.BrowseCommand),
-                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpReconnect), row.ReconnectCommand),
-                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpTest), row.TestCommand),
-                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.Edit), row.EditCommand, SeparatorBefore: true),
-                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.DeleteLabel), row.AskRemoveCommand, IsDestructive: true, SeparatorBefore: true),
+                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpBrowse), row.BrowseCommand) { Glyph = Lucide.Geometry(LucideIconKind.Blocks) },
+                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpReconnect), row.ReconnectCommand) { Glyph = Lucide.Geometry(LucideIconKind.RefreshCw) },
+                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.McpTest), row.TestCommand) { Glyph = Lucide.Geometry(LucideIconKind.PlugZap) },
+                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.Edit), row.EditCommand, SeparatorBefore: true) { Glyph = ArcIcons.Pencil },
+                new NcwMenus.Item(NcwTexts.Get(NcwTextKind.DeleteLabel), row.AskRemoveCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 },
             ]);
         }
     }

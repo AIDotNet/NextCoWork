@@ -143,6 +143,9 @@ public sealed class ConfigLinkTests : IAsyncLifetime
 
         public int Requests { get; private set; }
 
+        /// <summary>最近一次对话请求(调试)带的鉴权头:上游收到的应当是真 key。</summary>
+        public string? LastChatAuthorization { get; private set; }
+
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             lock (_gate)
@@ -151,6 +154,15 @@ public sealed class ConfigLinkTests : IAsyncLifetime
             }
 
             var url = request.RequestUri!.ToString();
+            if (url.EndsWith("/chat/completions", StringComparison.Ordinal))
+            {
+                LastChatAuthorization = request.Headers.TryGetValues("authorization", out var auth) ? string.Join(",", auth) : null;
+                const string Sse = "data: {\"model\":\"m1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"OK\"}}]}\n\n"
+                    + "data: {\"model\":\"m1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                    + "data: [DONE]\n\n";
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Sse, Encoding.UTF8, "text/event-stream") });
+            }
+
             if (url.Contains("models.dev", StringComparison.Ordinal) && ModelsDev is { } body)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
@@ -362,6 +374,53 @@ public sealed class ConfigLinkTests : IAsyncLifetime
         // Agent 层不引用协议:分组 / 端点标签在两边各写一份,这里守它们一致(控制端按协议的值翻译)
         Assert.Equal(ProviderTemplateGroups.All, Ncw.Agent.Catalog.Templates.ProviderTemplateGroups.All);
         Assert.Equal(ProviderTemplateVariants.All, Ncw.Agent.Catalog.Templates.ProviderTemplateVariants.All);
+    }
+
+    [Fact]
+    public async Task A_draft_is_debugged_on_the_device_with_live_progress_and_its_key_never_comes_back()
+    {
+        _c = await StartControllerAsync();
+        var deviceId = _c.Link.DeviceId;
+        Assert.True(_c.Providers.SupportsDebug(deviceId)); // 设备在 welcome.features 里报了这个能力
+        var target = new ProviderDebugTargetDto(null, "https://draft.example.com/v1", "openai-chat", Secret);
+
+        // 候选:两族列表端点都试了(假上游只认 OpenAI 族的 /models)
+        var models = await _c.Providers.DebugModelsAsync(deviceId, target);
+        Assert.Equal(["m1", "m2"], models.Value!.Models.Select(m => m.Id));
+        Assert.Equal(2, models.Value.Attempts.Length);
+
+        // 发一条:实时进度经 providers.debug/<runId> 主题到达,跑完返回完整记录
+        var live = new List<ProviderDebugEventDto>();
+        var run = await _c.Providers.DebugRunAsync(deviceId, new ProviderDebugRunParams("integration-1", target, "openai-chat", "m1", "", 64, DebugThinking.Auto, false),
+            ev =>
+            {
+                lock (live)
+                {
+                    live.Add(ev);
+                }
+            });
+        var record = run.Value!;
+        Assert.True(record.Ok, record.Detail);
+        Assert.Equal("OK", record.Text);
+        Assert.Equal("https://draft.example.com/v1/chat/completions", record.Url);
+        Assert.Equal($"Bearer ••••{Secret[^4..]}", record.RequestHeaders.Single(h => h.Name == "authorization").Value);
+        Assert.Equal($"Bearer {Secret}", _up.LastChatAuthorization); // 上游收到的是真 key
+        lock (live)
+        {
+            Assert.NotEmpty(live);
+            Assert.All(live, ev => Assert.Contains(ev, record.Events));
+        }
+
+        // 线上载荷里没有明文;草稿不落盘
+        var wire = Encoding.UTF8.GetString(Ncw.Protocol.Wire.FrameCodec.EncodePayload(record, PayloadShapes.GetShape<ProviderDebugResultDto>()));
+        Assert.DoesNotContain(Secret, wire, StringComparison.Ordinal);
+        Assert.Empty(_c.ProvidersState.Providers);
+
+        // 调试对象不合法是结构化的结局
+        var bad = await _c.Providers.DebugModelsAsync(deviceId, new ProviderDebugTargetDto(null, "file:///etc/passwd"));
+        Assert.Equal((ActionOutcome.Invalid, "providers.invalidBaseUrl"), (bad.Outcome, bad.ErrorKey));
+        var noModel = await _c.Providers.DebugRunAsync(deviceId, new ProviderDebugRunParams("integration-2", target, "openai-chat", " ", "", 64, DebugThinking.Auto, false));
+        Assert.Equal("providers.debug.modelRequired", noModel.ErrorKey);
     }
 
     [Fact]

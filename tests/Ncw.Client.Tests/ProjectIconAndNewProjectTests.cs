@@ -186,9 +186,17 @@ public class ProjectIconAndNewProjectTests
         Assert.Equal("🐙", text.PreviewGlyph);
         Assert.Equal("#0F766E", text.Color);
 
-        var initials = new ProjectIconViewModel(Octopus, "octopus", stores.Layout.State.Appearance[Octopus], actions, () => NoDialogs.Instance);
-        Assert.Equal(ProjectIconMode.Initials, initials.Mode);
-        Assert.Equal("Oc", initials.PreviewGlyph); // 默认图标取两个字母(03 §11.8)
+        var none = new ProjectIconViewModel(Octopus, "octopus", stores.Layout.State.Appearance.GetValueOrDefault(Octopus), actions, () => NoDialogs.Instance);
+        Assert.Equal(ProjectIconMode.None, none.Mode);
+        Assert.Equal("", none.PreviewGlyph); // 不再有默认首字母图标
+        Assert.True(none.HasNoPreview);
+        Assert.False(none.ShowsColor);
+        Assert.Null(none.Build());
+
+        // 只存了底色的旧记录:当成「不设」打开,保存就清掉
+        var colorOnly = new ProjectIconViewModel(Octopus, "octopus", new ProjectAppearance(null, "#2563EB"), actions, () => NoDialogs.Instance);
+        Assert.Equal(ProjectIconMode.None, colorOnly.Mode);
+        Assert.Null(colorOnly.Build());
 
         var image = new ProjectIconViewModel(Ncw, "NextCoWork", new ProjectAppearance(null, "#2563EB", "AAAA"), actions, () => NoDialogs.Instance);
         Assert.Equal(ProjectIconMode.Image, image.Mode);
@@ -269,6 +277,28 @@ public class ProjectIconAndNewProjectTests
         await form.PickImageCommand.ExecuteAsync(null);
         Assert.Equal(1, cancel.Picks);
         Assert.Equal("BASE64", form.Image);
+    }
+
+    [Fact]
+    public void Only_a_user_set_icon_is_shown_the_default_initials_are_not()
+    {
+        var stores = MockWorkspace.Create(DateTimeOffset.Now);
+        RailProjectViewModel Tile() => new RailViewModel(stores, new LayoutActions(stores)).Items.OfType<RailProjectViewModel>()
+            .Concat(new RailViewModel(stores, new LayoutActions(stores)).Items.OfType<RailGroupViewModel>().SelectMany(g => g.Members)).Single(t => t.Project == Octopus);
+        void Set(ProjectAppearance? a) => stores.Layout.Update(s => s with { Appearance = a is null ? s.Appearance.Remove(Octopus) : s.Appearance.SetItem(Octopus, a) });
+
+        Set(null);
+        Assert.False(Tile().HasIcon);
+        Assert.NotEmpty(Tile().Glyph); // 默认首字母仍然给出(手机列表、「更改图标」预览用)
+
+        Set(new ProjectAppearance(null, "#2563EB")); // 只换了颜色:还是首字母,不算图标
+        Assert.False(Tile().HasIcon);
+
+        Set(new ProjectAppearance("🐙", "#2563EB"));
+        Assert.True(Tile().HasIcon);
+
+        Set(new ProjectAppearance(null, "#2563EB", "BASE64"));
+        Assert.True(Tile().HasIcon);
     }
 
     [Fact]

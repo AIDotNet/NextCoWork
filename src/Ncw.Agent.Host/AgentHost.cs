@@ -115,6 +115,11 @@ public sealed class AgentHost : IDisposable
         _topics.Register(CatalogMethods.Topic, () => Volatile.Read(ref _providerRuntime)?.CatalogState() ?? EmptyCatalog);
         _topics.Register(ProvidersMethods.Topic, () => Volatile.Read(ref _providerRuntime)?.ProvidersState() ?? new ProvidersTopicState(0, [], [], [], []));
         _topics.Register(ProvidersMethods.OAuthTopic, () => Volatile.Read(ref _providerRuntime)?.OAuthState() ?? new OAuthTopicState(null));
+        // 供应商调试的进度(前缀主题,owner):没开始 / 已回收的 runId 给空快照,所以控制端可以先订阅再发起。
+        _topics.RegisterPrefix(ProviderDebugMethods.TopicPrefix, PayloadShapes.GetShape<ProviderDebugTopicState>(),
+            name => Volatile.Read(ref _providerRuntime)?.DebugRuns.State(name[ProviderDebugMethods.TopicPrefix.Length..])
+                    ?? new ProviderDebugTopicState(name[ProviderDebugMethods.TopicPrefix.Length..], false, []),
+            Role.Owner);
         // 设备设置 / 定时任务:全量权威(首帧与事件同一个类型,带单调版本号);数据没就绪时是出厂 / 空状态(版本 0),就绪后发一次 changed。
         _topics.Register(SettingsMethods.Topic, () => Volatile.Read(ref _deviceServices)?.SettingsState() ?? new DeviceSettingsState(0, ServiceMapping.ToDto(Ncw.Agent.Services.Settings.DeviceSettings.Default, false)));
         _topics.Register(SchedulesMethods.Topic, () => Volatile.Read(ref _deviceServices)?.SchedulesState() ?? new SchedulesTopicState(0, [], []));

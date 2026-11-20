@@ -21,6 +21,13 @@ public sealed partial class AppearanceViewModel : ObservableObject
     /// <summary>操作系统是否要求减少动态效果;<c>null</c> = 这个平台读不到(Avalonia 12 没有这个 API,各宿主自己探测)。UI 层装配时接上。</summary>
     public Func<bool?> SystemReducesMotion { get; set; } = static () => null;
 
+    /// <summary>用户选的主题偏好(深色 / 浅色 / 跟随系统)。</summary>
+    public UiThemePreference Theme
+    {
+        get => _stores.Prefs.State.Theme;
+        set => _stores.Prefs.Update(p => p with { Theme = value });
+    }
+
     /// <summary>用户选的动效偏好。</summary>
     public UiMotionPreference Motion
     {
@@ -36,6 +43,7 @@ public sealed partial class AppearanceViewModel : ObservableObject
 
     private void OnPrefsChanged()
     {
+        OnPropertyChanged(nameof(Theme));
         OnPropertyChanged(nameof(Motion));
         OnPropertyChanged(nameof(EffectiveLevel));
         OnPropertyChanged(nameof(SystemUnknown));

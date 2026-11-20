@@ -319,6 +319,62 @@ public sealed class ProtocolTextConverter : IValueConverter
 }
 
 /// <summary>设备给的供应商错误 key(<c>providers.*</c>)/ 操作结局 → 文字。不认识的 key 显示通用失败。</summary>
+/// <summary>调试弹窗协议分段上的短名字(三段并排放得下)。</summary>
+public sealed class ProtocolShortTextConverter : IValueConverter
+{
+    public static readonly ProtocolShortTextConverter Instance = new();
+
+    public static string Text(string? protocol) => protocol switch
+    {
+        "anthropic" => "Anthropic",
+        "openai-chat" => "OpenAI Chat",
+        "openai-responses" => "Responses",
+        _ => protocol ?? "",
+    };
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// 调试弹窗事件流里第二列:事件的种类 / 名字。这些是线上的技术标识(SSE 事件名、停止原因、失败类别),原样显示,不翻译。
+/// </summary>
+public sealed class DebugEventNameConverter : IValueConverter
+{
+    public static readonly DebugEventNameConverter Instance = new();
+
+    public static string Text(Ncw.Protocol.Methods.ProviderDebugEventDto? ev) => ev switch
+    {
+        null => "",
+        { Kind: Ncw.Protocol.Methods.DebugEventKinds.Sse } => ev.Name is { Length: > 0 } name ? name : "message",
+        { Kind: Ncw.Protocol.Methods.DebugEventKinds.Request } => "→ request",
+        { Kind: Ncw.Protocol.Methods.DebugEventKinds.Response } => $"← {ev.Name}",
+        { Name: { Length: > 0 } n } => $"{ev.Kind} · {n}",
+        _ => ev.Kind,
+    };
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as Ncw.Protocol.Methods.ProviderDebugEventDto);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>调试弹窗协议分段上的圆点颜色(<see cref="Ncw.UI.Controls.NcwStatusDot.Tone"/>):通过绿、失败红、正在跑黄、还没试灰。</summary>
+public sealed class DebugStateToneConverter : IValueConverter
+{
+    public static readonly DebugStateToneConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    {
+        Ncw.Client.ViewModels.DebugProtocolState.Ok => "ok",
+        Ncw.Client.ViewModels.DebugProtocolState.Failed => "bad",
+        Ncw.Client.ViewModels.DebugProtocolState.Running => "warn",
+        _ => "mute",
+    };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 public sealed class ProviderErrorTextConverter : IValueConverter
 {
     public static readonly ProviderErrorTextConverter Instance = new();
@@ -345,6 +401,7 @@ public sealed class ProviderErrorTextConverter : IValueConverter
         "providers.discovery.alreadyImported" => NcwTextKind.ProvErrDiscoveryAlreadyImported,
         "providers.editor.keyRequired" => NcwTextKind.ProvErrKeyRequired,
         "providers.editor.idTaken" => NcwTextKind.ProvErrIdTaken,
+        "providers.debug.modelRequired" => NcwTextKind.ProvErrDebugModelRequired,
         "models.editor.aliasRequired" => NcwTextKind.ModelEditorErrAliasRequired,
         "models.editor.contextTooSmall" => NcwTextKind.ModelEditorErrContextTooSmall,
         "models.editor.outputTooLarge" => NcwTextKind.ModelEditorErrOutputTooLarge,

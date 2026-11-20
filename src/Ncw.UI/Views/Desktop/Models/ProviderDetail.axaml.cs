@@ -2,6 +2,8 @@ using Avalonia.Controls;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
+using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Models;
 
@@ -15,18 +17,18 @@ public partial class ProviderDetail : UserControl
     {
         if (sender is NcwDropdownMenu { DataContext: ProviderItemViewModel row } menu)
         {
-            var items = new List<NcwMenus.Item> { new(NcwTexts.Get(NcwTextKind.ProviderEdit), row.EditCommand) };
+            var items = new List<NcwMenus.Item> { new(NcwTexts.Get(NcwTextKind.ProviderEdit), row.EditCommand) { Glyph = ArcIcons.Pencil } };
             if (row.IsOAuth)
             {
-                items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderSignOut), row.SignOutCommand));
+                items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderSignOut), row.SignOutCommand) { Glyph = Lucide.Geometry(LucideIconKind.LogOut) });
             }
 
             if (row.HasLast4)
             {
-                items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderRemoveKey), row.RemoveKeyCommand, IsDestructive: true, SeparatorBefore: true));
+                items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderRemoveKey), row.RemoveKeyCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = Lucide.Geometry(LucideIconKind.KeyRound) });
             }
 
-            items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderRemove), row.RemoveCommand, IsDestructive: true, SeparatorBefore: !row.HasLast4));
+            items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.ProviderRemove), row.RemoveCommand, IsDestructive: true, SeparatorBefore: !row.HasLast4) { Glyph = ArcIcons.Trash2 });
             NcwMenus.Populate(menu, items);
         }
     }

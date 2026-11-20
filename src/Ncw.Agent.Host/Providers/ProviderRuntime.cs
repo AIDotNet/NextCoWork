@@ -23,6 +23,8 @@ namespace Ncw.Agent.Host.Providers;
 /// <item><see cref="ModelCatalogService"/>:定时更新随 Host 启停(<see cref="Start"/> 在数据就绪后调,<see cref="DisposeAsync"/> 停);HTTP / 时钟 / 定时器都可注入,默认 HTTP 是不跟随重定向、自动解压的 <see cref="HttpClient"/>(AOT 友好)。</item>
 /// <item><see cref="ProviderService"/>、账号池、<see cref="CredentialResolver"/>(<c>onChanged</c> 接 <see cref="ProviderService.OnCredentialChanged"/>)、<see cref="LlmRouter"/>(价目表 = 目录、用量落 <c>usage_records</c>)。</item>
 /// <item>本类同时是对话链路的 <see cref="HostModelResolver"/>:别名 → 绑定 与路由用同一段规则(<see cref="ProviderConfigSource"/>),界面说 A、请求发给 B 且不报错的分家 bug 不会出现。</item>
+/// <item>托管供应商 <c>nextcowork</c>:账户委托令牌(<see cref="DelegatedAccount"/>)交付 → 同步平台模型(Claude 系固定走 Anthropic 协议),撤销 → 整家清掉;
+/// 令牌只经 <see cref="ManagedCredentialVault"/> 进请求,不落盘。同步的重试、串行与「撤销后不复活」都在本类(<see cref="ReconcileManaged"/>)。</item>
 /// <item>事件 → 主题:<c>catalog.changed</c>、<c>providers.changed</c>、<c>providers.accounts.changed</c>、<c>providers.oauth.progress</c>。全部是全量状态,凭据永远不进事件。</item>
 /// </list>
 /// </summary>
@@ -34,10 +36,23 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
 
     private static readonly TimeSpan MaxInterval = TimeSpan.FromDays(7);
 
+    /// <summary>同一个账户的托管模型最多这么久重拉一次(委托令牌每次刷新都会重新交付,不能每次都打一遍 <c>/v1/models</c>)。</summary>
+    private static readonly TimeSpan ManagedResync = TimeSpan.FromHours(1);
+
+    /// <summary>同步失败的重试间隔(第一次立即做);用完就等下一次令牌交付再来。</summary>
+    private static readonly TimeSpan[] ManagedRetries = [TimeSpan.Zero, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5)];
+
     private readonly TopicHub _topics;
     private readonly ILoopDiagnostics _log;
     private readonly KvStore _kv;
     private readonly HttpClient? _ownedHttp;
+    private readonly DelegatedAccount _account;
+    private readonly TimeProvider _clock;
+    private readonly CancellationTokenSource _managedCts = new();
+    private readonly SemaphoreSlim _managedGate = new(1, 1);
+    private readonly Action _onAccountChanged;
+    private (string AccountId, string? TeamId, DateTimeOffset At)? _managedSynced;
+    private int _managedGeneration;
     private readonly object _oauthGate = new();
     private OAuthProgressDto? _oauthCurrent;
     private CatalogSettingsFile? _settings;
@@ -49,6 +64,8 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
     {
         _topics = topics;
         _log = log;
+        _clock = clock;
+        _account = services.ResolveAccount(clock);
         _kv = new KvStore(database);
         _settings = LoadSettings();
 
@@ -79,7 +96,8 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         };
 
         File = new ProviderFileStore(Path.Combine(ProfileRootOf(dataRoot), ProviderFileStore.FileName));
-        var vault = new ProviderCredentialVault(new CredentialStore(database, dataRoot, NoLegacySecrets.Instance), File);
+        var vault = new ManagedCredentialVault(
+            new ProviderCredentialVault(new CredentialStore(database, dataRoot, NoLegacySecrets.Instance), File), () => _account.AccessToken);
         var accounts = new ProviderAccountRepository(database, vault, clock);
         Catalog = new ModelCatalogService(http, services.CatalogStore ?? new FileCatalogStore(dataRoot), new KvOverrideStore(_kv), clock, services.CatalogDelayer, effective);
         // 设置页的几项每次现读:账号轮换(同一家的多个登录账号)、故障转移(这家挂了换另一家)、上游空闲超时。注入了自己的参数(测试)就以注入的为准。
@@ -90,6 +108,7 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
             OAuthLogins = services.OAuthLogins ?? (_ => null),
         };
         Config = new ProviderConfigSource(Providers, Catalog, deviceSettings is null ? null : () => deviceSettings.Current().Failover);
+        DebugRuns = new ProviderDebugRuns(topics, log);
         Discovery = new Ncw.Agent.Catalog.Discovery.ProviderDiscovery(Providers, services.DiscoveryHost ?? Ncw.Agent.Catalog.Discovery.LocalDiscoveryHost.Instance);
         Presets = services.Presets ?? BuiltinProviderPresets.Instance;
         Router = new LlmRouter(
@@ -102,11 +121,16 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         Providers.Changed += _ => PublishProviders();
         Providers.AccountsChanged += PublishAccounts;
         Providers.OAuthProgressChanged += OnOAuthProgress;
+        _onAccountChanged = ReconcileManaged;
+        _account.Changed += _onAccountChanged;
     }
 
     public ModelCatalogService Catalog { get; }
 
     public ProviderService Providers { get; }
+
+    /// <summary>正在进行 / 刚结束的供应商调试(<c>providers.debug/&lt;runId&gt;</c> 主题的真源)。</summary>
+    public ProviderDebugRuns DebugRuns { get; }
 
     /// <summary>供应商自动发现与导入(在这台设备上读其他客户端的配置)。</summary>
     public Ncw.Agent.Catalog.Discovery.ProviderDiscovery Discovery { get; }
@@ -144,6 +168,84 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         {
             Catalog.Start();
         }
+
+        // 令牌可能早在设备数据就绪之前就交付了(登录不等 2.x 接管):补一次。
+        ReconcileManaged();
+    }
+
+    // ───────────────────────── 托管供应商(NextCoWork 账户的模型通道) ─────────────────────────
+
+    /// <summary>
+    /// 令牌交付 / 撤销 / 启动时调:在位 → 同步平台模型;不在 → 清掉托管供应商。<see cref="_managedGeneration"/> 让「撤销之后迟到的同步结果」复活不了(规则 6),
+    /// 同步之间串行(换账户时后到的覆盖先到的)。同一个账户 + 团队一小时内不重复拉。永不抛。
+    /// </summary>
+    private void ReconcileManaged()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        var generation = Interlocked.Increment(ref _managedGeneration);
+        var status = _account.Status();
+        if (!status.Attached || status.AccountId is not { } accountId)
+        {
+            _managedSynced = null;
+            Providers.ClearManaged();
+            return;
+        }
+
+        if (Providers.HasManaged && _managedSynced is { } done && done.AccountId == accountId && done.TeamId == status.TeamId && _clock.GetUtcNow() - done.At < ManagedResync)
+        {
+            return;
+        }
+
+        _ = Task.Run(() => SyncManagedAsync(generation, accountId, status.TeamId, _managedCts.Token));
+    }
+
+    private async Task SyncManagedAsync(int generation, string accountId, string? teamId, CancellationToken ct)
+    {
+        try
+        {
+            foreach (var delay in ManagedRetries)
+            {
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, _clock, ct).ConfigureAwait(false);
+                }
+
+                await _managedGate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    if (generation != Volatile.Read(ref _managedGeneration))
+                    {
+                        return; // 又有新的交付 / 撤销:这一轮作废,新的那一轮自己负责。
+                    }
+
+                    await Providers.SyncManagedAsync(ct).ConfigureAwait(false);
+                    _managedSynced = (accountId, teamId, _clock.GetUtcNow());
+                    return;
+                }
+                catch (ProviderException e) when (e.Key is ProviderErrorKeys.NoCredential or ProviderErrorKeys.FetchRejected)
+                {
+                    // 令牌不在 / 被平台拒:重试没有意义,下一次令牌交付(刷新、重新登录)会再来。
+                    _log.Warn($"The NextCoWork model sync stopped: {e.Key}.", e);
+                    return;
+                }
+                catch (ProviderException e)
+                {
+                    _log.Warn($"The NextCoWork model sync failed ({e.Key}); will retry.", e);
+                }
+                finally
+                {
+                    _managedGate.Release();
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 关机。
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -152,6 +254,9 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         {
             return;
         }
+
+        _account.Changed -= _onAccountChanged;
+        await _managedCts.CancelAsync().ConfigureAwait(false);
 
         File.StopWatching();
         await Catalog.StopAsync().ConfigureAwait(false);

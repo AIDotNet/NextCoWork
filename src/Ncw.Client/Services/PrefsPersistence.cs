@@ -137,13 +137,15 @@ public sealed record UiPrefsDto(
     string[]? InspectorTabs,
     string? Motion = null,
     Dictionary<string, string>? Shortcuts = null,
-    AttentionPrefsDto? Attention = null)
+    AttentionPrefsDto? Attention = null,
+    string? Theme = null)
 {
     public static UiPrefsDto From(UiPrefs prefs) => new(
         1, prefs.SidebarWidth, prefs.InspectorWidth, prefs.IsSidebarOpen, prefs.IsInspectorOpen,
         [.. prefs.InspectorTabs.Select(t => t.ToString())], prefs.Motion.ToString(),
         prefs.ShortcutOverrides.Count == 0 ? null : prefs.ShortcutOverrides.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
-        prefs.Attention is { } a ? new AttentionPrefsDto(a.NotifyPending, a.NotifyCompleted, a.NotifyFailed, a.Badge, a.Tray) : null);
+        prefs.Attention is { } a ? new AttentionPrefsDto(a.NotifyPending, a.NotifyCompleted, a.NotifyFailed, a.Badge, a.Tray) : null,
+        prefs.Theme.ToString());
 
     public UiPrefs ToPrefs() => new(
         SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen,
@@ -154,7 +156,8 @@ public sealed record UiPrefsDto(
             .Select(kv => (Ok: Enum.TryParse<AppCommand>(kv.Key, out var command) && Enum.IsDefined(command), Command: command, kv.Value))
             .Where(x => x.Ok && x.Value is not null)
             .ToImmutableDictionary(x => x.Command, x => x.Value),
-        Attention is { } a ? new AttentionPrefs(a.NotifyPending ?? true, a.NotifyCompleted ?? true, a.NotifyFailed ?? true, a.Badge ?? true, a.Tray ?? true) : null);
+        Attention is { } a ? new AttentionPrefs(a.NotifyPending ?? true, a.NotifyCompleted ?? true, a.NotifyFailed ?? true, a.Badge ?? true, a.Tray ?? true) : null,
+        Enum.TryParse<UiThemePreference>(Theme, out var theme) && Enum.IsDefined(theme) ? theme : UiThemePreference.Dark);
 }
 
 /// <summary>通知偏好在文件里的形状:每项可空(缺失 = 默认开)。</summary>

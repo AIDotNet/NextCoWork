@@ -4,10 +4,12 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Ncw.Client.Shortcuts;
+using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 using Ncw.Core.Layout;
 using Ncw.UI.Controls;
 using Ncw.UI.Views.Desktop.Tree;
+using TKCode.Arc;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -92,6 +94,24 @@ public partial class Sidebar : UserControl
         {
             shell.OpenAccountSettingsCommand.Execute(null);
         }
+    }
+
+    /// <summary>底部主题切换按钮:在 Arc 的页面过渡里把偏好写进 <see cref="AppearanceViewModel.Theme"/> 并应用到 Arc。</summary>
+    private void OnThemeChangeRequested(object? sender, ThemeSwitcherChangeRequestedEventArgs e)
+    {
+        if (this.FindAncestorOfType<DesktopShell>()?.DataContext is not ShellViewModel shell)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var next = e.Next == ThemeSwitcherAppearance.Light ? UiThemePreference.Light : UiThemePreference.Dark;
+        _ = ThemeSwitcher.RunTransitionAsync(ThemeButton, e.Variant, () =>
+        {
+            shell.Settings.Appearance.Theme = next;
+            NcwAppearance.Apply(next);
+            return Task.CompletedTask;
+        });
     }
 
     // ───────────────────────── 拖放 ─────────────────────────

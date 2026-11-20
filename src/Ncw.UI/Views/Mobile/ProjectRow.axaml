@@ -7,11 +7,12 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Mobile.ProjectRow"
              x:DataType="vm:RailProjectViewModel">
-  <!-- 项目列表里的一行(顶层项目和项目组里的项目共用):色块头像、名字、设备 · 分支、状态点 / 角标。点击由所在页面处理(冒泡的 Click)。 -->
+  <!-- 项目列表里的一行(顶层项目和项目组里的项目共用):用户设过的图标、名字、设备 · 分支、状态点 / 角标。点击由所在页面处理(冒泡的 Click)。 -->
   <ui:PlainButton Padding="0" CornerRadius="12" AutomationProperties.Name="{Binding Name}">
     <Border Classes="card" Padding="12,10" MinHeight="64" Opacity="{Binding IsOffline, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-        <Panel Width="40" Height="40">
+        <!-- 图标:用户设过才画(文字 + 底色或图片);没设过只显示名字,不画默认首字母 -->
+        <Panel Width="40" Height="40" IsVisible="{Binding HasIcon}">
           <Border CornerRadius="10" Background="{Binding Color, Converter={x:Static cv:HexBrushConverter.Instance}}" IsVisible="{Binding !HasImage}">
             <TextBlock Text="{Binding Glyph}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
           </Border>

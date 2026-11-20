@@ -37,30 +37,12 @@ public static class WireProtocols
         _ => null,
     };
 
-    /// <summary>
-    /// 每种协议实际要打的路径。两族协议的版本段约定是反的:Anthropic 的 base 不带 <c>/v1</c>,路径自己补;
-    /// OpenAI 族的版本段是 base 的一部分(智谱 <c>/api/paas/v4</c>、火山 <c>/api/v3</c>……),路径只有 <c>/chat/completions</c>。
-    /// </summary>
-    public static string PathOf(this WireProtocol protocol) => protocol switch
-    {
-        WireProtocol.Anthropic => "/v1/messages",
-        WireProtocol.OpenAiChat => "/chat/completions",
-        WireProtocol.OpenAiResponses => "/responses",
-        _ => throw new ArgumentOutOfRangeException(nameof(protocol)),
-    };
+    /// <summary>每种协议实际要打的路径(规则在 <see cref="Ncw.Core.Domain.ProviderEndpoints.ChatPath"/>,控制端显示「最终地址」用同一份)。</summary>
+    public static string PathOf(this WireProtocol protocol) =>
+        Ncw.Core.Domain.ProviderEndpoints.ChatPath(protocol.NameOf()) ?? throw new ArgumentOutOfRangeException(nameof(protocol));
 
-    /// <summary>
-    /// base 与 path 拼接。去重 <c>/v1</c> 只服务 Anthropic:用户手填 <c>.../anthropic/v1</c> 时避免拼出 <c>/v1/v1/messages</c>。
-    /// 设置页必须把最终拼出的 URL 显示出来,因为这条规则不可能对所有 base 都正确。
-    /// </summary>
-    public static string JoinUrl(string baseUrl, string path)
-    {
-        var baseTrimmed = baseUrl.TrimEnd('/');
-        var p = path.StartsWith('/') ? path : "/" + path;
-        return baseTrimmed.EndsWith("/v1", StringComparison.Ordinal) && p.StartsWith("/v1/", StringComparison.Ordinal)
-            ? baseTrimmed + p[3..]
-            : baseTrimmed + p;
-    }
+    /// <summary>base 与 path 拼接(规则在 <see cref="Ncw.Core.Domain.ProviderEndpoints.JoinUrl"/>,控制端显示「最终地址」用同一份)。</summary>
+    public static string JoinUrl(string baseUrl, string path) => Ncw.Core.Domain.ProviderEndpoints.JoinUrl(baseUrl, path);
 
     /// <summary>鉴权头。OAuth 的 access token 和 API Key 在鉴权头这一点上同构。编码器不碰凭据,由路由统一加。</summary>
     public static KeyValuePair<string, string> AuthHeader(this WireProtocol protocol, string bearer) =>

@@ -42,8 +42,8 @@
       <ui:PlainButton x:Name="RowButton" Grid.Column="1" Padding="4,0,6,0" CornerRadius="7" Command="{Binding ActivateCommand}"
                       AutomationProperties.Name="{Binding Tile.Name}" arc:Tooltip.Tip="{Binding Tile.Tooltip}">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-          <!-- 图标:文字 / 首字母 + 底色,或自定义图片(规则同手机项目列表);离线时变淡 -->
-          <Panel Width="20" Height="20" VerticalAlignment="Center" Classes.offline="{Binding Tile.IsOffline}">
+          <!-- 图标:用户设过的文字 + 底色,或自定义图片;没设过不画(默认的首字母色块和名字重复)。离线时变淡 -->
+          <Panel Width="20" Height="20" VerticalAlignment="Center" Classes.offline="{Binding Tile.IsOffline}" IsVisible="{Binding Tile.HasIcon}">
             <Panel.Styles>
               <Style Selector="Panel.offline"><Setter Property="Opacity" Value="0.45" /></Style>
             </Panel.Styles>

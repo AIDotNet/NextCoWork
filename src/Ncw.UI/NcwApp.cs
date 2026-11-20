@@ -32,6 +32,7 @@ public class NcwApp : Application
     private PrefsPersistence? _prefs;
     private LayoutPersistence? _layout;
     private IDisposable? _motion;
+    private IDisposable? _theme;
     private INcwBackend? _backend;
     private IUpdateService? _updates;
     private NcwAttention? _attention;
@@ -166,6 +167,7 @@ public class NcwApp : Application
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
             _layout = new LayoutPersistence(stores, new JsonFileLayoutRepository(Path.Combine(ClientDirectory, "layout.json")));   // 项目外观(自定义图标)
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
+            _theme = NcwAppearance.Bind(stores); // 明暗主题:偏好 → Arc 主题
             stores.Startup.Reach(StartupMilestone.PlatformReady);
             ShellViewModel? shell = null;
             if (UseMockData)
@@ -250,6 +252,7 @@ public class NcwApp : Application
                 _updates?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
                 _account?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(1));
                 _motion?.Dispose();
+                _theme?.Dispose();
                 _prefs?.Dispose();
                 _layout?.Dispose();
                 // 退出时让 Agent 收尾;最多等 3 秒,不能卡住退出。
@@ -277,6 +280,7 @@ public class NcwApp : Application
             _prefs = new PrefsPersistence(stores, new JsonFilePrefsRepository(Path.Combine(ClientDirectory, "ui.json")));
             _layout = new LayoutPersistence(stores, new JsonFileLayoutRepository(Path.Combine(ClientDirectory, "layout.json")));   // 项目外观(自定义图标)
             _motion = NcwMotion.Bind(stores);   // 动效级别:偏好 → Arc 主题(docs/design/03 §9)
+            _theme = NcwAppearance.Bind(stores); // 明暗主题:偏好 → Arc 主题
             stores.Startup.Reach(StartupMilestone.PlatformReady);
             var mobileShell = new ShellViewModel(stores, devices: devices, host: MobileHostFactory?.Invoke());
             mobileShell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();

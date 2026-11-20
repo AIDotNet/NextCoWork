@@ -125,9 +125,14 @@ public partial class ComposerView : UserControl
             return;
         }
 
-        NcwMenus.Populate(AttachMenu, new[] { (AttachmentSource.PhotoLibrary, NcwTextKind.AttachmentPhotoLibrary), (AttachmentSource.Camera, NcwTextKind.AttachmentCamera), (AttachmentSource.File, NcwTextKind.AttachmentFile) }
+        NcwMenus.Populate(AttachMenu, new[]
+            {
+                (AttachmentSource.PhotoLibrary, NcwTextKind.AttachmentPhotoLibrary, LucideIconKind.Image),
+                (AttachmentSource.Camera, NcwTextKind.AttachmentCamera, LucideIconKind.Camera),
+                (AttachmentSource.File, NcwTextKind.AttachmentFile, LucideIconKind.Paperclip),
+            }
             .Where(x => vm.Attachments.IsAvailable(x.Item1))
-            .Select(x => new NcwMenus.Item(NcwTexts.Get(x.Item2), vm.Attachments.PickCommand, x.Item1)));
+            .Select(x => new NcwMenus.Item(NcwTexts.Get(x.Item2), vm.Attachments.PickCommand, x.Item1) { Glyph = Lucide.Geometry(x.Item3) }));
         // 触发器:供应商首字母 + 模型名;思考刻度 + 短名;权限图标 + 文字(按档位着色)
         ModelText.Text = vm.SelectedModel is { } model ? model.DisplayName : NcwTexts.Get(NcwTextKind.NoModelSelected);
         ModelGlyph.Text = vm.SelectedModel is { ProviderName.Length: > 0 } provider ? provider.ProviderName[..1].ToUpperInvariant() : "?";

@@ -172,6 +172,12 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
     [RelayCommand]
     private async Task TestAsync()
     {
+        if (owner.SupportsDebug)
+        {
+            await owner.DebugProviderAsync(this);
+            return;
+        }
+
         TestInfo = new TestResult(TestState.Testing, null, null);
         var result = await owner.TestProviderAsync(Id);
         TestInfo = result is { IsOk: true, Value.Ok: true }
@@ -706,7 +712,10 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
 
         var text = _text();
-        var editor = new ProviderEditorViewModel(_providers, device, _templates, [.. Providers.Select(p => p.Id)], Discovery.ImportableCount, text.TemplateVariant);
+        var editor = new ProviderEditorViewModel(_providers, device, _templates, [.. Providers.Select(p => p.Id)], Discovery.ImportableCount, text.TemplateVariant)
+        {
+            ShowDebug = form => _dialogs().ShowProviderDebugAsync(form),
+        };
         await ShowEditorAsync(editor, isNew: true);
     }
 
@@ -718,7 +727,10 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
             return;
         }
 
-        var editor = new ProviderEditorViewModel(_providers, device, provider.Dto, TemplateOf(provider.BaseUrl, provider.Protocol));
+        var editor = new ProviderEditorViewModel(_providers, device, provider.Dto, TemplateOf(provider.BaseUrl, provider.Protocol))
+        {
+            ShowDebug = form => _dialogs().ShowProviderDebugAsync(form),
+        };
         await ShowEditorAsync(editor, isNew: false);
     }
 
@@ -778,6 +790,23 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         {
             Report(await _providers.RemoveAsync(device, provider.Id));
         }
+    }
+
+    /// <summary>设备支持调试弹窗:详情页的「测试」打开它,而不是只探一下模型列表端点。</summary>
+    internal bool SupportsDebug => DeviceId is { } device && _providers.SupportsDebug(device);
+
+    /// <summary>「测试」(新设备):打开调试弹窗测已保存的这家;候选里先放这家已经配过的上游模型。</summary>
+    internal Task DebugProviderAsync(ProviderItemViewModel provider)
+    {
+        if (DeviceId is not { } device)
+        {
+            return Task.CompletedTask;
+        }
+
+        var dto = provider.Dto;
+        var known = provider.Aliases.Select(a => a.Upstream).Distinct(StringComparer.Ordinal).ToList();
+        var form = new ProviderDebugViewModel(_providers, device, new ProviderDebugTargetDto(dto.Id), dto.Name, dto.BaseUrl, dto.Protocol, known);
+        return _dialogs().ShowProviderDebugAsync(form);
     }
 
     internal Task<ActionResult<ProviderTestResultDto>> TestProviderAsync(string providerId) =>

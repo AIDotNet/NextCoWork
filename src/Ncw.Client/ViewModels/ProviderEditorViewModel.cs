@@ -15,6 +15,9 @@ public interface IProviderEditorCommands
     Task<ActionResult<CredentialInfoDto>> SetApiKeyAsync(string deviceId, string providerId, string apiKey, CancellationToken ct = default);
 
     Task<ActionResult<ProviderTestResultDto>> TestAsync(string deviceId, string providerId, CancellationToken ct = default);
+
+    /// <summary>设备支持调试弹窗(能力 <c>providers.debug</c>)。不支持时「保存」退回「保存并测试」。</summary>
+    bool SupportsDebug(string deviceId) => false;
 }
 
 /// <summary>弹窗的两步。</summary>
@@ -107,7 +110,8 @@ public static class ProviderTemplateItems
 
 /// <summary>
 /// 「添加 / 编辑供应商」弹窗(docs/design/07 §3「添加供应商」):新建时先选模版(分组网格 + 搜索),再填 key,地址、协议、名字、id 都按模版填好、收在「高级」里;
-/// 「自定义」直接展开全部字段。保存 = 写供应商 → 存 key(只写不读,送出就清空)→ 测一次连接;测试失败时原因留在弹窗里,可以改了再试,或「保留并关闭」。
+/// 「自定义」直接展开全部字段。「测试」打开调试弹窗,测的是表单里的草稿(不用先保存,见 docs/design/07「供应商调试」);
+/// 保存 = 写供应商 → 存 key(只写不读,送出就清空)→ 关弹窗。设备不支持调试(老设备)时保存后再测一次连接,测试失败时原因留在弹窗里,可以改了再试,或「保留并关闭」。
 /// 模版是打开弹窗时查到的一次性结果(不进 Store);弹窗的全部状态都是这一次的纯 UI 状态。
 /// </summary>
 public sealed partial class ProviderEditorViewModel : ObservableObject
@@ -208,11 +212,43 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     /// <summary>保存完成(含「保留并关闭」),界面据此关窗口。</summary>
     public event Action? Completed;
 
+    /// <summary>弹出调试弹窗(界面给;没有界面的测试不给 = 没有「测试」按钮)。</summary>
+    public Func<ProviderDebugViewModel, Task>? ShowDebug { get; init; }
+
+    /// <summary>这台设备能调试:有「测试」按钮,「保存」不再自动测连接。</summary>
+    public bool DebugEnabled => ShowDebug is not null && _commands is IProviderDebugCommands && _commands.SupportsDebug(_deviceId);
+
+    /// <summary>「保存」顺带测一次连接(老设备)。</summary>
+    public bool SaveTests => !DebugEnabled;
+
+    public bool CanTest => DebugEnabled && IsFormStep && !IsSaving && Uri.TryCreate(BaseUrl.Trim(), UriKind.Absolute, out _);
+
+    /// <summary>打开调试弹窗测表单里的草稿:地址、协议、刚填的 key(留空 = 已存的那把)。跑通了别的协议可以「使用这个协议」改草稿。</summary>
+    [RelayCommand]
+    private async Task TestAsync()
+    {
+        if (!CanTest || _commands is not IProviderDebugCommands debug || ShowDebug is null)
+        {
+            return;
+        }
+
+        var key = ApiKey.Trim();
+        var savedId = IsNew ? _createdId : Id;
+        var target = new ProviderDebugTargetDto(savedId, BaseUrl.Trim(), Protocol, key.Length > 0 ? key : null);
+        var name = Name.Trim().Length > 0 ? Name.Trim() : AdvancedSummary;
+        var form = new ProviderDebugViewModel(debug, _deviceId, target, name, BaseUrl, Protocol, canApplyProtocol: true);
+        await ShowDebug(form);
+        if (form.AppliedProtocol is { } protocol && protocol != Protocol)
+        {
+            Protocol = protocol;
+        }
+    }
+
     /// <summary>点了顶部的「去导入」:界面关窗口,模型页切到「从其他应用导入」。</summary>
     public event Action? DiscoveryRequested;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsPickStep), nameof(IsFormStep), nameof(ShowsDiscoveryBanner))]
+    [NotifyPropertyChangedFor(nameof(IsPickStep), nameof(IsFormStep), nameof(ShowsDiscoveryBanner), nameof(CanTest))]
     public partial ProviderEditorStep Step { get; private set; }
 
     public bool IsPickStep => Step == ProviderEditorStep.Pick;
@@ -368,6 +404,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     partial void OnBaseUrlChanged(string value)
     {
         OnPropertyChanged(nameof(AdvancedSummary));
+        OnPropertyChanged(nameof(CanTest));
         Touch();
     }
 
@@ -378,7 +415,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     public bool CanEditId => IsNew && _createdId is null;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(CanSave), nameof(CanTest))]
     public partial bool IsSaving { get; private set; }
 
     /// <summary>保存前 / 写入失败的原因(稳定 key,界面翻译)。</summary>
@@ -463,7 +500,14 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
                 HasCredential = true;
             }
 
-            // 测一次连接(用模型列表端点探,不烧 token);没过就把原因留在弹窗里
+            // 能调试的设备:测试是「测试」按钮的事,保存就是保存
+            if (DebugEnabled)
+            {
+                Completed?.Invoke();
+                return;
+            }
+
+            // 老设备:测一次连接(用模型列表端点探,不烧 token);没过就把原因留在弹窗里
             var test = await _commands.TestAsync(_deviceId, id);
             if (test is { IsOk: true, Value.Ok: true })
             {

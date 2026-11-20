@@ -108,7 +108,8 @@
 - **单实例转发**:`SingleInstance`——主实例独占客户端目录下的锁文件(`FileShare.None`,进程崩溃由操作系统释放),在当前用户专属的命名管道(`CurrentUserOnly`)上监听;后启动的进程把 `link <uri>` / `activate` 转过去再退出。收到的内容不可信:只收第一行、≤ 16 KB、读取 5 秒期限,不解释,交给 `NcwLinkParser`。macOS 的 OpenUri 激活经 Avalonia 的 `IActivatableLifetime`(`ProtocolActivatedEventArgs`)进同一个收件箱 `NcwLinkInbox`。
 - **各平台注册**:macOS 靠 `tools/Ncw.Build` 的 bundle 写进 Info.plist(`CFBundleURLTypes`,已有);Windows 运行时写 `HKCU\Software\Classes\nextcowork`(Velopack 安装钩子以后接管,卸载时删);Linux 运行时写 `~/.local/share/applications/nextcowork-url-handler.desktop` 并 `xdg-mime default`(AppImage 用 `APPIMAGE` 指向的文件)。注册只做「尽力而为」;用 `dotnet` 主机启动(开发)或设了 `NCW_REGISTER_URL_SCHEME=0` 不会去改系统注册。
 - **账户后端(`IAccountApi` / `HttpAccountApi`)**:沿用 2.x 的真实端点(`/api/client/oauth/token`、`/revoke`、`/api/client/account`、`/api/client/context/options|select`、`/api/client/usage`),响应容忍 `{ data: … }` 外壳,10 秒超时,令牌只在请求头 / 体里。**与线上后端一致的部分**:授权页 `https://nextco.work/client/authorize`、`client_id = nextcowork-desktop`、`redirect_uri = http://127.0.0.1:{端口}/callback`、`scope` 沿用 2.x 的完整串(后端是**全等匹配**,少一个插件市场就 401),所有请求带 `User-Agent: NextCoWork/3.x`(后端按 `NextCoWork/` 前缀识别桌面客户端、给会话起设备名)。**后端仓库已实现、待部署的端点**(部署前线上得到 404 / 405 = `Unsupported`,客户端优雅降级):设备授权 `POST /api/client/oauth/device`(RFC 8628 §3.1,轮询走令牌端点的 `urn:ietf:params:oauth:grant-type:device_code`)、委托令牌 `POST /api/client/oauth/delegate`(没有就退回访问令牌)、控制端列表与撤销 `GET|DELETE /api/client/sessions[/{id}]`。这些在 05 §6 登记为 B11 / B13 / B14 / B15。
-- **没做(等后端或真机)**:账户配置同步 `configSync`(B10 `RailLayout` 跨端分组)只留接口位置和本地快照语义,后端到位前**保持关闭**;模型通道的托管供应商 `nextcowork`(`/v1/models` 同步成别名)随后端接入——Agent 已经能从 `DelegatedAccount` 拿令牌;钱包 / 余额 / 充值(3.0 不涉及支付);手机端的 `ASWebAuthenticationSession` / Custom Tabs 回跳(属于 M5 的宿主);各平台协议注册的真机验证(见 04 §7)。
+- **托管供应商 `nextcowork`(登录后内置的模型通道,已实现)**:`Ncw.Agent.Catalog/Providers/ManagedProvider.cs` + `ProviderService.SyncManagedAsync` / `ClearManaged` + `ProviderRuntime.ReconcileManaged`。委托令牌交付(登录、刷新、换团队、设备重连)→ Agent 用它请求 `https://nextco.work/v1/models`,整份替换成内存里的一层供应商 + 别名;撤销(退出登录 / 登录失效)→ 整家消失。它**不进 `providers.json`、不落盘**:凭据 ref `provider:nextcowork` 经 `ManagedCredentialVault` 读到的永远是内存里的委托令牌(令牌不进 DTO / 事件 / 日志,凭据摘要只回「有没有」,不回后四位,`providers.credential.reveal` 拒绝);名字、地址、凭据 ref 归登录流程,别名 / 改名 / 编辑 / 删除 / 手填密钥一律以 `providers.managedProvider` 拒绝。出厂协议 `openai-responses`(平台网关主推,带完整 `reasoning` 往返),优先级 1(排在用户自己配的供应商前面)。**Claude 系模型一律固定走 Anthropic 协议**(`/v1/messages`;`ManagedProvider.ProtocolFor` 是唯一的判断,认 `claude-*`、`vendor/claude-*`、`<region>.anthropic.claude-*`,不分大小写),写在别名的协议覆盖上,选择器 / 解析 / 路由读到的是同一个值;否则会继承 Responses,Claude 的思考档位(`thinking.budget_tokens`)和提示词缓存语义在兼容层里被丢掉,而且零报错。同一个账户 + 团队一小时内不重复拉;拉取失败保留上一份并按 15 秒 / 1 分钟 / 5 分钟重试(令牌不在或被平台拒绝则不重试,等下一次令牌交付);拉的过程中退出登录,迟到的结果不会让它复活。**差异(相对 2.x `client-auth.ts`)**:① 模型表是**每次登录同步的全量、不可编辑**(2.x 是首次灌入后可编辑,为此要处理「用户删掉的模型自己回来」);② 不落库,Agent 重启后在控制端重新交付令牌之前没有这家(控制端在设备连上时就交付);③ 强制 Anthropic 的只有 Claude 系(2.x 还有 DeepSeek / 智谱 / 小米 / Qwen 四家平台侧要求,3.0 未带);④ 控制端设置页还没有给这家画「由账户管理」的只读样式(操作会被拒并显示 `ProvErrManaged` 文案)。
+- **没做(等后端或真机)**:账户配置同步 `configSync`(B10 `RailLayout` 跨端分组)只留接口位置和本地快照语义,后端到位前**保持关闭**;钱包 / 余额 / 充值(3.0 不涉及支付);手机端的 `ASWebAuthenticationSession` / Custom Tabs 回跳(属于 M5 的宿主);各平台协议注册的真机验证(见 04 §7)。
 
 ## 3. 设置页(重新设计)
 
@@ -249,8 +250,10 @@
   搜索框(按名字、id、地址、端点标签,不分大小写),分组网格:常用 → 国际 → 国内 → 聚合平台 → 本机 → 其他(认不出的分组 + 最后一张「自定义」)。搜不到时给「改用自定义」。
 - **第二步(表单)**:页头是返回、logo、名字(带端点标签)、地址;要 key 的模版只露一个 API Key 输入框 + 「获取 API Key」(浏览器打开模版给的地址);本机服务换成一句「不需要 API Key,确认它在设备那台电脑上运行」。
   名字、标识、地址、协议、启用收在「高级」里(折起来时右边写「协议 · 主机名」);「自定义」和编辑一直展开。标识按模版 id 建议,已被占用就加 `-2`、`-3`(纯函数 `ProviderTemplateMatch.SuggestId`)。
-- **保存并测试**:写供应商 → 存 key(只写不读,送出就清空)→ 测一次连接(`providers.test`)。通过就关弹窗、在列表里选中它;没通过时原因留在弹窗里(「已保存,但连接测试没通过:……」),
-  可以改了再试(同一个标识,是更新),或「保留并关闭」。新建要 key 的模版不填 key 先拦住(自定义不拦:有的网关不要 key);标识被占在客户端就拦住。
+- **测试与保存(2026-11 起)**:按钮行是「测试」「取消」「保存」。「测试」打开下面的「供应商调试」弹窗,测的是**表单里的草稿**(地址、协议、刚填的 key;编辑时 key 留空就用已存的那把),
+  不用先保存,也不写任何东西;调试里跑通了可以「使用这个协议」把草稿的协议改过来。「保存」= 写供应商 → 存 key(只写不读,送出就清空)→ 关弹窗、在列表里选中它,**不再自动测连接**。
+  写入失败时原因留在弹窗里。新建要 key 的模版不填 key 先拦住(自定义不拦:有的网关不要 key);标识被占在客户端就拦住。
+  设备不报 `providers.debug` 能力(老设备)时没有「测试」按钮,「保存」退回老行为:保存后 `providers.test` 测一次,没通过原因留在弹窗里,可以改了再试或「保留并关闭」。
   表单有改动时点遮罩不关,Esc 和「取消」照常关。
 - **logo**:`Assets/ProviderLogos/<服务>.svg`,取自 models.dev 的单色 logo(MIT,许可证在同目录);`NcwProviderLogo` 只解析 logo 里用到的那部分 SVG(path 的填充 / 描边 / 透明度 / 变换),
   不引入 SVG 库,**颜色跟随 Arc 前景 token**,不带品牌色(深浅主题和强调色预设下一致)。没有 logo 的服务(百川、零一万物、混元、千帆)和认不出的地址画名字首字母。
@@ -260,6 +263,27 @@
 - 测试:`Ncw.Agent.Catalog.Tests/ProviderTemplatesTests`(每个已知服务都有默认模版、id 唯一、一个端点一条、分组和地址)、`Ncw.Protocol.Tests/ProviderTemplatesDtoTests`(冻结向量、方法表)、
   `Ncw.Core.Tests/ProviderTemplateMatchTests`、`Ncw.Client.Tests/ProviderEditorViewModelTests`(分组、搜索、填表、拦截、保存并测试、失败不关、编辑、老设备)、
   `Ncw.Integration.Tests/ConfigLinkTests`(真 Agent 给模版、两边常量一致)、`Ncw.UI.Tests/ProviderEditorDialogTests`(内置 logo 都能解析、宽 640 / 窄窗口、截图 `provider-editor-*`)。
+
+### 供应商调试(2026-11)
+
+「测试」不再只是探一下模型列表端点:模型列表端点 2xx 只说明 key 被认了,说明不了「这个模型用这个协议能不能聊」。现在「测试」打开一个**调试台**弹窗(方案页里选的 A:一次一条请求,看得最细),
+入口有两个:供应商详情页的「测试」(测已保存的供应商)和「添加 / 编辑供应商」弹窗的「测试」(测表单草稿,见上文)。协议是 09 `providers.debug.*`(能力 `providers.debug`)。
+
+- **布局**(宽 900,左栏 320,窗口窄时 Arc 收到「窗口宽 − 32」):左栏是请求配置——模型(可编辑的下拉:候选来自 `providers.debug.models`,也可以手填;候选旁写「上游列表 · N 个」或拉取失败的原因)、
+  协议(三段:Anthropic / OpenAI Chat / OpenAI Responses,每段一个小圆点记着这个协议上一次的结果:绿 = 通过、红 = 失败、灰 = 还没试)、最终地址(按所选协议拼出来,纯函数 `ProviderEndpoints`,和设备拼 URL 同一条规则)、
+  提示词(缺省「只回复两个字母:OK」)、思考(跟随模型 / 关 / 低 / 中 / 高)、最大输出(缺省 1024)、「带一个工具」(只验证端点接不接受工具定义);底部「发送」/「停止」。
+  右栏是结果:一行状态(状态码、首字耗时、总耗时、输入 / 输出 token、停止原因),下面四个标签页——**回复**(思考 + 正文 + 工具调用)、**请求**(方法、URL、头、正文)、**响应**(状态行、响应头、错误正文)、**事件流**(每个 SSE 事件一行:相对毫秒、事件名、数据)。
+- **执行**:设备用对话的同一套代码组请求(编码器、思考参数适配、请求补丁、Anthropic 缓存与身份、传输装饰、签名)、发一次、用同一套解码器解;不走重试 / 换家 / 账号轮换 / 健康评分 / 用量记录。
+  模型是已有别名的上游模型时,用那条别名的思考配置和请求补丁(只把协议换成所选的);否则按目录推导。发送时实时显示事件流和回复(`providers.debug/<runId>` 主题),跑完以返回的完整记录为准。
+  「停止」取消这次调用,设备掐断上游连接。空闲 60 秒没有任何字节、或整体超过 3 分钟就判超时。
+- **凭据**:请求头里的 key 一律显示成 `••••后四位`;正文、响应、事件里出现的 key 抹成 `[redacted]`,私钥块抹成 `[redacted key]`。草稿 key 只用于这一次请求。
+- **一键应用**:从编辑弹窗打开、跑通的协议和草稿不同时,出现「使用这个协议」(改草稿的协议,关调试弹窗);从详情页打开时不做应用(模型的协议覆盖在「编辑模型」里改)。
+- **老设备**(不报 `providers.debug`):详情页「测试」退回 `providers.test` 那一行结果,编辑弹窗退回「保存并测试」。
+- 拉模型列表也改了:Anthropic 兼容中转很多没有 `/v1/models`,而 OpenAI 族的 `/models` 往往在。导入(`providers.models.fetch`)先试这家协议那一族,失败或为空再试另一族;调试的候选(`providers.debug.models`)两族都试,合并去重(先这家协议那一族),每一族的结果都列出来。
+- 实现:Llm `Ncw.Agent.Llm/Diagnostics/ProviderProbe`(和路由共用 `Routing/WireRequests` 组请求);Catalog `ProviderService.ListModelsAsync` / `DebugAsync`;Host `ProviderDebugRuns`(进度主题);
+  协议 `ProviderDebugMethods`;Core `ProviderEndpoints`;客户端 `ProvidersActions.DebugModelsAsync` / `DebugRunAsync`、`ProviderDebugViewModel`、`IDialogService.ShowProviderDebugAsync`;界面 `Views/Dialogs/ProviderDebugDialog`。
+- 测试:`Ncw.Agent.Llm.Tests/ProviderProbeTests`(三种协议的请求形状、脱敏、事件、失败归类、取消)、`Ncw.Agent.Catalog.Tests/ProviderServiceTests`(两族列表合并、草稿对象、别名配置)、
+  `Ncw.Protocol.Tests/ProviderDebugDtoTests`(冻结向量、方法表、主题)、`Ncw.Core.Tests/ProviderEndpointsTests`、`Ncw.Client.Tests/ProviderDebugViewModelTests`、`Ncw.UI.Tests/ProviderDebugDialogTests`(截图 `provider-debug-*`)。
 
 ### 设备 / 项目作用域的管理页(已实现的部分)
 

@@ -88,6 +88,12 @@ public interface IDialogService
     Task ShowModelEditorAsync(ViewModels.ModelEditorViewModel form) => Task.CompletedTask;
 
     /// <summary>
+    /// 弹出「供应商调试」窗口(docs/design/07「供应商调试」);打开时拉一次模型候选,关窗口时取消还在跑的请求。
+    /// 「使用这个协议」后由 <paramref name="form"/> 的 <see cref="ViewModels.ProviderDebugViewModel.Completed"/> 关闭。没有界面的实现当作取消。
+    /// </summary>
+    Task ShowProviderDebugAsync(ViewModels.ProviderDebugViewModel form) => Task.CompletedTask;
+
+    /// <summary>
     /// 让用户选一张图片做项目图标,并压缩成 <see cref="ProjectIconSpec.PixelSize"/> 见方的小图(界面层解码,按缩小后的尺寸解码以省内存)。
     /// 取消返回 null;没有界面的实现当作取消。
     /// </summary>

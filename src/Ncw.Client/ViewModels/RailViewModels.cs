@@ -38,6 +38,18 @@ public sealed partial class RailViewModel : ObservableObject
     private Task AddProjectAsync() => _projects?.NewProjectAsync() ?? Task.CompletedTask;
 
     /// <summary>右键「更改图标…」:弹出「项目图标」窗口,编辑的起点是 Store 里的当前外观。</summary>
+    /// <summary>「从侧边栏移除」:接了设备时在设备上注销(<see cref="ProjectActions.RemoveAsync"/>),否则只改本地布局。</summary>
+    private Task RemoveAsync(RailProjectViewModel tile)
+    {
+        if (_projects is not null)
+        {
+            return _projects.RemoveAsync(tile.Project);
+        }
+
+        _actions.RemoveFromRail(tile.Project);
+        return Task.CompletedTask;
+    }
+
     private Task EditIconAsync(RailProjectViewModel tile)
     {
         var form = new ProjectIconViewModel(tile.Project, tile.Name, _stores.Layout.State.Appearance.GetValueOrDefault(tile.Project), _actions, _dialogs);
@@ -91,7 +103,7 @@ public sealed partial class RailViewModel : ObservableObject
 
     private RailProjectViewModel ProjectTile(ProjectRef project, LayoutState layout, WorkspaceState workspace, ProjectRef? selected)
     {
-        var vm = FindProject(project) ?? new RailProjectViewModel(project, _actions, EditIconAsync);
+        var vm = FindProject(project) ?? new RailProjectViewModel(project, _actions, EditIconAsync, RemoveAsync);
         workspace.Projects.TryGetValue(project, out var info);
         workspace.Devices.TryGetValue(project.DeviceId, out var device);
         layout.Appearance.TryGetValue(project, out var appearance);
@@ -149,12 +161,15 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
 {
     private readonly LayoutActions _actions;
     private readonly Func<RailProjectViewModel, Task>? _editIcon;
+    private readonly Func<RailProjectViewModel, Task>? _remove;
 
-    public RailProjectViewModel(ProjectRef project, LayoutActions actions, Func<RailProjectViewModel, Task>? editIcon = null)
+    /// <param name="remove">「从侧边栏移除」:在设备上注销项目(<see cref="ProjectActions.RemoveAsync"/>)。没给(没接设备的测试)时只改本地布局。</param>
+    public RailProjectViewModel(ProjectRef project, LayoutActions actions, Func<RailProjectViewModel, Task>? editIcon = null, Func<RailProjectViewModel, Task>? remove = null)
     {
         Project = project;
         _actions = actions;
         _editIcon = editIcon;
+        _remove = remove;
     }
 
     public ProjectRef Project { get; }
@@ -169,6 +184,12 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     public partial string? Image { get; private set; }
 
     public bool HasImage => Image is not null;
+
+    /// <summary>
+    /// 用户给这个项目设过图标(图片,或自己填的文字 / emoji)。没设过时侧边栏不画图标:默认的首字母色块和名字重复,只占地方。
+    /// <see cref="Glyph"/> / <see cref="Color"/> 仍然给出默认值(手机项目列表、「更改图标」窗口的预览要用)。
+    /// </summary>
+    [ObservableProperty] public partial bool HasIcon { get; private set; }
     [ObservableProperty] public partial bool IsSelected { get; private set; }
     [ObservableProperty] public partial bool IsRunning { get; private set; }
     [ObservableProperty] public partial int PendingCount { get; private set; }
@@ -202,7 +223,16 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     private void LeaveGroup() => _actions.LeaveGroup(Project);
 
     [RelayCommand]
-    private void RemoveFromRail() => _actions.RemoveFromRail(Project);
+    private Task RemoveFromRailAsync()
+    {
+        if (_remove is not null)
+        {
+            return _remove(this);
+        }
+
+        _actions.RemoveFromRail(Project);
+        return Task.CompletedTask;
+    }
 
     /// <summary>右键「更改图标…」。</summary>
     [RelayCommand]
@@ -216,6 +246,7 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         Glyph = appearance?.Glyph ?? Initials(Name);
         Color = appearance?.Color ?? DefaultColor(Project);
         Image = appearance?.Image is { Length: > 0 and <= ProjectIconSpec.MaxStoredLength } image ? image : null;
+        HasIcon = Image is not null || !string.IsNullOrWhiteSpace(appearance?.Glyph);
         IsSelected = selected;
         IsRunning = activity.IsRunning;
         PendingCount = activity.PendingInteractions;

@@ -70,9 +70,9 @@
 
   <Panel>
     <DockPanel>
-      <!-- 底部:账户(点开是账户卡片)+ 设置 -->
+      <!-- 底部:账户(点开是账户卡片)+ 主题切换 + 设置 -->
       <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}" Padding="8,6">
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
           <Panel x:Name="AccountArea" x:DataType="vm:AccountViewModel"
                  DataContext="{Binding $parent[desktop:DesktopShell].((vm:ShellViewModel)DataContext).Account, FallbackValue={x:Null}}">
             <ui:PlainButton x:Name="AccountButton" Height="40" Padding="4,0,6,0" Click="OnAccountClick"
@@ -167,7 +167,10 @@
               </Border>
             </Popup>
           </Panel>
-          <ui:PlainButton x:Name="SettingsButton" Grid.Column="1" Width="32" Height="32" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}"
+          <ui:NcwThemeSwitcher x:Name="ThemeButton" Grid.Column="1" IsIconOnly="True" Variant="Reveal" VerticalAlignment="Center"
+                               ThemeChangeRequested="OnThemeChangeRequested"
+                               AutomationProperties.Name="{l:NcwText ToggleTheme}" arc:Tooltip.Tip="{l:NcwText ToggleTheme}" />
+          <ui:PlainButton x:Name="SettingsButton" Grid.Column="2" Width="32" Height="32" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}"
                           AutomationProperties.Name="{l:NcwText Settings}" arc:Tooltip.Tip="{l:NcwText Settings}">
             <lucide:LucideIcon Kind="Settings" Size="16" HorizontalAlignment="Center" />
           </ui:PlainButton>

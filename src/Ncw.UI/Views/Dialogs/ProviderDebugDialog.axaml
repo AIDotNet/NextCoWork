@@ -1,0 +1,238 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:proto="using:Ncw.Protocol.Methods"
+             x:Class="Ncw.UI.Views.Dialogs.ProviderDebugDialog"
+             x:DataType="vm:ProviderDebugViewModel">
+  <!--
+    「供应商调试」窗口的内容(docs/design/07「供应商调试」,方案 A「调试台」;标题、按钮行由 NcwDialogService 的 Arc Dialog 提供,窗口宽 900):
+    左栏配一条请求(模型、协议三段 + 上次结果的圆点、最终地址、提示词、思考、最大输出、带不带工具、发送 / 停止),
+    右栏看结果(一行状态 + 回复 / 请求 / 响应 / 事件流四个标签页)。两栏的高度跟窗口走(code-behind 算),各自滚动。
+  -->
+  <UserControl.Styles>
+    <Style Selector="ui|PlainButton.segment">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ui|PlainButton.segment:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ui|PlainButton.segment Border.face">
+      <Setter Property="Padding" Value="4,6" />
+      <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+    </Style>
+    <Style Selector="ui|PlainButton.segment:pointerover Border.face">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderStrong}" />
+    </Style>
+    <Style Selector="ui|PlainButton.segment.selected Border.face">
+      <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
+    </Style>
+    <!-- 选中只换颜色不加粗:三段等宽,加粗会把「OpenAI Chat」挤出省略号 -->
+    <Style Selector="ui|PlainButton.segment.selected TextBlock.segmentText">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Accent}" />
+    </Style>
+    <Style Selector="TextBlock.fieldLabel">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.mono, TextBlock.mono">
+      <Setter Property="FontFamily" Value="{arc:ArcDesignTokenResource MonoFontFamily}" />
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    </Style>
+    <Style Selector="Border.well">
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid x:Name="Root" ColumnDefinitions="320,*" ColumnSpacing="16" Height="520">
+    <!-- ── 左栏:请求 ── -->
+    <!-- 字段自己滚动,「发送 / 停止」和调用失败的原因固定在底部 -->
+    <Grid RowDefinitions="*,Auto">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="14" Margin="0,4,12,8">
+          <!-- 模型:可手填,右边的下拉列出候选 -->
+          <StackPanel Spacing="4">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <ui:NcwInput x:Name="ModelInput" Label="{l:NcwText ProviderDebugModel}" Text="{Binding Model, Mode=TwoWay}"
+                           Placeholder="{l:NcwText ProviderDebugModelPlaceholder}" AutomationProperties.Name="{l:NcwText ProviderDebugModel}" />
+              <ui:NcwDropdownMenu x:Name="ModelMenu" Grid.Column="1" VerticalAlignment="Bottom" MaxDropDownHeight="320">
+                <ui:NcwDropdownMenu.Trigger>
+                  <ui:NcwButton x:Name="ModelMenuButton" Classes="icon" Variant="Secondary" AutomationProperties.Name="{l:NcwText ProviderDebugModelList}"
+                                arc:Tooltip.Tip="{l:NcwText ProviderDebugModelList}">
+                    <lucide:LucideIcon Kind="ChevronDown" Size="14" />
+                  </ui:NcwButton>
+                </ui:NcwDropdownMenu.Trigger>
+              </ui:NcwDropdownMenu>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" VerticalAlignment="Center" IsVisible="{Binding IsLoadingModels}" />
+                <TextBlock x:Name="ModelsHint" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center" />
+              </StackPanel>
+              <ui:NcwButton x:Name="RefreshModelsButton" Grid.Column="1" Variant="Ghost" Padding="4,0" Command="{Binding LoadModelsCommand}"
+                            IsVisible="{Binding !IsLoadingModels}" Content="{l:NcwText ProviderDebugModelsRefresh}" />
+            </Grid>
+          </StackPanel>
+
+          <!-- 协议:三段,每段一个圆点记着上一次的结局 -->
+          <StackPanel Spacing="6">
+            <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugProtocol}" />
+            <ItemsControl x:Name="ProtocolList" ItemsSource="{Binding Protocols}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Columns="3" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DebugProtocolItem">
+                  <ui:PlainButton Classes="segment" Classes.selected="{Binding IsSelected}" Margin="0,0,4,0"
+                                  Command="{Binding $parent[UserControl].((vm:ProviderDebugViewModel)DataContext).SelectProtocolCommand}" CommandParameter="{Binding Protocol}"
+                                  AutomationProperties.Name="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}"
+                                  arc:Tooltip.Tip="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}">
+                    <Border Classes="face">
+                      <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                        <ui:NcwStatusDot Tone="{Binding State, Converter={x:Static cv:DebugStateToneConverter.Instance}}" VerticalAlignment="Center" />
+                        <TextBlock Classes="segmentText" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding Protocol, Converter={x:Static cv:ProtocolShortTextConverter.Instance}}" />
+                      </StackPanel>
+                    </Border>
+                  </ui:PlainButton>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- 最终地址(和设备拼 URL 同一条规则) -->
+          <StackPanel Spacing="6">
+            <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugUrl}" />
+            <Border Classes="well">
+              <SelectableTextBlock x:Name="UrlText" Classes="mono" TextWrapping="Wrap" Text="{Binding FinalUrl}" />
+            </Border>
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugPrompt}" />
+            <ui:NcwTextArea x:Name="PromptInput" Text="{Binding Prompt, Mode=TwoWay}" FrameMinHeight="56" IsResizable="False"
+                            PlaceholderText="{l:NcwText ProviderDebugPromptPlaceholder}" AutomationProperties.Name="{l:NcwText ProviderDebugPrompt}" />
+          </StackPanel>
+
+          <ui:NcwSelect x:Name="ThinkingSelect" Label="{l:NcwText ProviderDebugThinking}" SelectedValue="{Binding Thinking, Mode=TwoWay}" />
+          <ui:NcwNumberField x:Name="MaxOutputField" Minimum="1" Maximum="64000" Step="256" LargeStep="4096" UseGrouping="True"
+                             Value="{Binding MaxOutputTokens, Mode=TwoWay}" Label="{l:NcwText ProviderDebugMaxOutput}" />
+
+          <StackPanel Spacing="2">
+            <ui:NcwCheckbox x:Name="ToolCheck" IsChecked="{Binding WithTool, Mode=TwoWay}" Content="{l:NcwText ProviderDebugWithTool}" />
+            <TextBlock Classes="hint" TextWrapping="Wrap" Margin="26,0,0,0" Text="{l:NcwText ProviderDebugWithToolHint}" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+      <StackPanel Grid.Row="1" Spacing="8" Margin="0,10,12,0">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <ui:NcwButton x:Name="SendButton" Variant="Primary" Command="{Binding SendCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Send" Size="13" VerticalAlignment="Center" />
+              <TextBlock VerticalAlignment="Center" Text="{l:NcwText ProviderDebugSend}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton x:Name="StopButton" Variant="Secondary" Command="{Binding StopCommand}" IsVisible="{Binding IsRunning}" Content="{l:NcwText ProviderDebugStop}" />
+        </StackPanel>
+
+        <TextBlock IsVisible="{Binding HasRunError}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
+                   Text="{Binding RunErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- ── 右栏:结果 ── -->
+    <Border Grid.Column="1" Classes="card" Padding="0">
+      <Grid RowDefinitions="Auto,Auto,Auto,*">
+        <!-- 状态行 -->
+        <WrapPanel x:Name="StatusRow" Orientation="Horizontal" Margin="12,10,12,6" ItemSpacing="6" LineSpacing="6" />
+        <TextBlock x:Name="FailureLine" Grid.Row="1" Margin="12,0,12,8" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" />
+
+        <ui:NcwSegmented x:Name="TabPicker" Grid.Row="2" Margin="12,0,12,8" HorizontalAlignment="Left" SelectedValue="{Binding SelectedTab, Mode=TwoWay}">
+          <ui:NcwSegmentedOption Value="{x:Static vm:DebugTab.Reply}" Label="{l:NcwText ProviderDebugTabReply}" />
+          <ui:NcwSegmentedOption Value="{x:Static vm:DebugTab.Request}" Label="{l:NcwText ProviderDebugTabRequest}" />
+          <ui:NcwSegmentedOption Value="{x:Static vm:DebugTab.Response}" Label="{l:NcwText ProviderDebugTabResponse}" />
+          <ui:NcwSegmentedOption Value="{x:Static vm:DebugTab.Events}" Label="{l:NcwText ProviderDebugTabEvents}" />
+        </ui:NcwSegmented>
+
+        <Panel Grid.Row="3">
+          <!-- 回复 -->
+          <ScrollViewer x:Name="ReplyPane" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="10" Margin="12,0,12,12">
+              <StackPanel Spacing="4" IsVisible="{Binding ThinkingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugThinking}" />
+                <SelectableTextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{Binding ThinkingText}" />
+              </StackPanel>
+              <SelectableTextBlock x:Name="ReplyText" TextWrapping="Wrap" Text="{Binding ReplyText}" />
+              <TextBlock x:Name="NoReplyText" Classes="hint" Text="{l:NcwText ProviderDebugNoReply}" />
+              <StackPanel Spacing="4" IsVisible="{Binding ToolCallsText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugToolCalls}" />
+                <Border Classes="well">
+                  <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding ToolCallsText}" />
+                </Border>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- 请求 -->
+          <ScrollViewer x:Name="RequestPane" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <SelectableTextBlock Classes="mono" Margin="12,0,12,12" TextWrapping="Wrap" Text="{Binding RequestText}" />
+          </ScrollViewer>
+
+          <!-- 响应 -->
+          <ScrollViewer x:Name="ResponsePane" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="12,0,12,12" Spacing="6">
+              <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding ResponseText}" />
+              <TextBlock x:Name="NoResponseText" Classes="hint" Text="{l:NcwText ProviderDebugNoResponse}" />
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- 事件流:一行一条(相对毫秒、种类 / 名字、数据) -->
+          <Grid x:Name="EventsPane" RowDefinitions="Auto,*">
+            <TextBlock x:Name="EventsTruncatedText" Classes="hint" Margin="12,0,12,6" />
+            <ScrollViewer x:Name="EventScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <ItemsControl x:Name="EventList" ItemsSource="{Binding Events}" Margin="12,0,12,12">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="proto:ProviderDebugEventDto">
+                    <Grid ColumnDefinitions="48,140,*" ColumnSpacing="10" Margin="0,1">
+                      <TextBlock Classes="mono" HorizontalAlignment="Right" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding ElapsedMs}" />
+                      <TextBlock Grid.Column="1" Classes="mono" Foreground="{arc:ArcDesignTokenResource Accent}" TextTrimming="CharacterEllipsis"
+                                 Text="{Binding Converter={x:Static cv:DebugEventNameConverter.Instance}}" />
+                      <TextBlock Grid.Column="2" Classes="mono" TextTrimming="CharacterEllipsis" MaxLines="1" Text="{Binding Data}"
+                                 arc:Tooltip.Tip="{Binding Data}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Grid>
+
+          <!-- 还没发过 / 正在等 / 已停止 -->
+          <StackPanel x:Name="Placeholder" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+            <lucide:LucideIcon x:Name="PlaceholderSpinner" Classes="spin" Kind="LoaderCircle" Size="18" HorizontalAlignment="Center" />
+            <TextBlock x:Name="PlaceholderText" Classes="hint" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="320" />
+          </StackPanel>
+        </Panel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

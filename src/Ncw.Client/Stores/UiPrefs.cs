@@ -16,7 +16,8 @@ public sealed record UiPrefs(
     ImmutableArray<InspectorTabKind> InspectorTabs,
     UiMotionPreference Motion = UiMotionPreference.System,
     ImmutableDictionary<AppCommand, string>? Shortcuts = null,
-    AttentionPrefs? Attention = null)
+    AttentionPrefs? Attention = null,
+    UiThemePreference Theme = UiThemePreference.Dark)
 {
     /// <summary>用户改过的快捷键(docs/design/03 §11);没改过是空表。</summary>
     public ImmutableDictionary<AppCommand, string> ShortcutOverrides => Shortcuts ?? ImmutableDictionary<AppCommand, string>.Empty;
@@ -43,6 +44,7 @@ public sealed record UiPrefs(
             ? []
             : [.. InspectorTabs.Where(ViewModels.InspectorTabs.Addable.Contains).Distinct()],
         Motion = Enum.IsDefined(Motion) ? Motion : UiMotionPreference.System,
+        Theme = Enum.IsDefined(Theme) ? Theme : UiThemePreference.Dark,
         Shortcuts = Shortcuts is null ? null : Shortcuts.Where(kv => Enum.IsDefined(kv.Key) && (kv.Value.Length == 0 || ShortcutCatalog.IsUsable(kv.Value)))
             .ToImmutableDictionary(kv => kv.Key, kv => kv.Value.Length == 0 ? "" : ShortcutCatalog.Normalize(kv.Value)),
     };
@@ -58,12 +60,13 @@ public sealed record UiPrefs(
         && IsSidebarOpen == other.IsSidebarOpen
         && IsInspectorOpen == other.IsInspectorOpen
         && Motion == other.Motion
+        && Theme == other.Theme
         && AttentionOrDefault == other.AttentionOrDefault
         && ShortcutOverrides.Count == other.ShortcutOverrides.Count
         && ShortcutOverrides.All(kv => other.ShortcutOverrides.TryGetValue(kv.Key, out var v) && v == kv.Value)
         && (InspectorTabs.IsDefault ? [] : InspectorTabs).SequenceEqual(other.InspectorTabs.IsDefault ? [] : other.InspectorTabs);
 
-    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen, Motion);
+    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen, Motion, Theme);
 }
 
 /// <summary>

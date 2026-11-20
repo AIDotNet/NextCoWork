@@ -160,6 +160,18 @@ public class InspectorScreenshotTests
         Assert.Equal("M", tree.Find("src/Ncw.UI/Views/Desktop/InspectorPanel.axaml")!.ChangeLetter);
         Assert.True(tree.Find("src/Ncw.Core")!.HasChangedDescendant);
         Assert.Contains(Find<FileRow>(view), r => (r.DataContext as FileNodeViewModel)?.Name == "InspectorPanel.axaml");
+        foreach (var row in Find<FileRow>(view).Where(r => r.DataContext is FileNodeViewModel { IsEntry: true }))
+        {
+            var menu = Assert.IsType<TKCode.Arc.MenuSurface>(TKCode.Arc.ContextMenu.GetMenu(row));
+            var entries = menu.Items.OfType<TKCode.Arc.MenuEntry>().ToList();
+            Assert.NotEmpty(entries);
+            Assert.All(entries, entry =>
+            {
+                var geometry = Assert.IsAssignableFrom<Avalonia.Media.Geometry>(entry.Icon);
+                Assert.False(geometry.Bounds.Width <= 0 && geometry.Bounds.Height <= 0);
+            });
+        }
+
         Snapshot(view, "files-tree", width, dark);
     }
 

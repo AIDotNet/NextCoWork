@@ -8,11 +8,11 @@ using Ncw.Core.Domain;
 
 namespace Ncw.Client.ViewModels;
 
-/// <summary>项目图标的三种样子。</summary>
+/// <summary>项目图标的三种设置:不设、文字、图片。</summary>
 public enum ProjectIconMode
 {
-    /// <summary>项目名首字母 + 底色(默认)。</summary>
-    Initials,
+    /// <summary>不设图标(默认):侧边栏和手机项目列表都不画图标,只显示名字。</summary>
+    None,
 
     /// <summary>自定义文字 / emoji + 底色。</summary>
     Text,
@@ -48,7 +48,7 @@ public sealed partial class ProjectIconViewModel : ObservableObject
         {
             { Image: not null } => ProjectIconMode.Image,
             { Glyph: not null } => ProjectIconMode.Text,
-            _ => ProjectIconMode.Initials,
+            _ => ProjectIconMode.None,
         };
     }
 
@@ -60,19 +60,19 @@ public sealed partial class ProjectIconViewModel : ObservableObject
     public IReadOnlyList<string> Palette => RailProjectViewModel.IconPalette;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsInitials), nameof(IsText), nameof(IsImage), nameof(PreviewGlyph), nameof(PreviewImage), nameof(ShowsColor))]
+    [NotifyPropertyChangedFor(nameof(IsNone), nameof(IsText), nameof(IsImage), nameof(PreviewGlyph), nameof(PreviewImage), nameof(ShowsColor), nameof(HasPreviewGlyph), nameof(HasNoPreview))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     public partial ProjectIconMode Mode { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PreviewGlyph))]
+    [NotifyPropertyChangedFor(nameof(PreviewGlyph), nameof(HasPreviewGlyph), nameof(HasNoPreview))]
     public partial string Text { get; set; }
 
     [ObservableProperty] public partial string Color { get; set; }
 
     /// <summary>选好的图片(压缩后的 base64);没选为 null。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PreviewImage), nameof(HasImage))]
+    [NotifyPropertyChangedFor(nameof(PreviewImage), nameof(HasImage), nameof(HasNoPreview))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     public partial string? Image { get; private set; }
 
@@ -82,7 +82,7 @@ public sealed partial class ProjectIconViewModel : ObservableObject
 
     [ObservableProperty] public partial bool IsPicking { get; private set; }
 
-    public bool IsInitials => Mode == ProjectIconMode.Initials;
+    public bool IsNone => Mode == ProjectIconMode.None;
 
     public bool IsText => Mode == ProjectIconMode.Text;
 
@@ -92,13 +92,18 @@ public sealed partial class ProjectIconViewModel : ObservableObject
 
     public bool HasImageError => ImageError is not null;
 
-    /// <summary>图片模式下不需要底色。</summary>
-    public bool ShowsColor => Mode != ProjectIconMode.Image;
+    /// <summary>只有文字图标要选底色。</summary>
+    public bool ShowsColor => Mode == ProjectIconMode.Text;
 
-    /// <summary>预览里显示的文字(图片模式下图片压过它)。</summary>
-    public string PreviewGlyph => Mode == ProjectIconMode.Text && NormalizeGlyph(Text) is { } glyph ? glyph : RailProjectViewModel.Initials(ProjectName);
+    /// <summary>预览里显示的文字(文字模式、填了字时才有;不再有默认首字母)。</summary>
+    public string PreviewGlyph => Mode == ProjectIconMode.Text && NormalizeGlyph(Text) is { } glyph ? glyph : "";
+
+    public bool HasPreviewGlyph => PreviewGlyph.Length > 0;
 
     public string? PreviewImage => Mode == ProjectIconMode.Image ? Image : null;
+
+    /// <summary>预览是空的(不设图标、文字没填、图片没选):画一个空占位。</summary>
+    public bool HasNoPreview => !HasPreviewGlyph && PreviewImage is null;
 
     /// <summary>保存或恢复默认之后:界面据此关窗口。</summary>
     public event Action? Completed;
@@ -152,12 +157,12 @@ public sealed partial class ProjectIconViewModel : ObservableObject
         Completed?.Invoke();
     }
 
-    /// <summary>当前编辑结果对应的外观;和默认完全一样时为 null(不留一条没用的记录)。</summary>
+    /// <summary>当前编辑结果对应的外观;不设图标(或文字没填)时为 null(不留一条没用的记录)。</summary>
     public ProjectAppearance? Build() => Mode switch
     {
         ProjectIconMode.Image when Image is not null => new ProjectAppearance(null, Color, Image),
         ProjectIconMode.Text when NormalizeGlyph(Text) is { } glyph => new ProjectAppearance(glyph, Color),
-        _ => Color == _defaultColor ? null : new ProjectAppearance(null, Color),
+        _ => null, // 不设图标:不留外观记录(没有首字母图标了,单独的底色也没有地方用)
     };
 
     /// <summary>去掉首尾空白,最多留 <see cref="MaxGlyphLength"/> 个字符(按文本元素,emoji 组合不会被截断);空的返回 null。</summary>

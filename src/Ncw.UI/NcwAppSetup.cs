@@ -18,6 +18,9 @@ public static class NcwAppSetup
                .UseArc(arc => arc
                    .UseLanguages(NcwLanguages.Initial, NcwLanguages.Supported)
                    .UseArcControls()
+                   // Arc 1.2.0 起 Markdown 与语法高亮是独立包,各自注册(回复正文、代码块)
+                   .UseArcMarkdown()
+                   .UseArcHighlighting()
                    // 手机壳的触控组件(arcm:)。桌面壳不用它们,但同一个应用在窄屏下会切到手机壳,所以统一注册
                    .UseArcMobile()
                    // AI 专用组件(TKCode.Arc.Special):输入框上下文环点开的上下文窗口卡片

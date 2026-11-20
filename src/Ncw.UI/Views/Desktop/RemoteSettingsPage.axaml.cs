@@ -3,7 +3,7 @@ using Avalonia.VisualTree;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Converters;
-using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -33,14 +33,16 @@ public partial class RemoteSettingsPage : UserControl
                     continue;
                 }
 
-                menu.ItemsSource = Roles
-                    .Select(role => new MenuEntry
+                NcwMenus.Populate(menu, Roles
+                    .Select(role => new NcwMenus.Item(RoleTextConverter.Text(role), vm.SetRoleCommand, new RoleChange(fingerprint, role))
                     {
-                        Header = RoleTextConverter.Text(role),
-                        Command = vm.SetRoleCommand,
-                        CommandParameter = new RoleChange(fingerprint, role),
-                    })
-                    .ToList();
+                        Glyph = Lucide.Geometry(role switch
+                        {
+                            "owner" => LucideIconKind.Shield,
+                            "viewer" => LucideIconKind.Eye,
+                            _ => LucideIconKind.User,
+                        }),
+                    }));
             }
         }, Avalonia.Threading.DispatcherPriority.Loaded);
 }

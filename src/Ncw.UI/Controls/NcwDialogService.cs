@@ -249,6 +249,57 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
     /// <summary>「添加供应商」弹窗的宽度:三列模版卡片、表单两列字段都放得下(docs/design/07 §3)。</summary>
     internal const double ProviderEditorWidth = 640;
 
+    /// <summary>「供应商调试」弹窗的宽度:左栏 320 的请求配置 + 右栏的结果(docs/design/07「供应商调试」)。</summary>
+    internal const double ProviderDebugWidth = 900;
+
+    /// <summary>
+    /// 「供应商调试」(docs/design/07「供应商调试」):Arc Dialog 包住 <see cref="ProviderDebugDialog"/>,宽 900(覆盖 Large 档的宽度 token;窗口窄时 Arc 收到「窗口宽 − 32」)。
+    /// 打开时拉一次模型候选;按钮行是「使用这个协议」(只在从编辑弹窗打开、刚跑通了别的协议时出现)和「关闭」。关窗口时取消还在跑的请求。
+    /// 可以叠在「添加 / 编辑供应商」弹窗上面打开。
+    /// </summary>
+    public async Task ShowProviderDebugAsync(ProviderDebugViewModel form)
+    {
+        var content = new ProviderDebugDialog { DataContext = form };
+        var use = new NcwButton { Variant = ButtonVariant.Primary, Content = NcwTexts.Get(NcwTextKind.ProviderDebugUseProtocol), Command = form.UseProtocolCommand, IsVisible = form.CanUseProtocol };
+        var close = new NcwButton { Variant = ButtonVariant.Secondary, Content = NcwTexts.Get(NcwTextKind.Close) };
+        var dialog = new Dialog
+        {
+            Title = NcwTexts.Format(NcwTextKind.ProviderDebugTitle, form.ProviderName),
+            Description = NcwTexts.Get(NcwTextKind.ProviderDebugDescription),
+            Content = content,
+            Actions = ActionRow(use, close),
+            Size = ControlSize.Large,
+        };
+        dialog.Resources[TKCode.Arc.DesignTokens.DialogSurfaceTokenKind.PanelWidthLG] = ProviderDebugWidth;
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(ProviderDebugViewModel.CanUseProtocol))
+            {
+                use.IsVisible = form.CanUseProtocol;
+            }
+        }
+
+        void Close() => dialog.Close(true);
+        close.Click += (_, _) => dialog.Close(false);
+        form.PropertyChanged += OnChanged;
+        form.Completed += Close;
+        dialog.Opened += (_, _) =>
+        {
+            Dispatcher.UIThread.Post(content.FocusFirst, DispatcherPriority.Input);
+            _ = form.LoadModelsAsync();
+        };
+        try
+        {
+            await dialog.ShowAsync(owner);
+        }
+        finally
+        {
+            form.PropertyChanged -= OnChanged;
+            form.Completed -= Close;
+            form.Close();
+        }
+    }
+
     /// <summary>选一张图片并压缩成项目图标(<see cref="NcwIconImages"/>);取消返回 null。</summary>
     public async Task<PickedIcon?> PickIconImageAsync()
     {

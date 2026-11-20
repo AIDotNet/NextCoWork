@@ -191,6 +191,18 @@ public sealed partial class SidebarViewModel : ObservableObject
 
     internal Task CopyPathAsync(SidebarProjectViewModel project) => _host.LocalFiles.CopyTextAsync(project.Path);
 
+    /// <summary>「从侧边栏移除」:接了设备时在设备上注销(<see cref="ProjectActions.RemoveAsync"/>),否则只改本地布局。</summary>
+    internal Task RemoveProjectAsync(RailProjectViewModel tile)
+    {
+        if (_projects is not null)
+        {
+            return _projects.RemoveAsync(tile.Project);
+        }
+
+        _actions.RemoveFromRail(tile.Project);
+        return Task.CompletedTask;
+    }
+
     internal Task EditIconAsync(RailProjectViewModel tile)
     {
         var form = new ProjectIconViewModel(tile.Project, tile.Name, _stores.Layout.State.Appearance.GetValueOrDefault(tile.Project), _actions, _dialogs);
@@ -267,7 +279,7 @@ public sealed partial class SidebarViewModel : ObservableObject
 
     private SidebarProjectViewModel ProjectNode(ProjectRef project, LayoutState layout, WorkspaceState workspace, SelectionState selection, bool showsDevices)
     {
-        var vm = FindNode(project) ?? new SidebarProjectViewModel(new RailProjectViewModel(project, _actions, EditIconAsync), this);
+        var vm = FindNode(project) ?? new SidebarProjectViewModel(new RailProjectViewModel(project, _actions, EditIconAsync, RemoveProjectAsync), this);
         workspace.Projects.TryGetValue(project, out var info);
         workspace.Devices.TryGetValue(project.DeviceId, out var device);
         layout.Appearance.TryGetValue(project, out var appearance);

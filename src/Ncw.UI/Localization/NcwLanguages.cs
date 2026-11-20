@@ -58,5 +58,17 @@ public sealed class NcwClientText : IClientText
 
     public string DeleteProviderMessage(string providerName) => NcwTexts.Format(NcwTextKind.DeleteProviderMessage, providerName);
 
+    public string RemoveProjectTitle => NcwTexts.Get(NcwTextKind.RemoveProjectTitle);
+
+    public string RemoveProjectMessage(string projectName) => NcwTexts.Format(NcwTextKind.RemoveProjectMessage, projectName);
+
+    public string RemoveProjectLabel => NcwTexts.Get(NcwTextKind.RemoveProjectLabel);
+
+    public string RemoveProjectFailedTitle => NcwTexts.Get(NcwTextKind.RemoveProjectFailedTitle);
+
+    public string ProjectRemoveOffline => NcwTexts.Get(NcwTextKind.ProjectRemoveOffline);
+
+    public string ProjectRemoveFailed => NcwTexts.Get(NcwTextKind.ProjectRemoveFailed);
+
     public string TemplateVariant(string variant) => Converters.TemplateVariantTextConverter.Text(variant);
 }

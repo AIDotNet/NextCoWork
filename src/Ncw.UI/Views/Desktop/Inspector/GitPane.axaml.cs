@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
+using TKCode.Arc.Icons.Lucide;
 using Protocol = Ncw.Protocol.Methods;
 
 namespace Ncw.UI.Views.Desktop.Inspector;
@@ -58,7 +59,7 @@ public partial class GitPane : UserControl
         }
 
         List<NcwMenus.Item> items = [.. vm.Branches.Select(b => new NcwMenus.Item(b.Name, vm.CheckoutCommand, b) { IsChecked = b.Current })];
-        items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.GitNewBranch), vm.CreateBranchCommand, null, SeparatorBefore: items.Count > 0));
+        items.Add(new NcwMenus.Item(NcwTexts.Get(NcwTextKind.GitNewBranch), vm.CreateBranchCommand, null, SeparatorBefore: items.Count > 0) { Glyph = Lucide.Geometry(LucideIconKind.GitBranchPlus) });
         NcwMenus.Populate(BranchMenu, items);
     }
 

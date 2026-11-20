@@ -2,6 +2,8 @@ using Avalonia.Controls;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
+using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -25,17 +27,17 @@ public partial class FileTabView : UserControl
 
         List<NcwMenus.Item> items =
         [
-            new(NcwTexts.Get(NcwTextKind.FilesCopyContent), file.CopyContentCommand, null),
-            new(NcwTexts.Get(NcwTextKind.FilesCopyPath), file.CopyPathCommand, null, SeparatorBefore: true),
-            new(NcwTexts.Get(NcwTextKind.FilesCopyRelativePath), file.CopyRelativePathCommand, null),
+            new(NcwTexts.Get(NcwTextKind.FilesCopyContent), file.CopyContentCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.Clipboard) },
+            new(NcwTexts.Get(NcwTextKind.FilesCopyPath), file.CopyPathCommand, null, SeparatorBefore: true) { Glyph = ArcIcons.Copy },
+            new(NcwTexts.Get(NcwTextKind.FilesCopyRelativePath), file.CopyRelativePathCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.ClipboardCopy) },
         ];
         if (file.CanOpenLocally)
         {
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesReveal), file.RevealCommand, null, SeparatorBefore: true));
-            items.Add(new(NcwTexts.Get(NcwTextKind.FilesOpenWith), file.OpenExternallyCommand, null));
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesReveal), file.RevealCommand, null, SeparatorBefore: true) { Glyph = ArcIcons.FolderOpen });
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilesOpenWith), file.OpenExternallyCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.ExternalLink) });
         }
 
-        items.Add(new(NcwTexts.Get(NcwTextKind.FilesSaveAs), file.SaveAsCommand, null, SeparatorBefore: true));
+        items.Add(new(NcwTexts.Get(NcwTextKind.FilesSaveAs), file.SaveAsCommand, null, SeparatorBefore: true) { Glyph = Lucide.Geometry(LucideIconKind.Save) });
         NcwMenus.Populate(MoreMenu, items);
     }
 }

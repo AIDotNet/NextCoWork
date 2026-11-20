@@ -11,7 +11,7 @@ namespace Ncw.Client.Actions;
 /// OAuth:授权页由控制端打开——界面订阅 Store 里的 <c>DeviceProviders.OAuth</c>,Waiting 阶段带授权 URL / 配对码;
 /// <see cref="StartOAuthAsync"/> 等方法在登录结束(成功 / 失败 / 取消)时才返回,回调码经 <see cref="SubmitOAuthCodeAsync"/> 交回。
 /// </summary>
-public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProviderDiscoveryCommands, ViewModels.IProviderEditorCommands, ViewModels.IModelEditorCommands
+public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProviderDiscoveryCommands, ViewModels.IProviderEditorCommands, ViewModels.IModelEditorCommands, ViewModels.IProviderDebugCommands
 {
     // ── 供应商 ──
 
@@ -134,6 +134,82 @@ public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProvi
 
     public Task<ActionResult<ProviderTemplatesResult>> ListTemplatesAsync(string deviceId, CancellationToken ct = default) =>
         Run(deviceId, link => link.CallAsync(ProviderTemplatesMethods.List, Unit.Value, ct));
+
+    // ── 调试(后加的能力 providers.debug)──
+
+    /// <summary>设备支持调试弹窗(老设备不报:「测试」退回 <see cref="TestAsync"/>)。</summary>
+    public bool SupportsDebug(string deviceId) =>
+        devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.ProviderDebug);
+
+    /// <summary>调试弹窗的模型候选(两族列表端点都试;都拉不到时模型为空,不是错误)。</summary>
+    public Task<ActionResult<ProviderDebugModelsResult>> DebugModelsAsync(string deviceId, ProviderDebugTargetDto target, CancellationToken ct = default) =>
+        Run(deviceId, link => link.CallAsync(ProviderDebugMethods.Models, new ProviderDebugModelsParams(target), ct));
+
+    /// <summary>
+    /// 发一条调试请求,跑完返回完整记录(权威结果)。<paramref name="onEvent"/> 在 UI 线程上收到实时进度(先订阅 <c>providers.debug/&lt;runId&gt;</c> 再调用;
+    /// 订阅失败不影响调试本身)。取消 <paramref name="ct"/> = 取消这次调用,设备掐断上游连接,这里抛 <see cref="OperationCanceledException"/>。
+    /// </summary>
+    public async Task<ActionResult<ProviderDebugResultDto>> DebugRunAsync(
+        string deviceId, ProviderDebugRunParams run, Action<ProviderDebugEventDto>? onEvent = null, CancellationToken ct = default)
+    {
+        if (devices.Find(deviceId) is not { IsConnected: true } link)
+        {
+            return ActionResult<ProviderDebugResultDto>.NotConnected();
+        }
+
+        IAsyncDisposable? progress = null;
+        if (onEvent is not null && link.CurrentClient is { } client)
+        {
+            try
+            {
+                progress = await client.SubscribeAsync(
+                    ProviderDebugMethods.Topic(run.RunId),
+                    (state, _) =>
+                    {
+                        foreach (var ev in state.Events)
+                        {
+                            link.PostToUi(() => onEvent(ev));
+                        }
+                    },
+                    evt =>
+                    {
+                        if (evt.Type == ProviderDebugEvents.Event)
+                        {
+                            var ev = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<ProviderDebugEventDto>());
+                            link.PostToUi(() => onEvent(ev));
+                        }
+                    },
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is ProtocolException or IOException or ObjectDisposedException)
+            {
+                // 实时进度是尽力而为:订阅不上照样发请求,结果里有全部事件。
+            }
+        }
+
+        try
+        {
+            return ActionResult<ProviderDebugResultDto>.Success(await link.CallAsync(ProviderDebugMethods.Run, run, ct, idem: Idem("debug.run")).ConfigureAwait(false));
+        }
+        catch (ProtocolException e)
+        {
+            return ActionResult<ProviderDebugResultDto>.From(e);
+        }
+        finally
+        {
+            if (progress is not null)
+            {
+                try
+                {
+                    await progress.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is ProtocolException or IOException or ObjectDisposedException or OperationCanceledException)
+                {
+                    // 连接已经断了:订阅本来就没了。
+                }
+            }
+        }
+    }
 
     private static string Idem(string what) => $"providers.{what}:{Guid.NewGuid():N}";
 

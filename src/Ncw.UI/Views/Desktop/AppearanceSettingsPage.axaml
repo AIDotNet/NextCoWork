@@ -24,6 +24,21 @@
     <Border Classes="card">
       <StackPanel Spacing="12">
         <StackPanel Spacing="2">
+          <TextBlock Text="{l:NcwText AppearanceThemeTitle}" FontWeight="SemiBold" />
+          <TextBlock Classes="hint" Text="{l:NcwText AppearanceThemeHint}" />
+        </StackPanel>
+        <ui:NcwSegmented x:Name="ThemePicker" HorizontalAlignment="Left" SelectedValue="{Binding Theme, Mode=TwoWay}"
+                         AutomationProperties.Name="{l:NcwText AppearanceThemeTitle}">
+          <ui:NcwSegmentedOption Value="{x:Static st:UiThemePreference.System}" Label="{l:NcwText ThemeSystem}" />
+          <ui:NcwSegmentedOption Value="{x:Static st:UiThemePreference.Light}" Label="{l:NcwText ThemeLight}" />
+          <ui:NcwSegmentedOption Value="{x:Static st:UiThemePreference.Dark}" Label="{l:NcwText ThemeDark}" />
+        </ui:NcwSegmented>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="12">
+        <StackPanel Spacing="2">
           <TextBlock Text="{l:NcwText AppearanceMotionTitle}" FontWeight="SemiBold" />
           <TextBlock Classes="hint" Text="{l:NcwText AppearanceMotionHint}" />
         </StackPanel>

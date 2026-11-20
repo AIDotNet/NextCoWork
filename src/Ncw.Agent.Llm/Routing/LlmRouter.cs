@@ -569,56 +569,8 @@ public sealed class LlmRouter : ILlmClient
             var payload = body.ToJsonString();
 
             // 每次发送(首发、以及 401 之后那次重发)都重新签名:时间戳式签名复用旧值等于没重试。
-            HttpRequestMessage Build(string? bearerOverride)
-            {
-                var target = new UriBuilder(url);
-                var signed = decoration.Signer?.Sign("POST", new Uri(url).AbsolutePath);
-                if (signed?.Query is { Count: > 0 } query)
-                {
-                    var existing = target.Query.TrimStart('?');
-                    var added = string.Join('&', query.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
-                    target.Query = existing.Length == 0 ? added : existing + "&" + added;
-                }
-
-                var message = new HttpRequestMessage(HttpMethod.Post, target.Uri)
-                {
-                    Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-                };
-                message.Headers.TryAddWithoutValidation("user-agent", _options.UserAgent);
-                foreach (var (key, value) in fixedHeaders)
-                {
-                    if (!key.Equals("content-type", StringComparison.OrdinalIgnoreCase))
-                    {
-                        message.Headers.TryAddWithoutValidation(key, value);
-                    }
-                }
-
-                // 有签名器时不加鉴权头:签名凭据的「发请求」是整套签名重算,私钥永远不进请求头。
-                if (decoration.Signer is null)
-                {
-                    var bearer = bearerOverride ?? CredentialFormat.BearerOf(credential);
-                    var (name, headerValue) = protocol.AuthHeader(bearer);
-                    message.Headers.TryAddWithoutValidation(name, headerValue);
-                }
-
-                foreach (var (key, value) in decoration.Headers ?? new Dictionary<string, string>())
-                {
-                    message.Headers.TryAddWithoutValidation(key, value);
-                }
-
-                foreach (var (key, value) in signed?.Headers ?? new Dictionary<string, string>())
-                {
-                    message.Headers.TryAddWithoutValidation(key, value);
-                }
-
-                foreach (var drop in decoration.DropHeaders ?? [])
-                {
-                    message.Headers.Remove(drop);
-                }
-
-                message.Headers.TryAddWithoutValidation("accept", "text/event-stream");
-                return message;
-            }
+            HttpRequestMessage Build(string? bearerOverride) =>
+                WireRequests.BuildHttp(url, payload, fixedHeaders, credential, protocol, decoration, _options.UserAgent, bearerOverride);
 
             ResetIdle();
             var response = await _http.SendAsync(Build(null), token).ConfigureAwait(false);
@@ -810,23 +762,7 @@ public sealed class LlmRouter : ILlmClient
         messages = await ResolveImagesAsync(messages, ct).ConfigureAwait(false);
         var prepared = request with { Messages = messages };
 
-        var thinkingConfig = ThinkingConfigFor(request, c, protocol);
-        var encoded = WireCodecs.Encode(protocol, prepared, c.Binding.UpstreamModel, new EncodeOptions(
-            context.WorkspaceId, c.Provider.CacheTtl, ReasoningReplayPolicy.For(thinkingConfig, c.Binding.UpstreamModel)));
-
-        var thinkingInput = new ThinkingAdapterInput(
-            protocol, c.Binding.UpstreamModel, thinkingConfig, ReasoningFor(request, c, thinkingConfig),
-            request.Options.MaxOutputTokens, c.Binding.Preset, c.Binding.ReasoningEfforts);
-        var adapted = ThinkingAdapter.Apply(encoded.Body, thinkingInput);
-        var patched = RequestPatches.Apply(adapted, c.Binding.Patches);
-        var guarded = ThinkingAdapter.Enforce(patched, thinkingInput);
-
-        // 模型级补丁可以自定义普通参数,但供应商自己的 Anthropic 身份和缓存字段在最终线上边界重新应用:
-        // metadata.user_id 和缓存始终强制,TTL 以供应商为准。
-        var anthropic = protocol == WireProtocol.Anthropic
-            ? AnthropicRequestPolicy.Apply(guarded, context.WorkspaceId, c.Provider.CacheTtl)
-            : guarded;
-        return (decoration.Body is { } transform ? transform(anthropic) : anthropic, encoded.Headers);
+        return WireRequests.EncodeBody(c.Provider, c.Binding, prepared, protocol, context, decoration);
     }
 
     private async ValueTask<IReadOnlyList<Message>> ResolveImagesAsync(IReadOnlyList<Message> messages, CancellationToken ct)
@@ -878,38 +814,6 @@ public sealed class LlmRouter : ILlmClient
     private static bool HasUnresolvedImage(Message message) => message.Parts.Any(p =>
         p is ImagePart image && IsRef(image.DataRef)
         || p is ToolResultPart { Output.Images: { } images } && images.Any(i => IsRef(i.DataRef)));
-
-    /// <summary>
-    /// 条目没有声明思考配置时的遗留检测:旧的模型导入默认 thinking=false 且没有 ThinkingConfig,
-    /// 已知的开关型协议仍应支持显式 Off。
-    /// </summary>
-    private static ThinkingConfig? ThinkingConfigFor(LlmRequest request, Candidate c, WireProtocol protocol)
-    {
-        if (c.Binding.Thinking is { } declared)
-        {
-            return declared;
-        }
-
-        if (request.Options.Thinking != ThinkingLevel.Off)
-        {
-            return null;
-        }
-
-        var model = c.Binding.UpstreamModel;
-        return protocol == WireProtocol.Anthropic
-            || ReasoningReplayPolicy.DeepSeekName().IsMatch(model)
-            || ReasoningReplayPolicy.GlmName().IsMatch(model)
-            || ReasoningReplayPolicy.HunyuanName().IsMatch(model)
-            ? new ThinkingConfig(ThinkingMode.Toggle, DefaultEnabled: false)
-            : null;
-    }
-
-    private static ResolvedThinking? ReasoningFor(LlmRequest request, Candidate c, ThinkingConfig? config)
-    {
-        // 思考预算的天花板用这次真的会发出去的 max_tokens(全局设置项决定),不和目录里的 maxOutputTokens 取小。
-        // Anthropic 的 budget_tokens >= max_tokens 那道 400 由适配器兜底。
-        return ThinkingResolver.Resolve(request.Options.Thinking, config, request.Options.MaxOutputTokens, c.Binding.ReasoningEfforts);
-    }
 
     // ── 错误文案(只带 key + 参数,界面文字由控制端生成) ──
 

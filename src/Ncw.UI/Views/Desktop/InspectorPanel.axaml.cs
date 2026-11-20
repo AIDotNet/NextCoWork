@@ -5,7 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
-using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -89,13 +89,19 @@ public partial class InspectorPanel : UserControl
             return;
         }
 
-        AddMenu.ItemsSource = _vm.Addable
-            .Select(kind => new MenuEntry
+        NcwMenus.Populate(AddMenu, _vm.Addable
+            .Select(kind => new NcwMenus.Item(Converters.InspectorTabTitleConverter.Title(kind), _vm.AddCommand, kind)
             {
-                Header = Converters.InspectorTabTitleConverter.Title(kind),
-                Command = _vm.AddCommand,
-                CommandParameter = kind,
-            })
-            .ToList();
+                Glyph = Lucide.Geometry(kind switch
+                {
+                    InspectorTabKind.Files => LucideIconKind.Files,
+                    InspectorTabKind.Git => LucideIconKind.GitCompare,
+                    InspectorTabKind.Review => LucideIconKind.FileDiff,
+                    InspectorTabKind.Terminal => LucideIconKind.SquareTerminal,
+                    InspectorTabKind.Context => LucideIconKind.Gauge,
+                    InspectorTabKind.History => LucideIconKind.History,
+                    _ => LucideIconKind.Bot,
+                }),
+            }));
     }
 }
