@@ -156,6 +156,7 @@ public sealed class FakeSettings(ClientStores stores) : ISettingsCommands
             UpstreamIdleTimeoutSeconds = patch.UpstreamIdleTimeoutSeconds ?? s.UpstreamIdleTimeoutSeconds,
             MaxOutputTokens = patch.MaxOutputTokens ?? s.MaxOutputTokens,
             PermissionReviewer = patch.PermissionReviewer ?? s.PermissionReviewer,
+            Image = patch.Image ?? s.Image,
             Gateway = patch.Gateway is { } g ? s.Gateway with { AllowRemote = g.AllowRemote ?? s.Gateway.AllowRemote, Enabled = g.Enabled ?? s.Gateway.Enabled } : s.Gateway,
             Data = patch.Data is { } d ? s.Data with { BackupDirectory = d.BackupDirectory ?? s.Data.BackupDirectory, BackupFrequency = d.BackupFrequency ?? s.Data.BackupFrequency } : s.Data,
             Proxy = patch.Proxy is { } p ? s.Proxy with { Enabled = p.Enabled ?? s.Proxy.Enabled, Host = p.Host ?? s.Proxy.Host, Port = p.Port ?? s.Proxy.Port, Mode = p.Mode ?? s.Proxy.Mode } : s.Proxy,

@@ -98,6 +98,47 @@ public class SidebarUiTests
         }
     }
 
+    [AvaloniaTheory]
+    [InlineData(1500)]
+    [InlineData(1200)]
+    [InlineData(900)]
+    public void Sidebar_contains_only_projects_and_sessions_when_the_right_inspector_is_hidden(double width)
+    {
+        var (window, shell, vm) = Render(width: width);
+        if (vm.IsCompact)
+        {
+            vm.ToggleSidebarCommand.Execute(null);
+        }
+        else
+        {
+            vm.IsInspectorOpen = false;
+        }
+
+        Dispatch();
+        var sidebar = shell.GetVisualDescendants().OfType<Sidebar>().Single();
+        Assert.Empty(sidebar.GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Inspector.FilesPane>());
+        Assert.Empty(sidebar.GetVisualDescendants().OfType<GridSplitter>());
+        Assert.False(shell.IsInspectorVisible);
+        Assert.True(sidebar.FindControl<ScrollViewer>("TreeScroll")!.IsEffectivelyVisible);
+        Snapshot(window, $"sidebar-projects-only-{width}");
+    }
+
+    [AvaloniaFact]
+    public void Collapsing_the_projects_section_hides_the_tree_but_keeps_its_header()
+    {
+        var (window, shell, vm) = Render();
+        var sidebar = shell.GetVisualDescendants().OfType<Sidebar>().Single();
+        var scroll = sidebar.FindControl<ScrollViewer>("TreeScroll")!;
+        vm.Sidebar.ToggleProjectsSectionCommand.Execute(null);
+        Dispatch();
+        Assert.False(scroll.IsEffectivelyVisible);
+        Assert.True(sidebar.FindControl<Control>("ProjectsSectionButton")!.IsEffectivelyVisible);
+        vm.Sidebar.ToggleProjectsSectionCommand.Execute(null);
+        Dispatch();
+        Assert.True(scroll.IsEffectivelyVisible);
+        Snapshot(window, "sidebar-projects-section-toggle");
+    }
+
     [AvaloniaFact]
     public void Clicking_a_project_row_selects_and_expands_it()
     {
@@ -146,7 +187,7 @@ public class SidebarUiTests
     }
 
     [AvaloniaFact]
-    public void Hovering_a_project_row_swaps_status_for_new_session_and_more()
+    public void Hovering_a_project_row_keeps_status_next_to_new_session_and_more()
     {
         var (window, shell, _) = Render();
         var api = Node(shell, "api-server");
@@ -158,6 +199,49 @@ public class SidebarUiTests
         window.MouseMove(at);
         Dispatch();
         Assert.True(hover.IsVisible);
+        var status = header.GetVisualDescendants().OfType<Panel>().Single(p => p.Name == "Status");
+        Assert.True(status.IsVisible);
+        var statusAt = status.TranslatePoint(default, header)!.Value;
+        var hoverAt = hover.TranslatePoint(default, header)!.Value;
+        Assert.True(statusAt.X + status.Bounds.Width <= hoverAt.X);
         Snapshot(window, "sidebar-hover");
+    }
+
+    [AvaloniaFact]
+    public void Session_rows_support_hover_pin_and_rename_and_new_menus_offer_more_actions()
+    {
+        var (window, shell, vm) = Render();
+        var sidebar = shell.GetVisualDescendants().OfType<Sidebar>().Single();
+        var ncw = Node(sidebar, "NextCoWork");
+        var rows = ncw.GetVisualDescendants().OfType<SessionRow>().Where(r => r.IsEffectivelyVisible).ToList();
+
+        // 悬停会话行显示重命名与置顶快捷按钮,点击置顶将该会话置顶到第一条
+        var hover = rows[1].GetVisualDescendants().OfType<StackPanel>().Single(p => p.Name == "HoverActions");
+        Assert.False(hover.IsVisible);
+        var rowAt = rows[1].TranslatePoint(new Point(rows[1].Bounds.Width / 2, rows[1].Bounds.Height / 2), window)!.Value;
+        window.MouseMove(rowAt);
+        Dispatch();
+        Assert.True(hover.IsVisible);
+        Assert.NotNull(rows[1].FindControl<Control>("RenameButton"));
+        Assert.NotNull(rows[1].FindControl<Control>("PinButton"));
+
+        var targetId = ((SessionItemViewModel)rows[1].DataContext!).Id;
+        vm.Stores.Workspace.Update(w => w with
+        {
+            Sessions = [.. w.Sessions.Select(s => s.Id == targetId ? s with { Favorited = true } : s)],
+        });
+        Dispatch();
+        rows = ncw.GetVisualDescendants().OfType<SessionRow>().Where(r => r.IsEffectivelyVisible).ToList();
+        Assert.Equal(targetId, ((SessionItemViewModel)rows[0].DataContext!).Id);
+        Assert.True(((SessionItemViewModel)rows[0].DataContext!).IsFavorite);
+
+        // 侧边栏顶部、项目行、工作区标签栏的「新建」菜单包含多项新建入口(不只是新建会话)
+        var sidebarNewMenu = sidebar.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("NewMenu")!;
+        Assert.True(sidebarNewMenu.ItemsSource?.Cast<object>().Count() >= 5);
+        var projectNewMenu = ncw.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("NewMenu")!;
+        Assert.True(projectNewMenu.ItemsSource?.Cast<object>().Count() >= 4);
+        var workspace = shell.GetVisualDescendants().OfType<WorkspaceArea>().Single();
+        var workspaceNewMenu = workspace.FindControl<Ncw.UI.Controls.NcwDropdownMenu>("NewMenu")!;
+        Assert.True(workspaceNewMenu.ItemsSource?.Cast<object>().Count() >= 5);
     }
 }

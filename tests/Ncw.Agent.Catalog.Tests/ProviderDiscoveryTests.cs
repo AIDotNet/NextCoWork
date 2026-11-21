@@ -247,7 +247,7 @@ public sealed class ProviderDiscoveryTests : IDisposable
         Assert.Equal(new DiscoveryImportOutcome("0000000000000000", null, ProviderDiscovery.ErrorGone), outcomes[3]);
 
         var created = _f.Service.Provider("deepseek-anthropic")!;
-        Assert.Equal(WireProtocol.Anthropic, created.Protocol);
+        Assert.Equal(Ncw.Agent.Llm.Media.ProviderProtocol.Anthropic, created.Protocol);
         Assert.Equal("DeepSeek", created.Name);
         Assert.Equal(new RevealedApiKey("sk-deepseek-secret-1234"), await _f.Service.RevealCredentialAsync("deepseek-anthropic"));
         Assert.Equal(["deepseek-chat"], _f.Service.Snapshot.Aliases.Where(a => a.ProviderId == "deepseek-anthropic").Select(a => a.UpstreamModel));
@@ -431,5 +431,33 @@ public sealed class ProviderDiscoveryTests : IDisposable
         var outcome = Assert.Single(await Discovery.ImportAsync([found.Single(c => c.SuggestedId == "ollama").Id]));
         Assert.Equal("ollama", outcome.ProviderId);
         Assert.False((await _f.Service.GetCredentialInfoAsync("ollama")).HasKey);
+    }
+
+    [Fact]
+    public async Task An_existing_media_provider_on_the_same_gateway_url_does_not_mark_a_text_candidate_as_imported_or_conflict()
+    {
+        // 用户已经配了火山方舟图片供应商(地址与文本方舟完全一致)
+        _f.Service.Upsert(new ProviderRecord(
+            "volcengine-image",
+            "火山方舟(图片)",
+            Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages,
+            "https://ark.cn-beijing.volces.com/api/v3",
+            Kind: Ncw.Agent.Llm.Media.ProviderKind.Image));
+        await _f.Service.SetApiKeyAsync("volcengine-image", "ark-same-9999");
+
+        File(".codex/config.toml", """
+            model = "doubao-seed-2-0-pro"
+            model_provider = "ark"
+            [model_providers.ark]
+            name = "Volcengine"
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+            env_key = "ARK_API_KEY"
+            """);
+        _host.Vars["ARK_API_KEY"] = "ark-same-9999";
+
+        var candidate = Assert.Single(await Discovery.ScanAsync());
+        Assert.Equal("volcengine", candidate.SuggestedId);
+        Assert.Equal(ProviderDiscovery.StatusNew, candidate.Status);
+        Assert.Null(candidate.ExistingProviderId);
     }
 }

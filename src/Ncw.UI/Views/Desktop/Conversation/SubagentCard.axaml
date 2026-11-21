@@ -24,7 +24,11 @@
       </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
         <Border Classes="chip">
-          <TextBlock Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" IsVisible="{Binding !IsUnknown}" />
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="11" VerticalAlignment="Center"
+                               IsVisible="{Binding IsActive}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+            <TextBlock Classes="hint" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" IsVisible="{Binding !IsUnknown}" />
+          </StackPanel>
         </Border>
         <Border Classes="chip" IsVisible="{Binding IsUnknown}">
           <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />

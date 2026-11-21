@@ -207,10 +207,12 @@ public class InteractionTests
             var (window, shell, vm) = Render();
             var texts = shell.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToHashSet();
 
-            Assert.Contains("Projects", texts);   // 侧边栏项目树的标题
+            Assert.Contains("Projects & sessions", texts); // 左侧上半区标题
             Assert.Contains("Inbox", texts);
-            Assert.Contains("2 pending", texts);  // 会话行的待处理数
-            Assert.Contains("Files", texts); // 右侧面板选中的页签
+            Assert.Contains("2 pending", texts); // 会话行的待处理数
+            Assert.Contains("Files", texts); // 右侧默认文件页签
+            Assert.True(vm.Inspector.IsFiles);
+            Assert.DoesNotContain("Review", texts); // 无变更时审查不自动出现
             Assert.Contains("3 min ago", texts);
             Assert.DoesNotContain("会话", texts);
             Snapshot(window, "shell-1500-en");

@@ -71,11 +71,11 @@ public sealed class TaskToolTests
     }
 
     [Fact]
-    public void Invariant_the_parameter_names_are_verbatim_Claude_Code_plus_the_background_switch()
+    public void Invariant_the_parameter_names_include_Claude_Code_options_without_changing_required_fields()
     {
         var properties = Make().Info.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name);
 
-        Assert.Equal(["description", "prompt", "subagent_type", "run_in_background"], properties);
+        Assert.Equal(["description", "prompt", "subagent_type", "run_in_background", "resume", "max_turns", "isolation", "model"], properties);
         Assert.Equal(["description", "prompt", "subagent_type"], Make().Info.InputSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()));
     }
 

@@ -45,7 +45,7 @@ public class InspectorScreenshotTests
 
     private sealed record View(Window Window, InspectorViewModel Inspector, InspectorPanel Panel, DesktopShell? Shell, ShellViewModel? ShellVm);
 
-    private static View Render(InspectorRig rig, double width, bool dark, double height = 860, Action<InspectorViewModel>? setup = null)
+    private static View Render(InspectorRig rig, double width, bool dark, double height = 860, Action<InspectorViewModel>? setup = null, bool files = false)
     {
         // 动效关掉:截图是静态的,弹簧动画在 headless 里不会随时间推进,会拍到半截
         ArcTheme.Apply(t => t.Appearance(dark ? ArcAppearance.Dark : ArcAppearance.Light).MotionLevel(TKCode.Arc.Motion.ArcMotionLevel.Off));
@@ -61,6 +61,11 @@ public class InspectorScreenshotTests
             shellVm = new ShellViewModel(rig.Stores, clock, inspector: rig.Services);
             inspector = shellVm.Inspector;
             setup?.Invoke(inspector);
+            if (files)
+            {
+                inspector.ActivateCommand.Execute(InspectorTabKind.Files);
+            }
+
             shell = new DesktopShell { DataContext = shellVm, Chrome = new WindowChrome(78, false) };
             window = new Window { Width = width, Height = height, Content = shell };
             window.Show();
@@ -71,6 +76,11 @@ public class InspectorScreenshotTests
         {
             inspector = new InspectorViewModel(rig.Stores, clock, rig.Services);
             setup?.Invoke(inspector);
+            if (files)
+            {
+                inspector.ActivateCommand.Execute(InspectorTabKind.Files);
+            }
+
             panel = new InspectorPanel { DataContext = inspector, Width = PanelWidth(width), HorizontalAlignment = HorizontalAlignment.Right };
             var host = new Border { Child = panel };
             window = new Window { Width = width, Height = height, Content = host };
@@ -146,7 +156,7 @@ public class InspectorScreenshotTests
     public async Task Files_tree_expanded_selected_with_git_markers(double width, bool dark)
     {
         var rig = FilesRig();
-        var view = Render(rig, width, dark);
+        var view = Render(rig, width, dark, files: true);
         var tree = view.Inspector.Files.Tree;
         await tree.ExpandAsync(tree.Find("src/Ncw.UI")!);
         await tree.ExpandAsync(tree.Find("src/Ncw.UI/Views")!);
@@ -180,7 +190,7 @@ public class InspectorScreenshotTests
     public async Task Files_search_by_name_and_by_content(double width, bool dark)
     {
         var rig = FilesRig();
-        var view = Render(rig, width, dark);
+        var view = Render(rig, width, dark, files: true);
         var search = view.Inspector.Files.Search;
 
         search.Query = "Inspector";

@@ -11,9 +11,10 @@ namespace Ncw.Protocol.Methods;
 /// 调试对象。<see cref="ProviderId"/> 给了 = 已保存的供应商(地址、协议、凭据默认取它的);草稿字段给了就压过已保存的。
 /// 没有 <see cref="ProviderId"/> 时 <see cref="BaseUrl"/> 必填(新建、还没保存的供应商)。
 /// </summary>
-/// <param name="Protocol">草稿的协议(<c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c>);决定拉模型列表时先试哪一族。</param>
+/// <param name="Protocol">草稿的协议(见 <c>ProviderDto.Protocol</c>);决定拉模型列表时先试哪一族以及媒体协议类型。</param>
 /// <param name="ApiKey">草稿里刚填的 key;空 = 用已存的那把(有的话)。</param>
-public sealed record ProviderDebugTargetDto(string? ProviderId, string? BaseUrl = null, string? Protocol = null, string? ApiKey = null);
+/// <param name="Kind">草稿的供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>);缺省时由协议或已保存供应商推断。</param>
+public sealed record ProviderDebugTargetDto(string? ProviderId, string? BaseUrl = null, string? Protocol = null, string? ApiKey = null, string? Kind = null);
 
 public sealed record ProviderDebugModelsParams(ProviderDebugTargetDto Target);
 

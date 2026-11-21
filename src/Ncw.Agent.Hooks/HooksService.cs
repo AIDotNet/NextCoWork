@@ -338,6 +338,7 @@ public sealed partial class HooksService : IAsyncDisposable
         }
 
         var reports = new List<HookRunReport>();
+        var currentInput = request.ToolInput;
         foreach (var item in selected)
         {
             ct.ThrowIfCancellationRequested();
@@ -351,7 +352,7 @@ public sealed partial class HooksService : IAsyncDisposable
                 Scope = item.Scope,
                 ToolName = request.ToolName,
                 ToolInternalId = request.ToolInternalId,
-                ToolInput = request.ToolInput,
+                ToolInput = currentInput,
             };
             if (request.Customize is { } customize)
             {
@@ -381,6 +382,12 @@ public sealed partial class HooksService : IAsyncDisposable
             if (report.Blocks)
             {
                 break;
+            }
+
+            // 同一事件的下一条 PreToolUse 钩子(及随后的权限审核 / 工具执行)看到改写后的入参
+            if (report.UpdatedInput is { } rewritten)
+            {
+                currentInput = rewritten;
             }
         }
 

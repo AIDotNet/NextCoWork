@@ -75,7 +75,19 @@ public static class ComposerLogic
     public static string ClampPermission(string mode, string? role) => PermissionModesFor(role).Contains(mode) ? mode : "ask";
 
     /// <summary>
-    /// 这个模型可选的思考档位。不支持思考(<c>ThinkingMode</c> 为空)只有「关」;支持的给 <c>auto</c> + 模型声明的强度档位(没声明给通用的四档)。
+    /// 该模型是否允许把思考切到 <c>off</c>:
+    /// <c>always</c> 模式不允许关闭;<c>effort</c> 模式显式声明了 <see cref="ModelOptionDto.ReasoningEfforts"/> 且其中不含 <c>"none"</c> 时也不允许关闭。
+    /// </summary>
+    public static bool CanDisableThinking(ModelOptionDto? model) => model switch
+    {
+        { ThinkingMode: "always" } => false,
+        { ThinkingMode: "effort", ReasoningEfforts: { Length: > 0 } declared } when !declared.Contains("none") => false,
+        _ => true,
+    };
+
+    /// <summary>
+    /// 这个模型可选的思考档位。不支持思考(<c>ThinkingMode</c> 为空或 <c>"unsupported"</c>)只有「关」;
+    /// <c>always</c> 只有 <c>auto</c>;其余模式给 <c>auto</c> + 模型声明的强度档位(允许关闭时包含 <c>off</c>,不允许关闭时去掉 <c>off</c>)。
     /// </summary>
     public static IReadOnlyList<string> ThinkingLevels(ModelOptionDto? model)
     {
@@ -84,13 +96,18 @@ public static class ComposerLogic
             return ["auto"];
         }
 
-        if (model.ThinkingMode is null)
+        if (model.ThinkingMode is null or "unsupported")
         {
             return ["off"];
         }
 
+        if (model.ThinkingMode == "always")
+        {
+            return ["auto"];
+        }
+
         IEnumerable<string> efforts = model.ReasoningEfforts is { Length: > 0 } declared ? declared.Where(e => e != "none") : ["low", "medium", "high"];
-        return ["auto", "off", .. efforts];
+        return CanDisableThinking(model) ? ["auto", "off", .. efforts] : ["auto", .. efforts];
     }
 
     /// <summary>当前思考档位对这个模型是否可用;不可用的退回第一个可用档位。</summary>

@@ -105,6 +105,36 @@ public class ComposerFileRefTests
     }
 
     [Fact]
+    public void Explorer_reference_uses_the_same_chips_and_refuses_a_missing_session()
+    {
+        var (composer, _, _) = Create();
+        composer.Draft = "Inspect";
+        composer.ReferenceFile("src/App.cs");
+
+        Assert.Equal("Inspect @App.cs ", composer.Draft);
+        Assert.Equal("src/App.cs", Assert.Single(composer.FileRefs).Path);
+
+        composer.Update(null, null, null, null, SessionActivity.Idle, DeviceConnection.Connecting, null, []);
+        composer.ReferenceFile("src/Other.cs");
+        Assert.Empty(composer.FileRefs);
+        Assert.Equal("", composer.Draft);
+    }
+
+    [Fact]
+    public async Task Shell_file_reference_returns_to_the_current_conversation()
+    {
+        var stores = MockWorkspace.Create(Now);
+        var shell = new ShellViewModel(stores, inspector: MockInspectorServices.Create(stores));
+        await shell.Workspace.OpenAsync(Project, "README.md");
+        Assert.NotNull(shell.Workspace.ActiveFile);
+
+        shell.Workspace.ActiveFile.ReferenceCommand.Execute(null);
+
+        Assert.Null(shell.Workspace.ActiveFile);
+        Assert.Equal("README.md", Assert.Single(shell.Conversation.Composer.FileRefs).Path);
+    }
+
+    [Fact]
     public async Task Typing_at_asks_the_device_for_matching_files_and_the_highlight_moves_with_the_keys()
     {
         var (composer, _, lookups) = Create();

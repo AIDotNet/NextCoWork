@@ -84,8 +84,8 @@ public sealed record SessionDto(
     long UpdatedAt,
     string PermissionMode = "ask");
 
-/// <summary>侧边栏的一行。运行状态不在这里:「这条会话在不在跑」只由 <c>device</c> 主题的 activeRuns 回答(一个事实一个真源)。</summary>
-public sealed record SessionListItemDto(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool SkillExtraction);
+/// <summary>侧边栏的一行。运行状态不在这里:「这条会话在不在跑」只由 <c>device</c> 主题的 activeRuns 回答(一个事实一个真源)。<see cref="IsEmpty"/> 表示尚未发出任何消息、仍为默认标题且未归档的空白新会话。</summary>
+public sealed record SessionListItemDto(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool SkillExtraction, bool IsEmpty = false);
 
 public sealed record SessionsListParams(string WorkspaceId, bool? Archived = null);
 

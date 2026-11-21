@@ -179,22 +179,31 @@
 
       <!-- 全局入口 -->
       <StackPanel DockPanel.Dock="Top" Margin="8,2,8,6" Spacing="1">
-        <ui:PlainButton x:Name="NewSessionButton" Height="30" Padding="8,0" Command="{Binding NewSessionCommand}" IsEnabled="{Binding HasCurrentProject}"
-                        AutomationProperties.Name="{l:NcwText NewSession}">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
-            <lucide:LucideIcon Kind="SquarePen" Size="15" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="{l:NcwText NewSession}" VerticalAlignment="Center" />
-            <TextBlock x:Name="NewSessionKey" Grid.Column="2" Classes="keyHint" />
-          </Grid>
-        </ui:PlainButton>
-        <ui:PlainButton Height="30" Padding="8,0" Command="{Binding SearchCommand}" AutomationProperties.Name="{l:NcwText Search}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
+          <ui:PlainButton x:Name="NewSessionButton" Height="26" Padding="8,0" Command="{Binding NewSessionCommand}" IsEnabled="{Binding HasCurrentProject}"
+                          AutomationProperties.Name="{l:NcwText NewSession}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+              <lucide:LucideIcon Kind="SquarePen" Size="15" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{l:NcwText NewSession}" VerticalAlignment="Center" />
+              <TextBlock x:Name="NewSessionKey" Grid.Column="2" Classes="keyHint" />
+            </Grid>
+          </ui:PlainButton>
+          <ui:NcwDropdownMenu x:Name="NewMenu" Grid.Column="1">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:PlainButton Width="24" Height="26" CornerRadius="6" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+                <lucide:LucideIcon Kind="ChevronDown" Size="13" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              </ui:PlainButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
+        </Grid>
+        <ui:PlainButton Height="26" Padding="8,0" Command="{Binding SearchCommand}" AutomationProperties.Name="{l:NcwText Search}">
           <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
             <lucide:LucideIcon Kind="Search" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
             <TextBlock Grid.Column="1" Text="{l:NcwText Search}" VerticalAlignment="Center" />
             <TextBlock x:Name="SearchKey" Grid.Column="2" Classes="keyHint" />
           </Grid>
         </ui:PlainButton>
-        <ui:PlainButton x:Name="InboxButton" Height="30" Padding="8,0" Command="{Binding ToggleInboxCommand}" Classes.active="{Binding IsInboxOpen}"
+        <ui:PlainButton x:Name="InboxButton" Height="26" Padding="8,0" Command="{Binding ToggleInboxCommand}" Classes.active="{Binding IsInboxOpen}"
                         AutomationProperties.Name="{l:NcwText InboxTitle}">
           <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
             <lucide:LucideIcon Kind="Inbox" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
@@ -246,7 +255,7 @@
             </ItemsControl>
           </StackPanel>
         </ui:NcwCollapsible>
-        <ui:PlainButton Height="30" Padding="8,0" Command="{Binding OpenScheduledTasksCommand}" AutomationProperties.Name="{l:NcwText ScheduledTasks}">
+        <ui:PlainButton Height="26" Padding="8,0" Command="{Binding OpenScheduledTasksCommand}" AutomationProperties.Name="{l:NcwText ScheduledTasks}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
             <lucide:LucideIcon Kind="CalendarClock" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
             <TextBlock Grid.Column="1" Text="{l:NcwText ScheduledTasks}" VerticalAlignment="Center" />
@@ -254,27 +263,39 @@
         </ui:PlainButton>
       </StackPanel>
 
-      <!-- 项目树标题:「+」= 新建项目窗口 -->
-      <Grid DockPanel.Dock="Top" Height="28" Margin="16,0,12,0" ColumnDefinitions="*,Auto">
-        <TextBlock Classes="section" Text="{l:NcwText SidebarProjects}" />
-        <ui:PlainButton Grid.Column="1" Width="22" Height="22" CornerRadius="6" Command="{Binding AddProjectCommand}"
-                        AutomationProperties.Name="{l:NcwText AddProject}" arc:Tooltip.Tip="{l:NcwText AddProject}">
-          <lucide:LucideIcon Kind="Plus" Size="13" HorizontalAlignment="Center" />
-        </ui:PlainButton>
-      </Grid>
-
-      <ScrollViewer x:Name="TreeScroll">
-        <StackPanel x:Name="TreeArea" Margin="8,0,8,12" Background="Transparent" MinHeight="80">
-          <ItemsControl x:Name="Tree" ItemsSource="{Binding Items}" />
-          <!-- 没有项目:原来项目面板的空状态(和「+」是同一个动作) -->
-          <StackPanel IsVisible="{Binding !HasProjects}" HorizontalAlignment="Center" Spacing="10" Margin="16,24">
-            <lucide:LucideIcon Kind="FolderPlus" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-            <TextBlock Text="{l:NcwText NoProjectsTitle}" HorizontalAlignment="Center" FontWeight="SemiBold" />
-            <TextBlock Classes="hint" Text="{l:NcwText NoProjectsHint}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
-            <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding AddProjectCommand}" Content="{l:NcwText AddFolder}" />
+      <!-- 项目与会话占满侧边栏剩余空间;文件浏览器保留在右侧检查器。 -->
+      <DockPanel x:Name="ProjectsPane">
+        <Grid DockPanel.Dock="Top" Height="28" Margin="8,0,8,0" ColumnDefinitions="*,Auto,Auto">
+          <ui:PlainButton x:Name="ProjectsSectionButton" Padding="4,0" Command="{Binding ToggleProjectsSectionCommand}"
+                          AutomationProperties.Name="{l:NcwText SidebarProjectsAndSessions}">
+            <Grid ColumnDefinitions="18,*" ColumnSpacing="4">
+              <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsProjectsSectionOpen}" Kind="ChevronRight" Size="12"
+                                 HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Grid.Column="1" Classes="section" Text="{l:NcwText SidebarProjectsAndSessions}" />
+            </Grid>
+          </ui:PlainButton>
+          <ui:PlainButton Grid.Column="1" Width="22" Height="22" CornerRadius="6" Command="{Binding CollapseAllProjectsCommand}"
+                          AutomationProperties.Name="{l:NcwText SidebarCollapseProjects}" arc:Tooltip.Tip="{l:NcwText SidebarCollapseProjects}">
+            <lucide:LucideIcon Kind="ListCollapse" Size="13" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+          <ui:PlainButton Grid.Column="2" Width="22" Height="22" CornerRadius="6" Command="{Binding AddProjectCommand}"
+                          AutomationProperties.Name="{l:NcwText AddProject}" arc:Tooltip.Tip="{l:NcwText AddProject}">
+            <lucide:LucideIcon Kind="Plus" Size="13" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </Grid>
+        <ScrollViewer x:Name="TreeScroll" IsVisible="{Binding IsProjectsSectionOpen}" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="TreeArea" Margin="8,0,8,12" Background="Transparent" MinHeight="80">
+            <ItemsControl x:Name="Tree" ItemsSource="{Binding Items}" />
+            <!-- 没有项目:原来项目面板的空状态(和「+」是同一个动作) -->
+            <StackPanel IsVisible="{Binding !HasProjects}" HorizontalAlignment="Center" Spacing="10" Margin="16,24">
+              <lucide:LucideIcon Kind="FolderPlus" Size="26" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Text="{l:NcwText NoProjectsTitle}" HorizontalAlignment="Center" FontWeight="SemiBold" />
+              <TextBlock Classes="hint" Text="{l:NcwText NoProjectsHint}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+              <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding AddProjectCommand}" Content="{l:NcwText AddFolder}" />
+            </StackPanel>
           </StackPanel>
-        </StackPanel>
-      </ScrollViewer>
+        </ScrollViewer>
+      </DockPanel>
     </DockPanel>
 
     <!-- 拖放的落点提示:前后放置是一条横线,成组 / 进组给目标行描一圈 -->

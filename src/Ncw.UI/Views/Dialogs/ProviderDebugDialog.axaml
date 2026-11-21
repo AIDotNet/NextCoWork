@@ -87,13 +87,13 @@
             </Grid>
           </StackPanel>
 
-          <!-- 协议:三段,每段一个圆点记着上一次的结局 -->
+          <!-- 协议:按当前供应商类型展示可选协议,每段一个圆点记着上一次的结局 -->
           <StackPanel Spacing="6">
             <TextBlock Classes="fieldLabel" Text="{l:NcwText ProviderDebugProtocol}" />
             <ItemsControl x:Name="ProtocolList" ItemsSource="{Binding Protocols}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                  <UniformGrid Columns="3" />
+                  <UniformGrid Columns="{Binding $parent[UserControl].Tag, FallbackValue=3}" />
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
@@ -129,11 +129,11 @@
                             PlaceholderText="{l:NcwText ProviderDebugPromptPlaceholder}" AutomationProperties.Name="{l:NcwText ProviderDebugPrompt}" />
           </StackPanel>
 
-          <ui:NcwSelect x:Name="ThinkingSelect" Label="{l:NcwText ProviderDebugThinking}" SelectedValue="{Binding Thinking, Mode=TwoWay}" />
-          <ui:NcwNumberField x:Name="MaxOutputField" Minimum="1" Maximum="64000" Step="256" LargeStep="4096" UseGrouping="True"
+          <ui:NcwSelect x:Name="ThinkingSelect" IsVisible="{Binding IsTextKind}" Label="{l:NcwText ProviderDebugThinking}" SelectedValue="{Binding Thinking, Mode=TwoWay}" />
+          <ui:NcwNumberField x:Name="MaxOutputField" IsVisible="{Binding IsTextKind}" Minimum="1" Maximum="64000" Step="256" LargeStep="4096" UseGrouping="True"
                              Value="{Binding MaxOutputTokens, Mode=TwoWay}" Label="{l:NcwText ProviderDebugMaxOutput}" />
 
-          <StackPanel Spacing="2">
+          <StackPanel Spacing="2" IsVisible="{Binding IsTextKind}">
             <ui:NcwCheckbox x:Name="ToolCheck" IsChecked="{Binding WithTool, Mode=TwoWay}" Content="{l:NcwText ProviderDebugWithTool}" />
             <TextBlock Classes="hint" TextWrapping="Wrap" Margin="26,0,0,0" Text="{l:NcwText ProviderDebugWithToolHint}" />
           </StackPanel>

@@ -47,11 +47,12 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
     public static readonly RoutedEvent<NcwWidgetWheelEventArgs> WheelForwardedEvent =
         RoutedEvent.Register<NcwWidgetSurface, NcwWidgetWheelEventArgs>("WheelForwarded", RoutingStrategies.Bubble);
 
-    private readonly NativeWebView _web = new() { Background = Brushes.Transparent };
+    private readonly NativeWebView _web;
     private readonly WidgetNavigationPolicy _policy = new();
     private string? _pendingHtml;
     private DispatcherTimer? _adapterTimer;
     private bool _adapterReady;
+    private bool _attachmentFailed;
     private bool _disposed;
     private bool _pageReady;
 
@@ -71,6 +72,7 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
 
     public NcwWidgetSurface()
     {
+        _web = new WidgetWebView(AttachWebView) { Background = Brushes.Transparent };
         Child = _web;
         _web.EnvironmentRequested += OnEnvironment;
         _web.AdapterCreated += OnAdapterCreated;
@@ -82,6 +84,64 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
         // 滚动只改祖先的排布,不会重新排布本控件:每一轮布局之后重算可见段(滚动、窗口缩放、上方的行变高都会触发布局)。
         // 在布局结束、渲染之前把 WebView 挪到新区域,NativeControlHost 在 AfterRender 读到的就是新位置,和这一帧的内容一致
         LayoutUpdated += (_, _) => UpdateVisible(Bounds.Size);
+    }
+
+    // NativeWebView 在 async void 附着流程中建原生子窗口;仅在外面捕获 Child 赋值的异常接不到它。
+    // 只为这次附着提供上下文:同步失败以及 async void 回投的异常都回到同一张卡片,不拦截全局 UI 异常。
+    internal void AttachWebView(Action attach) => new WebViewAttachmentContext(ReportAttachmentFailure).Run(attach);
+
+    internal static bool IsPlatformInitializationFailure(Exception exception) => exception is
+        InvalidOperationException or PlatformNotSupportedException or System.Runtime.InteropServices.ExternalException
+        or DllNotFoundException or EntryPointNotFoundException or TypeInitializationException;
+
+    private void ReportAttachmentFailure(Exception exception)
+    {
+        if (_disposed || _attachmentFailed)
+        {
+            return;
+        }
+
+        _attachmentFailed = true;
+        _adapterTimer?.Stop();
+        // 附着回调尚未退出时不能修改视觉树。
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_disposed)
+            {
+                Failed?.Invoke(WidgetSurfaceFailure.Unavailable, exception.Message);
+            }
+        });
+    }
+
+    private sealed class WidgetWebView(Action<Action> attach) : NativeWebView
+    {
+        protected override Type StyleKeyOverride => typeof(NativeWebView);
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) =>
+            attach(() => base.OnAttachedToVisualTree(e));
+    }
+
+    private sealed class WebViewAttachmentContext(Action<Exception> failed) : AvaloniaSynchronizationContext(DispatcherPriority.Normal)
+    {
+        public override void Post(SendOrPostCallback d, object? state) => base.Post(_ => Run(() => d(state)), null);
+
+        public void Run(Action action)
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                action();
+            }
+            catch (Exception e) when (IsPlatformInitializationFailure(e))
+            {
+                failed(e);
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
     }
 
     /// <summary>WebView 当前可见的那一段(本控件坐标,测试 / 诊断用);空 = 整个隐藏。</summary>
@@ -198,7 +258,7 @@ public sealed class NcwWidgetSurface : Decorator, IDisposable
     /// <summary>加载外壳页面。适配器还没建好就等它建好再加载。</summary>
     public void LoadShell(string html)
     {
-        if (_disposed)
+        if (_disposed || _attachmentFailed)
         {
             return;
         }

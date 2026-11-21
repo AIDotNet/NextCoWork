@@ -94,6 +94,7 @@ public sealed class MethodRouter(TimeProvider? clock = null)
 
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly Dictionary<string, (MethodDef Def, Func<RequestFrame, CallContext, CancellationToken, ValueTask<byte[]>> Invoke)> _handlers = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _extraCapabilities = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, IdempotentEntry> _idempotent = new(StringComparer.Ordinal);
     private long _lastSweep;
     private int _addedSinceSweep;
@@ -139,8 +140,16 @@ public sealed class MethodRouter(TimeProvider? clock = null)
 
     public MethodDef? Find(string method) => _handlers.TryGetValue(method, out var entry) ? entry.Def : null;
 
-    /// <summary>已注册方法所属的能力(去重、排序)。握手时作为 <c>welcome.features</c> 告诉控制端:这台设备支持哪些领域。</summary>
-    public string[] Capabilities => [.. _handlers.Values.Select(h => h.Def.Capability).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+    /// <summary>显式声明设备支持某个后加的能力开关(例如不单独占方法名、而是在既有方法上扩展语义与末尾可选字段的能力)。</summary>
+    public void DeclareCapability(string capability)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(capability);
+        _extraCapabilities.Add(capability);
+    }
+
+    /// <summary>已注册方法所属的能力与显式声明的能力(去重、排序)。握手时作为 <c>welcome.features</c> 告诉控制端:这台设备支持哪些领域。</summary>
+    public string[] Capabilities =>
+        [.. _handlers.Values.Select(h => h.Def.Capability).OfType<string>().Concat(_extraCapabilities).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 
     public async Task<ResponseFrame> InvokeAsync(RequestFrame request, CallContext context, CancellationToken ct)
     {

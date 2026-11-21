@@ -1,0 +1,1301 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NextCoWork · 左侧项目菜单与右侧文件树重设计方案（参考 VS Code）</title>
+<style>
+/* Token 对齐 Arc(Surface / SurfaceMuted / SurfaceRaised / Border / TextSecondary / Accent …) */
+:root, :root[data-theme="dark"] {
+  --Page: #0e0e10;
+  --Surface: #161618;
+  --Side: #1b1b1e;
+  --SurfaceMuted: #222226;
+  --SurfaceRaised: #29292e;
+  --SurfaceHover: #26262b;
+  --Selected: #2d2f39;
+  --Border: #2e2e34;
+  --BorderSubtle: #242429;
+  --BorderStrong: #43434c;
+  --Guide: #2a2a30;
+  --GuideActive: #4c5265;
+  --Text: #ececef;
+  --TextSecondary: #a4a4ad;
+  --TextMuted: #707079;
+  --Accent: #7c9cff;
+  --AccentSoft: rgba(124,156,255,.15);
+  --Primary: #ececef;
+  --OnPrimary: #121214;
+  --Warning: #e5a93c;
+  --WarningSoft: rgba(229,169,60,.15);
+  --Danger: #ef6363;
+  --DangerSoft: rgba(239,99,99,.14);
+  --Success: #4cc38a;
+  --SuccessSoft: rgba(76,195,138,.14);
+  --Shadow: 0 14px 36px rgba(0,0,0,.52), 0 0 0 1px rgba(255,255,255,.06);
+}
+:root[data-theme="light"] {
+  --Page: #eeede9;
+  --Surface: #ffffff;
+  --Side: #f6f6f3;
+  --SurfaceMuted: #ebebea;
+  --SurfaceRaised: #ffffff;
+  --SurfaceHover: #e9e9e5;
+  --Selected: #dfe4f2;
+  --Border: #dcdcd6;
+  --BorderSubtle: #e6e6e1;
+  --BorderStrong: #c5c5be;
+  --Guide: #e1e1dc;
+  --GuideActive: #a5acc0;
+  --Text: #1c1c1a;
+  --TextSecondary: #5a5a55;
+  --TextMuted: #8e8e88;
+  --Accent: #3d63dd;
+  --AccentSoft: rgba(61,99,221,.12);
+  --Primary: #1c1c1a;
+  --OnPrimary: #ffffff;
+  --Warning: #b4730d;
+  --WarningSoft: rgba(180,115,13,.12);
+  --Danger: #d23f3f;
+  --DangerSoft: rgba(210,63,63,.10);
+  --Success: #1f9460;
+  --SuccessSoft: rgba(31,148,96,.11);
+  --Shadow: 0 14px 36px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.06);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--Page); color: var(--Text);
+  font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+input { font: inherit; color: inherit; }
+svg.i { width: var(--s, 14px); height: var(--s, 14px); flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+kbd { font: 10.5px ui-monospace, Menlo, monospace; color: var(--TextMuted); border: 1px solid var(--Border); border-radius: 4px; padding: 0 4px; line-height: 16px; background: var(--Surface); }
+
+/* 页面外框 */
+.page { max-width: 1320px; margin: 0 auto; padding: 28px 18px 96px; }
+.hero h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; letter-spacing: -.01em; }
+.hero p { margin: 0; color: var(--TextSecondary); max-width: 920px; }
+.controls {
+  position: sticky; top: 0; z-index: 80; margin: 18px -18px 8px; padding: 10px 18px;
+  background: color-mix(in srgb, var(--Page) 88%, transparent); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--BorderSubtle); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+}
+.controls .lbl { color: var(--TextMuted); font-size: 12px; margin-right: 6px; }
+.seg { display: inline-flex; background: var(--SurfaceMuted); border: 1px solid var(--Border); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { padding: 3px 10px; border-radius: 6px; font-size: 12.5px; color: var(--TextSecondary); white-space: nowrap; }
+.seg button.on { background: var(--Surface); color: var(--Text); box-shadow: 0 0 0 1px var(--Border); }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav a { font-size: 12.5px; color: var(--TextSecondary); text-decoration: none; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--Border); }
+.nav a:hover { color: var(--Text); background: var(--SurfaceMuted); }
+
+h2.sec { font-size: 17px; margin: 38px 0 10px; font-weight: 650; }
+.audit { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.audit .it { background: var(--Surface); border: 1px solid var(--BorderSubtle); border-radius: 10px; padding: 10px 12px; font-size: 12.8px; color: var(--TextSecondary); display: flex; gap: 10px; }
+.audit .it b { color: var(--Text); font-weight: 600; }
+.sev { flex: none; font: 600 10.5px/1 ui-monospace, Menlo, monospace; padding: 4px 6px; border-radius: 5px; height: fit-content; margin-top: 2px; }
+.sev.l { background: var(--AccentSoft); color: var(--Accent); }
+.sev.r { background: var(--WarningSoft); color: var(--Warning); }
+
+section.opt { margin-top: 48px; scroll-margin-top: 68px; }
+.opt-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.opt-head .tag { font: 600 12px/1 ui-monospace, Menlo, monospace; color: var(--Accent); background: var(--AccentSoft); padding: 4px 8px; border-radius: 6px; }
+.opt-head h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.opt-head .rec { font-size: 11.5px; color: var(--Success); background: var(--SuccessSoft); padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.opt-head .sub { color: var(--TextSecondary); font-size: 13px; }
+.stagewrap { margin-top: 12px; overflow-x: auto; border-radius: 12px; }
+.hint { font-size: 12px; color: var(--TextMuted); margin-top: 8px; }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 12px; font-size: 12.8px; color: var(--TextSecondary); }
+@media (max-width: 900px) { .notes { grid-template-columns: 1fr; } }
+.notes h4 { margin: 0 0 6px; font-size: 12px; color: var(--TextMuted); font-weight: 600; }
+.notes ul { margin: 0; padding-left: 18px; }
+.notes li { margin: 3px 0; }
+.notes li b { color: var(--Text); font-weight: 600; }
+.notes .pro li::marker { color: var(--Success); }
+.notes .con li::marker { color: var(--Warning); }
+
+table.cmp { width: 100%; border-collapse: collapse; font-size: 12.8px; margin-top: 8px; }
+table.cmp th, table.cmp td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--BorderSubtle); vertical-align: top; }
+table.cmp th { color: var(--TextMuted); font-weight: 600; font-size: 12px; }
+table.cmp td:first-child { color: var(--TextSecondary); white-space: nowrap; font-weight: 500; }
+.good { color: var(--Success); } .mid { color: var(--Warning); } .bad { color: var(--Danger); }
+
+/* ================= 模拟窗口 ================= */
+.win {
+  display: flex; height: 610px; min-width: 1160px; border: 1px solid var(--Border);
+  border-radius: 12px; overflow: hidden; background: var(--Surface); position: relative; font-size: 12.5px;
+  user-select: none;
+}
+.side { display: flex; flex-direction: column; background: var(--Side); border-right: 1px solid var(--BorderSubtle); flex: none; min-height: 0; position: relative; }
+.insp { display: flex; flex-direction: column; background: var(--Side); border-left: 1px solid var(--BorderSubtle); flex: none; min-height: 0; position: relative; }
+.topbar { height: 38px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; flex: none; border-bottom: 1px solid var(--BorderSubtle); }
+.lights { display: flex; gap: 6px; margin-right: 8px; }
+.lights i { width: 10px; height: 10px; border-radius: 50%; background: var(--BorderStrong); }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 650; font-size: 12.5px; }
+.logo { width: 17px; height: 17px; border-radius: 4px; background: var(--Text); color: var(--Side); display: inline-flex; align-items: center; justify-content: center; font: 800 10px/1 sans-serif; }
+.sp { flex: 1; }
+.ib { width: 24px; height: 24px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--TextSecondary); flex: none; position: relative; }
+.ib:hover, .ib.on { background: var(--SurfaceHover); color: var(--Text); }
+.ib.xs { width: 20px; height: 20px; border-radius: 4px; }
+.scroll { overflow-y: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
+
+/* VS Code 风格折叠分区头 (Accordion Section Header) */
+.vsec {
+  height: 24px; display: flex; align-items: center; gap: 3px; padding: 0 6px;
+  font-size: 11px; font-weight: 650; letter-spacing: .02em; color: var(--TextSecondary);
+  border-top: 1px solid var(--BorderSubtle); background: var(--Side); flex: none;
+}
+.vsec.noborder { border-top: 0; }
+.vsec:hover { color: var(--Text); }
+.vsec .tbtn { display: inline-flex; align-items: center; gap: 4px; flex: 1; min-width: 0; height: 100%; font-weight: 650; }
+.vsec .tbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vsec .acts { display: none; align-items: center; gap: 1px; }
+.vsec:hover .acts, .vsec.keep .acts { display: inline-flex; }
+.chev { display: inline-flex; transition: transform .14s ease; color: var(--TextMuted); }
+.chev.closed { transform: rotate(-90deg); }
+
+/* 通用紧凑树行 (24-26px VS Code 密度) */
+.vrow {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 25px; padding: 0 8px 0 6px;
+  color: var(--Text); min-width: 0; position: relative; border-radius: 0;
+}
+.vrow.round { border-radius: 5px; margin: 0 4px; width: calc(100% - 8px); }
+.vrow:hover { background: var(--SurfaceHover); }
+.vrow.sel { background: var(--Selected); }
+.vrow.curproj { background: color-mix(in srgb, var(--Accent) 9%, transparent); }
+.vrow.curproj::before {
+  content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2.5px;
+  border-radius: 2px; background: var(--Accent);
+}
+.vrow .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrow .meta { font-size: 11px; color: var(--TextMuted); white-space: nowrap; }
+.vrow .hov { display: none; align-items: center; gap: 1px; }
+.vrow:hover .hov { display: inline-flex; }
+.vrow.dim .tt { color: var(--TextMuted); }
+
+/* 树缩进引导线 (VS Code Indent Guides) */
+.guides { position: relative; }
+.guide-children {
+  position: relative; margin-left: 13px; border-left: 1px solid var(--Guide);
+}
+.guide-children:hover, .guide-children.active { border-left-color: var(--GuideActive); }
+
+/* 状态胶囊与圆点 */
+.pill { font: 700 10px/1 -apple-system, sans-serif; padding: 2.5px 5.5px; border-radius: 8px; white-space: nowrap; }
+.pill.w { background: var(--WarningSoft); color: var(--Warning); }
+.pill.a { background: var(--AccentSoft); color: var(--Accent); }
+.pill.n { background: var(--SurfaceMuted); color: var(--TextSecondary); }
+.st { width: 7px; height: 7px; border-radius: 50%; flex: none; border: 1.5px solid var(--TextMuted); }
+.st.run { background: var(--Accent); border-color: var(--Accent); animation: breathe 1.6s infinite; }
+.st.wait { background: var(--Warning); border-color: var(--Warning); }
+@keyframes breathe { 50% { opacity: .35; } }
+
+/* 项目小色块 */
+.ptile {
+  width: 16px; height: 16px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;
+  font: 700 9px/1 -apple-system, sans-serif; color: #fff; flex: none;
+}
+.ptile.e { font-size: 11px; background: var(--SurfaceMuted) !important; }
+
+/* Git 状态着色 (VS Code 语义色) */
+.git-M { color: var(--Warning) !important; }
+.git-A, .git-U { color: var(--Success) !important; }
+.git-D { color: var(--Danger) !important; text-decoration: line-through; }
+.git-badge { font: 700 10.5px/1 ui-monospace, Menlo, monospace; width: 12px; text-align: right; flex: none; }
+.git-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--Warning); flex: none; opacity: .85; }
+
+/* Compact Folders 路径分段 */
+.compact-seg { color: inherit; }
+.compact-seg:hover { text-decoration: underline; }
+.compact-sep { color: var(--TextMuted); margin: 0 1px; }
+
+/* 原位输入框 (VS Code Inline New File / Rename) */
+.inline-edit {
+  display: flex; align-items: center; gap: 6px; height: 25px; padding: 0 6px;
+  background: var(--Surface); border: 1px solid var(--Accent); margin: 1px 4px; border-radius: 3px;
+}
+.inline-edit input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 12px; color: var(--Text);
+}
+
+/* 搜索过滤小条 */
+.filterbar {
+  display: flex; align-items: center; gap: 5px; margin: 4px 6px; padding: 0 6px; height: 26px;
+  background: var(--Surface); border: 1px solid var(--Accent); border-radius: 5px; flex: none;
+}
+.filterbar input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 12px; }
+
+/* VS Code Activity Bar (方案 B) */
+.abar {
+  width: 44px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0 8px;
+  background: color-mix(in srgb, var(--Side) 80%, var(--Page)); border-right: 1px solid var(--BorderSubtle); flex: none;
+}
+.abtn {
+  width: 34px; height: 34px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+  color: var(--TextMuted); position: relative;
+}
+.abtn:hover { color: var(--Text); background: var(--SurfaceHover); }
+.abtn.on { color: var(--Text); }
+.abtn.on::before { content: ''; position: absolute; left: -5px; top: 7px; bottom: 7px; width: 2.5px; border-radius: 2px; background: var(--Accent); }
+.abtn .bdg {
+  position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; padding: 0 3.5px;
+  border-radius: 7px; background: var(--Warning); color: #1a1200; font: 700 9px/14px sans-serif; text-align: center;
+}
+
+/* 顶部快捷栏 */
+.quicktop { display: flex; gap: 5px; padding: 7px 8px; flex: none; }
+.newbtn {
+  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 6px;
+  background: var(--SurfaceMuted); border: 1px solid var(--Border); flex: 1; font-weight: 550; font-size: 12px;
+}
+.newbtn:hover { background: var(--SurfaceHover); }
+.newbtn kbd { margin-left: auto; }
+
+/* 底部栏 */
+.foot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--BorderSubtle); flex: none; }
+.avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--SurfaceMuted); color: var(--TextSecondary); display: inline-flex; align-items: center; justify-content: center; font: 600 10.5px/1 sans-serif; position: relative; flex: none; }
+.avatar .ok { position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--Success); border: 2px solid var(--Side); }
+.foot .who { flex: 1; min-width: 0; line-height: 1.2; }
+.foot .who b { display: block; font-size: 12px; font-weight: 600; }
+.foot .who span { font-size: 10.5px; color: var(--TextMuted); }
+
+/* ================= 中间主工作区 (会话 + VS Code 预览标签页 + 面包屑) ================= */
+.ws { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--Surface); position: relative; }
+.wstabs { height: 38px; display: flex; align-items: center; gap: 3px; padding: 0 8px; border-bottom: 1px solid var(--BorderSubtle); flex: none; background: var(--Side); }
+.wstab {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 9px; border-radius: 6px;
+  color: var(--TextSecondary); max-width: 210px; font-size: 12px; border: 1px solid transparent;
+}
+.wstab:hover { background: var(--SurfaceHover); color: var(--Text); }
+.wstab.on { background: var(--Surface); color: var(--Text); border-color: var(--Border); }
+.wstab.preview .tname { font-style: italic; }
+.wstab .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wstab .x { opacity: 0; width: 16px; height: 16px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+.wstab:hover .x, .wstab.on .x { opacity: .75; }
+.wstab .x:hover { opacity: 1; background: var(--SurfaceMuted); }
+
+/* 面包屑 Breadcrumbs */
+.crumbs {
+  height: 26px; display: flex; align-items: center; gap: 3px; padding: 0 14px;
+  border-bottom: 1px solid var(--BorderSubtle); font-size: 11.5px; color: var(--TextSecondary); flex: none;
+}
+.crumbs button { padding: 1px 4px; border-radius: 4px; color: var(--TextSecondary); display: inline-flex; align-items: center; gap: 4px; }
+.crumbs button:hover { background: var(--SurfaceMuted); color: var(--Text); }
+.crumbs .cur { color: var(--Text); font-weight: 550; }
+
+/* 代码预览与对话流 */
+.codeview { flex: 1; overflow: auto; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 10px 0; min-height: 0; }
+.cline { display: flex; padding: 0 14px; }
+.cline:hover { background: color-mix(in srgb, var(--SurfaceMuted) 45%, transparent); }
+.cline .ln { width: 34px; text-align: right; padding-right: 14px; color: var(--TextMuted); flex: none; }
+.cline .src { white-space: pre; color: var(--Text); }
+.kw { color: var(--Accent); } .str { color: var(--Success); } .cmt { color: var(--TextMuted); }
+
+.chatbody { flex: 1; padding: 20px 28px; display: flex; flex-direction: column; gap: 14px; overflow: auto; min-height: 0; }
+.ubub { align-self: flex-end; background: var(--SurfaceMuted); border: 1px solid var(--Border); padding: 8px 12px; border-radius: 12px; max-width: 78%; font-size: 12.8px; }
+.acard { display: flex; flex-direction: column; gap: 8px; font-size: 12.8px; color: var(--Text); }
+.toolrow { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--TextSecondary); padding: 3px 8px; border-radius: 6px; background: var(--SurfaceMuted); width: fit-content; }
+.composer { margin: 0 16px 14px; border: 1px solid var(--Border); border-radius: 12px; padding: 9px 12px; background: var(--Side); display: flex; flex-direction: column; gap: 7px; }
+.chips-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.fchip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; background: var(--SurfaceRaised); border: 1px solid var(--Border); font-size: 11.5px; }
+.comp-in { display: flex; align-items: center; color: var(--TextMuted); font-size: 12.5px; }
+
+/* 检查器页签栏 */
+.itabs { height: 38px; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--BorderSubtle); flex: none; }
+.itab { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 7px; border-radius: 6px; color: var(--TextSecondary); font-size: 12px; }
+.itab:hover { background: var(--SurfaceHover); color: var(--Text); }
+.itab.on { background: var(--Surface); color: var(--Text); box-shadow: 0 0 0 1px var(--Border); }
+
+/* 弹出菜单 & Toast */
+.pop { position: absolute; z-index: 50; background: var(--SurfaceRaised); border: 1px solid var(--Border); border-radius: 8px; box-shadow: var(--Shadow); padding: 4px; min-width: 196px; }
+.pop .vrow { height: 26px; border-radius: 5px; }
+.pop .sep { height: 1px; background: var(--BorderSubtle); margin: 4px 2px; }
+.toast {
+  position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%);
+  background: var(--Text); color: var(--Surface); font-size: 12px; padding: 6px 12px;
+  border-radius: 7px; white-space: nowrap; box-shadow: var(--Shadow); z-index: 60; pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hero">
+    <h1>左侧项目菜单 + 右侧展开文件列表 · VS Code 风格设计方案</h1>
+    <p>基于当前 NextCoWork 3.0 代码（<code>Sidebar.axaml</code> + <code>FilesPane.axaml</code> + <code>WorkspaceArea.axaml</code>），给出 <b>3 套可直接点击体验的完整方案</b>。重点对比<b>左侧项目/会话如何组织</b>与<b>右侧文件树如何借鉴 VS Code Explorer</b>（紧凑工具栏、缩进线、Git 红黄绿语义色、Compact Folders 单目录合并、原位新建、单击斜体预览 Tab vs 双击固定、面包屑）。</p>
+  </div>
+
+  <div class="controls">
+    <div>
+      <span class="lbl">主题</span>
+      <span class="seg" id="theme">
+        <button data-t="dark" class="on">深色 Dark</button>
+        <button data-t="light">浅色 Light</button>
+      </span>
+    </div>
+    <nav class="nav">
+      <a href="#problems">当前痛点</a>
+      <a href="#A">方案 A · 左项目会话 + 右 VS Code 文件树（推荐）</a>
+      <a href="#B">方案 B · 经典 VS Code 活动栏 + 统一侧栏</a>
+      <a href="#C">方案 C · 左侧「项目内双折叠区（会话 + 文件）」</a>
+      <a href="#cmp">方案对比表</a>
+    </nav>
+  </div>
+
+  <h2 class="sec" id="problems">为什么要改：当前左、右两侧的 6 个具体问题</h2>
+  <div class="audit">
+    <div class="it"><span class="sev l">左侧</span><div><b>当前项目不显眼、悬停遮挡状态：</b>选中项目仅文字变粗，展开多个项目时分不清右侧文件树属于谁；悬停出 <code>+ ⋯</code> 时直接把待处理数盖没了。</div></div>
+    <div class="it"><span class="sev l">左侧</span><div><b>缺少树缩进线与折叠分区感：</b>全局入口、收件箱、项目树平铺堆叠，<code>项目组 → 项目 → 会话</code> 没有纵向引导线，层级松散。</div></div>
+    <div class="it"><span class="sev r">右侧</span><div><b>头部占掉 110px+，新建藏在二级菜单：</b>大项目名 + 常驻大搜索框挤压了文件树；高频的「新建文件/文件夹」「定位当前文件」没有像 VS Code 一样放在标题行。</div></div>
+    <div class="it"><span class="sev r">右侧</span><div><b>没有缩进线 &amp; Git 颜色全写死黄色：</b><code>FileRow.axaml</code> 里 M / A / D / U 全部是 <code>Warning</code> 黄色，文件名也不随 Git 状态着色。</div></div>
+    <div class="it"><span class="sev r">右侧</span><div><b>C# 深层空目录没合并、新建弹大模态框：</b><code>Views/Desktop/Inspector</code> 要点三次；新建/重命名弹居中大 Dialog 打断视线，不如 VS Code 原位输入框顺手。</div></div>
+    <div class="it"><span class="sev r">联动</span><div><b>单击文件直接塞满顶部标签栏：</b>缺少 VS Code 的「<b>单击斜体预览 Tab（复用同一个标签）+ 双击固定</b>」与文件顶部的可点击<b>面包屑（Breadcrumbs）</b>。</div></div>
+  </div>
+
+  <!-- ==================== 方案 A ==================== -->
+  <section class="opt" id="A">
+    <div class="opt-head">
+      <span class="tag">方案 A</span>
+      <h2>三栏各司其职 · 全面换装 VS Code Explorer 细节</h2>
+      <span class="rec">推荐 · 架构改动最稳</span>
+      <span class="sub">保留「左：项目与会话 ｜ 中：主工作区 ｜ 右：文件检查器」格局，左右两侧内部交互完整对齐 VS Code</span>
+    </div>
+    <div class="stagewrap"><div class="win" data-opt="A"></div></div>
+    <div class="hint">💡 试试交互：① 左侧点折叠分区（待处理 / 项目 / 定时任务）、点项目切换右侧文件树、悬停项目看 <code>+ ⋯</code> 不遮挡角标；② 右侧悬停 <code>NEXTCOWORK</code> 标题点「新建文件（原位输入）」「定位当前文件」「紧凑目录开关」「放大镜筛选」；③ <b>单击</b>文件看顶部斜体预览 Tab 复用，<b>双击</b>文件固定 Tab，点<b>面包屑</b>或点「+ 引用到对话」。</div>
+    <div class="notes">
+      <div><h4>核心设计要点</h4><ul>
+        <li><b>左侧变成 VS Code 折叠面板（Accordion）</b>：顶部紧凑 <code>[+ 新会话 ⌘N] [⌕ ⌘K]</code>，下方三个标准折叠区 <code>待处理 (3)</code>、<code>项目</code>（悬停出新建项目 / 新建组 / 全部折叠）、<code>定时任务</code>。</li>
+        <li><b>项目树强化</b>：当前项目带<b>左侧强调色竖条 + 浅底色</b>；展开的组和会话带<b>纵向缩进引导线</b>；悬停出 <code>+ ⋯</code> 时角标左移不消失。</li>
+        <li><b>右侧 1:1 还原 VS Code Explorer 体验</b>：24px 分区头悬停浮现 <code>新建文件 / 新建文件夹 / 定位当前文件 / 刷新 / 全部折叠 / 筛选</code>；搜索框按需展开；支持 <b>Compact Folders</b>（如 <code>Views/Desktop</code> 合并一行）、<b>原位输入框</b>、<b>Git 红黄绿着色</b>。</li>
+        <li><b>标签栏联动</b>：单击文件复用斜体 <i>Preview Tab</i>，双击固定；文件页顶部带可点选的 <b>Breadcrumbs 面包屑</b> + 一键 <code>@引用到对话</code>。</li>
+      </ul></div>
+      <div class="pro"><h4>优势</h4><ul>
+        <li><b>会话与文件树同屏可见</b>：边和 AI 聊边看右侧哪些文件变绿/变黄、随手单击预览代码，不用来回切面板。</li>
+        <li><b>完全符合现有 Store / ViewModel 分工</b>：<code>SidebarViewModel</code> 与 <code>FilesPanelViewModel</code> 原位升级，<code>NcwTreeView</code> 本身已内置 <code>ShowIndentGuides</code>。</li>
+        <li><b>空间利用率提升 ~30%</b>：右侧去掉 70px 冗余头、行高 25px，一屏多看 6–8 个文件。</li>
+      </ul></div>
+      <div class="con"><h4>注意点与工作量</h4><ul>
+        <li>1440px 以下窄窗口右侧检查器仍是抽屉覆盖（保持现有响应式断点）。</li>
+        <li>工作量约 <b>3–4 天</b>（改 <code>03-ui-layout.md</code> → 左侧 Accordion &amp; 缩进线 → 右侧紧凑头/Git 着色/Compact Folders/原位输入 → Preview Tab &amp; 面包屑）。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ==================== 方案 B ==================== -->
+  <section class="opt" id="B">
+    <div class="opt-head">
+      <span class="tag">方案 B</span>
+      <h2>经典 VS Code 活动栏（Activity Bar）+ 右侧可选双栏</h2>
+      <span class="sub">最像原生 VS Code / Cursor：最左 44px 图标活动栏切换「项目会话 / 资源管理器 / Git / 搜索 / 定时任务」，文件树既可放左边也可放右边</span>
+    </div>
+    <div class="stagewrap"><div class="win" data-opt="B"></div></div>
+    <div class="hint">💡 试试交互：点击最左侧 44px 活动栏的 5 个图标（<b>会话树 / 文件资源管理器 / 源代码管理 Git / 收件箱 / 定时任务</b>），或者点击文件面板右上角的「移到右侧并排 ◨」按钮切换单侧栏 / 双侧栏！</div>
+    <div class="notes">
+      <div><h4>核心设计要点</h4><ul>
+        <li><b>最左 44px Activity Bar</b>：固定展示核心视图图标 + 待处理数字角标 + 底部账户与设置（和 VS Code 肌肉记忆 100% 一致）。</li>
+        <li><b>文件树包含两个折叠子区</b>：完全照搬 VS Code 资源管理器的 <b><code>OPEN EDITORS（打开的会话与文件）</code></b> + <b><code>项目文件夹树</code></b>，顶部带项目下拉切换器。</li>
+        <li><b>支持「移到右侧辅助侧栏（Secondary Side Bar）」</b>：窄屏时左边切视图就够用，完全不用开右栏；大屏点一下 <code>◨</code> 把文件树钉去右边，和会话同屏。</li>
+      </ul></div>
+      <div class="pro"><h4>优势</h4><ul>
+        <li><b>窄屏 / 笔记本极度友好</b>：1280px 屏幕下不用开右侧抽屉，直接在左边切一下图标就能看完整文件树和 Git。</li>
+        <li><b>扩展性极强</b>：以后加「工作流库」「插件市场」「远程设备」只需在活动栏多一个图标。</li>
+      </ul></div>
+      <div class="con"><h4>注意点与工作量</h4><ul>
+        <li>刚在 2026-11 去掉了左侧窄栏合成单栏（<code>03-ui-layout.md</code> §1），这个方案等于重新引入 44px 活动栏。</li>
+        <li>在左边切到「文件树」时，如果不把文件树移到右边，就看不到跨项目的会话状态了。</li>
+        <li>工作量约 <b>5–6 天</b>（需调整 <code>DesktopShell</code> 外壳布局与视图路由）。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ==================== 方案 C ==================== -->
+  <section class="opt" id="C">
+    <div class="opt-head">
+      <span class="tag">方案 C</span>
+      <h2>左侧上下分栏（项目树 + 当前项目文件树）· 右侧专注运行时</h2>
+      <span class="sub">参考 VS Code 多段式 Explorer（Outline / Timeline 上下分栏）：左边上半部分选项目/会话，下半部分直接展开当前项目文件树</span>
+    </div>
+    <div class="stagewrap"><div class="win" data-opt="C"></div></div>
+    <div class="hint">💡 试试交互：左侧上半区切换项目（<code>NextCoWork / Octopus / Agent</code>），看<b>左下角的文件树跟着当前项目自动切换</b>！右侧检查器只保留纯粹的 AI / 开发运行时面板（改动审查 Diff、Git 提交、终端、子代理）。</div>
+    <div class="notes">
+      <div><h4>核心设计要点</h4><ul>
+        <li><b>导航全部收归左侧</b>：左栏内像 VS Code Explorer 的上下可拖拽 SplitView —— 上半区是 <code>项目与会话</code>，下半区是 <code>文件资源管理器 · {当前项目}</code>。</li>
+        <li><b>默认两栏就能干所有活</b>：关掉右侧检查器（⌘⌥I）时，依然能同时看到「项目会话列表 + 文件树 + 中间主工作区」，主工作区非常宽敞。</li>
+        <li><b>右侧回归纯粹「检查器」</b>：右侧去掉文件树，只放「本轮 AI 改动审查（Diff）」「Git」「终端」「子代理监控」。</li>
+      </ul></div>
+      <div class="pro"><h4>优势</h4><ul>
+        <li><b>心智模型非常干净</b>：「左边 = 找东西（找项目、找会话、找文件）」，「中间 = 干活（聊 AI、看代码）」，「右边 = 查状态（看改动 Diff、跑终端）」。</li>
+        <li>不需要开第三栏就能边聊 AI 边点开项目文件。</li>
+      </ul></div>
+      <div class="con"><h4>注意点与工作量</h4><ul>
+        <li><b>纵向空间竞争</b>：左栏高度有限（比如 800px 高的屏幕），项目多 + 文件目录深时，上下两个滚动区会显得有点挤（需要靠折叠和拖拽分隔条平衡）。</li>
+        <li>工作量约 <b>4–5 天</b>（把 <code>FilesPane</code> 迁入左侧可调比例的下方面板，调整 <code>InspectorTabs</code> 默认页签为审查/Git）。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <h2 class="sec" id="cmp">三套方案横向对比</h2>
+  <div style="overflow-x:auto">
+    <table class="cmp">
+      <tr>
+        <th>对比维度</th>
+        <th>方案 A · 左会话树 + 右 VS Code 文件树（推荐）</th>
+        <th>方案 B · VS Code 44px 活动栏 + 可移动面板</th>
+        <th>方案 C · 左侧上下分栏（上项目 + 下文件树）</th>
+      </tr>
+      <tr>
+        <td>默认栏数与宽度</td>
+        <td class="good">左 260px + 中自适应 + 右 300px（可 ⌘⌥I 收起）</td>
+        <td class="good">左 44+260px + 中自适应（右栏可选并排）</td>
+        <td class="good">左 280px + 中自适应（两栏即可同时看会话与文件）</td>
+      </tr>
+      <tr>
+        <td>纵向列表空间</td>
+        <td class="good">极佳（左整列给项目会话，右整列给文件树）</td>
+        <td class="good">极佳（每次独占整列高度）</td>
+        <td class="mid">一般（上下平分高度，深目录需多滚）</td>
+      </tr>
+      <tr>
+        <td>会话与文件同屏</td>
+        <td class="good">天然同屏（左看会话，右点文件）</td>
+        <td class="mid">默认切换，点「移到右侧」后可同屏</td>
+        <td class="good">天然同屏（都在左侧上下分区）</td>
+      </tr>
+      <tr>
+        <td>VS Code 核心文件体验<br><span style="font-weight:400;color:var(--TextMuted)">（紧凑工具栏/缩进线/Git色/Compact目录/原位新建/预览Tab/面包屑）</span></td>
+        <td class="good">全部包含</td>
+        <td class="good">全部包含</td>
+        <td class="good">全部包含</td>
+      </tr>
+      <tr>
+        <td>对现有 3.0 架构改动</td>
+        <td class="good">最小、最顺滑（原位增强 Sidebar + FilesPane）</td>
+        <td class="mid">中等（外壳增加 ActivityBar 与双侧宿主切换）</td>
+        <td class="mid">中等（FilesPane 从右栏迁左栏 SplitView）</td>
+      </tr>
+    </table>
+  </div>
+  <p class="hint" style="margin-top:14px">直接告诉我你选 <b>方案 A</b>、<b>方案 B</b> 还是 <b>方案 C</b>（或者任意混搭细节，比如「选 A，不要 Compact Folders」），我立即先更新 <code>docs/design/03-ui-layout.md</code> 再落代码并通过构建测试。</p>
+</div>
+
+<script>
+const IC = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  cal: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
+  panelL: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  panelR: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  dots: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folderOpen: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  filePlus: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 12v6"/>',
+  fileCode: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/>',
+  fileText: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  fileCog: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="12" cy="14" r="2"/>',
+  files: '<path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  collapse: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>',
+  locate: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/>',
+  git: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/>',
+  diff: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 7v6"/><path d="M9 17h6"/>',
+  term: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M9 13v2"/><path d="M15 13v2"/>',
+  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  at: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  compact: '<path d="M4 7h6l2 2h8"/><path d="M4 17h16"/>',
+  updown: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+};
+const I = (n, s = 14, cls = '') => `<svg class="i ${cls}" style="--s:${s}px" viewBox="0 0 24 24">${IC[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* 模拟项目与会话数据 */
+const PROJS = {
+  ncw: {
+    name: 'NextCoWork', glyph: '🐙', color: '#0f766e', path: '~/code/NextCoWork', branch: 'main',
+    sessions: [
+      { id: 's1', title: '整理左侧菜单与右侧 VS Code 文件树', st: 'run', pend: 1, t: '刚刚' },
+      { id: 's2', title: '实现 NativeAOT 插件宿主探针', t: '2 小时前' },
+      { id: 's3', title: '修复 Android 模拟器配对长按审批', t: '昨天' },
+      { id: 's4', title: '对齐 TKCode.Arc 1.3.0 Token', t: '周一' },
+      { id: 's5', title: '补充中继服务 SIGTERM 优雅退出测试', t: '上周' },
+    ],
+    tree: [
+      { name: 'docs', kind: 'dir', children: [
+        { name: 'design', kind: 'dir', children: [
+          { name: '03-ui-layout.md', kind: 'md', git: 'M', lines: ['# 03 · 界面设计与布局', '', '## 1. 桌面布局:左侧边栏 + 主工作区 + 检查器', '- 左侧采用可折叠分区与缩进引导线', '- 右侧对齐 VS Code Explorer 紧凑工具栏与预览标签'] },
+          { name: '09-protocol.md', kind: 'md', lines: ['# 09 · 协议设计', '', '远程连接采用 TLS 1.3 双向认证与 SRP-6a 配对。'] },
+        ]},
+      ]},
+      { name: 'src', kind: 'dir', children: [
+        { name: 'Ncw.Client', kind: 'dir', children: [
+          { name: 'ViewModels', kind: 'dir', children: [
+            { name: 'SidebarViewModel.cs', kind: 'code', git: 'M', lines: ['namespace Ncw.Client.ViewModels;', '', 'public sealed partial class SidebarViewModel : ObservableObject', '{', '    // 当前选中项目高亮 + 会话缩进树', '    public ObservableCollection<SidebarNodeViewModel> Items { get; } = [];', '}'] },
+            { name: 'FileTreeViewModel.cs', kind: 'code', git: 'M', lines: ['namespace Ncw.Client.ViewModels;', '', 'public sealed partial class FileTreeViewModel(IFilesCommands files) : ObservableObject', '{', '    // 支持 Compact Folders 与 Git M/A/D/U 语义状态', '    public bool CompactFolders { get; set; } = true;', '}'] },
+            { name: 'WorkspaceViewModel.cs', kind: 'code', lines: ['namespace Ncw.Client.ViewModels;', '', 'public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost', '{', '    // 单击复用 Preview Tab，双击 Pin 固定', '}'] },
+          ]},
+        ]},
+        { name: 'Ncw.UI', kind: 'dir', children: [
+          { name: 'Views', kind: 'dir', children: [
+            { name: 'Desktop', kind: 'dir', children: [
+              { name: 'Sidebar.axaml', kind: 'code', git: 'M', lines: ['<UserControl x:Class="Ncw.UI.Views.Desktop.Sidebar">', '  <!-- VS Code 风格折叠分区 + 项目缩进线 -->', '</UserControl>'] },
+              { name: 'FilesPane.axaml', kind: 'code', git: 'A', lines: ['<UserControl x:Class="Ncw.UI.Views.Desktop.Inspector.FilesPane">', '  <!-- 24px 紧凑工具头: 新建 / 定位 / 折叠 / 按需筛选 -->', '  <ui:NcwTreeView RowHeight="25" ShowIndentGuides="True" />', '</UserControl>'] },
+              { name: 'FileRow.axaml', kind: 'code', lines: ['<UserControl x:Class="Ncw.UI.Views.Desktop.Inspector.FileRow">', '  <!-- Git 状态色: M 黄 / A,U 绿 / D 红 -->', '</UserControl>'] },
+            ]},
+          ]},
+        ]},
+      ]},
+      { name: '.gitignore', kind: 'cfg', ignored: true, lines: ['bin/', 'obj/', 'artifacts/'] },
+      { name: 'AGENTS.md', kind: 'md', lines: ['# AGENTS.md (NextCoWork 3.0)', '', '所有颜色使用 ArcDesignTokenResource，所有文案走 NcwTextKind。'] },
+      { name: 'Directory.Packages.props', kind: 'cfg', git: 'U', lines: ['<Project>', '  <ItemGroup>', '    <PackageVersion Include="Avalonia" Version="12.1.6" />', '    <PackageVersion Include="TKCode.Arc" Version="1.3.0" />', '  </ItemGroup>', '</Project>'] },
+    ]
+  },
+  oc: {
+    name: 'Octopus', ini: 'Oc', color: '#ea580c', path: '~/code/octopus', branch: 'feat/auth',
+    sessions: [
+      { id: 'o1', title: '重构 OAuth PKCE 登录流', st: 'wait', pend: 2, t: '5 分钟前' },
+      { id: 'o2', title: '升级 .NET 11 SDK', t: '昨天' },
+    ],
+    tree: [
+      { name: 'src', kind: 'dir', children: [
+        { name: 'Octopus.App', kind: 'dir', children: [
+          { name: 'AuthService.cs', kind: 'code', git: 'M', lines: ['public sealed class AuthService', '{', '    public Task SignInAsync() => Task.CompletedTask;', '}'] },
+          { name: 'TokenStore.cs', kind: 'code', git: 'A', lines: ['public sealed class TokenStore { }'] },
+        ]}
+      ]},
+      { name: 'README.md', kind: 'md', lines: ['# Octopus', 'Cross-platform desktop client.'] }
+    ]
+  },
+  ag: {
+    name: 'Agent · devbox', ini: 'Ag', color: '#16a34a', path: '/srv/agent', remote: 'SSH', branch: 'dev',
+    sessions: [
+      { id: 'a1', title: '压测回合循环与流式增量', t: '昨天' },
+    ],
+    tree: [
+      { name: 'kernel', kind: 'dir', children: [
+        { name: 'RunLoop.cs', kind: 'code', lines: ['// Remote SSH workspace file', 'public sealed class RunLoop { }'] }
+      ]},
+      { name: 'appsettings.json', kind: 'cfg', git: 'M', lines: ['{ "Mode": "Cloud" }'] }
+    ]
+  }
+};
+
+const INBOX = [
+  { p: 'ncw', s: 's1', title: '写入 FilesPane.axaml (+42 −18)', proj: 'NextCoWork' },
+  { p: 'oc', s: 'o1', title: '提问：刷新令牌存 Keychain 还是库？', proj: 'Octopus' },
+  { p: 'oc', s: 'o1', title: '运行 dotnet test Octopus.slnx', proj: 'Octopus' },
+];
+
+const TASKS = [
+  { name: '每日依赖安全巡检', meta: 'NextCoWork · 每天 09:00' },
+  { name: '夜间回归冒烟', meta: 'Agent · 每天 02:00' },
+];
+
+/* 为节点补全相对路径与子目录变更标记 */
+function enrichTree(nodes, prefix = '') {
+  let hasChanged = false;
+  for (const n of nodes) {
+    n.path = prefix ? `${prefix}/${n.name}` : n.name;
+    if (n.kind === 'dir' && n.children) {
+      n.hasChangedDesc = enrichTree(n.children, n.path);
+      if (n.hasChangedDesc) hasChanged = true;
+    } else if (n.git) {
+      hasChanged = true;
+    }
+  }
+  return hasChanged;
+}
+Object.values(PROJS).forEach(p => enrichTree(p.tree));
+
+function findFile(nodes, path) {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    if (n.children) { const f = findFile(n.children, path); if (f) return f; }
+  }
+  return null;
+}
+
+/* 每个方案独立的纯 UI 状态 */
+function makeState(extra = {}) {
+  return Object.assign({
+    proj: 'ncw',
+    sess: 's1',
+    secInbox: false,
+    secProj: true,
+    secTasks: false,
+    groupWork: true,
+    expProj: { ncw: true, oc: true },
+    showMore: {},
+    expDirs: { 'src': true, 'src/Ncw.Client': true, 'src/Ncw.Client/ViewModels': true, 'src/Ncw.UI': true, 'src/Ncw.UI/Views': true, 'src/Ncw.UI/Views/Desktop': true, 'docs': true, 'docs/design': true, 'src/Octopus.App': true, 'kernel': true },
+    compactFolders: true,
+    filterOpen: false,
+    filterQ: '',
+    inlineNew: null, // { parentPath: '', type: 'file'|'dir' }
+    selectedPath: 'src/Ncw.UI/Views/Desktop/FilesPane.axaml',
+    pinnedFiles: ['docs/design/03-ui-layout.md'],
+    previewFile: 'src/Ncw.UI/Views/Desktop/FilesPane.axaml',
+    activeTab: 's:s1', // 's:id' or 'f:path'
+    refs: ['src/Ncw.UI/Views/Desktop/Sidebar.axaml'],
+    inspTab: 'files',
+    pmenu: null,
+    toast: null,
+  }, extra);
+}
+
+const ST = {
+  A: makeState({ activeTab: 'f:src/Ncw.UI/Views/Desktop/FilesPane.axaml' }),
+  B: makeState({ actMode: 'files', dockRight: false, projDrop: false, secOpenEditors: true }),
+  C: makeState({ inspTab: 'review', secFiles: true }),
+};
+
+function ptile(id) {
+  const p = PROJS[id];
+  return `<span class="ptile ${p.glyph ? 'e' : ''}" style="background:${p.color}">${p.glyph || p.ini}</span>`;
+}
+function pendCount(id) { return PROJS[id].sessions.reduce((a, s) => a + (s.pend || 0), 0); }
+function isRunning(id) { return PROJS[id].sessions.some(s => s.st === 'run'); }
+
+/* 渲染 VS Code 风格文件树（支持 Compact Folders + 缩进线 + Git 红黄绿 + 原位新建 + 按需过滤） */
+function renderFileExplorer(opt, st, { headerTitle = null, extraHeaderBtn = '' } = {}) {
+  const p = PROJS[st.proj];
+  const title = (headerTitle || p.name).toUpperCase();
+
+  // 递归构建树 HTML
+  function renderNodes(nodes) {
+    let html = '';
+    if (st.inlineNew && st.inlineNew.parentPath === '') {
+      // handled at root below
+    }
+    for (const raw of nodes) {
+      // 过滤模式
+      if (st.filterOpen && st.filterQ.trim()) {
+        const q = st.filterQ.trim().toLowerCase();
+        const matchSelf = raw.name.toLowerCase().includes(q);
+        const hasMatchChild = raw.children && JSON.stringify(raw.children).toLowerCase().includes(q);
+        if (!matchSelf && !hasMatchChild) continue;
+      }
+
+      if (raw.kind === 'dir') {
+        // Compact Folders: 沿着单子目录且无同级文件的链一路合并
+        let chain = [raw];
+        let cur = raw;
+        if (st.compactFolders) {
+          while (cur.children && cur.children.length === 1 && cur.children[0].kind === 'dir') {
+            if (!st.expDirs[cur.path]) break;
+            cur = cur.children[0];
+            chain.push(cur);
+          }
+        }
+        const tail = chain[chain.length - 1];
+        const open = !!st.expDirs[tail.path];
+        const label = chain.length > 1
+          ? chain.map((c, idx) => `<span class="compact-seg">${esc(c.name)}</span>${idx < chain.length - 1 ? '<span class="compact-sep">/</span>' : ''}`).join('')
+          : esc(raw.name);
+
+        html += `<div class="vrow ${st.selectedPath === tail.path ? 'sel' : ''}" data-act="dir" data-path="${esc(tail.path)}">
+          <span class="chev ${open ? '' : 'closed'}">${I('down', 12)}</span>
+          <span style="color:${open ? 'var(--Accent)' : 'var(--TextSecondary)'};display:inline-flex">${I(open ? 'folderOpen' : 'folder', 14)}</span>
+          <span class="tt">${label}</span>
+          ${!open && tail.hasChangedDesc ? '<span class="git-dot" title="包含已修改文件"></span>' : ''}
+        </div>`;
+
+        if (open) {
+          let inner = '';
+          if (st.inlineNew && st.inlineNew.parentPath === tail.path) {
+            inner += `<div class="inline-edit">
+              ${I(st.inlineNew.type === 'dir' ? 'folderPlus' : 'filePlus', 13)}
+              <input data-act="inline-input" placeholder="${st.inlineNew.type === 'dir' ? '输入文件夹名，回车创建…' : '输入文件名 (如 Helper.cs)，回车创建…'}" autofocus>
+            </div>`;
+          }
+          inner += renderNodes(tail.children || []);
+          html += `<div class="guide-children">${inner}</div>`;
+        }
+      } else {
+        const iconKind = raw.kind === 'code' ? 'fileCode' : raw.kind === 'md' ? 'fileText' : 'fileCog';
+        const gitCls = raw.git ? `git-${raw.git}` : '';
+        const sel = st.selectedPath === raw.path;
+        html += `<div class="vrow ${sel ? 'sel' : ''} ${raw.ignored ? 'dim' : ''}" data-act="file" data-path="${esc(raw.path)}" title="单击预览 · 双击固定标签页">
+          <span style="width:12px;flex:none"></span>
+          <span style="color:var(--TextSecondary);display:inline-flex">${I(iconKind, 14)}</span>
+          <span class="tt ${gitCls}">${esc(raw.name)}</span>
+          <span class="hov">
+            <button class="ib xs" data-act="ref" data-path="${esc(raw.path)}" title="引用到 AI 输入框 (@file)">${I('at', 12)}</button>
+          </span>
+          ${raw.git ? `<span class="git-badge ${gitCls}">${raw.git}</span>` : ''}
+        </div>`;
+      }
+    }
+    return html;
+  }
+
+  const rootInline = (st.inlineNew && st.inlineNew.parentPath === '')
+    ? `<div class="inline-edit">${I(st.inlineNew.type === 'dir' ? 'folderPlus' : 'filePlus', 13)}<input data-act="inline-input" placeholder="输入名称，Enter 创建，Esc 取消…" autofocus></div>`
+    : '';
+
+  return `
+    <div class="vsec keep" style="height:26px">
+      <button class="tbtn" data-act="toast" data-m="路径：${esc(p.path)} (${p.branch})">
+        <span class="chev">${I('down', 11)}</span>
+        <span>${esc(title)}</span>
+      </button>
+      <div class="acts">
+        <button class="ib xs" data-act="newfile" title="新建文件 (原位输入)">${I('filePlus', 13)}</button>
+        <button class="ib xs" data-act="newdir" title="新建文件夹 (原位输入)">${I('folderPlus', 13)}</button>
+        <button class="ib xs" data-act="locate" title="在树中定位当前打开的文件 (Reveal Active File)">${I('locate', 13)}</button>
+        <button class="ib xs ${st.compactFolders ? 'on' : ''}" data-act="togglecompact" title="切换紧凑单链目录 (Compact Folders)">${I('compact', 13)}</button>
+        <button class="ib xs ${st.filterOpen ? 'on' : ''}" data-act="togglefilter" title="按文件名筛选 (⌘F)">${I('search', 13)}</button>
+        <button class="ib xs" data-act="collapseall" title="全部折叠">${I('collapse', 13)}</button>
+        ${extraHeaderBtn}
+      </div>
+    </div>
+    ${st.filterOpen ? `<div class="filterbar">${I('search', 12)}<input data-act="filterq" value="${esc(st.filterQ)}" placeholder="筛选文件名称…" autofocus><button class="ib xs" data-act="togglefilter" title="关闭筛选">${I('x', 12)}</button></div>` : ''}
+    <div class="scroll" style="padding:2px 0 10px">
+      ${rootInline}
+      ${renderNodes(p.tree)}
+    </div>
+  `;
+}
+
+/* 渲染左侧项目与会话树（带缩进线 + 当前项目左竖条 + 不遮挡角标的悬停按钮） */
+function renderProjectTree(st) {
+  const renderProj = (id) => {
+    const p = PROJS[id];
+    const isCur = st.proj === id;
+    const open = !!st.expProj[id];
+    const n = pendCount(id);
+    const run = isRunning(id);
+
+    let badge = '';
+    if (n) badge = `<span class="pill w">${n}</span>`;
+    else if (run) badge = `<span class="st run"></span>`;
+
+    const head = `<div class="vrow round ${isCur ? 'curproj' : ''}">
+      <button data-act="projtoggle" data-p="${id}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:20px">
+        <span class="chev ${open ? '' : 'closed'}">${I('down', 11)}</span>
+      </button>
+      <button data-act="projsel" data-p="${id}" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;height:100%">
+        ${ptile(id)}
+        <span class="tt" style="font-weight:${isCur ? '650' : '500'}">${esc(p.name)}</span>
+      </button>
+      <span class="hov">
+        <button class="ib xs" data-act="newsess" data-p="${id}" title="在此项目新建会话">${I('plus', 12)}</button>
+        <button class="ib xs" data-act="pmenu" data-p="${id}" title="项目菜单">${I('dots', 12)}</button>
+      </span>
+      ${badge}
+    </div>`;
+
+    if (!open) return head;
+
+    const limit = st.showMore[id] ? 99 : 4;
+    const visible = p.sessions.slice(0, limit);
+    const rows = visible.map(s => {
+      const sel = st.activeTab === `s:${s.id}` || (st.proj === id && st.sess === s.id && !st.activeTab.startsWith('f:'));
+      return `<button class="vrow round ${sel ? 'sel' : ''}" data-act="opensess" data-p="${id}" data-s="${s.id}">
+        <span class="st ${s.st || ''}"></span>
+        <span class="tt">${esc(s.title)}</span>
+        ${s.pend ? `<span class="pill w">${s.pend} 待批</span>` : `<span class="meta">${s.t}</span>`}
+      </button>`;
+    }).join('');
+    const more = p.sessions.length > limit
+      ? `<button class="vrow round" style="color:var(--TextMuted);font-size:11.5px" data-act="more" data-p="${id}">显示更多 (${p.sessions.length - limit})…</button>`
+      : '';
+
+    return `${head}<div class="guide-children" style="margin-left:16px">${rows}${more}</div>`;
+  };
+
+  const workPend = pendCount('oc') + pendCount('ag');
+  return `
+    ${renderProj('ncw')}
+    <div style="margin-top:3px">
+      <div class="vrow round" data-act="togglegroup">
+        <span class="chev ${st.groupWork ? '' : 'closed'}">${I('down', 11)}</span>
+        <span style="width:8px;height:8px;border-radius:2px;background:#ea580c;flex:none"></span>
+        <span class="tt" style="font-size:11.5px;font-weight:600;color:var(--TextSecondary)">工作组</span>
+        ${!st.groupWork && workPend ? `<span class="pill w">${workPend}</span>` : ''}
+      </div>
+      ${st.groupWork ? `<div class="guide-children" style="margin-left:13px">${renderProj('oc')}${renderProj('ag')}</div>` : ''}
+    </div>
+  `;
+}
+
+/* 渲染中间主工作区（支持斜体预览 Tab vs 固定 Tab + 面包屑 + @引用卡片） */
+function renderWorkspace(st) {
+  const p = PROJS[st.proj];
+  const curSess = p.sessions.find(x => x.id === st.sess) || p.sessions[0];
+
+  // 组装标签页：当前会话 + 固定文件 + 预览文件（如果不重复）
+  const tabs = [
+    { key: `s:${curSess.id}`, kind: 'sess', title: curSess.title, running: curSess.st === 'run' }
+  ];
+  for (const fp of st.pinnedFiles) {
+    const fn = findFile(p.tree, fp);
+    if (fn) tabs.push({ key: `f:${fp}`, kind: 'file', path: fp, title: fn.name, preview: false });
+  }
+  if (st.previewFile && !st.pinnedFiles.includes(st.previewFile)) {
+    const fn = findFile(p.tree, st.previewFile);
+    if (fn) tabs.push({ key: `f:${st.previewFile}`, kind: 'file', path: st.previewFile, title: fn.name, preview: true });
+  }
+
+  const tabHtml = tabs.map(t => `
+    <div class="wstab ${st.activeTab === t.key ? 'on' : ''} ${t.preview ? 'preview' : ''}" data-act="wstab" data-key="${esc(t.key)}" title="${t.preview ? '预览标签页（双击固定）' : esc(t.title)}">
+      ${t.running ? '<span class="st run"></span>' : I(t.kind === 'sess' ? 'msg' : 'fileCode', 13)}
+      <span class="tname">${esc(t.title)}</span>
+      ${t.preview ? '<span class="meta" style="font-style:normal">预览</span>' : ''}
+      <button class="x" data-act="wsclose" data-key="${esc(t.key)}" title="关闭">${I('x', 11)}</button>
+    </div>
+  `).join('');
+
+  let bodyHtml = '';
+  if (st.activeTab.startsWith('f:')) {
+    const fpath = st.activeTab.slice(2);
+    const fn = findFile(p.tree, fpath) || { name: fpath.split('/').pop(), path: fpath, lines: ['// 新建文件，可直接编辑或引用到会话'] };
+    const segs = fpath.split('/');
+    const crumbs = segs.map((seg, i) => `
+      <button class="${i === segs.length - 1 ? 'cur' : ''}" data-act="crumb" data-path="${esc(segs.slice(0, i + 1).join('/'))}">
+        ${i === segs.length - 1 ? I('fileCode', 12) : I('folder', 12)} ${esc(seg)}
+      </button>${i < segs.length - 1 ? '<span style="color:var(--TextMuted)">›</span>' : ''}
+    `).join('');
+
+    const lines = (fn.lines || []).map((ln, idx) => `<div class="cline"><span class="ln">${idx + 1}</span><span class="src">${esc(ln)}</span></div>`).join('');
+    const isPreview = st.previewFile === fpath && !st.pinnedFiles.includes(fpath);
+
+    bodyHtml = `
+      <div class="crumbs">
+        ${crumbs}
+        <span class="sp"></span>
+        ${isPreview ? `<button data-act="pinnow" data-path="${esc(fpath)}" style="color:var(--Accent)">📌 固定标签</button>` : '<span class="meta">已固定</span>'}
+        <button data-act="ref" data-path="${esc(fpath)}">${I('at', 12)} 引用到对话</button>
+      </div>
+      <div class="codeview">${lines}</div>
+    `;
+  } else {
+    bodyHtml = `
+      <div class="crumbs">
+        <button data-act="toast" data-m="${esc(p.path)}">${ptile(st.proj)} ${esc(p.name)}</button>
+        <span style="color:var(--TextMuted)">›</span>
+        <span class="cur">${esc(curSess.title)}</span>
+        <span class="sp"></span>
+        <span class="meta">${I('git', 11)} ${p.branch}</span>
+      </div>
+      <div class="chatbody">
+        <div class="ubub">帮我把左侧项目菜单和右侧展开的文件列表参考 VS Code 优化一下交互密度。</div>
+        <div class="acard">
+          <div class="toolrow">${I('fileCode', 13)} 已读取 <b>Sidebar.axaml</b>、<b>FilesPane.axaml</b> · 准备应用新布局</div>
+          <div>已在右侧文件树启用 <b>缩进引导线</b>、<b>Compact Folders</b> 与 <b>Git M/A/D 语义着色</b>。你可以直接在文件树<b>单击预览</b>任意文件，<b>双击固定</b>到顶部标签栏，或点 <code>@</code> 把文件加入下方输入框。</div>
+        </div>
+      </div>
+      <div class="composer">
+        ${st.refs.length ? `<div class="chips-row">${st.refs.map(r => `<span class="fchip">${I('fileCode', 11)} ${esc(r.split('/').pop())} <button data-act="unref" data-path="${esc(r)}" style="color:var(--TextMuted)">×</button></span>`).join('')}</div>` : ''}
+        <div class="comp-in"><span>输入消息，@ 引用项目文件，/ 执行命令…</span><span class="sp"></span><span class="pill a">Claude Sonnet 4.6 ▾</span></div>
+      </div>
+    `;
+  }
+
+  return `<div class="ws">
+    <div class="wstabs">${tabHtml}<button class="ib xs" data-act="newsess" data-p="${st.proj}" title="新建会话 ⌘N">${I('plus', 13)}</button></div>
+    ${bodyHtml}
+    ${st.toast ? `<div class="toast">${esc(st.toast)}</div>` : ''}
+  </div>`;
+}
+
+/* 项目右键 / ⋯ 弹出菜单 */
+function renderProjMenu(st) {
+  if (!st.pmenu) return '';
+  const p = PROJS[st.pmenu];
+  return `<div class="pop" style="left:64px;top:156px">
+    <div style="padding:4px 8px;font:11px ui-monospace,Menlo,monospace;color:var(--TextMuted)">${esc(p.path)}</div>
+    <button class="vrow" data-act="newsess" data-p="${st.pmenu}">${I('pen', 13)}<span class="tt">新建会话</span></button>
+    <button class="vrow" data-act="toast" data-m="已在右侧打开 ${p.name} 的终端">${I('term', 13)}<span class="tt">新建终端</span></button>
+    <div class="sep"></div>
+    <button class="vrow" data-act="toast" data-m="已在访达中显示 ${p.path}">${I('folderOpen', 13)}<span class="tt">在访达中显示</span></button>
+    <button class="vrow" data-act="toast" data-m="已复制路径 ${p.path}">${I('files', 13)}<span class="tt">复制路径</span></button>
+    <button class="vrow" data-act="toast" data-m="打开更改项目图标弹窗">${I('gear', 13)}<span class="tt">更改图标 / 分组…</span></button>
+  </div>`;
+}
+
+/* ==================== 方案 A 渲染 ==================== */
+function renderA(st) {
+  const left = `<div class="side" style="width:264px">
+    <div class="topbar">${'<span class="lights"><i></i><i></i><i></i></span>'}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><button class="ib" data-act="toast" data-m="收起左侧边栏 ⌘B">${I('panelL', 14)}</button></div>
+    <div class="quicktop">
+      <button class="newbtn" data-act="newsess" data-p="${st.proj}">${I('pen', 13)} 新会话 <kbd>⌘N</kbd></button>
+      <button class="ib" style="width:28px;height:28px;border:1px solid var(--Border);border-radius:6px" data-act="toast" data-m="打开命令面板 ⌘K（搜索文件/会话/命令）" title="搜索 ⌘K">${I('search', 13)}</button>
+    </div>
+
+    <!-- 分区 1: 收件箱 / 待处理 -->
+    <div class="vsec">
+      <button class="tbtn" data-act="togsec" data-k="secInbox">
+        <span class="chev ${st.secInbox ? '' : 'closed'}">${I('down', 11)}</span>
+        <span>待处理收件箱</span>
+      </button>
+      <span class="pill w">${INBOX.length}</span>
+    </div>
+    ${st.secInbox ? `<div style="padding:3px 4px 6px">${INBOX.map(it => `
+      <button class="vrow round" data-act="opensess" data-p="${it.p}" data-s="${it.s}">
+        <span style="color:var(--Warning);display:inline-flex">${I('shield', 13)}</span>
+        <span class="tt">${esc(it.title)}</span>
+        <span class="meta">${it.proj}</span>
+      </button>`).join('')}</div>` : ''}
+
+    <!-- 分区 2: 项目树 -->
+    <div class="vsec">
+      <button class="tbtn" data-act="togsec" data-k="secProj">
+        <span class="chev ${st.secProj ? '' : 'closed'}">${I('down', 11)}</span>
+        <span>项目与会话</span>
+      </button>
+      <div class="acts">
+        <button class="ib xs" data-act="toast" data-m="弹出「新建项目」窗口" title="添加项目">${I('plus', 13)}</button>
+        <button class="ib xs" data-act="collapseprojs" title="折叠全部项目">${I('collapse', 13)}</button>
+      </div>
+    </div>
+    <div class="scroll" style="padding:4px 0 8px">
+      ${st.secProj ? renderProjectTree(st) : '<div style="padding:8px 14px;color:var(--TextMuted);font-size:12px">已折叠 3 个项目</div>'}
+    </div>
+
+    <!-- 分区 3: 定时任务 -->
+    <div class="vsec">
+      <button class="tbtn" data-act="togsec" data-k="secTasks">
+        <span class="chev ${st.secTasks ? '' : 'closed'}">${I('down', 11)}</span>
+        <span>定时任务</span>
+      </button>
+      <span class="meta">${TASKS.length}</span>
+    </div>
+    ${st.secTasks ? `<div style="padding:3px 4px 6px">${TASKS.map(t => `<button class="vrow round" data-act="toast" data-m="打开定时任务：${t.name}">${I('cal', 13)}<span class="tt">${esc(t.name)}</span></button>`).join('')}</div>` : ''}
+
+    <div class="foot"><span class="avatar">T<span class="ok"></span></span><div class="who"><b>token</b><span>已登录</span></div><button class="ib" data-act="toast" data-m="打开设置 ⌘,">${I('gear', 14)}</button></div>
+    ${renderProjMenu(st)}
+  </div>`;
+
+  const inspBody = st.inspTab === 'files'
+    ? renderFileExplorer('A', st)
+    : `<div style="padding:16px;color:var(--TextSecondary);font-size:12.5px;display:flex;flex-direction:column;gap:8px">
+        <b>${st.inspTab === 'git' ? '源代码管理 (Git)' : st.inspTab === 'review' ? '本轮改动审查 (Review)' : '集成终端 (zsh)'}</b>
+        <div style="color:var(--TextMuted)">点切回左上角「文件」页签可继续体验 VS Code 风格文件树。</div>
+      </div>`;
+
+  const right = `<div class="insp" style="width:296px">
+    <div class="itabs">
+      <button class="itab ${st.inspTab === 'files' ? 'on' : ''}" data-act="itab" data-t="files">${I('files', 13)}${st.inspTab === 'files' ? '<span>文件</span>' : ''}</button>
+      <button class="itab ${st.inspTab === 'git' ? 'on' : ''}" data-act="itab" data-t="git">${I('git', 13)}${st.inspTab === 'git' ? '<span>Git</span>' : ''}<span class="pill n">4</span></button>
+      <button class="itab ${st.inspTab === 'review' ? 'on' : ''}" data-act="itab" data-t="review">${I('diff', 13)}${st.inspTab === 'review' ? '<span>审查</span>' : ''}</button>
+      <button class="itab ${st.inspTab === 'term' ? 'on' : ''}" data-act="itab" data-t="term">${I('term', 13)}${st.inspTab === 'term' ? '<span>终端</span>' : ''}</button>
+      <span class="sp"></span>
+      <button class="ib" data-act="toast" data-m="收起右侧检查器 ⌘⌥I">${I('panelR', 14)}</button>
+    </div>
+    ${inspBody}
+  </div>`;
+
+  return left + renderWorkspace(st) + right;
+}
+
+/* ==================== 方案 B 渲染 (经典 VS Code Activity Bar) ==================== */
+function renderB(st) {
+  const p = PROJS[st.proj];
+  const abar = `<div class="abar">
+    <button class="abtn ${st.actMode === 'sessions' ? 'on' : ''}" data-act="bmode" data-m="sessions" title="项目与会话">${I('msg', 18)}</button>
+    <button class="abtn ${st.actMode === 'files' ? 'on' : ''}" data-act="bmode" data-m="files" title="资源管理器 Explorer (⇧⌘E)">${I('files', 18)}</button>
+    <button class="abtn ${st.actMode === 'git' ? 'on' : ''}" data-act="bmode" data-m="git" title="源代码管理 Git">${I('git', 18)}<span class="bdg" style="background:var(--Accent);color:#fff">4</span></button>
+    <button class="abtn ${st.actMode === 'inbox' ? 'on' : ''}" data-act="bmode" data-m="inbox" title="待处理收件箱">${I('inbox', 18)}<span class="bdg">${INBOX.length}</span></button>
+    <button class="abtn ${st.actMode === 'tasks' ? 'on' : ''}" data-act="bmode" data-m="tasks" title="定时任务">${I('cal', 18)}</button>
+    <span class="sp"></span>
+    <span class="avatar" style="margin-bottom:6px">T<span class="ok"></span></span>
+    <button class="abtn" data-act="toast" data-m="打开设置">${I('gear', 17)}</button>
+  </div>`;
+
+  const switcher = `<div style="padding:6px 8px;border-bottom:1px solid var(--BorderSubtle);position:relative">
+    <button class="vrow round" style="height:28px;background:var(--Surface);border:1px solid var(--Border)" data-act="bprojdrop">
+      ${ptile(st.proj)}<span class="tt" style="font-weight:600">${esc(p.name)}</span><span class="meta">${p.branch}</span>${I('updown', 12)}
+    </button>
+    ${st.projDrop ? `<div class="pop" style="left:8px;right:8px;top:38px">
+      ${Object.keys(PROJS).map(id => `<button class="vrow ${id === st.proj ? 'sel' : ''}" data-act="projsel" data-p="${id}">${ptile(id)}<span class="tt">${PROJS[id].name}</span>${pendCount(id) ? `<span class="pill w">${pendCount(id)}</span>` : ''}</button>`).join('')}
+    </div>` : ''}
+  </div>`;
+
+  let sideBody = '';
+  if (st.actMode === 'sessions') {
+    sideBody = `<div class="quicktop"><button class="newbtn" data-act="newsess" data-p="${st.proj}">${I('pen', 13)} 新会话 <kbd>⌘N</kbd></button></div>
+      <div class="scroll" style="padding:4px 0">${renderProjectTree(st)}</div>`;
+  } else if (st.actMode === 'files') {
+    const openEditors = `
+      <div class="vsec noborder">
+        <button class="tbtn" data-act="togsec" data-k="secOpenEditors">
+          <span class="chev ${st.secOpenEditors ? '' : 'closed'}">${I('down', 11)}</span>
+          <span>OPEN EDITORS · 打开的项</span>
+        </button>
+      </div>
+      ${st.secOpenEditors ? `<div style="padding:2px 0 4px">
+        ${p.sessions.slice(0, 2).map(s => `<button class="vrow ${st.activeTab === 's:' + s.id ? 'sel' : ''}" data-act="opensess" data-p="${st.proj}" data-s="${s.id}"><span class="st ${s.st || ''}" style="margin-left:8px"></span><span class="tt">${esc(s.title)}</span></button>`).join('')}
+        ${st.pinnedFiles.map(fp => `<button class="vrow ${st.activeTab === 'f:' + fp ? 'sel' : ''}" data-act="file" data-path="${esc(fp)}"><span style="margin-left:6px;display:inline-flex">${I('fileCode', 13)}</span><span class="tt">${esc(fp.split('/').pop())}</span></button>`).join('')}
+      </div>` : ''}
+    `;
+    sideBody = switcher + openEditors + renderFileExplorer('B', st, {
+      extraHeaderBtn: `<button class="ib xs" data-act="bdock" title="将文件树移到右侧辅助栏（与会话同屏）">${I('panelR', 13)}</button>`
+    });
+  } else if (st.actMode === 'inbox') {
+    sideBody = `<div style="padding:8px">${INBOX.map(it => `<button class="vrow round" data-act="opensess" data-p="${it.p}" data-s="${it.s}"><span style="color:var(--Warning)">${I('shield', 13)}</span><span class="tt">${esc(it.title)}</span></button>`).join('')}</div>`;
+  } else {
+    sideBody = `<div style="padding:14px;color:var(--TextSecondary)">当前模式：<b>${st.actMode === 'git' ? 'Git 变更 (4 个文件)' : '定时任务列表'}</b></div>`;
+  }
+
+  const left = `<div class="side" style="width:304px">
+    <div class="topbar">${'<span class="lights"><i></i><i></i><i></i></span>'}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><button class="ib" data-act="bdock" title="切换右侧辅助文件栏">${I('panelR', 14)}</button></div>
+    <div style="display:flex;flex:1;min-height:0">${abar}<div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">${sideBody}</div></div>
+  </div>`;
+
+  const right = st.dockRight ? `<div class="insp" style="width:284px">
+    <div class="itabs"><span style="font-size:12px;font-weight:600;padding-left:4px">辅助侧栏 · 文件树</span><span class="sp"></span><button class="ib xs" data-act="bdock" title="移回左侧">${I('x', 13)}</button></div>
+    ${renderFileExplorer('B', st)}
+  </div>` : '';
+
+  return left + renderWorkspace(st) + right;
+}
+
+/* ==================== 方案 C 渲染 (左侧上下分栏：项目会话 + 当前项目文件树) ==================== */
+function renderC(st) {
+  const left = `<div class="side" style="width:284px">
+    <div class="topbar">${'<span class="lights"><i></i><i></i><i></i></span>'}<span class="brand"><span class="logo">N</span>NextCoWork</span><span class="sp"></span><button class="ib" data-act="toast" data-m="打开搜索面板 ⌘K">${I('search', 14)}</button><button class="ib" data-act="toast" data-m="收起左侧边栏 ⌘B">${I('panelL', 14)}</button></div>
+
+    <!-- 上半区：项目与会话 (约 44% 高度) -->
+    <div class="vsec noborder keep">
+      <button class="tbtn" data-act="togsec" data-k="secProj">
+        <span class="chev ${st.secProj ? '' : 'closed'}">${I('down', 11)}</span>
+        <span>PROJECTS · 项目与会话</span>
+      </button>
+      <div class="acts">
+        <button class="ib xs" data-act="newsess" data-p="${st.proj}" title="新建会话 ⌘N">${I('pen', 12)}</button>
+        <button class="ib xs" data-act="toast" data-m="新建项目" title="添加项目">${I('plus', 13)}</button>
+      </div>
+    </div>
+    ${st.secProj ? `<div class="scroll" style="flex:0 0 205px;padding:2px 0 6px">${renderProjectTree(st)}</div>` : ''}
+
+    <!-- 下半区：跟随当前项目的 VS Code 文件资源管理器 (自适应占满剩余高度) -->
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;border-top:2px solid var(--Border)">
+      ${renderFileExplorer('C', st, { headerTitle: `FILES · ${PROJS[st.proj].name}` })}
+    </div>
+
+    <div class="foot"><span class="avatar">T<span class="ok"></span></span><div class="who"><b>token</b><span>待处理 ${INBOX.length} 项</span></div><button class="ib" data-act="toast" data-m="打开设置">${I('gear', 14)}</button></div>
+    ${renderProjMenu(st)}
+  </div>`;
+
+  const right = `<div class="insp" style="width:270px">
+    <div class="itabs">
+      <button class="itab ${st.inspTab === 'review' ? 'on' : ''}" data-act="itab" data-t="review">${I('diff', 13)}<span>审查</span></button>
+      <button class="itab ${st.inspTab === 'git' ? 'on' : ''}" data-act="itab" data-t="git">${I('git', 13)}<span>Git</span></button>
+      <button class="itab ${st.inspTab === 'term' ? 'on' : ''}" data-act="itab" data-t="term">${I('term', 13)}<span>终端</span></button>
+      <button class="itab ${st.inspTab === 'bot' ? 'on' : ''}" data-act="itab" data-t="bot">${I('bot', 13)}<span>子代理</span></button>
+    </div>
+    <div style="padding:12px;display:flex;flex-direction:column;gap:8px;font-size:12px">
+      <div style="color:var(--TextSecondary);font-weight:600">本轮改动文件 (3)</div>
+      <button class="vrow round" data-act="file" data-path="src/Ncw.UI/Views/Desktop/Sidebar.axaml">${I('fileCode', 13)}<span class="tt">Sidebar.axaml</span><span style="color:var(--Success)">+38</span><span style="color:var(--Danger)">−14</span></button>
+      <button class="vrow round" data-act="file" data-path="src/Ncw.UI/Views/Desktop/FilesPane.axaml">${I('fileCode', 13)}<span class="tt">FilesPane.axaml</span><span style="color:var(--Success)">+54</span><span style="color:var(--Danger)">−29</span></button>
+      <button class="vrow round" data-act="file" data-path="docs/design/03-ui-layout.md">${I('fileText', 13)}<span class="tt">03-ui-layout.md</span><span style="color:var(--Success)">+26</span><span style="color:var(--Danger)">−8</span></button>
+      <div style="margin-top:8px;padding:10px;border-radius:8px;background:var(--Surface);border:1px solid var(--BorderSubtle);color:var(--TextMuted)">
+        文件树已合并到左下角跟随当前项目切换；右侧面板可随时 <code>⌘⌥I</code> 完全收起，专注看代码或对话。
+      </div>
+    </div>
+  </div>`;
+
+  return left + renderWorkspace(st) + right;
+}
+
+function renderOne(opt) {
+  const el = document.querySelector(`.win[data-opt="${opt}"]`);
+  const st = ST[opt];
+  el.innerHTML = opt === 'A' ? renderA(st) : opt === 'B' ? renderB(st) : renderC(st);
+  const inp = el.querySelector('input[autofocus]');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+['A', 'B', 'C'].forEach(renderOne);
+
+function flash(opt, msg) {
+  const st = ST[opt];
+  st.toast = msg;
+  clearTimeout(st._timer);
+  st._timer = setTimeout(() => { st.toast = null; renderOne(opt); }, 1800);
+}
+
+/* 事件委托：单击、双击固定 Tab、原位回车新建、实时过滤 */
+document.addEventListener('click', e => {
+  const tbtn = e.target.closest('#theme button');
+  if (tbtn) {
+    document.documentElement.dataset.theme = tbtn.dataset.t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b === tbtn));
+    return;
+  }
+  const win = e.target.closest('.win');
+  if (!win) return;
+  const opt = win.dataset.opt;
+  const st = ST[opt];
+  const btn = e.target.closest('[data-act]');
+  if (!btn) {
+    if (st.pmenu || st.projDrop) { st.pmenu = null; st.projDrop = false; renderOne(opt); }
+    return;
+  }
+  const act = btn.dataset.act;
+  if (act !== 'pmenu') st.pmenu = null;
+  if (act !== 'bprojdrop') st.projDrop = false;
+
+  if (act === 'togsec') st[btn.dataset.k] = !st[btn.dataset.k];
+  else if (act === 'projtoggle') st.expProj[btn.dataset.p] = !st.expProj[btn.dataset.p];
+  else if (act === 'projsel') {
+    st.proj = btn.dataset.p;
+    st.expProj[st.proj] = true;
+    const first = PROJS[st.proj].sessions[0];
+    if (first) { st.sess = first.id; st.activeTab = `s:${first.id}`; }
+    st.pinnedFiles = []; st.previewFile = null; st.inlineNew = null;
+    flash(opt, `已切换到项目 ${PROJS[st.proj].name}，文件树同步刷新`);
+  }
+  else if (act === 'togglegroup') st.groupWork = !st.groupWork;
+  else if (act === 'collapseprojs') { st.expProj = {}; flash(opt, '已折叠全部项目'); }
+  else if (act === 'more') st.showMore[btn.dataset.p] = true;
+  else if (act === 'opensess') {
+    st.proj = btn.dataset.p; st.sess = btn.dataset.s; st.activeTab = `s:${st.sess}`;
+  }
+  else if (act === 'newsess') {
+    const p = PROJS[btn.dataset.p];
+    const id = 'n' + Date.now().toString().slice(-3);
+    p.sessions.unshift({ id, title: '新会话', t: '刚刚' });
+    st.proj = btn.dataset.p; st.expProj[st.proj] = true; st.sess = id; st.activeTab = `s:${id}`;
+    flash(opt, `已在 ${p.name} 新建会话`);
+  }
+  else if (act === 'pmenu') { st.pmenu = st.pmenu === btn.dataset.p ? null : btn.dataset.p; }
+  else if (act === 'dir') { st.selectedPath = btn.dataset.path; st.expDirs[btn.dataset.path] = !st.expDirs[btn.dataset.path]; }
+  else if (act === 'file') {
+    const path = btn.dataset.path;
+    st.selectedPath = path;
+    if (!st.pinnedFiles.includes(path)) st.previewFile = path;
+    st.activeTab = `f:${path}`;
+  }
+  else if (act === 'pinnow') {
+    const path = btn.dataset.path;
+    if (!st.pinnedFiles.includes(path)) st.pinnedFiles.push(path);
+    if (st.previewFile === path) st.previewFile = null;
+    flash(opt, '已固定文件标签页');
+  }
+  else if (act === 'wstab') { st.activeTab = btn.dataset.key; }
+  else if (act === 'wsclose') {
+    e.stopPropagation();
+    const key = btn.dataset.key;
+    if (key.startsWith('f:')) {
+      const fp = key.slice(2);
+      st.pinnedFiles = st.pinnedFiles.filter(x => x !== fp);
+      if (st.previewFile === fp) st.previewFile = null;
+      st.activeTab = `s:${st.sess}`;
+    } else {
+      flash(opt, '保留至少一个当前会话标签');
+    }
+  }
+  else if (act === 'ref') {
+    e.stopPropagation();
+    const path = btn.dataset.path;
+    if (!st.refs.includes(path)) st.refs.push(path);
+    st.activeTab = `s:${st.sess}`;
+    flash(opt, `已将 @${path.split('/').pop()} 加入对话输入框`);
+  }
+  else if (act === 'unref') { st.refs = st.refs.filter(x => x !== btn.dataset.path); }
+  else if (act === 'newfile' || act === 'newdir') {
+    let parent = '';
+    if (st.selectedPath) {
+      const node = findFile(PROJS[st.proj].tree, st.selectedPath);
+      parent = node && node.kind === 'dir' ? node.path : (st.selectedPath.includes('/') ? st.selectedPath.slice(0, st.selectedPath.lastIndexOf('/')) : '');
+    }
+    if (parent) st.expDirs[parent] = true;
+    st.inlineNew = { parentPath: parent, type: act === 'newdir' ? 'dir' : 'file' };
+  }
+  else if (act === 'locate') {
+    const fp = st.activeTab.startsWith('f:') ? st.activeTab.slice(2) : st.selectedPath;
+    if (fp) {
+      const parts = fp.split('/');
+      for (let i = 1; i < parts.length; i++) st.expDirs[parts.slice(0, i).join('/')] = true;
+      st.selectedPath = fp;
+      flash(opt, `已在文件树展开并定位：${fp}`);
+    }
+  }
+  else if (act === 'togglecompact') { st.compactFolders = !st.compactFolders; flash(opt, st.compactFolders ? '已开启 Compact Folders 单链目录合并' : '已关闭 Compact Folders'); }
+  else if (act === 'togglefilter') { st.filterOpen = !st.filterOpen; if (!st.filterOpen) st.filterQ = ''; }
+  else if (act === 'collapseall') { st.expDirs = {}; flash(opt, '已全部折叠文件目录'); }
+  else if (act === 'crumb') {
+    const path = btn.dataset.path;
+    const node = findFile(PROJS[st.proj].tree, path);
+    if (node && node.kind === 'dir') { st.expDirs[path] = true; st.selectedPath = path; flash(opt, `已在文件树选中目录 ${path}`); }
+  }
+  else if (act === 'itab') st.inspTab = btn.dataset.t;
+  else if (act === 'bmode') st.actMode = btn.dataset.m;
+  else if (act === 'bprojdrop') st.projDrop = !st.projDrop;
+  else if (act === 'bdock') {
+    st.dockRight = !st.dockRight;
+    if (st.dockRight && st.actMode === 'files') st.actMode = 'sessions';
+    flash(opt, st.dockRight ? '已将文件树移至右侧与会话同屏' : '已将文件树收回左侧活动栏');
+  }
+  else if (act === 'toast') flash(opt, btn.dataset.m);
+  else if (act === 'inline-input' || act === 'filterq') return;
+
+  renderOne(opt);
+});
+
+/* 双击文件行或预览 Tab → 固定标签页（VS Code 核心交互） */
+document.addEventListener('dblclick', e => {
+  const win = e.target.closest('.win');
+  if (!win) return;
+  const opt = win.dataset.opt;
+  const st = ST[opt];
+  const frow = e.target.closest('[data-act="file"]');
+  const tab = e.target.closest('[data-act="wstab"]');
+  const path = frow ? frow.dataset.path : (tab && tab.dataset.key.startsWith('f:') ? tab.dataset.key.slice(2) : null);
+  if (!path) return;
+  if (!st.pinnedFiles.includes(path)) st.pinnedFiles.push(path);
+  if (st.previewFile === path) st.previewFile = null;
+  st.activeTab = `f:${path}`;
+  flash(opt, `📌 已固定标签页：${path.split('/').pop()}`);
+  renderOne(opt);
+});
+
+/* 原位新建回车提交 / Esc 取消 + 筛选实时输入 */
+document.addEventListener('keydown', e => {
+  const win = e.target.closest('.win');
+  if (!win) return;
+  const opt = win.dataset.opt;
+  const st = ST[opt];
+  if (e.target.matches('[data-act="inline-input"]')) {
+    if (e.key === 'Escape') { st.inlineNew = null; renderOne(opt); }
+    else if (e.key === 'Enter') {
+      const val = e.target.value.trim();
+      if (val && st.inlineNew) {
+        const parentNode = st.inlineNew.parentPath ? findFile(PROJS[st.proj].tree, st.inlineNew.parentPath) : null;
+        const list = parentNode ? parentNode.children : PROJS[st.proj].tree;
+        const full = st.inlineNew.parentPath ? `${st.inlineNew.parentPath}/${val}` : val;
+        if (st.inlineNew.type === 'dir') {
+          list.unshift({ name: val, path: full, kind: 'dir', children: [] });
+          st.expDirs[full] = true;
+        } else {
+          list.push({ name: val, path: full, kind: 'code', git: 'U', lines: [`// Created inline: ${full}`, ''] });
+          st.pinnedFiles.push(full);
+          st.activeTab = `f:${full}`;
+        }
+        st.selectedPath = full;
+        flash(opt, `已原位创建：${full}`);
+      }
+      st.inlineNew = null;
+      renderOne(opt);
+    }
+  }
+});
+
+document.addEventListener('input', e => {
+  if (!e.target.matches('[data-act="filterq"]')) return;
+  const win = e.target.closest('.win');
+  const opt = win.dataset.opt;
+  ST[opt].filterQ = e.target.value;
+  renderOne(opt);
+});
+</script>
+</body>
+</html>

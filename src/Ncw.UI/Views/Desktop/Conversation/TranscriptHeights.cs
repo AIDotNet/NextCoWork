@@ -5,7 +5,7 @@ namespace Ncw.UI.Views.Desktop.Conversation;
 
 /// <summary>
 /// 转录各种行「还没量过时大约多高」(<see cref="NcwTranscriptPanel"/> 用)。只按数据粗算:字数 × 字宽 / 可用宽度 → 行数 × 行高,
-/// 不碰控件、不做文字排版。数字取自 <c>ConversationView.axaml</c> 里各模板的边距和 Arc 的正文字号;估得系统性偏高 / 偏低由面板按行类型校准,
+/// 不碰控件、不做文字排版。数字取自 <c>TranscriptList.axaml</c> 里各模板的边距和 Arc 的正文字号;估得系统性偏高 / 偏低由面板按行类型校准,
 /// 所以这里只求「长的估得长、短的估得短」,比 Avalonia 默认的「全部按视口里几行的平均值」好得多。
 /// </summary>
 public sealed class TranscriptHeights : IRowHeightEstimator
@@ -16,14 +16,14 @@ public sealed class TranscriptHeights : IRowHeightEstimator
     private const double HintLine = 19;     // 小号提示文字 / 等宽行
     private const double LatinWidth = 7.6;  // 正文里一个拉丁字符大约多宽
     private const double WideWidth = 14.5;  // 一个 CJK / 全角字符大约多宽
-    private const double ToolbarRow = 28;   // 消息下面的工具条(悬停才显示,但一直占位)
+    private const double ToolbarRow = 28;   // 消息下面的工具条 / 生成中脚标(高度对齐,流式结束不跳动)
     private const double OneLineRow = 28;   // 工具行 / 思考块的标题行(含上下边距)
     private const double UserBubbleMax = 560;
     private const int ThinkingEstimateChars = 4000; // 展开的思考块封顶 NcwThinkingView.MaxBodyHeight:估到这么多字早就超过了,不必量全文
 
     public double? Estimate(object item, double width) => item switch
     {
-        AssistantRowViewModel a => 8 + Markdown(a.Text, width) + (a.IsStreaming ? 12 : ToolbarRow),
+        AssistantRowViewModel a => 8 + Markdown(a.Text, width) + ToolbarRow,
         UserRowViewModel u => 12 + 18 + Plain(u.Text, Math.Min(width, UserBubbleMax) - 26, BodyLine)
                               + (u.HasFiles ? HintLine + 6 : 0) + (u.HasThumbs ? 124 : u.HasImageCountOnly ? HintLine + 6 : 0) + ToolbarRow,
         ThinkingRowViewModel t => OneLineRow + (t.IsExpanded ? Math.Min(Plain(t.Text.Length > ThinkingEstimateChars ? t.Text[..ThinkingEstimateChars] : t.Text, width - 22, HintLine), NcwThinkingView.MaxBodyHeight) + 4 : 0),

@@ -96,6 +96,9 @@ public sealed record RunLaunch(string SessionId, string WorkspaceId, RunRequest 
 
     /// <summary>启动前就绑定的订阅(「先订阅再启动」):Run 的第一个事件之前它们已经挂在 Run 上。</summary>
     public IReadOnlyList<RunSubscription> Subscriptions { get; init; } = [];
+
+    /// <summary>可选的工作区根目录覆盖(例如隔离的 git worktree 路径);null = 使用项目默认根目录。</summary>
+    public Ncw.Agent.Environments.EnvPath? WorkspaceRoot { get; init; }
 }
 
 public enum RunRefusal

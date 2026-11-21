@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Ncw.Agent.Catalog;
 using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Auth;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Pricing;
 using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Thinking;
@@ -102,7 +103,7 @@ internal static class ProviderMapping
 
     public static ProviderDto ToDto(ProviderRecord p, bool hasCredential, string? oauthIssuer) => new(
         p.Id, p.Name, p.Protocol.NameOf(), p.BaseUrl, p.Priority, p.Enabled, CacheTtlName(p.CacheTtl),
-        p.ProtocolOptions?.ToJsonString(), hasCredential, oauthIssuer);
+        p.ProtocolOptions?.ToJsonString(), hasCredential, oauthIssuer, p.Kind.NameOf());
 
     public static ModelAliasDto ToDto(ModelAliasRecord a)
     {
@@ -155,7 +156,7 @@ internal static class ProviderMapping
 
     public static ModelOptionDto ToDto(ModelOption o) => new(
         o.ProviderId, o.ProviderName, o.Alias, o.DisplayName, o.UpstreamModel, o.ContextWindow, o.MaxOutputTokens, o.Enabled, o.ProviderEnabled, o.SupportsImages, o.IsChatModel,
-        o.ThinkingMode?.ToString().ToLowerInvariant(), o.ReasoningEfforts is null ? null : [.. o.ReasoningEfforts.Select(EffortName)], o.Protocol.NameOf());
+        o.ThinkingMode?.ToString().ToLowerInvariant(), o.ReasoningEfforts is null ? null : [.. o.ReasoningEfforts.Select(EffortName)], o.Protocol.NameOf(), o.Kind.NameOf());
 
     public static ProviderTestResultDto ToDto(ProviderTestResult r) => new(r.Ok, r.LatencyMs, r.Status, r.ErrorKey, r.Detail);
 
@@ -209,7 +210,7 @@ internal static class ProviderMapping
 
     /// <summary>内置模版 → DTO。</summary>
     public static ProviderTemplateDto ToDto(Ncw.Agent.Catalog.Templates.ProviderTemplate t) =>
-        new(t.Id, t.Service, t.Name, t.Group, t.Variant, t.Protocol.NameOf(), t.BaseUrl, t.KeyUrl, t.NeedsKey, t.Featured);
+        new(t.Id, t.Service, t.Name, t.Group, t.Variant, t.Protocol.NameOf(), t.BaseUrl, t.KeyUrl, t.NeedsKey, t.Featured, t.Kind.NameOf());
 
     /// <summary>扫描候选 → DTO:密钥只留后四位。</summary>
     public static DiscoveredProviderDto ToDto(Ncw.Agent.Catalog.Discovery.DiscoveryCandidate c) =>

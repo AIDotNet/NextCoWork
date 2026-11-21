@@ -153,6 +153,36 @@ public class WidgetScreenshotTests
         Shot(window, "ready-snapshot", width, dark);
     }
 
+    [AvaloniaFact]
+    public void Failing_to_attach_a_web_view_displays_the_snapshot_instead_of_a_broken_surface()
+    {
+        var previous = NcwWidgetSurface.DisableForTesting;
+        NcwWidgetSurface.DisableForTesting = false;
+        Window? window = null;
+        try
+        {
+            var stores = Scenario("ready");
+            var vm = new ShellViewModel(stores, new FixedClock(Now));
+            var host = new NcwWidgetHost { DataContext = Row(vm) };
+            window = new Window { Content = host };
+            window.Show();
+            var surface = Assert.Single(host.GetVisualDescendants().OfType<NcwWidgetSurface>());
+
+            surface.AttachWebView(static () => throw new InvalidOperationException("cannot create native child window"));
+            Dispatch();
+
+            Assert.Equal(WidgetSurfaceFailure.Unavailable, host.Failure);
+            Assert.False(host.HasSurface);
+            Assert.True(host.IsShowingSnapshot);
+            Assert.Contains(Texts(window), t => t is not null && t.Contains("Quarterly revenue", StringComparison.Ordinal));
+        }
+        finally
+        {
+            window?.Close();
+            NcwWidgetSurface.DisableForTesting = previous;
+        }
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Matrix))]
     public void A_card_still_being_drawn_shows_the_models_loading_message(int width, bool dark)

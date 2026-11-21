@@ -63,6 +63,23 @@ public class CatalogProvidersDtoTests
         Assert.Equal(GoldenV1CatalogProviders.Of(name), actual);
 
     [Fact]
+    public void Old_v1_payloads_without_kind_still_decode_with_default_kind()
+    {
+        var upsert = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1CatalogProviders.WithoutKind["ProvidersUpsertParams"]), PayloadShapes.GetShape<ProvidersUpsertParams>());
+        Assert.Equal("gw", upsert.Id);
+        Assert.Null(upsert.Kind);
+
+        var provider = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1CatalogProviders.WithoutKind["ProviderDto"]), PayloadShapes.GetShape<ProviderDto>());
+        Assert.Equal(("gw", "text"), (provider.Id, provider.Kind));
+
+        var topic = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1CatalogProviders.WithoutKind["ProvidersTopicState"]), PayloadShapes.GetShape<ProvidersTopicState>());
+        Assert.Equal("text", topic.Providers[0].Kind);
+
+        var option = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1CatalogProviders.WithoutKind["ModelOptionDto"]), PayloadShapes.GetShape<ModelOptionDto>());
+        Assert.Equal(("sonnet", "text"), (option.Alias, option.Kind));
+    }
+
+    [Fact]
     public void Every_payload_round_trips()
     {
         Assert.Equal(Model, RoundTrip(Model) with { Capabilities = Model.Capabilities, ReasoningEfforts = Model.ReasoningEfforts, Price = Model.Price });

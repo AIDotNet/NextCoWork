@@ -174,16 +174,16 @@ pi 没有这一层;它对应 2.x 的 `run-registry.ts`、`services/agent.ts`、`
 **实现注**(`src/Ncw.Agent.Subagents`,M3):
 
 - **项目与依赖**:在编排层(`Ncw.Agent.Runs`)和一方扩展(`Ncw.Agent.Extensions`:权限状态、交互闸门)之上,另引用目录层(只用 `ModelSelection` / `ModelSelections.ForSubagent` 这个纯函数)。不引用 Protocol、Avalonia、客户端、Host;不直接碰文件和进程(定义文件只经 `IExecutionEnvironment`);不产出界面文字(诊断带稳定 key + 英文,发给模型的文字是英文常量)。
-- **`Task` 工具**(`TaskTool`):`description` 按**当前工作区的清单**拼(`AgentRegistry.List()` 同一个列表对象 = 内容没变 = 同一个 `ToolSpec`,提示词缓存稳定);深度闸门第一行;结局映射三种不同的东西(拒绝原样转交 / 空文字当失败 / 网络故障明说瞬时);
+- **`Task` 工具**(`TaskTool`):`description` 按**当前工作区的清单**拼(`AgentRegistry.List()` 同一个列表对象 = 内容没变 = 同一个 `ToolSpec`,提示词缓存稳定);可选参数含 `run_in_background`、`resume`(同父会话同工作区恢复已有子会话转录)、`max_turns`、`model`、`isolation: "worktree"`;深度闸门第一行;结局映射三种不同的东西(拒绝原样转交 / 空文字当失败 / 网络故障明说瞬时);
   **中止原样抛**,只有「子代理被单独停掉、父 Run 还活着」时才返回一个清楚的失败结果(C# 的循环对非中止的 `OperationCanceledException` 会当成「工具失败」,所以 2.x 那条「`aborted` 一律抛」要按父 Run 的令牌区分)。
 - **能力注入,不套 `ToolContext`**(偏离 03 §1 / 06 的「`ToolContext` 派生类型带 `SpawnSubagent`」):`SessionToolContext`、`ExecutionToolContext` 都是「换一个子类型」的写法,两个兄弟子类型套在一起会丢掉彼此的能力(`base(inner)` 只拷贝 `ToolContext` 自己的字段)。
   所以 `Task` 经注入的 `ISubagentLauncher`(`SubagentService`)工作,按 `ctx.RunId` 找回父 Run 的句柄。
 - **定义**(`AgentLoader` / `AgentRegistry` / `AgentCatalog`):全局目录在设备本机、项目目录 `<项目根>/.next-cowork/agents` 在项目的执行环境里;永不抛(连接断开除外:那不是文件的问题,原样抛出,不能判成「没有子代理」);
-  内置四条写死在代码里先进表;缺 description / 正文为空 / `tools:` 一个都认不出 / `permissionMode:` 认不出 → **整条作废**,`thinking:` / `color:` 读错 → 当没写;软链逃逸被路径守卫挡住;frontmatter 用 `FrontmatterParser`(2.x `frontmatter.ts` 的逐条移植,Skills 也将用它)。
+  内置四条写死在代码里先进表;缺 description / 正文为空 / `tools:` 一个都认不出 / `permissionMode:` 认不出 → **整条作废**,`thinking:` / `effort:` / `color:` / `maxTurns:` / `isolation:` 读错 → 当没写并记诊断;支持 Claude Code 兼容字段 `disallowedTools`、`maxTurns`、`effort`、`background: true`、`isolation: worktree`;软链逃逸被路径守卫挡住;frontmatter 用 `FrontmatterParser`(2.x `frontmatter.ts` 的逐条移植,Skills 也将用它)。
   诊断是 `AgentDiagnostic(Path, Key, Message, Params)`(2.x 是中文文案,3.0 改成 key + 英文)。`AgentCatalog` 每个工作区一份注册表,`RefreshAsync` 在顶层 Run 的 `before_run` 里扫一遍并滤掉被用户关掉的;`ListAsync` / `DiagnosticsAsync` 只读,不碰注册表。
-- **子 Run 的创建**(`SubagentService.SpawnAsync` → `StartChild`):子 RunId `<父 RunId>:sub:<N>`(N 进程内单调递增,2.x 同,所以孙代理可能是 `:sub:2` 而不是 `:sub:1`);`SessionRepository.Ensure(…ParentSessionId)` 建子会话行(名额到手才建);
-  请求由 Host 的 `IRunRequestFactory` 出模板、再改 `Depth` 和 `AgentPrompt`(设置快照、模式提示词只有一份来源);模式 `code`、`maxContext` 继承;模型 = `ModelSelections.ForSubagent`(声明 > 设置里的默认子代理 > 父 Run;悬空的供应商锁摘掉、悬空的默认值落到下一档,经 `ISubagentModels` 询问路由器);
-  思考档位 = `SubagentThinkingSelection.Select` 再经 `ISubagentModels.NormalizeThinking` 静默降级。
+- **子 Run 的创建与隔离**(`SubagentService.SpawnAsync` → `StartChild`):子 RunId `<父 RunId>:sub:<N>`(N 进程内单调递增,2.x 同,所以孙代理可能是 `:sub:2` 而不是 `:sub:1`);`SessionRepository.Ensure(…ParentSessionId)` 建或复用子会话行(名额到手才建;`resume` 时校验同父同工作区且不在运行中,保留原 SQLite 转录);
+  请求由 Host 的 `IRunRequestFactory` 出模板、再改 `Depth`、`AgentPrompt`、`AgentType`、`MaxTurns`(定义与调用取 `min`,会话层在回合开始前检查 `turnIndex >= maxTurns` 收尾)与 `WorkspaceRoot`(仅当 `isolation: worktree` 时指向临时 git worktree);模式 `code`、`maxContext` 继承;模型 = `ModelSelections.ForSubagent`(调用覆盖 / 声明 > 设置里的默认子代理 > 父 Run;悬空的供应商锁摘掉、悬空的默认值落到下一档,经 `ISubagentModels` 询问路由器);
+  思考档位 = `SubagentThinkingSelection.Select` 再经 `ISubagentModels.NormalizeThinking` 静默降级;启动模式遵循 `run_in_background ?? definition.DefaultBackground`;`isolation: worktree` 由 `SubagentWorktree` 全程经 `IExecutionEnvironment.RunAsync` 跑 `git worktree add/status/rev-list/remove`,干净时自动清理、有未提交改动或新提交时保留并将路径与分支交回父代理。
 - **权限与交互**:`SubagentService` 同时是 `IRunExtension`:`OnCreated`(子 Run)取父 Run 的 `PermissionRunState.ForSubagent`(档位 = `min(父实时值, 定义值)`,父 Run 中途调低子代理立刻跟着降)并 `OpenRun(depth > 0)`;拿不到父状态就不登记(权限扩展对没登记的 Run 是拒绝,失败即关闭)。
   `OnEnded` 兜底结清交互。工具快照由 `SubagentExtension` 的 `before_run` 收窄(定义里的 tools ∩ 去掉 `AskUserQuestion` / `ExitPlanMode`)。三道「不能提问」的闸(快照过滤 / 不提供 `Interact` / 审批直接拒绝)现在都有端到端测试。
 - **队列**(`SubagentQueue`,2.x 逐条移植):用一把可重入锁代替单线程事件循环;`Start` 在锁内同步执行(避开 TOCTOU);排位回调在锁外调;兜底重扫用 `TimeProvider` 的定时器(测试用 `ManualClock`)。

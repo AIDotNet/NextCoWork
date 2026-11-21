@@ -10,10 +10,10 @@
              xmlns:themes="using:Ncw.UI.Themes"
              x:Class="Ncw.UI.Views.Desktop.InspectorPanel"
              x:DataType="vm:InspectorViewModel">
-  <!--
-    右侧面板(docs/design/03 §1):默认是文件管理器;Git、上下文、历史通过「+」添加;
-    当前会话有子代理时自动出现「子代理」页签。页签行就是窗口顶部这一行的右段。
-  -->
+    <!--
+      右侧面板(docs/design/03 §1):默认是改动审查;Git、终端、上下文、历史通过「+」添加;
+      当前会话有子代理时自动出现「子代理」页签;会话改过文件时自动出现「审查」页签。页签行就是窗口顶部这一行的右段。
+    -->
   <UserControl.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
@@ -92,7 +92,7 @@
       各页按需创建(docs/design/03 §12):第一次切到某页时才建出它的控件,之后常驻(终端、Git 的界面状态要留着)。
       没打开过的页不占样式 / 绑定的内存。
     -->
-    <!-- 文件管理器(默认) -->
+    <!-- 当前项目文件树 -->
     <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsFiles}" ui:NcwMotion.ShowMotion="Fade">
       <DataTemplate x:DataType="vm:InspectorViewModel">
         <insp:FilesPane DataContext="{Binding Files}" />
@@ -120,30 +120,78 @@
       </DataTemplate>
     </ui:NcwDeferred>
 
-    <!-- 上下文 -->
+    <!-- 上下文:最近一次 context_usage 与当前待办 -->
     <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsContext}" ui:NcwMotion.ShowMotion="Fade">
       <DataTemplate x:DataType="vm:InspectorViewModel">
-        <ScrollViewer>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="14,6,14,14" Spacing="14">
             <StackPanel Spacing="8">
               <TextBlock Classes="section" Text="{l:NcwText TabContext}" />
-              <Border Classes="card">
+              <Border Classes="card" IsVisible="{Binding HasContext}">
                 <StackPanel Spacing="8">
                   <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="102K / 200K" />
-                    <TextBlock Grid.Column="1" Classes="hint" Text="51%" />
+                    <TextBlock FontWeight="SemiBold">
+                      <Run Text="{Binding ContextUsedText}" /><Run Text=" / " /><Run Text="{Binding ContextWindowText}" />
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Classes="hint">
+                      <Run Text="{Binding ContextPercent}" /><Run Text="%" />
+                    </TextBlock>
                   </Grid>
-                  <Grid ColumnDefinitions="51*,49*" Height="6">
-                    <Border CornerRadius="3,0,0,3" Background="{arc:ArcDesignTokenResource Accent}" />
-                    <Border Grid.Column="1" CornerRadius="0,3,3,0" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+                  <Grid Height="6">
+                    <Border CornerRadius="3" Background="{arc:ArcDesignTokenResource SurfaceMuted}" />
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="{Binding ContextRatio, Converter={x:Static cv:StarLengthConverter.Fill}}" />
+                        <ColumnDefinition Width="{Binding ContextRatio, Converter={x:Static cv:StarLengthConverter.Rest}}" />
+                      </Grid.ColumnDefinitions>
+                      <Border CornerRadius="3" Background="{arc:ArcDesignTokenResource Accent}" />
+                    </Grid>
                   </Grid>
+                  <ItemsControl ItemsSource="{Binding ContextSegments}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ContextSegmentView">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                          <TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static cv:ContextSegmentTitleConverter.Instance}}"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="1" Classes="hint mono" Text="{Binding TokensText}" />
+                          <TextBlock Grid.Column="2" Classes="hint" MinWidth="28" TextAlignment="Right">
+                            <Run Text="{Binding Percent}" /><Run Text="%" />
+                          </TextBlock>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </StackPanel>
+              </Border>
+              <Border Classes="card" IsVisible="{Binding !HasContext}">
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ContextEmptyHint}" />
               </Border>
             </StackPanel>
             <StackPanel Spacing="8">
-              <TextBlock Classes="section" Text="{l:NcwText Todos}" />
-              <Border Classes="card">
-                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText TodosPlaceholder}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="{l:NcwText Todos}" />
+                <TextBlock Grid.Column="1" Classes="hint" IsVisible="{Binding HasTodo}">
+                  <Run Text="{Binding Todo.Completed, FallbackValue=0}" /><Run Text=" / " /><Run Text="{Binding Todo.Total, FallbackValue=0}" />
+                </TextBlock>
+              </Grid>
+              <Border Classes="card" IsVisible="{Binding HasTodo}">
+                <ItemsControl ItemsSource="{Binding Todo.Items, FallbackValue={x:Null}}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TodoRowView">
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,2">
+                        <Panel Width="14" VerticalAlignment="Top" Margin="0,2,0,0">
+                          <lucide:LucideIcon Kind="CircleCheck" Size="14" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" IsVisible="{Binding IsActive}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+                          <lucide:LucideIcon Kind="Circle" Size="14" IsVisible="{Binding IsPending}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                        </Panel>
+                        <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Border>
+              <Border Classes="card" IsVisible="{Binding !HasTodo}">
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText TodosEmptyHint}" />
               </Border>
             </StackPanel>
           </StackPanel>
@@ -151,13 +199,63 @@
       </DataTemplate>
     </ui:NcwDeferred>
 
-    <!-- 历史(M4 接入) -->
+    <!-- 历史:当前会话里改过文件的各轮检查点时间线,点选后在「审查」页签查看 diff 或撤销 -->
     <ui:NcwDeferred Grid.Row="1" IsVisible="{Binding IsHistory}" ui:NcwMotion.ShowMotion="Fade">
       <DataTemplate x:DataType="vm:InspectorViewModel">
-        <StackPanel Margin="14,16" Spacing="6">
-          <TextBlock Text="{l:NcwText TabHistory}" FontWeight="SemiBold" />
-          <TextBlock Classes="hint" Text="{l:NcwText HistoryPlaceholder}" TextWrapping="Wrap" />
-        </StackPanel>
+        <Grid RowDefinitions="Auto,*">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,6,10,6">
+            <TextBlock Classes="section" VerticalAlignment="Center" Text="{l:NcwText TabHistory}" />
+            <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Width="26" Height="26" Command="{Binding Review.LoadCommand}"
+                          AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+              <lucide:LucideIcon Kind="RefreshCw" Size="13" />
+            </ui:NcwButton>
+          </Grid>
+          <Panel Grid.Row="1">
+            <StackPanel IsVisible="{Binding Review.IsLoading}" ui:NcwMotion.ShowMotion="Fade" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0">
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <TextBlock Classes="hint" Text="{l:NcwText PageLoading}" />
+            </StackPanel>
+            <Border Classes="card" Margin="14,4,14,14" VerticalAlignment="Top" IsVisible="{Binding Review.IsEmpty}">
+              <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText HistoryEmptyHint}" />
+            </Border>
+            <ScrollViewer IsVisible="{Binding Review.HasRuns}" HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Review.Runs}" Margin="10,0,10,12">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="6" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ReviewRunItem">
+                    <Border Classes="card" Padding="0">
+                      <ui:PlainButton Padding="10,8" CornerRadius="8"
+                                      Command="{Binding $parent[UserControl].((vm:InspectorViewModel)DataContext).OpenReviewRunCommand}"
+                                      CommandParameter="{Binding}"
+                                      AutomationProperties.Name="{l:NcwText HistoryOpenInReview}"
+                                      arc:Tooltip.Tip="{l:NcwText HistoryOpenInReview}">
+                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowSpacing="4">
+                          <lucide:LucideIcon Kind="History" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock FontWeight="SemiBold" Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+                            <Border Classes="chip" IsVisible="{Binding IsReverted}">
+                              <TextBlock Classes="hint" Text="{l:NcwText ReviewReverted}" />
+                            </Border>
+                          </StackPanel>
+                          <lucide:LucideIcon Grid.Column="2" Kind="ChevronRight" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                          <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
+                            <TextBlock Classes="hint" Text="{Binding FileCount, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ReviewFiles}" />
+                            <TextBlock Classes="letter added" IsVisible="{Binding HasStats}" Text="{Binding Additions, StringFormat=+{0}}" />
+                            <TextBlock Classes="letter deleted" IsVisible="{Binding HasStats}" Text="{Binding Deletions, StringFormat=−{0}}" />
+                          </StackPanel>
+                        </Grid>
+                      </ui:PlainButton>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Panel>
+        </Grid>
       </DataTemplate>
     </ui:NcwDeferred>
 

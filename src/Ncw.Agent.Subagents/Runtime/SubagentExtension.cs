@@ -14,10 +14,11 @@ public static class SubagentToolFilter
     /// <summary>会等用户的工具。<b>恰好这两个</b>(有测试钉着):多摘一个等于悄悄削弱子代理,少摘一个等于留一条死锁的路。</summary>
     public static IReadOnlySet<string> InteractiveToolIds { get; } = new HashSet<string>(StringComparer.Ordinal) { "AskUserQuestion", "ExitPlanMode" };
 
-    /// <summary>子代理能不能用这个工具:定义里写了 tools 就只认那份(归一化后的内部 id);没写 = 继承全部;去掉交互类工具。</summary>
+    /// <summary>子代理能不能用这个工具:定义里写了 tools 就只认那份(归一化后的内部 id);没写 = 继承全部;去掉交互类工具与 disallowedTools。</summary>
     public static bool Allows(AgentDefinition definition, ToolSpec tool) =>
         !InteractiveToolIds.Contains(tool.InternalId)
-        && (definition.Tools is null || definition.Tools.Contains(tool.InternalId, StringComparer.Ordinal));
+        && (definition.Tools is null || definition.Tools.Contains(tool.InternalId, StringComparer.Ordinal))
+        && (definition.DisallowedTools is null || !definition.DisallowedTools.Contains(tool.InternalId, StringComparer.Ordinal));
 }
 
 /// <summary>

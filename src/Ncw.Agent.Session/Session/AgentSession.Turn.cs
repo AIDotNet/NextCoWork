@@ -19,6 +19,8 @@ public sealed partial class AgentSession
 
         public required ExtensionContext Ctx { get; init; }
 
+        public required EnvPath WorkspaceRoot { get; init; }
+
         /// <summary>完整转录(库里的整段历史 + 本 Run 提交的消息)。发给模型的是它的 <see cref="BuildContext"/> 投影。</summary>
         public required List<Message> Messages { get; init; }
 
@@ -81,6 +83,7 @@ public sealed partial class AgentSession
         var options = new GenerationOptions(
             ContextWindows.ResolveMaxOutputTokens(request.Settings.MaxOutputTokens, binding?.ContextWindow), request.Thinking);
 
+        var workspaceRoot = request.WorkspaceRoot ?? _deps.WorkspaceRoot;
         EnvironmentPromptFacts? facts = null;
         string? instructions = null;
         GitContext? git = null;
@@ -92,7 +95,7 @@ public sealed partial class AgentSession
             if (request.Settings.ProjectInstructions)
             {
                 var found = await ProjectInstructions.DiscoverAsync(
-                    env, _deps.WorkspaceRoot, request.Settings.GlobalInstructions, request.Settings.ImportedInstructions, ct).ConfigureAwait(false);
+                    env, workspaceRoot, request.Settings.GlobalInstructions, request.Settings.ImportedInstructions, ct).ConfigureAwait(false);
                 instructions = found.Text;
                 foreach (var diagnostic in found.Diagnostics)
                 {
@@ -100,7 +103,7 @@ public sealed partial class AgentSession
                 }
             }
 
-            git = await GitContextReader.ReadAsync(env, _deps.WorkspaceRoot, ct).ConfigureAwait(false);
+            git = await GitContextReader.ReadAsync(env, workspaceRoot, ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is EnvironmentException or OperationCanceledException)
         {
@@ -113,6 +116,7 @@ public sealed partial class AgentSession
             Request = request,
             Draft = draft,
             Ctx = ctx,
+            WorkspaceRoot = workspaceRoot,
             Messages = [.. records.Select(MessageCodec.FromRecord)],
             Options = options,
             EffectiveWindow = ContextWindows.Effective(binding?.ContextWindow, request.MaxContext),
@@ -142,6 +146,20 @@ public sealed partial class AgentSession
         if (state.Blocked is { } blocked)
         {
             return TurnPlan.Stop(RunStatus.Error, blocked);
+        }
+
+        if (state.Request.MaxTurns is { } maxTurns && turn.TurnIndex >= maxTurns)
+        {
+            var error = AgentError.Create(
+                AgentErrorCode.Unknown,
+                $"The run reached its maximum turn limit ({maxTurns}).",
+                retryable: false,
+                messageKey: SessionErrorKeys.MaxTurns,
+                messageParams: new Dictionary<string, string>
+                {
+                    ["maxTurns"] = maxTurns.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                });
+            return TurnPlan.Stop(RunStatus.Error, error);
         }
 
         var events = new List<AgentEvent>(state.PendingEvents);
@@ -194,7 +212,7 @@ public sealed partial class AgentSession
         var info = new SessionInfo(SessionId, WorkspaceId, state.Request.Depth, Tag);
         var sections = _host.CollectSystemSections(info, Log);
         var systemInput = new SystemPromptInput(
-            _deps.WorkspaceRoot.Value,
+            state.WorkspaceRoot.Value,
             state.Now,
             state.Environment,
             state.Draft.AgentPrompt,

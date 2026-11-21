@@ -9,6 +9,9 @@ using Ncw.Protocol.Methods;
 
 namespace Ncw.Client.ViewModels;
 
+/// <summary>项目相对路径中的一个可导航段;目录段包含累积路径,最后一段表示文件。</summary>
+public sealed record FileBreadcrumbSegment(string Name, string Path, bool IsFile);
+
 public enum FilePreviewKind
 {
     Loading,
@@ -84,9 +87,45 @@ public sealed partial class FilePreviewViewModel : ObservableObject
         Path = path;
         Line = line;
         Language = FileLanguages.Of(path);
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        Breadcrumbs = parts.Select((name, index) => new FileBreadcrumbSegment(name, string.Join('/', parts.Take(index + 1)), index == parts.Length - 1)).ToArray();
     }
 
     public ProjectRef Project => _project;
+
+    /// <summary>临时预览用斜体标签显示;编辑或显式固定后成为常驻标签。</summary>
+    [ObservableProperty] public partial bool IsPreview { get; internal set; }
+
+    public IReadOnlyList<FileBreadcrumbSegment> Breadcrumbs { get; }
+
+    public Action<ProjectRef, string>? RevealRequested { get; set; }
+
+    public Action<ProjectRef, string>? ReferenceRequested { get; set; }
+
+    public Func<ProjectRef, bool>? CanReferenceRequested { get; set; }
+
+    public bool CanReference => ReferenceRequested is not null && CanReferenceRequested?.Invoke(_project) == true;
+
+    public void RefreshReferenceAvailability()
+    {
+        OnPropertyChanged(nameof(CanReference));
+        ReferenceCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    private void Pin() => IsPreview = false;
+
+    [RelayCommand]
+    private void RevealBreadcrumb(FileBreadcrumbSegment segment) => RevealRequested?.Invoke(_project, segment.Path);
+
+    [RelayCommand(CanExecute = nameof(CanReference))]
+    private void Reference()
+    {
+        if (CanReference)
+        {
+            ReferenceRequested?.Invoke(_project, Path);
+        }
+    }
 
     /// <summary>项目在本机设备的本机环境里:「在文件管理器中显示 / 用默认程序打开」才有意义。</summary>
     public bool CanOpenLocally => _local is not null && _localRoot is not null;
@@ -378,6 +417,7 @@ public sealed partial class FilePreviewViewModel : ObservableObject
             return;
         }
 
+        Pin();
         EditText = _original;
         HasConflict = false;
         JustSaved = false;

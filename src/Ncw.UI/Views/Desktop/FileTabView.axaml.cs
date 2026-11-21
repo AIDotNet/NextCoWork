@@ -27,6 +27,8 @@ public partial class FileTabView : UserControl
 
         List<NcwMenus.Item> items =
         [
+            new(NcwTexts.Get(NcwTextKind.FilesReferenceInChat), file.ReferenceCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.AtSign) },
+            new(NcwTexts.Get(NcwTextKind.FilePinTab), file.PinCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.Pin) },
             new(NcwTexts.Get(NcwTextKind.FilesCopyContent), file.CopyContentCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.Clipboard) },
             new(NcwTexts.Get(NcwTextKind.FilesCopyPath), file.CopyPathCommand, null, SeparatorBefore: true) { Glyph = ArcIcons.Copy },
             new(NcwTexts.Get(NcwTextKind.FilesCopyRelativePath), file.CopyRelativePathCommand, null) { Glyph = Lucide.Geometry(LucideIconKind.ClipboardCopy) },

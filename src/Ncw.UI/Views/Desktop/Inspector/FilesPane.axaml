@@ -9,20 +9,21 @@
              xmlns:insp="using:Ncw.UI.Views.Desktop.Inspector"
              x:Class="Ncw.UI.Views.Desktop.Inspector.FilesPane"
              x:DataType="vm:FilesPanelViewModel">
-  <!--
-    文件页签(默认):项目名 + 全部折叠 / 刷新 / 更多;搜索框(文件名 / 内容);惰性文件树;点开文件在主工作区打开它的标签页(预览 / 简易编辑在那里)。
-    树、搜索结果都是纯 UI 状态(文件在设备上,不进 Store);右键菜单、展开状态的恢复在 code-behind(只管树控件自己的展示)。
-  -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*">
-    <!-- 树的头:项目名 + 工具 -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,0,8,2" Height="32">
-      <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                 Text="{Binding ProjectName}" arc:Tooltip.Tip="{Binding ProjectPath}" />
-      <StackPanel Grid.Column="1" Orientation="Horizontal">
-        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CollapseAllCommand}" AutomationProperties.Name="{l:NcwText CollapseAll}" arc:Tooltip.Tip="{l:NcwText CollapseAll}">
-          <lucide:LucideIcon Kind="ListCollapse" Size="14" />
+  <!-- 可折叠项目资源管理器:筛选默认收起,目录链紧凑显示;单击临时预览、双击固定标签。 -->
+  <Grid RowDefinitions="Auto,*">
+    <Grid ColumnDefinitions="*,Auto" Margin="6,0,4,0" MinHeight="32">
+      <ui:PlainButton Command="{Binding ToggleExpandedCommand}" Padding="4,4">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="ChevronRight" Size="13" IsVisible="{Binding !IsExpanded}" />
+          <lucide:LucideIcon Kind="ChevronDown" Size="13" IsVisible="{Binding IsExpanded}" />
+          <TextBlock FontWeight="SemiBold" Text="{l:NcwText FilesSection}" />
+        </StackPanel>
+      </ui:PlainButton>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding IsExpanded}">
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleFilterCommand}" arc:Tooltip.Tip="{l:NcwText FilesFilterToggle}" AutomationProperties.Name="{l:NcwText FilesFilterToggle}">
+          <lucide:LucideIcon Kind="Search" Size="14" />
         </ui:NcwButton>
-        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RefreshCommand}" AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+        <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding RefreshCommand}" arc:Tooltip.Tip="{l:NcwText Refresh}" AutomationProperties.Name="{l:NcwText Refresh}">
           <lucide:LucideIcon Kind="RefreshCw" Size="14" />
         </ui:NcwButton>
         <ui:NcwDropdownMenu x:Name="MoreMenu">
@@ -34,9 +35,27 @@
         </ui:NcwDropdownMenu>
       </StackPanel>
     </Grid>
+    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding IsExpanded}">
+      <Grid ColumnDefinitions="*,Auto" Margin="10,0,6,2" MinHeight="28">
+        <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding ProjectName}" arc:Tooltip.Tip="{Binding ProjectPath}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <ui:NcwButton Classes="icon" Variant="Ghost" IsEnabled="{Binding CanWrite}" Command="{Binding NewFileCommand}" CommandParameter="{Binding Selected}" arc:Tooltip.Tip="{l:NcwText FilesNewFile}" AutomationProperties.Name="{l:NcwText FilesNewFile}">
+            <lucide:LucideIcon Kind="FilePlus" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" IsEnabled="{Binding CanWrite}" Command="{Binding NewFolderCommand}" CommandParameter="{Binding Selected}" arc:Tooltip.Tip="{l:NcwText FilesNewFolder}" AutomationProperties.Name="{l:NcwText FilesNewFolder}">
+            <lucide:LucideIcon Kind="FolderPlus" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding LocateActiveCommand}" arc:Tooltip.Tip="{l:NcwText FilesLocateActive}" AutomationProperties.Name="{l:NcwText FilesLocateActive}">
+            <lucide:LucideIcon Kind="LocateFixed" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding CollapseAllCommand}" arc:Tooltip.Tip="{l:NcwText CollapseAll}" AutomationProperties.Name="{l:NcwText CollapseAll}">
+            <lucide:LucideIcon Kind="ListCollapse" Size="14" />
+          </ui:NcwButton>
+        </StackPanel>
+      </Grid>
 
     <!-- 搜索:文件名 / 内容 -->
-    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6">
+    <StackPanel Grid.Row="1" Margin="10,0,10,6" Spacing="6" IsVisible="{Binding IsFilterVisible}">
       <ui:NcwSearchField x:Name="SearchBox" Text="{Binding Search.Query, Mode=TwoWay}" PlaceholderText="{l:NcwText FilesSearchPlaceholder}" />
       <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding Search.IsActive}">
         <ui:PlainButton Height="24" Padding="10,0" Click="OnNamesMode" Classes.active="{Binding Search.IsNamesMode}">
@@ -55,7 +74,7 @@
       <!-- 文件树 -->
       <Grid IsVisible="{Binding ShowsTree}" ui:NcwMotion.ShowMotion="Fade">
         <ui:NcwTreeView x:Name="Tree" Margin="4,0,4,6" Background="Transparent" BorderThickness="0"
-                        RowHeight="28" ShowIcons="False" ItemsSource="{Binding Tree.Roots}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                        RowHeight="25" ShowIndentGuides="True" ShowIcons="False" ItemsSource="{Binding Tree.Roots}" SelectedItem="{Binding Selected, Mode=TwoWay}">
           <ui:NcwTreeView.ItemTemplate>
             <DataTemplate x:DataType="vm:FileNodeViewModel">
               <insp:FileRow />
@@ -86,7 +105,7 @@
               <DataTemplate x:DataType="vm:FileSearchResult">
                 <ui:PlainButton Padding="8,5" Click="OnResultClick">
                   <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto">
-                    <lucide:LucideIcon Kind="File" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                    <ui:NcwFileIcon Path="{Binding Path}" Width="16" Height="16" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" TextTrimming="CharacterEllipsis">
                       <Run Text="{Binding Name}" /><Run Text="  " /><Run Text="{Binding Directory}" FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                     </TextBlock>
@@ -103,5 +122,6 @@
         </StackPanel>
       </ScrollViewer>
     </Panel>
+    </Grid>
   </Grid>
 </UserControl>

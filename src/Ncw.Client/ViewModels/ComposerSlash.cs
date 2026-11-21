@@ -17,6 +17,9 @@ public enum SlashAction
 
     /// <summary><c>/model &lt;名称&gt;</c> 切换模型;没有参数打开模型菜单。</summary>
     Model,
+
+    /// <summary><c>/plan [on|off]</c> 切换会话模式(<c>plan</c> / <c>code</c>)。</summary>
+    Plan,
 }
 
 /// <summary>一次本地动作调用:动作 + 命令名之后的整段参数(已去掉首尾空白)。</summary>
@@ -55,6 +58,12 @@ public enum SlashNoticeKind
     /// <summary>已切换模型;<see cref="SlashNotice.Arg"/> = 模型名。</summary>
     ModelSwitched,
 
+    /// <summary>已切换到规划模式。</summary>
+    PlanEnabled,
+
+    /// <summary>已切回编码模式。</summary>
+    PlanDisabled,
+
     /// <summary>设备没连上 / 这条命令在这里用不了。</summary>
     Unavailable,
 }
@@ -71,6 +80,7 @@ public static class ComposerSlash
         (SlashAction.Compact, "compact"),
         (SlashAction.Model, "model"),
         (SlashAction.Clear, "clear"),
+        (SlashAction.Plan, "plan"),
     ];
 
     public static string NameOf(SlashAction action) => Builtins.First(b => b.Action == action).Name;

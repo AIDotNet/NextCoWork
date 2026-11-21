@@ -26,6 +26,7 @@ public partial class ProviderDebugDialog : UserControl
     public ProviderDebugDialog()
     {
         InitializeComponent();
+        Tag = 3;
         ThinkingSelect.ItemsSource = ProviderDebugViewModel.ThinkingLevels;
         ThinkingSelect.TextSelector = item => ThinkingText(item as string);
     }
@@ -68,6 +69,8 @@ public partial class ProviderDebugDialog : UserControl
             _vm.PropertyChanged += OnVmChanged;
             _vm.ModelCandidates.CollectionChanged += OnCandidatesChanged;
             _vm.Events.CollectionChanged += OnEventsChanged;
+            Tag = Math.Clamp(_vm.Protocols.Count, 1, 3);
+            PromptInput.PlaceholderText = NcwTexts.Get(_vm.IsTextKind ? NcwTextKind.ProviderDebugPromptPlaceholder : NcwTextKind.ProviderDebugMediaPromptPlaceholder);
         }
 
         UpdateModelMenu();

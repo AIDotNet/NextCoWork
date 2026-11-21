@@ -3,7 +3,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Ncw.Client.Services;
 using Ncw.Client.ViewModels;
-using Ncw.Core.Domain;
+using Ncw.UI.Controls;
 
 namespace Ncw.UI.Views.Desktop.Conversation;
 
@@ -17,9 +17,42 @@ namespace Ncw.UI.Views.Desktop.Conversation;
 /// </summary>
 internal static class ComposerClipboard
 {
-    public static async Task<bool> PasteAsync(IAsyncDataTransfer data, ComposerViewModel vm, Action<string> insertText, TimeProvider? clock = null)
+    public static Task<bool> DropAsync(IDataTransfer data, ComposerViewModel vm, Action<string> insertText, TimeProvider? clock = null) =>
+        PasteCoreAsync(
+            data.Contains(DataFormat.File),
+            () => Task.FromResult(data.TryGetFiles()),
+            data.Contains(DataFormat.Bitmap),
+            () => Task.FromResult(data.TryGetBitmap()),
+            data.Contains(DataFormat.Text),
+            () => Task.FromResult(data.TryGetText()),
+            vm,
+            insertText,
+            clock);
+
+    public static Task<bool> PasteAsync(IAsyncDataTransfer data, ComposerViewModel vm, Action<string> insertText, TimeProvider? clock = null) =>
+        PasteCoreAsync(
+            data.Contains(DataFormat.File),
+            data.TryGetFilesAsync,
+            data.Contains(DataFormat.Bitmap),
+            data.TryGetBitmapAsync,
+            data.Contains(DataFormat.Text),
+            data.TryGetTextAsync,
+            vm,
+            insertText,
+            clock);
+
+    private static async Task<bool> PasteCoreAsync(
+        bool hasFile,
+        Func<Task<IStorageItem[]?>> getFiles,
+        bool hasBitmap,
+        Func<Task<Bitmap?>> getBitmap,
+        bool hasText,
+        Func<Task<string?>> getText,
+        ComposerViewModel vm,
+        Action<string> insertText,
+        TimeProvider? clock)
     {
-        if (data.Contains(DataFormat.File) && await data.TryGetFilesAsync() is { Length: > 0 } files)
+        if (hasFile && await getFiles() is { Length: > 0 } files)
         {
             var paths = new List<string>();
             var handled = false;
@@ -52,7 +85,7 @@ internal static class ComposerClipboard
             }
         }
 
-        if (data.Contains(DataFormat.Bitmap) && await data.TryGetBitmapAsync() is { } bitmap)
+        if (hasBitmap && await getBitmap() is { } bitmap)
         {
             byte[] bytes;
             using (bitmap)
@@ -71,7 +104,7 @@ internal static class ComposerClipboard
             }
         }
 
-        if (data.Contains(DataFormat.Text) && await data.TryGetTextAsync() is { Length: > 0 } text)
+        if (hasText && await getText() is { Length: > 0 } text)
         {
             insertText(text);
             return true;
@@ -80,65 +113,10 @@ internal static class ComposerClipboard
         return false;
     }
 
-    internal static string? TryGetImageMime(string fileName) =>
-        Attachments.NormalizeImageMime(Attachments.MimeOfExt(fileName));
+    internal static string? TryGetImageMime(string fileName) => StorageAttachments.TryGetImageMime(fileName);
 
-    internal static string? TryGetPath(IStorageItem item)
-    {
-        var local = item.TryGetLocalPath();
-        if (!string.IsNullOrEmpty(local))
-        {
-            return local;
-        }
+    internal static string? TryGetPath(IStorageItem item) => StorageAttachments.TryGetPath(item);
 
-        if (item.Path is { IsAbsoluteUri: true, IsFile: true } uri)
-        {
-            return uri.LocalPath;
-        }
-
-        return item.Path?.OriginalString is { Length: > 0 } raw ? raw : null;
-    }
-
-    private static async Task<PickedAttachment> CreateImageAttachmentAsync(IStorageFile file, string? localPath, string mime)
-    {
-        if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
-        {
-            var length = new FileInfo(localPath).Length;
-            return new PickedAttachment(file.Name, mime, length, token => File.ReadAllBytesAsync(localPath, token));
-        }
-
-        long knownSize = 0;
-        try
-        {
-            var props = await file.GetBasicPropertiesAsync();
-            knownSize = props.Size is { } s ? (long)s : 0;
-            if (knownSize > Attachments.MaxBytes)
-            {
-                return new PickedAttachment(file.Name, mime, knownSize, static _ => Task.FromResult(Array.Empty<byte>()));
-            }
-
-            await using var stream = await file.OpenReadAsync();
-            using var memory = new MemoryStream();
-            var buffer = new byte[81920];
-            long total = 0;
-            int read;
-            while ((read = await stream.ReadAsync(buffer)) > 0)
-            {
-                total += read;
-                if (total > Attachments.MaxBytes)
-                {
-                    return new PickedAttachment(file.Name, mime, total, static _ => Task.FromResult(Array.Empty<byte>()));
-                }
-
-                memory.Write(buffer, 0, read);
-            }
-
-            var bytes = memory.ToArray();
-            return new PickedAttachment(file.Name, mime, bytes.Length, _ => Task.FromResult(bytes));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return new PickedAttachment(file.Name, mime, Math.Max(knownSize, 1), _ => Task.FromException<byte[]>(e));
-        }
-    }
+    private static Task<PickedAttachment> CreateImageAttachmentAsync(IStorageFile file, string? localPath, string mime) =>
+        StorageAttachments.CreateImageAttachmentAsync(file, localPath, mime);
 }

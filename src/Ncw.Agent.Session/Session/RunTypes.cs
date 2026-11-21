@@ -85,6 +85,15 @@ public sealed record RunRequest(
     /// <summary>子代理深度(0 = 主 Run)。</summary>
     public int Depth { get; init; }
 
+    /// <summary>可选的子代理定义名(供 <c>SubagentStart</c> Hook 等识别子代理类型)。</summary>
+    public string? AgentType { get; init; }
+
+    /// <summary>可选的最大回合数限制(用于子代理 <c>maxTurns</c>):到达上限时停在回合边界。</summary>
+    public int? MaxTurns { get; init; }
+
+    /// <summary>可选的本 Run 根目录覆盖(例如子代理 <c>isolation: worktree</c>);null = 使用会话所在项目的根目录。</summary>
+    public EnvPath? WorkspaceRoot { get; init; }
+
     public SessionSettings Settings { get; init; } = new();
 
     /// <summary>子代理的角色提示词(<b>追加</b>在基础提示词之后,不替换)。</summary>
@@ -132,6 +141,9 @@ public static class SessionErrorKeys
 
     /// <summary>输入被扩展拦下(例如 UserPromptSubmit Hook 阻断),原因在错误的英文诊断里。</summary>
     public const string InputBlocked = "session.inputBlocked";
+
+    /// <summary>Run 达到最大回合数上限(<see cref="RunRequest.MaxTurns"/>)。</summary>
+    public const string MaxTurns = "session.maxTurns";
 }
 
 /// <summary>会话层的诊断 key(只进诊断日志,不是界面文字;日志行形如 <c>key site=… run=… session=…</c>)。</summary>

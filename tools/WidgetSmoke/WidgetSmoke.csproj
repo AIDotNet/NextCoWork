@@ -9,6 +9,7 @@
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <ApplicationManifest>../../src/Ncw.Desktop/app.manifest</ApplicationManifest>
     <IsPackable>false</IsPackable>
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>

@@ -31,7 +31,7 @@
       </StackPanel>
 
       <!-- ── 上下文 ── -->
-      <StackPanel Spacing="10">
+      <StackPanel Spacing="10" IsVisible="{Binding IsTextKind}">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionContext}" />
         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
           <ui:NcwNumberField x:Name="ContextField" Minimum="1024" Maximum="100000000" Step="1024" LargeStep="65536" UseGrouping="True"
@@ -44,7 +44,7 @@
       <!-- ── 能力与协议 ── -->
       <StackPanel Spacing="10">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionCapabilities}" />
-        <Grid ColumnDefinitions="*,Auto">
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsTextKind}">
           <StackPanel Spacing="2">
             <TextBlock Text="{l:NcwText ModelEditorVision}" />
             <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ModelEditorVisionHint}" />
@@ -56,7 +56,7 @@
       </StackPanel>
 
       <!-- ── 思考 ── -->
-      <StackPanel Spacing="10">
+      <StackPanel Spacing="10" IsVisible="{Binding IsTextKind}">
         <TextBlock Classes="sectionTitle" Text="{l:NcwText ModelEditorSectionThinking}" />
         <ui:NcwSelect x:Name="ThinkingSelect" Label="{l:NcwText ModelEditorThinkingMode}" Description="{l:NcwText ModelEditorThinkingModeHint}"
                       SelectedValue="{Binding ThinkingMode, Mode=TwoWay}" />

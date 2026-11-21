@@ -45,4 +45,21 @@ public class ProviderTemplateMatchTests
         Assert.Equal("deepseek-2", ProviderTemplateMatch.SuggestId("deepseek", ["deepseek"]));
         Assert.Equal("deepseek-3", ProviderTemplateMatch.SuggestId("deepseek", ["deepseek", "deepseek-2"]));
     }
+
+    [Fact]
+    public void Shared_gateway_addresses_disambiguate_by_provider_kind()
+    {
+        TemplateRef[] ark =
+        [
+            new("volcengine", "volcengine", "https://ark.cn-beijing.volces.com/api/v3", "openai-chat", ProviderKinds.Text),
+            new("volcengine-image", "volcengine", "https://ark.cn-beijing.volces.com/api/v3", "volcengine-images", ProviderKinds.Image),
+            new("volcengine-video", "volcengine", "https://ark.cn-beijing.volces.com/api/v3", "volcengine-videos", ProviderKinds.Video),
+        ];
+
+        Assert.Equal("volcengine", ProviderTemplateMatch.Find("https://ark.cn-beijing.volces.com/api/v3", "openai-chat", ark, ProviderKinds.Text)?.Id);
+        Assert.Equal("volcengine-image", ProviderTemplateMatch.Find("https://ark.cn-beijing.volces.com/api/v3", "volcengine-images", ark, ProviderKinds.Image)?.Id);
+        Assert.Equal("volcengine-video", ProviderTemplateMatch.Find("https://ark.cn-beijing.volces.com/api/v3", "volcengine-videos", ark, ProviderKinds.Video)?.Id);
+        // 音频下火山没有模版:不能误匹配到文本或图片模版
+        Assert.Null(ProviderTemplateMatch.Find("https://ark.cn-beijing.volces.com/api/v3", "openai-audio", ark, ProviderKinds.Audio));
+    }
 }

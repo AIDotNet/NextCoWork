@@ -10,6 +10,11 @@
              xmlns:desk="using:Ncw.UI.Views.Desktop"
              x:Class="Ncw.UI.Views.Desktop.WorkspaceArea"
              x:DataType="vm:ShellViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.preview">
+      <Setter Property="FontStyle" Value="Italic" />
+    </Style>
+  </UserControl.Styles>
   <!-- 栏 3:主工作区。标签栏 + 会话内容(转录、待办、目标条、输入框)。 -->
   <Grid RowDefinitions="40,*,Auto">
     <!-- 标签栏 = 窗口顶部这一行(空白处拖动窗口)。左右留白由外壳按左侧区域、检查器的显隐设置。 -->
@@ -25,17 +30,18 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="vm:WorkspaceTabViewModel">
                 <ui:PlainButton Height="30" Padding="10,0,6,0" VerticalAlignment="Center"
-                                Classes.active="{Binding IsActive}"
+                                Classes.active="{Binding IsActive}" DoubleTapped="OnTabDoubleTapped"
                                 Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).Workspace.ActivateCommand}"
                                 CommandParameter="{Binding}">
                   <StackPanel Orientation="Horizontal" Spacing="7">
                     <!-- 会话标签:运行中(权威广播)/ 设备断开时未知 / 空闲时是会话图标;文件标签:文件图标 -->
                     <Panel Width="14" VerticalAlignment="Center">
                       <lucide:LucideIcon Kind="MessageSquare" Size="13" IsVisible="{Binding IsSession}" />
-                      <lucide:LucideIcon Kind="File" Size="13" IsVisible="{Binding IsFile}" />
+                      <ui:NcwFileIcon Path="{Binding Path}" Width="14" Height="14" IsVisible="{Binding IsFile}" />
                       <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Center" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
                     </Panel>
-                    <TextBlock Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <TextBlock Classes.preview="{Binding File.IsPreview}" Text="{Binding Title}" MaxWidth="200" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <lucide:LucideIcon Kind="Pin" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsFavorite}" Foreground="{arc:ArcDesignTokenResource Warning}" />
                     <!-- 文件标签:有未保存的修改 -->
                     <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource TextMuted}"
                             IsVisible="{Binding File.IsDirty}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" arc:Tooltip.Tip="{l:NcwText FileUnsaved}" />
@@ -50,9 +56,13 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding Panel.NewSessionCommand}" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
-            <lucide:LucideIcon Kind="Plus" Size="15" />
-          </ui:NcwButton>
+          <ui:NcwDropdownMenu x:Name="NewMenu">
+            <ui:NcwDropdownMenu.Trigger>
+              <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
+                <lucide:LucideIcon Kind="Plus" Size="15" />
+              </ui:NcwButton>
+            </ui:NcwDropdownMenu.Trigger>
+          </ui:NcwDropdownMenu>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
           <!-- 更多菜单:当前会话的操作(和会话行右键菜单同一组意图)+ 几个全局命令;条目在 code-behind 里随当前会话 / 快捷键重建 -->

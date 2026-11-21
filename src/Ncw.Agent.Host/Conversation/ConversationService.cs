@@ -1,5 +1,7 @@
+using Ncw.Agent.Catalog;
 using Ncw.Agent.Environments;
 using Ncw.Agent.Host.Extensions;
+using Ncw.Agent.Hooks;
 using Ncw.Agent.Extensions.Interactions;
 using Ncw.Agent.Extensions.Permissions;
 using Ncw.Agent.Extensions.Planning;
@@ -111,6 +113,17 @@ internal sealed class ConversationService : IAsyncDisposable
         // 后台 Shell 不是租约持有者(它们比 Run 活得久):还有在跑的,它所在的 SSH 环境就不能被空闲回收
         Environments.AddBusyProbe(id => Shells.List().Any(shell => shell.Status == BackgroundShellStatus.Running && shell.Environment.Environment == id));
         // 扩展域(Skills / 命令 / Hooks / MCP):设备事实一份,PreToolUse Hook 作为权限链里的接入口交给权限扩展(它们不是 before_tool 上的并列处理器)。
+        RunRegistry? registryForHooks = null;
+        var hookEvaluator = services.HookEvaluator ?? new LlmHookEvaluator(new LlmHookEvaluatorOptions
+        {
+            Llm = models.Client,
+            ResolveModel = models.Resolve,
+            ReadMessages = sessionId => Sessions.History(sessionId).Select(MessageCodec.FromRecord).ToList(),
+            ActiveModel = (sessionId, runId) =>
+                registryForHooks?.Get(new RunId(runId))?.Model
+                ?? (Sessions.Get(sessionId) is { Model.Length: > 0 } s ? new ModelSelection(s.Model, s.ModelProviderId).ToRef() : null),
+            Clock = clock,
+        });
         Domain = ExtensionDomain.Create(new ExtensionHostContext
         {
             Database = database,
@@ -132,7 +145,7 @@ internal sealed class ConversationService : IAsyncDisposable
                     await Environments.EnsureProjectReadyAsync(project, Ncw.Agent.Host.Environments.ConnectMode.NonInteractive, ct).ConfigureAwait(false);
                 }
             },
-        }, ToolRegistry, () => Probe().RegisteredCommands);
+        }, ToolRegistry, () => Probe().RegisteredCommands, hookEvaluator);
         var permissions = new PermissionExtension(
             PermissionRuns, Rules, reviewer: new LlmPermissionReviewer(models.Client, Log), hooks: [Domain.Hooks.PreToolSource], interceptors: [Domain.Plugins.Interceptor], options: services.Permissions);
         Domain.Hooks.AttachNotifications(Gate, PermissionRuns);
@@ -155,6 +168,16 @@ internal sealed class ConversationService : IAsyncDisposable
             Gate = Gate,
             Clock = clock,
             Log = Log,
+            ResolveProject = workspaceId =>
+            {
+                if (Workspaces.Get(workspaceId) is not { } project)
+                {
+                    return null;
+                }
+
+                var env = EnvironmentOf(project);
+                return (env, EnvPath.Parse(project.RootPath, env.Facts.PathStyle));
+            },
         });
 
         // 计划 / 待办 / 目标:同样先造、后 Bind。判定模型与「模型自提目标」策略每个 Run 现读;「这个 Run 开着计划工作流」由 Host 按会话模式回答。
@@ -195,6 +218,7 @@ internal sealed class ConversationService : IAsyncDisposable
             Interactions = new GateView(Gate),
             Shells = Shells,
         });
+        registryForHooks = Registry;
         // 会话标题:第一条消息发出时起名(预览立即写、模型回答迟到再换)。注入了假模型解析时默认关,见 AgentServices.SessionTitles。
         if (services.SessionTitles ?? (services.Models is null))
         {
@@ -574,7 +598,7 @@ internal sealed class ConversationRunExtension(ConversationService service) : IR
         {
             Environment = environment,
             WorkspaceId = run.WorkspaceId,
-            Root = EnvPath.Parse(project.RootPath, environment.Facts.PathStyle),
+            Root = run.WorkspaceRoot ?? EnvPath.Parse(project.RootPath, environment.Facts.PathStyle),
             Shells = service.Shells,
         };
         // 子代理的 Run 不在这里登记权限状态 / 开交互作用域:那由 SubagentService.OnCreated 做(档位 = min(父实时值, 定义值),作用域 depth > 0 = 不能提问)。

@@ -55,6 +55,13 @@
           </Grid>
         </Border>
 
+        <ui:NcwSegmented x:Name="KindPicker" HorizontalAlignment="Left" SelectedValue="{Binding Kind, Mode=TwoWay}">
+          <ui:NcwSegmentedOption Value="text" Label="{l:NcwText ProviderKindText}" />
+          <ui:NcwSegmentedOption Value="image" Label="{l:NcwText ProviderKindImage}" />
+          <ui:NcwSegmentedOption Value="video" Label="{l:NcwText ProviderKindVideo}" />
+          <ui:NcwSegmentedOption Value="audio" Label="{l:NcwText ProviderKindAudio}" />
+        </ui:NcwSegmented>
+
         <ui:NcwInput x:Name="SearchInput" Text="{Binding Query, Mode=TwoWay}" Placeholder="{l:NcwText ProviderTemplateSearch}"
                      AutomationProperties.Name="{l:NcwText ProviderTemplateSearch}" />
 
@@ -131,6 +138,9 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
               <TextBlock FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                          Text="{Binding Name}" />
+              <Border Classes="chip">
+                <TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static cv:ProviderKindTextConverter.Instance}, ConverterParameter=Short}" />
+              </Border>
               <Border Classes="chip" IsVisible="{Binding Template.Variant, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
                 <TextBlock Classes="hint" Text="{Binding Template.Variant, Converter={x:Static cv:TemplateVariantTextConverter.Instance}}" />
               </Border>
@@ -188,7 +198,10 @@
                   <ui:NcwInput Grid.Column="1" Text="{Binding Id, Mode=TwoWay}" Label="{l:NcwText ProviderId}" IsEnabled="{Binding CanEditId}" />
                 </Grid>
                 <ui:NcwInput x:Name="UrlInput" Text="{Binding BaseUrl, Mode=TwoWay}" Label="{l:NcwText ProviderBaseUrl}" Placeholder="https://api.example.com/v1" />
-                <ui:NcwSelect x:Name="ProtocolSelect" Label="{l:NcwText ProviderProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                  <ui:NcwSelect x:Name="KindSelect" Label="{l:NcwText ProviderKindLabel}" SelectedValue="{Binding Kind, Mode=TwoWay}" IsEnabled="{Binding CanEditKind}" />
+                  <ui:NcwSelect x:Name="ProtocolSelect" Grid.Column="1" Label="{l:NcwText ProviderProtocol}" SelectedValue="{Binding Protocol, Mode=TwoWay}" />
+                </Grid>
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="2">
                     <TextBlock Text="{l:NcwText ProviderEnabled}" />

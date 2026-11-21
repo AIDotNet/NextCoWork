@@ -1,5 +1,5 @@
 using Ncw.Agent.Catalog.Templates;
-using Ncw.Agent.Llm.Wire;
+using Ncw.Agent.Llm.Media;
 
 namespace Ncw.Agent.Catalog.Tests;
 
@@ -31,7 +31,7 @@ public sealed class ProviderTemplatesTests
     {
         var deepseek = ProviderTemplates.All.Where(t => t.Service == "deepseek").ToList();
         Assert.Equal(["deepseek", "deepseek-anthropic"], deepseek.Select(t => t.Id));
-        Assert.Equal(WireProtocol.Anthropic, deepseek[1].Protocol);
+        Assert.Equal(ProviderProtocol.Anthropic, deepseek[1].Protocol);
         Assert.Equal("https://api.deepseek.com/anthropic", deepseek[1].BaseUrl);
 
         var kimi = ProviderTemplates.All.Where(t => t.Service == "moonshot").Select(t => (t.Variant, t.BaseUrl)).ToList();
@@ -39,8 +39,8 @@ public sealed class ProviderTemplatesTests
             [(null, "https://api.moonshot.cn/v1"), (ProviderTemplateVariants.International, "https://api.moonshot.ai/v1"), (ProviderTemplateVariants.Anthropic, "https://api.moonshot.cn/anthropic")],
             kimi);
 
-        // 其余端点不进「常用」,只有默认端点可能进
-        Assert.All(ProviderTemplates.All.Where(t => t.Variant is not null), t => Assert.False(t.Featured));
+        // 其余文本端点变体不进「常用」,只有默认端点或独立媒体模版可能进
+        Assert.All(ProviderTemplates.All.Where(t => t.Kind == ProviderKind.Text && t.Variant is not null), t => Assert.False(t.Featured));
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class ProviderTemplatesTests
     [Fact]
     public void Anthropic_endpoints_use_the_anthropic_protocol()
     {
-        Assert.All(ProviderTemplates.All.Where(t => t.Variant == ProviderTemplateVariants.Anthropic), t => Assert.Equal(WireProtocol.Anthropic, t.Protocol));
+        Assert.All(ProviderTemplates.All.Where(t => t.Variant == ProviderTemplateVariants.Anthropic), t => Assert.Equal(ProviderProtocol.Anthropic, t.Protocol));
         Assert.Contains(ProviderTemplates.All, t => t.Featured && t.Id == "anthropic");
         Assert.Contains(ProviderTemplates.All, t => t.Featured && t.Id == "ollama" && !t.NeedsKey);
     }

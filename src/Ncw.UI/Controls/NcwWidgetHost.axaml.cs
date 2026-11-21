@@ -182,15 +182,26 @@ public partial class NcwWidgetHost : UserControl
             return;
         }
 
-        var surface = new NcwWidgetSurface
+        NcwWidgetSurface surface;
+        try
         {
-            Height = InitialHeight(card),
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-            IsVisible = !NcwWidgetAirspace.IsSuspended,
-        };
+            surface = new NcwWidgetSurface
+            {
+                Height = InitialHeight(card),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                IsVisible = !NcwWidgetAirspace.IsSuspended,
+            };
+        }
+        catch (Exception e) when (NcwWidgetSurface.IsPlatformInitializationFailure(e))
+        {
+            OnSurfaceFailed(null, WidgetSurfaceFailure.Unavailable, e.Message);
+            return;
+        }
+
         var bridge = _vm.CreateBridge(json => surface.Post(json));
         if (bridge is null)
         {
+            surface.Dispose();
             return;
         }
 
@@ -204,7 +215,7 @@ public partial class NcwWidgetHost : UserControl
 
         surface.MessageReceived += body => _ = HandleMessageAsync(bridge, body);
         surface.ExternalRequested += uri => _ = bridge.OpenExternalAsync(uri);
-        surface.Failed += OnSurfaceFailed;
+        surface.Failed += (failure, detail) => OnSurfaceFailed(surface, failure, detail);
         bridge.Ready += () => Dispatcher.UIThread.Post(() => OnPageReady(surface));
         var key = _vm.Ref;
         bridge.HeightChanged += height => Dispatcher.UIThread.Post(() =>
@@ -228,20 +239,35 @@ public partial class NcwWidgetHost : UserControl
                 Dispatcher.UIThread.Post(() => ForwardWheel(surface, dy));
             }
         };
-        bridge.Locked += () => Dispatcher.UIThread.Post(() => OnSurfaceFailed(WidgetSurfaceFailure.Crashed, "locked"));
+        bridge.Locked += () => Dispatcher.UIThread.Post(() => OnSurfaceFailed(surface, WidgetSurfaceFailure.Crashed, "locked"));
 
-        SurfaceSlot.Child = surface;
-        surface.LoadShell(WidgetShell.Build(WidgetShell.NewNonce()));
-        _readyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(ReadyTimeoutSeconds) };
-        _readyTimer.Tick += (_, _) =>
+        try
         {
-            _readyTimer?.Stop();
+            SurfaceSlot.Child = surface;
+        }
+        catch (Exception e) when (NcwWidgetSurface.IsPlatformInitializationFailure(e))
+        {
+            OnSurfaceFailed(surface, WidgetSurfaceFailure.Unavailable, e.Message);
+            return;
+        }
+
+        surface.LoadShell(WidgetShell.Build(WidgetShell.NewNonce()));
+        if (!ReferenceEquals(_surface, surface))
+        {
+            return;
+        }
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(ReadyTimeoutSeconds) };
+        _readyTimer = timer;
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
             if (!_pageReady)
             {
-                OnSurfaceFailed(WidgetSurfaceFailure.LoadFailed, "timeout");
+                OnSurfaceFailed(surface, WidgetSurfaceFailure.LoadFailed, "timeout");
             }
         };
-        _readyTimer.Start();
+        timer.Start();
     }
 
     private void ForwardWheel(NcwWidgetSurface surface, double dy)
@@ -285,9 +311,8 @@ public partial class NcwWidgetHost : UserControl
         _readyTimer = null;
         if (_surface is { } surface)
         {
-            SurfaceSlot.Child = null;
-            surface.Failed -= OnSurfaceFailed;
             surface.Dispose();
+            SurfaceSlot.Child = null;
         }
 
         if (_counted)
@@ -363,11 +388,16 @@ public partial class NcwWidgetHost : UserControl
         }
     }
 
-    private void OnSurfaceFailed(WidgetSurfaceFailure failure, string? detail)
+    private void OnSurfaceFailed(NcwWidgetSurface? surface, WidgetSurfaceFailure failure, string? detail)
     {
         if (Dispatcher.UIThread.CheckAccess() is false)
         {
-            Dispatcher.UIThread.Post(() => OnSurfaceFailed(failure, detail));
+            Dispatcher.UIThread.Post(() => OnSurfaceFailed(surface, failure, detail));
+            return;
+        }
+
+        if (!ReferenceEquals(_surface, surface))
+        {
             return;
         }
 

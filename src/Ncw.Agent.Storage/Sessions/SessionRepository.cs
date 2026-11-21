@@ -234,7 +234,9 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
     public IReadOnlyList<SessionListItem> List(string workspaceId, bool? archived = null)
     {
         var sql = $"""
-            SELECT s.id, s.title, s.updated_at, s.archived, s.favorited, s.json FROM sessions s
+            SELECT s.id, s.title, s.updated_at, s.archived, s.favorited, s.json,
+                   NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)
+            FROM sessions s
             WHERE s.workspace_id = $w AND s.parent_session_id IS NULL {(archived is null ? "" : "AND s.archived = $a")}
               AND {ConfigScope.WorkspaceVisible("s.workspace_id")}
             ORDER BY s.updated_at DESC, s.id DESC
@@ -247,10 +249,15 @@ public sealed partial class SessionRepository(AgentDatabase database, TimeProvid
 
         return [.. database.Rows(sql, r =>
         {
+            var title = r.GetString(1);
+            var isArchived = r.Int(3) != 0;
             var parsed = ParseJson(r.Text(5));
+            var hasNoMessages = r.Int(6) != 0;
+            var isDefaultTitle = parsed?.TitleSource == "default" || (parsed?.TitleSource is null && IsDefaultTitle(title));
             return (Origin: parsed?.Origin, Item: new SessionListItem(
-                r.GetString(0), r.GetString(1), r.Int(2), r.Int(3) != 0, r.Int(4) != 0, Running: false,
-                SkillExtraction: parsed?.SkillSource?.SessionId is not null));
+                r.GetString(0), title, r.Int(2), isArchived, r.Int(4) != 0, Running: false,
+                SkillExtraction: parsed?.SkillSource?.SessionId is not null,
+                IsEmpty: hasNoMessages && !isArchived && isDefaultTitle));
         }, [.. args]).Where(x => x.Origin != "scheduled").Select(x => x.Item)];
     }
 

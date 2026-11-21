@@ -30,7 +30,7 @@ public sealed class HostLikeRunExtension(SubRig rig) : IRunExtension
 
     public void OnCreated(RunHandle run)
     {
-        var runtime = new ToolRuntime { Environment = rig.Env, Root = LocalEnvironment.PathOf(rig.WorkRoot), Shells = rig.Shells };
+        var runtime = new ToolRuntime { Environment = rig.Env, Root = run.WorkspaceRoot ?? LocalEnvironment.PathOf(rig.WorkRoot), Shells = rig.Shells };
         lock (_runtimes)
         {
             _runtimes[run.RunId] = runtime;
@@ -121,6 +121,7 @@ public sealed class SubRig : IDisposable
             PermissionRuns = Perms,
             Gate = Gate,
             Log = Log,
+            ResolveProject = _ => (Env, LocalEnvironment.PathOf(WorkRoot)),
         });
         Llm.Route = Route;
         Sessions = new SessionDirectory(NewSession);

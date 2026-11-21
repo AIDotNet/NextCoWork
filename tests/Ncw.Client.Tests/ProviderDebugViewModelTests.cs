@@ -267,7 +267,7 @@ public class ProviderDebugViewModelTests
         await vm.TestCommand.ExecuteAsync(null);
 
         Assert.NotNull(shown);
-        Assert.Equal(new ProviderDebugTargetDto(null, "https://api.deepseek.com/anthropic", "anthropic", "sk-draft-1234"), GetTarget(commands, shown!));
+        Assert.Equal(new ProviderDebugTargetDto(null, "https://api.deepseek.com/anthropic", "anthropic", "sk-draft-1234", "text"), GetTarget(commands, shown!));
         Assert.Equal("anthropic", shown!.SelectedProtocol);
         Assert.Empty(commands.Editor.Upserts); // 测试不写任何东西
 
@@ -314,5 +314,35 @@ public class ProviderDebugViewModelTests
         commands.ModelTargets.Clear();
         form.LoadModelsAsync().GetAwaiter().GetResult();
         return Assert.Single(commands.ModelTargets);
+    }
+
+    [Fact]
+    public void Media_provider_debugger_shows_only_matching_protocols_and_builds_volcengine_media_urls()
+    {
+        var imgVm = new ProviderDebugViewModel(
+            new DebugCommands(),
+            "dev",
+            new ProviderDebugTargetDto("ark-img", Kind: "image"),
+            "火山图片",
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "volcengine-images",
+            kind: "image");
+
+        Assert.False(imgVm.IsTextKind);
+        Assert.Equal(["openai-images", "volcengine-images"], imgVm.Protocols.Select(p => p.Protocol).ToArray());
+        Assert.Equal("https://ark.cn-beijing.volces.com/api/v3/images/generations", imgVm.FinalUrl);
+
+        var vidVm = new ProviderDebugViewModel(
+            new DebugCommands(),
+            "dev",
+            new ProviderDebugTargetDto("ark-vid", Kind: "video"),
+            "火山视频",
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "volcengine-videos",
+            kind: "video");
+
+        Assert.False(vidVm.IsTextKind);
+        Assert.Equal(["openai-videos", "volcengine-videos"], vidVm.Protocols.Select(p => p.Protocol).ToArray());
+        Assert.Equal("https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", vidVm.FinalUrl);
     }
 }

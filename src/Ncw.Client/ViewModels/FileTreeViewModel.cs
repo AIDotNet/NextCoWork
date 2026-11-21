@@ -8,7 +8,7 @@ using Ncw.Protocol.Methods;
 namespace Ncw.Client.ViewModels;
 
 /// <summary>
-/// 右侧面板的文件树。目录<b>惰性展开</b>:展开时才 <c>files.list</c> 一层(分页,默认 2000 条),没展开的目录里只有一个占位子节点,所以树控件认得出它是「能展开的」。
+/// 右侧当前项目的文件树。目录<b>惰性展开</b>:展开时才 <c>files.list</c> 一层(分页,默认 2000 条),没展开的目录里只有一个占位子节点,所以树控件认得出它是「能展开的」。
 /// 排序只有 Core 的 <see cref="FileEntrySort"/> 一份(目录在前,不分大小写,数字按值);忽略表里的条目(<c>.git</c>、<c>node_modules</c>……)缺省不列出,
 /// 「显示忽略的文件」打开后列出来并淡显(<see cref="FileNodeViewModel.IsDimmed"/>)。展开状态是纯 UI 状态(按路径记着,刷新后恢复);
 /// 文件内容、目录列表都不进 Store(设备是真源),Git 状态角标来自 Git 镜像(<see cref="ApplyChanges"/>)。
@@ -43,6 +43,21 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
     [ObservableProperty] public partial bool ShowIgnored { get; set; }
 
     partial void OnShowIgnoredChanged(bool value) => _ = RefreshAsync();
+
+    /// <summary>只合并已经惰性加载、且唯一子项为目录的链;真实节点和路径不变。</summary>
+    [ObservableProperty] public partial bool CompactFolders { get; set; } = true;
+
+    partial void OnCompactFoldersChanged(bool value) => UpdatePresentation();
+
+    public void UpdatePresentation()
+    {
+        foreach (var root in Roots)
+        {
+            root.UpdatePresentation(CompactFolders);
+        }
+
+        Loaded?.Invoke(null);
+    }
 
     /// <summary>绑定到一个项目(换了项目:展开状态不跨项目保留,默认展开 <c>src</c>)。同一个项目再次绑定只刷新名字。</summary>
     public async Task BindAsync(ProjectRef? project, string name, string path)
@@ -116,7 +131,7 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
 
             await RestoreExpandedAsync(Roots, generation).ConfigureAwait(true);
             ApplyChanges(_changes);
-            Loaded?.Invoke(null);
+            UpdatePresentation();
         }
         finally
         {
@@ -149,8 +164,15 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
 
         node.IsExpanded = true;
         _expanded.Add(node.Path);
-        if (node.ChildrenLoaded || node.IsLoading)
+        if (node.IsLoading)
         {
+            return;
+        }
+
+        if (node.ChildrenLoaded)
+        {
+            await ExpandCompactChildAsync(node).ConfigureAwait(true);
+            UpdatePresentation();
             return;
         }
 
@@ -180,8 +202,9 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
             AddMore(node.Children, node, page);
             node.ChildrenLoaded = true;
             ApplyChanges(_changes);
-            Loaded?.Invoke(node);
             await RestoreExpandedAsync(node.Children, generation).ConfigureAwait(true);
+            await ExpandCompactChildAsync(node).ConfigureAwait(true);
+            UpdatePresentation();
         }
         finally
         {
@@ -189,11 +212,67 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
         }
     }
 
+    private async Task ExpandCompactChildAsync(FileNodeViewModel node)
+    {
+        if (CompactFolders && !node.IsLink && node.Children.Count == 1 && node.Children[0] is { IsDirectory: true, IsLink: false, IsDraft: false } child)
+        {
+            await ExpandAsync(child).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>沿真实路径惰性加载祖先并翻页,返回真实节点;不依赖显示名称。</summary>
+    public async Task<FileNodeViewModel?> RevealPathAsync(string path)
+    {
+        var generation = _generation;
+        var nodes = Roots;
+        FileNodeViewModel? found = null;
+        foreach (var segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            found = nodes.FirstOrDefault(n => n.Name == segment && n.IsEntry && !n.IsDraft);
+            while (found is null && nodes.LastOrDefault() is { IsMore: true } more)
+            {
+                var count = nodes.Count;
+                await LoadMoreAsync(more).ConfigureAwait(true);
+                if (generation != _generation || nodes.Count == count && nodes.Contains(more)) return null;
+                found = nodes.FirstOrDefault(n => n.Name == segment && n.IsEntry && !n.IsDraft);
+            }
+
+            if (found is null || generation != _generation) return null;
+            if (found.IsDirectory)
+            {
+                await ExpandAsync(found).ConfigureAwait(true);
+                if (generation != _generation) return null;
+            }
+
+            nodes = found.Children;
+        }
+
+        UpdatePresentation();
+        return found;
+    }
+
+    /// <summary>返回真实节点对应的可见紧凑行。</summary>
+    public FileNodeViewModel DisplayRow(FileNodeViewModel node)
+    {
+        var row = node;
+        while (row.Parent is { } parent && parent.DisplayNode != parent && parent.Children.Count == 1)
+        {
+            row = parent;
+        }
+
+        return row;
+    }
+
     /// <summary>目录被用户收起(树控件的事件)。</summary>
     public void Collapse(FileNodeViewModel node)
     {
-        node.IsExpanded = false;
-        _expanded.Remove(node.Path);
+        var end = node.DisplayNode;
+        for (var current = node; ; current = current.Children[0])
+        {
+            current.IsExpanded = false;
+            _expanded.Remove(current.Path);
+            if (current == end) break;
+        }
     }
 
     public void CollapseAll()
@@ -203,6 +282,8 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
         {
             CollapseRecursive(node);
         }
+
+        Loaded?.Invoke(null);
     }
 
     private static void CollapseRecursive(FileNodeViewModel node)
@@ -220,7 +301,7 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
         var parent = more.Parent;
         var siblings = parent?.Children ?? Roots;
         var generation = _generation;
-        var loaded = siblings.Count(n => !n.IsMore && !n.IsPlaceholder);
+        var loaded = siblings.Count(n => n.IsEntry && !n.IsDraft);
         var page = await ListAsync(parent?.Path ?? "", loaded).ConfigureAwait(true);
         if (generation != _generation || page is null)
         {
@@ -235,7 +316,7 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
 
         AddMore(siblings, parent, page, loaded);
         ApplyChanges(_changes);
-        Loaded?.Invoke(parent);
+        UpdatePresentation();
     }
 
     /// <summary>重新列一个目录(新建 / 改名 / 删除之后)。空串 = 根。</summary>
@@ -260,6 +341,8 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
         {
             await ExpandAsync(node).ConfigureAwait(true);
         }
+
+        UpdatePresentation();
     }
 
     public FileNodeViewModel? Find(string path)
@@ -268,7 +351,7 @@ public sealed partial class FileTreeViewModel(IFilesCommands files) : Observable
         FileNodeViewModel? found = null;
         foreach (var segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            found = nodes.FirstOrDefault(n => n.Name == segment && !n.IsMore && !n.IsPlaceholder);
+            found = nodes.FirstOrDefault(n => n.Name == segment && n.IsEntry && !n.IsDraft);
             if (found is null)
             {
                 return null;
@@ -389,6 +472,7 @@ public sealed partial class FileNodeViewModel : ObservableObject
         Path = path;
         Name = name;
         Parent = parent;
+        DisplayNode = this;
     }
 
     public FileNodeViewModel(FileEntryDto entry, FileNodeViewModel? parent)
@@ -418,6 +502,41 @@ public sealed partial class FileNodeViewModel : ObservableObject
     public string Path { get; }
 
     public string Name { get; }
+
+    public FileNodeViewModel DisplayNode { get; private set; } = null!;
+
+    public string DisplayName => DisplayNode == this || Children.Count == 0 ? Name : Name + "/" + Children[0].DisplayName;
+
+    public ObservableCollection<FileNodeViewModel> DisplayChildren => DisplayNode?.Children ?? Children;
+
+    internal void UpdatePresentation(bool compact)
+    {
+        foreach (var child in Children)
+        {
+            child.UpdatePresentation(compact);
+        }
+
+        DisplayNode = compact && !IsLink && !IsEditing && ChildrenLoaded && Children.Count == 1 && Children[0] is { IsDirectory: true, IsLink: false, IsDraft: false, IsEditing: false } childDirectory
+            ? childDirectory.DisplayNode : this;
+        OnPropertyChanged(nameof(DisplayNode));
+        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(DisplayChildren));
+    }
+
+    public static FileNodeViewModel Draft(FileNodeViewModel? parent, bool directory) =>
+        new((parent?.Path ?? "") + "/\u0000draft", "", parent) { IsDirectory = directory, IsDraft = true, IsEditing = true };
+
+    public bool IsDraft { get; private init; }
+
+    public bool CanReference => IsFile && !IsDraft;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsLabel))]
+    public partial bool IsEditing { get; internal set; }
+
+    public bool ShowsLabel => IsEntry && !IsEditing;
+
+    [ObservableProperty] public partial string EditName { get; set; } = "";
 
     public FileNodeViewModel? Parent { get; }
 
@@ -477,7 +596,7 @@ public sealed partial class FileNodeViewModel : ObservableObject
     [ObservableProperty] public partial bool IsLoading { get; internal set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ChangeLetter), nameof(HasChange))]
+    [NotifyPropertyChangedFor(nameof(ChangeLetter), nameof(HasChange), nameof(IsAddedChange), nameof(IsDeletedChange), nameof(IsModifiedChange), nameof(IsRenamedChange))]
     public partial GitChange? Change { get; internal set; }
 
     /// <summary>目录下有变更的文件时,目录名后面显示一个点。</summary>
@@ -494,6 +613,14 @@ public sealed partial class FileNodeViewModel : ObservableObject
     };
 
     public bool HasChange => Change is not null;
+
+    public bool IsAddedChange => Change is GitChange.Added or GitChange.Untracked;
+
+    public bool IsDeletedChange => Change is GitChange.Deleted;
+
+    public bool IsModifiedChange => Change is GitChange.Modified;
+
+    public bool IsRenamedChange => Change is GitChange.Renamed;
 
     /// <summary>所在目录(项目相对,根是空串)。</summary>
     public string Directory => Path.LastIndexOf('/') is > 0 and var i ? Path[..i] : "";

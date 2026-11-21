@@ -140,12 +140,15 @@ public class DeferredContentTests
         var (window, _, vm) = RenderShell();
         var inspector = window.GetVisualDescendants().OfType<InspectorPanel>().Single();
         Assert.Single(inspector.GetLogicalDescendants().OfType<FilesPane>());
+        Assert.Single(window.GetLogicalDescendants().OfType<FilesPane>());
+        Assert.Empty(inspector.GetLogicalDescendants().OfType<ReviewPane>());
         Assert.Empty(inspector.GetLogicalDescendants().OfType<GitPane>());
         Assert.Empty(inspector.GetLogicalDescendants().OfType<TerminalPane>());
 
         vm.Inspector.AddCommand.Execute(InspectorTabKind.Git);
         Dispatch();
         Assert.Single(inspector.GetLogicalDescendants().OfType<GitPane>());
+        Assert.Single(inspector.GetLogicalDescendants().OfType<FilesPane>());
 
         vm.Inspector.ActivateCommand.Execute(InspectorTabKind.Files);
         Dispatch();

@@ -48,6 +48,15 @@ public sealed record HookPayload
 
     public HookNotification? Notification { get; init; }
 
+    /// <summary><c>PreCompact</c> 触发来源(<c>manual</c> / <c>auto</c>)。</summary>
+    public string? Trigger { get; init; }
+
+    /// <summary><c>PreCompact</c> 的用户自定义压缩指令。</summary>
+    public string? CustomInstructions { get; init; }
+
+    /// <summary><c>SubagentStart</c> 的子代理定义名。</summary>
+    public string? AgentType { get; init; }
+
     public string ToJson()
     {
         using var stream = new MemoryStream();
@@ -110,6 +119,21 @@ public sealed record HookPayload
                 }
 
                 w.WriteEndObject();
+            }
+
+            if (Trigger is not null)
+            {
+                w.WriteString("trigger", Trigger);
+            }
+
+            if (CustomInstructions is not null)
+            {
+                w.WriteString("custom_instructions", CustomInstructions);
+            }
+
+            if (AgentType is not null)
+            {
+                w.WriteString("agent_type", AgentType);
             }
 
             w.WriteEndObject();

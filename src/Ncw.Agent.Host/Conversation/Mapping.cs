@@ -26,7 +26,7 @@ internal static class Mapping
         s.Id, s.WorkspaceId, s.ParentSessionId, s.Origin, s.Title, s.TitleSource, s.Model, s.ModelProviderId, s.Mode, s.Thinking,
         s.Archived, s.Favorited, s.CreatedAt, s.UpdatedAt, s.PermissionMode);
 
-    public static SessionListItemDto ToDto(SessionListItem s) => new(s.Id, s.Title, s.UpdatedAt, s.Archived, s.Favorited, s.SkillExtraction);
+    public static SessionListItemDto ToDto(SessionListItem s) => new(s.Id, s.Title, s.UpdatedAt, s.Archived, s.Favorited, s.SkillExtraction, s.IsEmpty);
 
     public static MessageDto ToDto(MessageRecord m) => new(m.Id, m.Role, m.CreatedAt, m.Internal, m.PartsJson, m.MetaJson);
 

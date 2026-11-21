@@ -84,6 +84,14 @@ public class RealSessionsTests
         Assert.False(item.IsRunning);
         Assert.Equal(item.Id, Assert.Single(vm.Workspace.Tabs).SessionId);
 
+        // 再次点击新建会话:直接跳转到已有的空白新会话,不会无限新建
+        vm.Workspace.CloseCommand.Execute(Assert.Single(vm.Workspace.Tabs));
+        Assert.False(vm.Conversation.HasSession);
+        await vm.Panel.NewSessionCommand.ExecuteAsync(null);
+        await Pump(() => vm.Conversation.HasSession, "reused empty session");
+        Assert.Single(vm.Panel.Sessions);
+        Assert.Equal(item.Id, vm.Panel.Sessions.Single(s => s.IsSelected).Id);
+
         // 重命名
         dialogs.NextName = "我的第一个会话";
         await item.RenameCommand.ExecuteAsync(null);

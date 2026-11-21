@@ -83,6 +83,7 @@ public sealed class RunHandle : IDisposable
         Depth = launch.Depth;
         Origin = launch.Origin;
         Options = launch.Options;
+        WorkspaceRoot = launch.WorkspaceRoot;
         LivePermissionMode = launch.PermissionMode;
         StartedAt = host.Clock.GetUtcNow();
     }
@@ -102,6 +103,8 @@ public sealed class RunHandle : IDisposable
     public RunOrigin Origin { get; }
 
     public SendOptions? Options { get; }
+
+    public Ncw.Agent.Environments.EnvPath? WorkspaceRoot { get; }
 
     /// <summary>
     /// 这次 Run 的输入里的文字(各条输入消息的文字块,换行连接;2.x 的 <c>req.input</c> 文字部分)。给 AI 审核器当「用户的任务」——
@@ -253,7 +256,7 @@ public sealed class RunHandle : IDisposable
         }
     }
 
-    internal ModelRef Model => _model;
+    public ModelRef Model => _model;
 
     // ─────────────────────────── 发射 ───────────────────────────
 

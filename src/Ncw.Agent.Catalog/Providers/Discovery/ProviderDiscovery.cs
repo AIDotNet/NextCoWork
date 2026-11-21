@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Wire;
 
 namespace Ncw.Agent.Catalog.Discovery;
@@ -46,9 +47,9 @@ public sealed class ProviderDiscovery(ProviderService providers, IDiscoveryHost 
         var raw = DiscoveryReaders.ReadAll(host);
         var merged = Merge(raw);
 
-        // 现有供应商的地址和 key(只在这里比较,不外传)
+        // 现有文本供应商的地址和 key(只在这里比较,不外传;媒体供应商允许共用同一网关和 key)
         var existing = new List<(string Id, string BaseUrl, string? Key)>();
-        foreach (var p in providers.Snapshot.Providers.Where(p => p.Id != ProviderRefs.ManagedProviderId))
+        foreach (var p in providers.Snapshot.Providers.Where(p => p.Kind == ProviderKind.Text && !ProviderRefs.IsManagedProviderId(p.Id)))
         {
             existing.Add((p.Id, Normalize(p.BaseUrl), await KeyOfAsync(p.Id, ct).ConfigureAwait(false)));
         }
@@ -75,7 +76,7 @@ public sealed class ProviderDiscovery(ProviderService providers, IDiscoveryHost 
     public async Task<IReadOnlyList<DiscoveryImportOutcome>> ImportAsync(IReadOnlyList<string> candidateIds, CancellationToken ct = default)
     {
         var scan = await ScanAsync(ct).ConfigureAwait(false);
-        var taken = providers.Snapshot.Providers.Select(p => p.Id).Append(ProviderRefs.ManagedProviderId).ToHashSet(StringComparer.Ordinal);
+        var taken = providers.Snapshot.Providers.Select(p => p.Id).Concat(ProviderRefs.ManagedProviderIds).ToHashSet(StringComparer.Ordinal);
         var outcomes = new List<DiscoveryImportOutcome>();
         foreach (var id in candidateIds.Distinct(StringComparer.Ordinal))
         {

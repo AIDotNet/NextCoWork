@@ -33,7 +33,7 @@ public enum SubagentNotice
 }
 
 /// <summary>
-/// 右侧面板:默认是文件管理器;Git、改动审查、终端、上下文、历史通过「+」添加;当前会话有子代理时自动出现「子代理」页签。
+/// 右侧面板:默认是文件;Git、审查、终端、上下文、历史通过「+」添加;当前会话有子代理时自动出现「子代理」页签。
 /// 「添加了哪些页签、当前选中哪个」是纯 UI 状态,放在这里(添加的页签持久化在 Prefs);各页签的事实都从 Store 读,
 /// 文件 / diff / 终端输出这类不进 Store 的东西各由页签自己的 ViewModel 持有(见 <see cref="FilesPanelViewModel"/> 等)。本类只在 Store 变化后把「当前项目 / 会话」推给各页签。
 /// </summary>
@@ -46,6 +46,7 @@ public sealed partial class InspectorViewModel : ObservableObject
     private int _runningRuns;
     private bool _initialized;
     private bool _connected;
+    private (string? Device, string? Session) _reviewSelection;
 
     /// <summary>用户通过「+」添加的页签,持久化在 Prefs 里(本机界面偏好的唯一真源)。</summary>
     private IReadOnlyList<InspectorTabKind> Added => _stores.Prefs.State.InspectorTabs;
@@ -125,15 +126,37 @@ public sealed partial class InspectorViewModel : ObservableObject
 
     public bool IsSubagents => Active == InspectorTabKind.Subagents;
 
+    [ObservableProperty] public partial bool HasContext { get; private set; }
+
+    [ObservableProperty] public partial int ContextUsed { get; private set; }
+
+    [ObservableProperty] public partial int ContextWindow { get; private set; }
+
+    [ObservableProperty] public partial int ContextPercent { get; private set; }
+
+    [ObservableProperty] public partial double ContextRatio { get; private set; }
+
+    [ObservableProperty] public partial string ContextUsedText { get; private set; } = "";
+
+    [ObservableProperty] public partial string ContextWindowText { get; private set; } = "";
+
+    public ObservableCollection<ContextSegmentView> ContextSegments { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTodo))]
+    public partial TodoPanelViewModel? Todo { get; private set; }
+
+    public bool HasTodo => Todo is { Items.Count: > 0 };
+
     partial void OnActiveChanged(InspectorTabKind value)
     {
-        // 页签切换:Git / 审查取一次最新的;终端只有可见时才订阅输出
+        // 页签切换:Git / 审查 / 历史取一次最新的;终端只有可见时才订阅输出
         switch (value)
         {
             case InspectorTabKind.Git:
                 _ = Git.RefreshAsync();
                 break;
-            case InspectorTabKind.Review:
+            case InspectorTabKind.Review or InspectorTabKind.History:
                 _ = Review.LoadAsync();
                 break;
         }
@@ -182,6 +205,11 @@ public sealed partial class InspectorViewModel : ObservableObject
     [RelayCommand]
     private void Close(InspectorTabKind kind)
     {
+        if (kind is InspectorTabKind.Files or InspectorTabKind.Subagents)
+        {
+            return;
+        }
+
         if (Active == kind)
         {
             Active = InspectorTabKind.Files;
@@ -212,6 +240,13 @@ public sealed partial class InspectorViewModel : ObservableObject
         Git.Bind(project);
         Terminals.Bind(project);
         Review.Bind(project?.DeviceId, selection.SessionId);
+        var reviewSelection = (project?.DeviceId, selection.SessionId);
+        if (Active == InspectorTabKind.Review && (!_initialized || reviewSelection != _reviewSelection))
+        {
+            _ = Review.LoadAsync();
+        }
+
+        _reviewSelection = reviewSelection;
         Files.Tree.ApplyChanges(GitChangeGroups.TreeMarkers(project is { } g ? _stores.Git.State.Of(g).Overview : null));
 
         var connected = device?.Connection == DeviceConnection.Connected;
@@ -235,11 +270,13 @@ public sealed partial class InspectorViewModel : ObservableObject
         _initialized = true;
 
         RefreshSubagents();
+        RefreshSessionInspector();
     }
 
     private void OnConversations()
     {
         RefreshSubagents();
+        RefreshSessionInspector();
         // 一个 Run 跑完了:它可能改过文件,git 概览(和文件树角标)跟着取一次
         if (_project is { } project)
         {
@@ -287,7 +324,7 @@ public sealed partial class InspectorViewModel : ObservableObject
         var kinds = InspectorTabs.Compose(Added, items.Count > 0, SessionHasChanges);
         if (!kinds.Contains(Active))
         {
-            // 子代理页签随会话消失时回到文件管理器。
+            // 子代理页签随会话消失时回到文件。
             Active = InspectorTabKind.Files;
         }
 
@@ -412,16 +449,90 @@ public sealed partial class InspectorViewModel : ObservableObject
 
     [RelayCommand]
     private void DismissNotice() => Notice = SubagentNotice.None;
+
+    /// <summary>在历史页签里点某一轮检查点:在改动审查里选中这一轮并切过去看 diff / 撤销。</summary>
+    [RelayCommand]
+    private void OpenReviewRun(ReviewRunItem run)
+    {
+        Review.SelectRunCommand.Execute(run);
+        if (Tabs.Any(t => t.Kind == InspectorTabKind.Review))
+        {
+            Activate(InspectorTabKind.Review);
+        }
+        else
+        {
+            Add(InspectorTabKind.Review);
+        }
+    }
+
+    private void RefreshSessionInspector()
+    {
+        var selection = _stores.Selection.State;
+        var session = selection.Project is { } project && selection.SessionId is { } sessionId
+            ? new SessionRef(project.DeviceId, sessionId)
+            : (SessionRef?)null;
+        var conversations = _stores.Conversations.State;
+
+        var usage = session is { } s ? ConversationViewModel.LatestContextOf(conversations, s) : null;
+        if (usage is { Window: > 0 })
+        {
+            HasContext = true;
+            ContextUsed = usage.Used;
+            ContextWindow = usage.Window;
+            ContextPercent = ConversationViewModel.PercentOf(usage);
+            ContextRatio = Math.Clamp((double)usage.Used / usage.Window, 0, 1);
+            ContextUsedText = ComposerLogic.WindowText(usage.Used);
+            ContextWindowText = ComposerLogic.WindowText(usage.Window);
+            var segments = usage.Segments
+                .Where(seg => seg.Tokens > 0)
+                .Select(seg => new ContextSegmentView(
+                    seg.Kind,
+                    seg.Tokens,
+                    (int)Math.Round(100.0 * seg.Tokens / usage.Window),
+                    ComposerLogic.WindowText(seg.Tokens)))
+                .ToList();
+            if (!ContextSegments.SequenceEqual(segments))
+            {
+                ContextSegments.Clear();
+                foreach (var seg in segments)
+                {
+                    ContextSegments.Add(seg);
+                }
+            }
+        }
+        else
+        {
+            HasContext = false;
+            ContextUsed = 0;
+            ContextWindow = 0;
+            ContextPercent = 0;
+            ContextRatio = 0;
+            ContextUsedText = "";
+            ContextWindowText = "";
+            if (ContextSegments.Count > 0)
+            {
+                ContextSegments.Clear();
+            }
+        }
+
+        var view = session is { } current ? conversations.Sessions.GetValueOrDefault(current) : null;
+        Todo = view?.Todo is { Items.Count: > 0 } todo
+            ? (Todo?.View.Equals(todo) == true ? Todo : new TodoPanelViewModel(todo))
+            : null;
+    }
 }
+
+/// <summary>检查器「上下文」页签里的一段占用(纯结构化数值,类别文案由 UI 转换器翻译)。</summary>
+public sealed record ContextSegmentView(string Kind, int Tokens, int Percent, string TokensText);
 
 public sealed partial class InspectorTabViewModel(InspectorTabKind kind, int count) : ObservableObject
 {
     public InspectorTabKind Kind { get; } = kind;
 
-    /// <summary>文件页签不能关;子代理页签随会话自动出现和消失,也不能手动关。审查页签:用户加的能关;自动出现的不能关(<see cref="IsAuto"/>)。</summary>
+    /// <summary>常驻文件与自动出现的审查 / 子代理不能手动关闭;用户添加的页签可以关闭。</summary>
     public bool IsClosable => !IsAuto && Kind is not (InspectorTabKind.Files or InspectorTabKind.Subagents);
 
-    /// <summary>随会话自动出现的页签(子代理、改过文件时的审查)。</summary>
+    /// <summary>随会话出现的页签:自动审查或子代理。</summary>
     public bool IsAuto { get; init; }
 
     public int Count { get; } = count;

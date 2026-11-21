@@ -9,7 +9,7 @@ public sealed record SidebarSessionList(IReadOnlyList<SessionSummary> Visible, i
 /// 侧边栏项目树里会话的排序与截断(docs/design/03 §1「左侧边栏」;纯函数,单测见 Ncw.Client.Tests)。
 /// <list type="bullet">
 /// <item>已归档的默认不显示;<c>showArchived</c> 时排在最后;</item>
-/// <item>有待处理的 → 运行中的 → 收藏的 → 其余,同一档里按最近活动倒序、再按 id 稳定排序;</item>
+/// <item>置顶的 → 有待处理的 → 运行中的 → 其余,同一档里按最近活动倒序、再按 id 稳定排序;</item>
 /// <item>最多显示 <see cref="Limit"/> 条(<c>showAll</c> 时全部),当前打开的会话排在后面也一定显示(顶替最后一条,不让列表变长)。</item>
 /// </list>
 /// </summary>
@@ -27,7 +27,7 @@ public static class SidebarSessions
     {
         var ordered = sessions
             .Where(s => showArchived || !s.Archived)
-            .Select(s => (Session: s, Rank: s.Archived ? 4 : pendingOf(s) > 0 ? 0 : runningOf(s) ? 1 : s.Favorited ? 2 : 3))
+            .Select(s => (Session: s, Rank: s.Archived ? 4 : s.Favorited ? 0 : pendingOf(s) > 0 ? 1 : runningOf(s) ? 2 : 3))
             .OrderBy(x => x.Rank)
             .ThenByDescending(x => x.Session.UpdatedAt)
             .ThenBy(x => x.Session.Id, StringComparer.Ordinal)

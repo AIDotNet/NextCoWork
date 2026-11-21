@@ -138,14 +138,15 @@ public sealed record UiPrefsDto(
     string? Motion = null,
     Dictionary<string, string>? Shortcuts = null,
     AttentionPrefsDto? Attention = null,
-    string? Theme = null)
+    string? Theme = null,
+    double? SidebarFilesRatio = null)
 {
     public static UiPrefsDto From(UiPrefs prefs) => new(
         1, prefs.SidebarWidth, prefs.InspectorWidth, prefs.IsSidebarOpen, prefs.IsInspectorOpen,
         [.. prefs.InspectorTabs.Select(t => t.ToString())], prefs.Motion.ToString(),
         prefs.ShortcutOverrides.Count == 0 ? null : prefs.ShortcutOverrides.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
         prefs.Attention is { } a ? new AttentionPrefsDto(a.NotifyPending, a.NotifyCompleted, a.NotifyFailed, a.Badge, a.Tray) : null,
-        prefs.Theme.ToString());
+        prefs.Theme.ToString(), prefs.SidebarFilesRatio);
 
     public UiPrefs ToPrefs() => new(
         SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen,
@@ -157,7 +158,7 @@ public sealed record UiPrefsDto(
             .Where(x => x.Ok && x.Value is not null)
             .ToImmutableDictionary(x => x.Command, x => x.Value),
         Attention is { } a ? new AttentionPrefs(a.NotifyPending ?? true, a.NotifyCompleted ?? true, a.NotifyFailed ?? true, a.Badge ?? true, a.Tray ?? true) : null,
-        Enum.TryParse<UiThemePreference>(Theme, out var theme) && Enum.IsDefined(theme) ? theme : UiThemePreference.Dark);
+        Enum.TryParse<UiThemePreference>(Theme, out var theme) && Enum.IsDefined(theme) ? theme : UiThemePreference.Dark, SidebarFilesRatio ?? UiPrefs.SidebarFilesDefaultRatio);
 }
 
 /// <summary>通知偏好在文件里的形状:每项可空(缺失 = 默认开)。</summary>

@@ -1,23 +1,25 @@
 namespace Ncw.Core.Domain;
 
-/// <summary>参与匹配的模版(只要地址、协议和所属服务)。</summary>
-public readonly record struct TemplateRef(string Id, string Service, string BaseUrl, string Protocol);
+/// <summary>参与匹配的模版(地址、协议、所属服务与类型)。</summary>
+public readonly record struct TemplateRef(string Id, string Service, string BaseUrl, string Protocol, string Kind = ProviderKinds.Text);
 
 /// <summary>
 /// 一个供应商(或自动发现的候选)对应哪个内置模版:列表栏 / 详情 / 编辑弹窗的 logo 和「获取 key」链接都由它派生(docs/design/07 §3「添加供应商」)。
-/// 先比完整地址,再比主机名(同主机优先同协议,例如 DeepSeek 的 Anthropic 兼容端点),本机地址按端口。认不出为 null。
+/// 先比完整地址,再比主机名(同主机优先同协议、同类型,例如火山方舟同时有文本 / 图片 / 视频三个模版),本机地址按端口。认不出为 null。
 /// </summary>
 public static class ProviderTemplateMatch
 {
-    public static TemplateRef? Find(string baseUrl, string protocol, IReadOnlyList<TemplateRef> templates)
+    public static TemplateRef? Find(string baseUrl, string protocol, IReadOnlyList<TemplateRef> templates, string? kind = null)
     {
         if (templates.Count == 0 || !Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out var uri))
         {
             return null;
         }
 
+        var wantedKind = ProviderKinds.Normalize(kind) ?? ProviderEndpoints.KindOfProtocol(protocol) ?? ProviderKinds.Text;
+        var explicitKind = ProviderKinds.Normalize(kind) is not null;
         var url = Normalize(uri);
-        TemplateRef? exactUrl = null, hostAndProtocol = null, host = null;
+        TemplateRef? exactUrlSameKind = null, exactUrl = null, hostAndProtocol = null, hostSameKind = null, host = null;
         foreach (var t in templates)
         {
             if (!Uri.TryCreate(t.BaseUrl, UriKind.Absolute, out var other) || !SameOrigin(uri, other))
@@ -25,25 +27,41 @@ public static class ProviderTemplateMatch
                 continue;
             }
 
+            var sameKind = t.Kind == wantedKind;
+            if (explicitKind && !sameKind)
+            {
+                continue;
+            }
+
             if (Normalize(other) == url)
             {
-                if (t.Protocol == protocol)
+                if (t.Protocol == protocol && sameKind)
                 {
                     return t;
+                }
+
+                if (sameKind)
+                {
+                    exactUrlSameKind ??= t;
                 }
 
                 exactUrl ??= t;
             }
 
-            if (t.Protocol == protocol)
+            if (t.Protocol == protocol && sameKind)
             {
                 hostAndProtocol ??= t;
+            }
+
+            if (sameKind)
+            {
+                hostSameKind ??= t;
             }
 
             host ??= t;
         }
 
-        return exactUrl ?? hostAndProtocol ?? host;
+        return exactUrlSameKind ?? exactUrl ?? hostAndProtocol ?? hostSameKind ?? host;
     }
 
     /// <summary>

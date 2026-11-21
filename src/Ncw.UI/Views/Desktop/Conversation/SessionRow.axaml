@@ -8,30 +8,53 @@
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Desktop.Conversation.SessionRow"
              x:DataType="vm:SessionItemViewModel">
-  <!-- 侧边栏里的一行会话:状态点 · 标题 · 收藏星 · 时间(有待处理时换成「n 待处理」)。右键菜单:重命名 / 收藏 / 归档 / 删除(删除要二次确认)。 -->
-  <ui:PlainButton Padding="8,6" Command="{Binding OpenCommand}" Classes.active="{Binding IsSelected}" Opacity="{Binding IsArchived, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
-    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
-      <Panel Width="10" Height="10" VerticalAlignment="Center" arc:Tooltip.Tip="{Binding Activity, Converter={x:Static cv:ActivityTextConverter.Instance}}">
-        <!-- 运行中:实心点;未知(设备断开):旋转的加载图标,既不当成结束也不当成还在跑 -->
-        <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
-        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="10" IsVisible="{Binding IsUnknown}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-        <Border CornerRadius="5" BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}">
-          <Border.IsVisible>
-            <MultiBinding Converter="{x:Static BoolConverters.And}">
-              <Binding Path="!IsRunning" />
-              <Binding Path="!IsUnknown" />
-            </MultiBinding>
-          </Border.IsVisible>
+  <UserControl.Styles>
+    <Style Selector="Grid#Row StackPanel#HoverActions">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Grid#Row:pointerover StackPanel#HoverActions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+  </UserControl.Styles>
+  <!-- 侧边栏里的一行会话:状态点 · 标题 · 置顶图标 · 时间(有待处理时换成「n 待处理」);悬停追加重命名 / 置顶按钮。右键菜单:重命名 / 置顶 / 归档 / 删除(删除要二次确认)。 -->
+  <Grid x:Name="Row" ColumnDefinitions="*,Auto" Opacity="{Binding IsArchived, Converter={x:Static cv:ArchivedOpacityConverter.Instance}}">
+    <ui:PlainButton x:Name="OpenButton" Padding="6,5" Command="{Binding OpenCommand}" Classes.active="{Binding IsSelected}" DoubleTapped="OnRowDoubleTapped">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+        <Panel Width="10" Height="10" VerticalAlignment="Center" arc:Tooltip.Tip="{Binding Activity, Converter={x:Static cv:ActivityTextConverter.Instance}}">
+          <!-- 运行中:实心点;未知(设备断开):旋转的加载图标,既不当成结束也不当成还在跑 -->
+          <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding IsRunning}" ui:NcwMotion.Busy="Breathe" />
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="10" IsVisible="{Binding IsUnknown}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <Border CornerRadius="5" BorderThickness="1.5" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}">
+            <Border.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="!IsRunning" />
+                <Binding Path="!IsUnknown" />
+              </MultiBinding>
+            </Border.IsVisible>
+          </Border>
+        </Panel>
+        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <lucide:LucideIcon Grid.Column="2" Kind="Pin" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsFavorite}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !HasPending}"
+                   Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
+        <!-- 等你处理的交互数(SessionActivityView.PendingOf;样式 Border.pendingPill 在侧边栏里) -->
+        <Border Grid.Column="3" Classes="pendingPill" IsVisible="{Binding HasPending}">
+          <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=SidebarPending}" />
         </Border>
-      </Panel>
-      <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-      <lucide:LucideIcon Grid.Column="2" Kind="Star" Size="11" VerticalAlignment="Center" IsVisible="{Binding IsFavorite}" Foreground="{arc:ArcDesignTokenResource Warning}" />
-      <TextBlock Grid.Column="3" Classes="hint" VerticalAlignment="Center" IsVisible="{Binding !HasPending}"
-                 Text="{Binding UpdatedAt, Converter={x:Static cv:RelativeTimeConverter.Instance}}" />
-      <!-- 等你处理的交互数(SessionActivityView.PendingOf;样式 Border.pendingPill 在侧边栏里) -->
-      <Border Grid.Column="3" Classes="pendingPill" IsVisible="{Binding HasPending}">
-        <TextBlock Text="{Binding PendingCount, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=SidebarPending}" />
-      </Border>
-    </Grid>
-  </ui:PlainButton>
+      </Grid>
+    </ui:PlainButton>
+    <StackPanel x:Name="HoverActions" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,2,0" Spacing="1">
+      <ui:PlainButton x:Name="RenameButton" Width="20" Height="20" CornerRadius="5" Command="{Binding RenameCommand}"
+                      AutomationProperties.Name="{l:NcwText Rename}" arc:Tooltip.Tip="{l:NcwText Rename}">
+        <lucide:LucideIcon Kind="Pencil" Size="11" HorizontalAlignment="Center" />
+      </ui:PlainButton>
+      <ui:PlainButton x:Name="PinButton" Width="20" Height="20" CornerRadius="5" Command="{Binding ToggleFavoriteCommand}"
+                      AutomationProperties.Name="{l:NcwText PinSession}" arc:Tooltip.Tip="{l:NcwText PinSession}">
+        <Panel>
+          <lucide:LucideIcon Kind="Pin" Size="11" HorizontalAlignment="Center" IsVisible="{Binding !IsFavorite}" />
+          <lucide:LucideIcon Kind="PinOff" Size="11" HorizontalAlignment="Center" IsVisible="{Binding IsFavorite}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        </Panel>
+      </ui:PlainButton>
+    </StackPanel>
+  </Grid>
 </UserControl>

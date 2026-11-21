@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ncw.Agent.Catalog;
-using Ncw.Agent.Llm.Wire;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Storage;
 using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
@@ -23,6 +23,8 @@ internal static class ProviderHandlers
 
     public static void Register(MethodRouter router, Func<ProviderRuntime> runtime)
     {
+        router.DeclareCapability(Capabilities.ProviderMedia);
+
         // ── catalog ──
         router.Handle(CatalogMethods.Query, (p, _, _) => Sync(() => Query(runtime(), p)));
         router.Handle(CatalogMethods.Providers, (_, _, _) => Sync(() => CatalogProviders(runtime())));
@@ -186,7 +188,7 @@ internal static class ProviderHandlers
                 throw new ProtocolException(ErrorCodes.InvalidRequest, "The debug run id must be 1-64 letters, digits, '-' or '_'.");
             }
 
-            var protocol = WireProtocols.Parse(p.Protocol) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{p.Protocol}'.");
+            var protocol = ProviderProtocols.Parse(p.Protocol) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{p.Protocol}'.");
             var request = new DebugRequest(ToTarget(p.Target), protocol, p.Model, p.Prompt, p.MaxOutputTokens, ProviderMapping.ParseDebugThinking(p.Thinking), p.WithTool);
             var rt = runtime();
             rt.DebugRuns.Start(p.RunId);
@@ -204,10 +206,21 @@ internal static class ProviderHandlers
 
     private static DebugTarget ToTarget(ProviderDebugTargetDto target)
     {
-        WireProtocol? protocol = null;
+        ProviderProtocol? protocol = null;
         if (target.Protocol is { } name)
         {
-            protocol = WireProtocols.Parse(name) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{name}'.");
+            protocol = ProviderProtocols.Parse(name) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{name}'.");
+        }
+
+        ProviderKind? kind = null;
+        if (target.Kind is { } kindName)
+        {
+            kind = ProviderKindExtensions.ParseKind(kindName) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown provider kind '{kindName}'.");
+        }
+
+        if (protocol is { } p && kind is { } k && p.KindOf() != k)
+        {
+            throw new ProtocolException(ErrorCodes.InvalidRequest, $"Protocol '{p.NameOf()}' does not belong to kind '{k.NameOf()}'.");
         }
 
         if (target.ProviderId is null && string.IsNullOrWhiteSpace(target.BaseUrl))
@@ -215,7 +228,7 @@ internal static class ProviderHandlers
             throw new ProtocolException(ErrorCodes.InvalidRequest, "A debug target needs a saved provider id or an API address.");
         }
 
-        return new DebugTarget(target.ProviderId, string.IsNullOrWhiteSpace(target.BaseUrl) ? null : target.BaseUrl, protocol, target.ApiKey);
+        return new DebugTarget(target.ProviderId, string.IsNullOrWhiteSpace(target.BaseUrl) ? null : target.BaseUrl, protocol, target.ApiKey, kind);
     }
 
     private static readonly ProviderTemplatesResult Templates = new([.. Ncw.Agent.Catalog.Templates.ProviderTemplates.All.Select(ProviderMapping.ToDto)]);
@@ -258,8 +271,13 @@ internal static class ProviderHandlers
 
     private static ProviderDto Upsert(ProviderRuntime rt, ProvidersUpsertParams p)
     {
-        var protocol = WireProtocols.Parse(p.Protocol) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{p.Protocol}'.");
-        var saved = rt.Providers.Upsert(new ProviderRecord(p.Id, p.Name, protocol, p.BaseUrl, p.Priority ?? ProviderRecord.DefaultPriority, p.Enabled ?? true)
+        var protocol = ProviderProtocols.Parse(p.Protocol)
+            ?? throw new ProviderException(ProviderErrorKeys.InvalidProtocol, $"Unknown protocol '{p.Protocol}'.");
+        var kind = p.Kind is null
+            ? protocol.KindOf()
+            : ProviderKindExtensions.ParseKind(p.Kind)
+                ?? throw new ProviderException(ProviderErrorKeys.InvalidKind, $"Unknown provider kind '{p.Kind}'.");
+        var saved = rt.Providers.Upsert(new ProviderRecord(p.Id, p.Name, protocol, p.BaseUrl, p.Priority ?? ProviderRecord.DefaultPriority, p.Enabled ?? true, kind)
         {
             ProtocolOptions = ParseObject(p.ProtocolOptionsJson, nameof(p.ProtocolOptionsJson)),
         });
@@ -270,10 +288,10 @@ internal static class ProviderHandlers
 
     private static AliasUpdate ToUpdate(ModelUpdateParams p)
     {
-        WireProtocol? protocol = null;
+        ProviderProtocol? protocol = null;
         if (p.ProtocolOverride is { } name)
         {
-            protocol = WireProtocols.Parse(name) ?? throw new ProtocolException(ErrorCodes.InvalidRequest, $"Unknown protocol '{name}'.");
+            protocol = ProviderProtocols.Parse(name) ?? throw new ProviderException(ProviderErrorKeys.InvalidProtocol, $"Unknown protocol '{name}'.");
         }
 
         return new AliasUpdate(

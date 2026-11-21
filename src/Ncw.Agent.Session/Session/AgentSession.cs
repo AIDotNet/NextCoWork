@@ -164,11 +164,12 @@ public sealed partial class AgentSession
         var transformed = await _host.TransformAsync(SessionExtensionPoints.Input, new InputPayload(request.Input) { Depth = request.Depth }, ctx, ct).ConfigureAwait(false);
         var input = transformed.Messages;
         var newMessages = new List<Message>(input.Count);
+        var effectiveRoot = request.WorkspaceRoot ?? _deps.WorkspaceRoot;
         if (transformed.BlockedReason is null)
         {
             foreach (var message in input)
             {
-                newMessages.Add(message with { Parts = await FileReferences.NormalizeAsync(message.Parts, _deps.Environment, _deps.WorkspaceRoot, ct).ConfigureAwait(false) });
+                newMessages.Add(message with { Parts = await FileReferences.NormalizeAsync(message.Parts, _deps.Environment, effectiveRoot, ct).ConfigureAwait(false) });
             }
         }
 
@@ -355,7 +356,7 @@ public sealed partial class AgentSession
 
     private ToolContext Enrich(RunState state, ToolContext context)
     {
-        ToolContext enriched = new SessionToolContext(context, _deps.Environment, _deps.WorkspaceRoot);
+        ToolContext enriched = new SessionToolContext(context, _deps.Environment, state.WorkspaceRoot);
         return state.Request.EnrichToolContext is { } more ? more(enriched) : enriched;
     }
 }

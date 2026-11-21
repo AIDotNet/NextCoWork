@@ -14,6 +14,7 @@ namespace Ncw.Client.Actions;
 public sealed class SessionActions(ClientStores stores, DeviceRegistry devices, ConversationActions conversations)
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<SessionRef, byte> _opened = [];
+    private readonly Dictionary<ProjectRef, Task<ActionResult<string>>> _creating = [];
 
     /// <summary>打开一个会话:选中并开始跟踪(快照进 Store)。已经在跟踪就只是选中(连接会在断线重连后自己恢复订阅,不重复订阅)。</summary>
     public void Open(ProjectRef project, string sessionId)
@@ -38,19 +39,67 @@ public sealed class SessionActions(ClientStores stores, DeviceRegistry devices, 
     public void Deselect(ProjectRef project) =>
         stores.Selection.Update(s => s.Project == project && s.SessionId is not null ? s with { SessionId = null } : s);
 
-    /// <summary>「新建会话」:在项目里建一个并打开。</summary>
-    public async Task<ActionResult<string>> CreateAsync(ProjectRef project, string? model = null, CancellationToken ct = default)
+    /// <summary>「新建会话」:如果项目里已经有一个未使用的空白新会话,直接跳转到它并显示;否则在项目里建一个并打开。</summary>
+    public Task<ActionResult<string>> CreateAsync(ProjectRef project, string? model = null, CancellationToken ct = default)
     {
-        // 注意不用 ConfigureAwait(false):后面要写 Store,Store 只能在 UI 线程上读写
-        if (await conversations.CreateSessionAsync(project, model, ct) is not { } session)
+        if (FindReusableNewSession(project) is { } existing)
         {
-            return ActionResult<string>.NotConnected();
+            Open(project, existing.Id);
+            return Task.FromResult(ActionResult<string>.Success(existing.Id));
         }
 
-        _opened.TryAdd(session, 0); // CreateSessionAsync 已经订阅了它
-        stores.Selection.Update(_ => new SelectionState(project, session.SessionId));
-        await RefreshAsync(project, ct);
-        return ActionResult<string>.Success(session.SessionId);
+        if (_creating.TryGetValue(project, out var inflight))
+        {
+            return inflight;
+        }
+
+        var task = CreateCoreAsync(project, model, ct);
+        _creating[project] = task;
+        return task;
+    }
+
+    private async Task<ActionResult<string>> CreateCoreAsync(ProjectRef project, string? model, CancellationToken ct)
+    {
+        try
+        {
+            // 注意不用 ConfigureAwait(false):后面要写 Store,Store 只能在 UI 线程上读写
+            if (await conversations.CreateSessionAsync(project, model, ct) is not { } session)
+            {
+                return ActionResult<string>.NotConnected();
+            }
+
+            _opened.TryAdd(session, 0); // CreateSessionAsync 已经订阅了它
+            stores.Selection.Update(_ => new SelectionState(project, session.SessionId));
+            await RefreshAsync(project, ct);
+            return ActionResult<string>.Success(session.SessionId);
+        }
+        finally
+        {
+            _creating.Remove(project);
+        }
+    }
+
+    private SessionSummary? FindReusableNewSession(ProjectRef project)
+    {
+        var workspace = stores.Workspace.State;
+        var conv = stores.Conversations.State;
+        return workspace.Sessions
+            .Where(s => s.Project == project && !s.Archived && s.IsEmpty && !workspace.IsSessionRunning(s))
+            .Where(s => IsUnusedInConversationState(conv, new SessionRef(project.DeviceId, s.Id)))
+            .OrderByDescending(s => s.UpdatedAt)
+            .ThenBy(s => s.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    private static bool IsUnusedInConversationState(ConversationState conv, SessionRef session)
+    {
+        if (conv.Sessions.TryGetValue(session, out var view)
+            && (!view.Messages.IsEmpty || view.Queue.Items.Length > 0 || view.ActiveRunId is not null))
+        {
+            return false;
+        }
+
+        return !conv.Runs.Values.Any(r => r.Ref.DeviceId == session.DeviceId && r.SessionId == session.SessionId);
     }
 
     public Task<ActionResult<SessionDto>> RenameAsync(ProjectRef project, string sessionId, string title, CancellationToken ct = default) =>

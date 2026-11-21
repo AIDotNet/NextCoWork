@@ -125,13 +125,22 @@ public class DesktopShellTests
     }
 
     [AvaloniaFact]
-    public void Right_panel_defaults_to_file_manager()
+    public void Right_panel_defaults_to_files_in_the_inspector()
     {
         var (window, shell, vm) = Render(1500);
 
+        var inspector = shell.FindControl<InspectorPanel>("Inspector")!;
         Assert.True(vm.Inspector.IsFiles);
-        Assert.Contains(shell.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwTreeView>(), t => t.Name == "Tree" && t.IsEffectivelyVisible);
-        Snapshot(window, "panel-files");
+        Assert.Single(inspector.GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Inspector.FilesPane>());
+        Assert.Single(shell.GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Inspector.FilesPane>());
+        Assert.Contains(inspector.GetVisualDescendants().OfType<Ncw.UI.Controls.NcwTreeView>(), t => t.Name == "Tree" && t.IsEffectivelyVisible);
+        Snapshot(window, "panel-right-files");
+
+        vm.Inspector.AddCommand.Execute(InspectorTabKind.Review);
+        Dispatch();
+        Assert.True(vm.Inspector.IsReview);
+        Assert.DoesNotContain(inspector.GetVisualDescendants().OfType<Ncw.UI.Views.Desktop.Inspector.FilesPane>(), f => f.IsEffectivelyVisible);
+        Snapshot(window, "panel-review");
     }
 
     [AvaloniaFact]

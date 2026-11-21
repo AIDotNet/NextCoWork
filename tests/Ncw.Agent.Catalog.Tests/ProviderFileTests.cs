@@ -125,7 +125,7 @@ public sealed class ProviderFileTests : IDisposable
         _store.Load();
         Assert.Empty(_store.Problems);
         var provider = _store.ListProviders()[0];
-        Assert.Equal(("astra", "Astra", WireProtocol.OpenAiChat, 50, true), (provider.Id, provider.Name, provider.Protocol, provider.Priority, provider.Enabled));
+        Assert.Equal(("astra", "Astra", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, 50, true), (provider.Id, provider.Name, provider.Protocol, provider.Priority, provider.Enabled));
         Assert.Equal("astra-nextcowork-1", _store.GetCredential("astra"));
         var aliases = _store.ListAliases();
         Assert.Equal(["glm-5", "gpt-5.1"], aliases.Select(a => a.Alias).ToArray());
@@ -364,6 +364,38 @@ public sealed class ProviderFileTests : IDisposable
         await WaitAsync(() => _store.Error is not null);
         Assert.Empty(seen);
         Assert.Equal(["gw"], _store.ListProviders().Select(p => p.Id).ToArray());
+    }
+
+    // ── 供应商类型与媒体协议 ──
+
+    [Fact]
+    public void Media_providers_round_trip_with_kind_and_infer_kind_from_protocol_while_text_providers_omit_default_kind()
+    {
+        File.WriteAllText(_path, """
+        {"providers":{
+          "ark-img":{"name":"火山生图","baseUrl":"https://ark.cn-beijing.volces.com/api/v3","protocol":"volcengine-images"},
+          "ark-vid":{"name":"火山视频","kind":"video","baseUrl":"https://ark.cn-beijing.volces.com/api/v3","protocol":"volcengine-videos"},
+          "badkind":{"baseUrl":"u","kind":"embedding","protocol":"openai-chat"},
+          "mismatch":{"baseUrl":"u","kind":"image","protocol":"openai-chat"},
+          "nextcowork-image":{"baseUrl":"u","protocol":"openai-images"}
+        }}
+        """);
+
+        Assert.True(_store.Load());
+        var loaded = _store.ListProviders().ToDictionary(p => p.Id);
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal((Ncw.Agent.Llm.Media.ProviderKind.Image, Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages), (loaded["ark-img"].Kind, loaded["ark-img"].Protocol));
+        Assert.Equal((Ncw.Agent.Llm.Media.ProviderKind.Video, Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineVideos), (loaded["ark-vid"].Kind, loaded["ark-vid"].Protocol));
+        Assert.Contains(_store.Problems, p => p.ProviderId == "badkind" && p.Key == ProviderFileProblemKeys.InvalidKind);
+        Assert.Contains(_store.Problems, p => p.ProviderId == "mismatch" && p.Key == ProviderFileProblemKeys.InvalidProtocol);
+        Assert.Contains(_store.Problems, p => p.ProviderId == "nextcowork-image" && p.Key == ProviderFileProblemKeys.ManagedId);
+
+        _store.PutProvider(new ProviderRecord("oa-audio", "OpenAI Audio", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiAudio, "https://api.openai.com/v1", Kind: Ncw.Agent.Llm.Media.ProviderKind.Audio));
+        _store.PutProvider(Provider("plain-text", "Plain Text"));
+        Assert.Equal("audio", Entry("oa-audio")["kind"]!.GetValue<string>());
+        Assert.Null(Entry("plain-text")["kind"]); // 默认文本供应商不额外写 kind 字段
+        Assert.Equal(ProviderErrorKeys.ManagedProvider, Assert.Throws<ProviderException>(() => _store.PutProvider(
+            new ProviderRecord("nextcowork-video", "X", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiVideos, "https://x", Kind: Ncw.Agent.Llm.Media.ProviderKind.Video))).Key);
     }
 
     private static async Task WaitAsync(Func<bool> condition)

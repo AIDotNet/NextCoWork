@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Ncw.Agent.Kernel.Loop;
+using Ncw.Agent.Kernel.Session;
 using Ncw.Agent.Kernel.Tools;
 using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Json;
@@ -39,7 +40,11 @@ public sealed class TaskTool : IAgentTool
             "The full task for the subagent. IMPORTANT: the subagent CANNOT SEE THIS CONVERSATION, so every piece of context it needs — and exactly what you want back — must be written here",
             minLength: 1, maxLength: 50_000)),
         ("subagent_type", S.String("The name of the subagent to use, chosen from the list in this tool's description", minLength: 1, maxLength: 64)),
-        ("run_in_background", S.Boolean("If true, start the subagent and continue this conversation without waiting for its report"))));
+        ("run_in_background", S.Boolean("If true, start the subagent and continue this conversation without waiting for its report")),
+        ("resume", S.String("Optional subagent session ID from an earlier run to resume with its full preserved transcript", minLength: 1, maxLength: 128)),
+        ("max_turns", S.Integer("Optional maximum number of agentic turns before the subagent stops", minimum: 1, maximum: 500)),
+        ("isolation", S.Enum("Optional workspace isolation mode. \"worktree\" runs the subagent in a temporary git worktree", ["worktree"])),
+        ("model", S.String("Optional model alias override for this subagent invocation", minLength: 1, maxLength: 128))));
 
     private readonly ISubagentLauncher? _launcher;
     private readonly Func<IReadOnlyList<AgentDefinition>> _agents;
@@ -114,8 +119,23 @@ public sealed class TaskTool : IAgentTool
             return ToolResult.Error("Subagents cannot be launched in this environment. Do this step yourself.");
         }
 
+        var explicitBackground = args.Bool("run_in_background");
+        var maxTurns = args.TryGetProperty("max_turns", out var maxTurnsNode) && maxTurnsNode.ValueKind == JsonValueKind.Number && maxTurnsNode.TryGetInt32(out var parsedTurns)
+            ? parsedTurns
+            : (int?)null;
+        var isolation = string.Equals(args.Str("isolation"), "worktree", StringComparison.OrdinalIgnoreCase)
+            ? AgentIsolation.Worktree
+            : (AgentIsolation?)null;
+
         var outcome = await _launcher.SpawnAsync(
-            new SubagentRequest(ctx.RunId, ctx.CallId, type, args.Str("prompt") ?? "", args.Str("description") ?? "", args.Bool("run_in_background") == true),
+            new SubagentRequest(ctx.RunId, ctx.CallId, type, args.Str("prompt") ?? "", args.Str("description") ?? "", explicitBackground == true)
+            {
+                RunInBackground = explicitBackground,
+                Resume = args.Str("resume"),
+                MaxTurns = maxTurns,
+                Model = args.Str("model"),
+                Isolation = isolation,
+            },
             ct).ConfigureAwait(false);
 
         switch (outcome)
@@ -172,7 +192,10 @@ public sealed class TaskTool : IAgentTool
                     };
                 }
 
-                return ToolResult.Text(outcome.Text) with
+                var resultText = outcome.Worktree is null
+                    ? outcome.Text
+                    : $"{outcome.Text}\n\n[worktree: {outcome.Worktree.Path} (branch {outcome.Worktree.Branch})]";
+                return ToolResult.Text(resultText) with
                 {
                     Subagent = new SubagentReceipt(childRun, "done", Preview(outcome.Text), Color: outcome.Color),
                 };
@@ -182,10 +205,21 @@ public sealed class TaskTool : IAgentTool
                 // ★ 网络故障要明说它是瞬时的:子 Run 走到这里时,会话层已经续跑过几次了——这里是最后一道防线,而父代理是唯一还能做点什么的人。
                 // 只甩一句「failed: 连接失败」的话,模型读不出「这跟我的提示词无关、原样再派一次就可能成」。
                 var error = outcome.Error ?? AgentError.Create(AgentErrorCode.Unknown, "unknown error");
+                if (error.MessageKey == SessionErrorKeys.MaxTurns)
+                {
+                    var partial = string.IsNullOrWhiteSpace(outcome.Text) ? "" : $"\n\nPartial output before limit:\n{outcome.Text}";
+                    var wt = outcome.Worktree is null ? "" : $"\n\n[worktree: {outcome.Worktree.Path} (branch {outcome.Worktree.Branch})]";
+                    return ToolResult.Error($"The subagent {type} stopped because it reached max_turns: {error.Message}{partial}{wt}") with
+                    {
+                        Subagent = new SubagentReceipt(childRun, "error", Color: outcome.Color, Error: error),
+                    };
+                }
+
                 var transient = error.Code == AgentErrorCode.Network
                     ? " This was a transient network failure and the subagent already retried on its own; dispatching the same task again may well succeed."
                     : "";
-                return ToolResult.Error($"The subagent {type} failed: {error.Message}{transient}") with
+                var wtNote = outcome.Worktree is null ? "" : $"\n\n[worktree: {outcome.Worktree.Path} (branch {outcome.Worktree.Branch})]";
+                return ToolResult.Error($"The subagent {type} failed: {error.Message}{transient}{wtNote}") with
                 {
                     Subagent = new SubagentReceipt(childRun, "error", Color: outcome.Color, Error: error),
                 };
@@ -223,8 +257,12 @@ public sealed class TaskTool : IAgentTool
     }
 
     /// <summary>清单里每个子代理占的那一行。<c>tools</c> 省略时照 CC 写成 <c>*</c>。</summary>
-    private static string Describe(AgentDefinition agent) =>
-        $"- {agent.Name}: {agent.Description} (Tools: {(agent.Tools is null ? "*" : string.Join(", ", agent.Tools))})";
+    private static string Describe(AgentDefinition agent)
+    {
+        var allowed = agent.Tools is null ? "*" : string.Join(", ", agent.Tools);
+        var disallowed = agent.DisallowedTools is { Count: > 0 } ? $"; Disallowed: {string.Join(", ", agent.DisallowedTools)}" : "";
+        return $"- {agent.Name}: {agent.Description} (Tools: {allowed}{disallowed})";
+    }
 
     internal static string BuildDescription(IReadOnlyList<AgentDefinition> agents)
     {

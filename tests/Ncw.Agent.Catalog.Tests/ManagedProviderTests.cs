@@ -1,3 +1,4 @@
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Wire;
 
 namespace Ncw.Agent.Catalog.Tests;
@@ -50,15 +51,17 @@ public sealed class ManagedProviderTests : IDisposable
         var count = await Service.SyncManagedAsync();
 
         Assert.Equal(4, count);
-        Assert.Equal(["nextcowork", "mine"], Service.Snapshot.Providers.Select(p => p.Id).ToArray());
+        Assert.Equal(
+            ["nextcowork", "nextcowork-image", "nextcowork-video", "nextcowork-audio", "mine"],
+            Service.Snapshot.Providers.Select(p => p.Id).ToArray());
         var provider = Service.Provider("nextcowork")!;
-        Assert.Equal(("NextCoWork", WireProtocol.OpenAiResponses, "https://nextco.work/v1", ManagedProvider.Priority), (provider.Name, provider.Protocol, provider.BaseUrl, provider.Priority));
+        Assert.Equal(("NextCoWork", ProviderProtocol.OpenAiResponses, "https://nextco.work/v1", ManagedProvider.Priority), (provider.Name, provider.Protocol, provider.BaseUrl, provider.Priority));
 
         Assert.Equal(WireProtocol.Anthropic, Resolver.Resolve(new ModelSelection("claude-opus-4-5")).Protocol);
         Assert.Equal(WireProtocol.Anthropic, Resolver.Resolve(new ModelSelection("anthropic/claude-sonnet-4", "nextcowork")).Protocol);
         Assert.Equal(WireProtocol.OpenAiResponses, Resolver.Resolve(new ModelSelection("gpt-5")).Protocol);
         Assert.Equal(WireProtocol.OpenAiResponses, Resolver.Resolve(new ModelSelection("deepseek-chat")).Protocol);
-        Assert.All(Resolver.Options().Where(o => o.ProviderId == "nextcowork" && ManagedProvider.IsClaude(o.UpstreamModel)), o => Assert.Equal(WireProtocol.Anthropic, o.Protocol));
+        Assert.All(Resolver.Options().Where(o => o.ProviderId == "nextcowork" && ManagedProvider.IsClaude(o.UpstreamModel)), o => Assert.Equal(ProviderProtocol.Anthropic, o.Protocol));
     }
 
     [Fact]
@@ -169,7 +172,7 @@ public sealed class ManagedProviderTests : IDisposable
         Assert.Equal(ProviderErrorKeys.ManagedProvider, (await Assert.ThrowsAsync<ProviderException>(() => Service.RevealCredentialAsync("nextcowork"))).Key);
 
         // 协议覆盖没被任何一条路径改掉。
-        Assert.Equal(WireProtocol.Anthropic, Service.Aliases("nextcowork").Single(a => a.Alias == "claude-opus-4-5").ProtocolOverride);
+        Assert.Equal(ProviderProtocol.Anthropic, Service.Aliases("nextcowork").Single(a => a.Alias == "claude-opus-4-5").ProtocolOverride);
         Assert.Empty(_fx.File.ListAliases());
     }
 
@@ -213,5 +216,92 @@ public sealed class ManagedProviderTests : IDisposable
         Assert.Equal("sk-1", await vault.GetAsync("provider:gw", default));
         vault.Remove("provider:gw");
         Assert.Null(await vault.GetAsync("provider:gw", default));
+    }
+
+    [Fact]
+    public async Task Syncing_splits_platform_models_into_all_four_built_in_providers_and_clears_them_together()
+    {
+        const string MixedPlatformModels = """
+            {"object":"list","data":[
+              {"id":"claude-opus-4-5"},
+              {"id":"gpt-5"},
+              {"id":"gpt-image-1.5"},
+              {"id":"doubao-seedream-4-5-251128"},
+              {"id":"sora-2"},
+              {"id":"doubao-seedance-1-5-pro-251215"},
+              {"id":"gpt-4o-mini-tts"},
+              {"id":"whisper-large-v3"},
+              {"id":"text-embedding-3-large"}
+            ]}
+            """;
+        _fx.Http.Ok(MixedPlatformModels);
+
+        var total = await Service.SyncManagedAsync();
+
+        Assert.Equal(8, total); // text-embedding-3-large 被过滤掉
+        Assert.Equal(["claude-opus-4-5", "gpt-5"], Service.Aliases("nextcowork").Select(a => a.Alias).ToArray());
+        Assert.Equal(["gpt-image-1.5", "doubao-seedream-4-5-251128"], Service.Aliases("nextcowork-image").Select(a => a.Alias).ToArray());
+        Assert.Equal(["sora-2", "doubao-seedance-1-5-pro-251215"], Service.Aliases("nextcowork-video").Select(a => a.Alias).ToArray());
+        Assert.Equal(["gpt-4o-mini-tts", "whisper-large-v3"], Service.Aliases("nextcowork-audio").Select(a => a.Alias).ToArray());
+
+        Assert.Equal((ProviderKind.Image, ProviderProtocol.OpenAiImages), (Service.Provider("nextcowork-image")!.Kind, Service.Provider("nextcowork-image")!.Protocol));
+        Assert.Equal((ProviderKind.Video, ProviderProtocol.OpenAiVideos), (Service.Provider("nextcowork-video")!.Kind, Service.Provider("nextcowork-video")!.Protocol));
+        Assert.Equal((ProviderKind.Audio, ProviderProtocol.OpenAiAudio), (Service.Provider("nextcowork-audio")!.Kind, Service.Provider("nextcowork-audio")!.Protocol));
+
+        // 四个内置供应商共用委托令牌,且全部拒绝手动写入
+        var vault = new ManagedCredentialVault(_inner, () => _token);
+        foreach (var managedId in ProviderRefs.ManagedProviderIds)
+        {
+            Assert.Equal("tok-1", await vault.GetAsync(ProviderRefs.ForProvider(managedId), default));
+            Assert.Equal(ProviderErrorKeys.ManagedProvider, Assert.Throws<ProviderException>(() => Service.Remove(managedId)).Key);
+            Assert.Equal(ProviderErrorKeys.ManagedProvider, (await Assert.ThrowsAsync<ProviderException>(() => Service.SetApiKeyAsync(managedId, "k"))).Key);
+        }
+
+        Assert.NotNull(Resolver.ResolveMedia(new ModelSelection("gpt-image-1.5"), ProviderKind.Image));
+        Assert.NotNull(Resolver.ResolveMedia(new ModelSelection("sora-2"), ProviderKind.Video));
+        Assert.NotNull(Resolver.ResolveMedia(new ModelSelection("whisper-large-v3"), ProviderKind.Audio));
+
+        Service.ClearManaged();
+        Assert.Empty(Service.Providers);
+        Assert.Empty(Service.Aliases());
+    }
+
+    [Fact]
+    public async Task Seedance_video_with_sound_and_omni_chat_models_reporting_audio_output_capabilities_are_not_misclassified_as_audio()
+    {
+        // 复刻 NextCoWork 真实 /v1/models 负载:
+        // - Seedance 2.0 / 2.5 有声视频模型返回 capabilities: ["VisionInput", "AudioInput", "AudioOutput"](平台枚举无 VideoOutput);
+        // - Seedream 图片模型返回 capabilities: ["ImageGeneration", "VisionInput"];
+        // - 多模态对话模型带 FunctionCalling + AudioOutput;
+        // - 纯语音合成模型 seed-tts-2.0 返回 capabilities: ["AudioOutput"]。
+        const string RealGatewayPayload = """
+            {"object":"list","data":[
+              {"id":"qwen3-omni-flash","capabilities":["Reasoning","VisionInput","AudioInput","AudioOutput","FunctionCalling","WebSearch","PromptCache"]},
+              {"id":"doubao-seedream-4-5-251128","capabilities":["ImageGeneration","VisionInput"]},
+              {"id":"doubao-seedance-2-0-260128","capabilities":["VisionInput","AudioInput","AudioOutput"]},
+              {"id":"doubao-seedance-2-0-fast-260128","capabilities":["VisionInput","AudioInput","AudioOutput"]},
+              {"id":"doubao-seedance-2-0-mini-260615","capabilities":["VisionInput","AudioInput","AudioOutput"]},
+              {"id":"doubao-seedance-2-5-260628","capabilities":["VisionInput","AudioInput","AudioOutput"]},
+              {"id":"doubao-seedance-2-5-flash-261115","capabilities":["VisionInput","AudioInput","AudioOutput"]},
+              {"id":"seed-tts-2.0","capabilities":["AudioOutput"]}
+            ]}
+            """;
+        _fx.Http.Ok(RealGatewayPayload);
+
+        var total = await Service.SyncManagedAsync();
+
+        Assert.Equal(8, total);
+        Assert.Equal(["qwen3-omni-flash"], Service.Aliases("nextcowork").Select(a => a.Alias).ToArray());
+        Assert.Equal(["doubao-seedream-4-5-251128"], Service.Aliases("nextcowork-image").Select(a => a.Alias).ToArray());
+        Assert.Equal(
+            [
+                "doubao-seedance-2-0-260128",
+                "doubao-seedance-2-0-fast-260128",
+                "doubao-seedance-2-0-mini-260615",
+                "doubao-seedance-2-5-260628",
+                "doubao-seedance-2-5-flash-261115",
+            ],
+            Service.Aliases("nextcowork-video").Select(a => a.Alias).ToArray());
+        Assert.Equal(["seed-tts-2.0"], Service.Aliases("nextcowork-audio").Select(a => a.Alias).ToArray());
     }
 }

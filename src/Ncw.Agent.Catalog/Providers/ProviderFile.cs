@@ -4,7 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ncw.Agent.Llm.Auth;
-using Ncw.Agent.Llm.Wire;
+using Ncw.Agent.Llm.Media;
 
 namespace Ncw.Agent.Catalog;
 
@@ -14,6 +14,7 @@ public static class ProviderFileProblemKeys
     public const string ManagedId = "providers.file.managedId";
     public const string NotObject = "providers.file.notObject";
     public const string MissingBaseUrl = "providers.file.missingBaseUrl";
+    public const string InvalidKind = "providers.file.invalidKind";
     public const string InvalidProtocol = "providers.file.invalidProtocol";
     public const string InvalidCredential = "providers.file.invalidCredential";
     public const string ModelsNotObject = "providers.file.modelsNotObject";
@@ -135,7 +136,7 @@ public sealed class ProviderFileStore(string path)
 
     public ProviderRecord PutProvider(ProviderRecord provider)
     {
-        if (provider.Id == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(provider.Id))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The managed provider is not stored in the file.");
         }
@@ -158,6 +159,11 @@ public sealed class ProviderFileStore(string path)
 
                 var next = raw ?? new JsonObject();
                 next["name"] = provider.Name;
+                if (provider.Kind != ProviderKind.Text || next.ContainsKey("kind"))
+                {
+                    next["kind"] = provider.Kind.NameOf();
+                }
+
                 next["protocol"] = provider.Protocol.NameOf();
                 next["baseUrl"] = provider.BaseUrl;
                 next["priority"] = provider.Priority;
@@ -481,9 +487,9 @@ public sealed class ProviderFileStore(string path)
             return null;
         }
 
-        if (id == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(id))
         {
-            problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.ManagedId, $"\"{id}\" is the built-in managed provider and cannot be defined in {FileName}; ignored."));
+            problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.ManagedId, $"\"{id}\" is a built-in managed provider and cannot be defined in {FileName}; ignored."));
             return null;
         }
 
@@ -500,9 +506,30 @@ public sealed class ProviderFileStore(string path)
             return null;
         }
 
-        if (WireProtocols.Parse(NonEmpty(entry["protocol"])) is not { } protocol)
+        if (ProviderProtocols.Parse(NonEmpty(entry["protocol"])) is not { } protocol)
         {
-            problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.InvalidProtocol, "protocol must be anthropic, openai-chat or openai-responses; ignored."));
+            problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.InvalidProtocol, "protocol must be a supported text, image, video or audio protocol; ignored."));
+            return null;
+        }
+
+        ProviderKind kind;
+        if (entry["kind"] is null)
+        {
+            kind = protocol.KindOf();
+        }
+        else if (ProviderKindExtensions.ParseKind(NonEmpty(entry["kind"])) is { } parsedKind)
+        {
+            if (protocol.KindOf() != parsedKind)
+            {
+                problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.InvalidProtocol, $"protocol \"{protocol.NameOf()}\" does not belong to kind \"{parsedKind.NameOf()}\"; ignored."));
+                return null;
+            }
+
+            kind = parsedKind;
+        }
+        else
+        {
+            problems.Add(new ProviderFileProblem(id, ProviderFileProblemKeys.InvalidKind, "kind must be text, image, video or audio; ignored."));
             return null;
         }
 
@@ -518,7 +545,8 @@ public sealed class ProviderFileStore(string path)
             protocol,
             baseUrl.Trim(),
             Int(entry["priority"]) ?? ProviderRecord.DefaultPriority,
-            Bool(entry["enabled"]) ?? true)
+            Bool(entry["enabled"]) ?? true,
+            kind)
         {
             ProtocolOptions = entry["protocolOptions"] is JsonObject po ? Clone(po) : null,
             VideoGeneration = entry["videoGeneration"] is JsonObject vg ? Clone(vg) : null,
@@ -563,7 +591,7 @@ public sealed class ProviderFileStore(string path)
             ContextWindow = PositiveInt(m["contextWindow"]) ?? ModelAliasRecord.DefaultContextWindow,
             MaxOutputTokens = PositiveInt(m["maxOutputTokens"]) ?? ModelAliasRecord.DefaultMaxOutputTokens,
             DisplayName = NonEmpty(m["displayName"]) ?? NonEmpty(m["name"]),
-            ProtocolOverride = WireProtocols.Parse(NonEmpty(m["protocolOverride"])),
+            ProtocolOverride = ProviderProtocols.Parse(NonEmpty(m["protocolOverride"])),
             Priority = Int(m["priority"]),
             Modality = NonEmpty(m["modality"]),
             Enabled = Bool(m["enabled"]),
@@ -774,6 +802,7 @@ public sealed class ProviderFileStore(string path)
     private static string Signature(ProviderRecord p) => Canonical(new JsonObject
     {
         ["name"] = p.Name,
+        ["kind"] = p.Kind.NameOf(),
         ["protocol"] = p.Protocol.NameOf(),
         ["baseUrl"] = p.BaseUrl,
         ["priority"] = p.Priority,

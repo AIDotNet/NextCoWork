@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -8,8 +9,10 @@ using Ncw.Client.Stores;
 using Ncw.Client.ViewModels;
 using Ncw.Core.Layout;
 using Ncw.UI.Controls;
+using Ncw.UI.Localization;
 using Ncw.UI.Views.Desktop.Tree;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -31,6 +34,7 @@ public partial class Sidebar : UserControl
     private Point _pressPoint;
     private (DataFormat<string> Format, string Id)? _pressed;
     private bool _dragging;
+    private SidebarViewModel? _vm;
 
     public Sidebar()
     {
@@ -47,6 +51,23 @@ public partial class Sidebar : UserControl
 
     private SidebarViewModel? Model => DataContext as SidebarViewModel;
 
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged -= OnViewModelChanged;
+        }
+
+        _vm = Model;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged += OnViewModelChanged;
+        }
+
+        RebuildNewMenu();
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -57,7 +78,20 @@ public partial class Sidebar : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ShortcutText.CurrentChanged -= UpdateKeyHints;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged -= OnViewModelChanged;
+        }
+
         base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SidebarViewModel.HasCurrentProject))
+        {
+            RebuildNewMenu();
+        }
     }
 
     /// <summary>入口右侧的快捷键提示跟着用户在设置里的修改走。</summary>
@@ -65,6 +99,52 @@ public partial class Sidebar : UserControl
     {
         NewSessionKey.Text = ShortcutText.Format(ShortcutText.CurrentGesture(AppCommand.NewSession));
         SearchKey.Text = ShortcutText.Format(ShortcutText.CurrentGesture(AppCommand.CommandPalette));
+        RebuildNewMenu();
+    }
+
+    private void RebuildNewMenu()
+    {
+        if (Model is not { } vm)
+        {
+            return;
+        }
+
+        var hasProject = vm.HasCurrentProject;
+        List<NcwMenus.Item> items =
+        [
+            new(NcwTexts.Get(NcwTextKind.NewSession), vm.NewSessionCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = ArcIcons.SquarePen,
+                Hint = ShortcutText.CurrentGesture(AppCommand.NewSession) is { Length: > 0 } g1 ? ShortcutText.Format(g1) : null,
+            },
+            new(NcwTexts.Get(NcwTextKind.NewTerminal), vm.NewTerminalCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = ArcIcons.Terminal,
+            },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFile), vm.NewFileCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = Lucide.Geometry(LucideIconKind.FilePlus),
+            },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFolder), vm.NewFolderCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = Lucide.Geometry(LucideIconKind.FolderPlus),
+            },
+            new(NcwTexts.Get(NcwTextKind.ScheduledTasks), vm.OpenScheduledTasksCommand, SeparatorBefore: true)
+            {
+                Glyph = Lucide.Geometry(LucideIconKind.CalendarClock),
+            },
+            new(NcwTexts.Get(NcwTextKind.AddProject), vm.AddProjectCommand)
+            {
+                Glyph = ArcIcons.Folder,
+                Hint = ShortcutText.CurrentGesture(AppCommand.AddProject) is { Length: > 0 } g2 ? ShortcutText.Format(g2) : null,
+            },
+        ];
+        NcwMenus.Populate(NewMenu, items);
+        NcwMenus.Attach(NewSessionButton, items);
     }
 
     // ───────────────────────── 账户卡片 ─────────────────────────

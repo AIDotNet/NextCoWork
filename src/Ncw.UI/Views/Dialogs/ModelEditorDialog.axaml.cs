@@ -31,7 +31,7 @@ public partial class ModelEditorDialog : UserControl
         base.OnDataContextChanged(e);
         if (DataContext is ModelEditorViewModel vm)
         {
-            ProtocolSelect.ItemsSource = ModelEditorViewModel.ProtocolChoices;
+            ProtocolSelect.ItemsSource = vm.AvailableProtocolChoices;
             ThinkingSelect.ItemsSource = vm.ThinkingModes;
         }
     }

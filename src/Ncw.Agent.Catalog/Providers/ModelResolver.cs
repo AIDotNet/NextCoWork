@@ -1,4 +1,5 @@
 using Ncw.Agent.Llm;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Thinking;
 using Ncw.Agent.Llm.Wire;
@@ -32,6 +33,9 @@ public sealed record ModelResolution(
     public WireProtocol? Protocol => Binding is null || Provider is null ? null : Binding.ProtocolOverride ?? Provider.Protocol;
 }
 
+/// <summary>图片 / 视频 / 音频模型的路由解析结果。</summary>
+public sealed record MediaModelResolution(ProviderRecord Provider, ModelAliasRecord Alias, ProviderProtocol Protocol);
+
 /// <summary>
 /// 把「会话选的模型 / 供应商」解析成 Llm 层 <c>LlmRouter</c> 所需的路由配置。Host 把它注入给会话层(解析上下文窗口、校验图片 / 思考)和路由(<see cref="IProviderConfigSource"/>)。
 /// </summary>
@@ -61,7 +65,8 @@ public sealed record ModelOption(
     bool IsChatModel,
     ThinkingMode? ThinkingMode,
     IReadOnlyList<ReasoningEffort>? ReasoningEfforts,
-    WireProtocol Protocol);
+    ProviderProtocol Protocol,
+    ProviderKind Kind = ProviderKind.Text);
 
 /// <summary>
 /// <see cref="IModelResolver"/> 的实现,同时是 <see cref="IProviderConfigSource"/>。绑定表按 (供应商快照版本, 目录版本) 缓存:
@@ -103,9 +108,11 @@ public sealed class ProviderConfigSource : IModelResolver, IProviderConfigSource
 
             var snapshot = _providers.Snapshot;
 
-            var byId = snapshot.Providers.ToDictionary(p => p.Id, StringComparer.Ordinal);
-            var configs = snapshot.Providers
-                .Select(p => new ProviderConfig(p.Id, p.Name, p.BaseUrl, p.Protocol, p.Priority, p.Enabled, p.CredentialRef, p.CacheTtl))
+            // LlmRouter 只路由文本对话模型;图片 / 视频 / 音频供应商不进入文本路由表。
+            var textProviders = snapshot.Providers.Where(p => p.Kind == ProviderKind.Text && p.TextProtocol is not null).ToList();
+            var byId = textProviders.ToDictionary(p => p.Id, StringComparer.Ordinal);
+            var configs = textProviders
+                .Select(p => new ProviderConfig(p.Id, p.Name, p.BaseUrl, p.TextProtocol!.Value, p.Priority, p.Enabled, p.CredentialRef, p.CacheTtl))
                 .ToList();
             var bindings = new List<ModelBinding>();
             var infos = new List<ModelInfo?>();
@@ -157,6 +164,27 @@ public sealed class ProviderConfigSource : IModelResolver, IProviderConfigSource
         return new ModelResolution(selection.ToRef(), null, null, null, IssueFor(selection, all.Select(a => a.Binding).ToList(), providers));
     }
 
+    /// <summary>按相同优先级 / 钉住供应商规则解析图片 / 视频 / 音频模型。</summary>
+    public MediaModelResolution? ResolveMedia(ModelSelection selection, ProviderKind kind)
+    {
+        var snapshot = _providers.Snapshot;
+        var providers = snapshot.Providers.Where(p => p.Kind == kind).ToDictionary(p => p.Id, StringComparer.Ordinal);
+        var pinned = selection.ProviderId;
+        var winner = snapshot.Aliases
+            .Where(a => a.Alias == selection.Alias && (pinned is null || a.ProviderId == pinned))
+            .Where(a => a.IsEnabled && providers.TryGetValue(a.ProviderId, out var p) && p.Enabled)
+            .OrderBy(a => providers[a.ProviderId].Priority)
+            .FirstOrDefault();
+        if (winner is null)
+        {
+            return null;
+        }
+
+        var provider = providers[winner.ProviderId];
+        var protocol = winner.ProtocolOverride is { } po && po.KindOf() == kind ? po : provider.Protocol;
+        return new MediaModelResolution(provider, winner, protocol);
+    }
+
     private static ModelResolutionIssue IssueFor(ModelSelection selection, List<ModelBinding> bindings, Dictionary<string, ProviderConfig> providers)
     {
         if (selection.ProviderId is { } pinned)
@@ -175,22 +203,45 @@ public sealed class ProviderConfigSource : IModelResolver, IProviderConfigSource
     public IReadOnlyList<ModelOption> Options()
     {
         var cache = Build();
-        var providers = cache.Providers.ToDictionary(p => p.Id, StringComparer.Ordinal);
-        var rank = cache.Providers.Select((p, i) => (p.Id, i)).ToDictionary(x => x.Id, x => x.i, StringComparer.Ordinal);
-        var aliases = _providers.Aliases().ToDictionary(a => (a.ProviderId, a.Alias));
-        var options = new List<(ModelOption Option, int Rank, int Priority)>();
+        var snapshot = _providers.Snapshot;
+        var allProviders = snapshot.Providers.ToDictionary(p => p.Id, StringComparer.Ordinal);
+        var rank = snapshot.Providers.Select((p, i) => (p.Id, i)).ToDictionary(x => x.Id, x => x.i, StringComparer.Ordinal);
+        var textBindings = new Dictionary<(string ProviderId, string Alias), (ModelBinding Binding, ModelInfo? Info)>();
         for (var i = 0; i < cache.Bindings.Count; i++)
         {
             var binding = cache.Bindings[i];
-            var info = cache.Infos[i];
-            var provider = providers[binding.ProviderId];
-            var record = aliases[(binding.ProviderId, binding.Alias)];
-            var chat = (record.Modality is null or "text") && (info?.Capabilities.IsChatModel ?? true);
-            options.Add((new ModelOption(
-                binding.ProviderId, provider.Name, binding.Alias, record.DisplayName ?? info?.DisplayName ?? binding.Alias, binding.UpstreamModel,
-                binding.ContextWindow, binding.MaxOutputTokens, binding.Enabled, provider.Enabled, binding.SupportsImages, chat,
-                binding.Thinking?.Mode, binding.ReasoningEfforts, binding.ProtocolOverride ?? provider.Protocol),
-                rank[binding.ProviderId], record.Priority ?? int.MaxValue));
+            textBindings[(binding.ProviderId, binding.Alias)] = (binding, cache.Infos[i]);
+        }
+
+        var options = new List<(ModelOption Option, int Rank, int Priority)>();
+        foreach (var record in snapshot.Aliases)
+        {
+            if (!allProviders.TryGetValue(record.ProviderId, out var provider))
+            {
+                continue;
+            }
+
+            if (provider.Kind == ProviderKind.Text && textBindings.TryGetValue((record.ProviderId, record.Alias), out var resolved))
+            {
+                var (binding, info) = resolved;
+                var chat = (record.Modality is null or "text") && (info?.Capabilities.IsChatModel ?? true);
+                var protocol = binding.ProtocolOverride?.ToProviderProtocol() ?? provider.Protocol;
+                options.Add((new ModelOption(
+                    binding.ProviderId, provider.Name, binding.Alias, record.DisplayName ?? info?.DisplayName ?? binding.Alias, binding.UpstreamModel,
+                    binding.ContextWindow, binding.MaxOutputTokens, binding.Enabled, provider.Enabled, binding.SupportsImages, chat,
+                    binding.Thinking?.Mode, binding.ReasoningEfforts, protocol, ProviderKind.Text),
+                    rank[binding.ProviderId], record.Priority ?? int.MaxValue));
+            }
+            else
+            {
+                var info = _catalog.Describe(provider.Id, record.UpstreamModel);
+                var protocol = record.ProtocolOverride ?? provider.Protocol;
+                options.Add((new ModelOption(
+                    record.ProviderId, provider.Name, record.Alias, record.DisplayName ?? info?.DisplayName ?? record.Alias, record.UpstreamModel,
+                    record.ContextWindow, record.MaxOutputTokens, record.IsEnabled, provider.Enabled, false, false,
+                    null, null, protocol, provider.Kind),
+                    rank[record.ProviderId], record.Priority ?? int.MaxValue));
+            }
         }
 
         // 「供应商顺序 → 别名优先级 → 别名」:下拉框的顺序是用户资产,不该按字典序重排成他不认识的样子。

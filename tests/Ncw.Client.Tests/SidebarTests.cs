@@ -17,12 +17,12 @@ public class SidebarSessionsTests
         new(id, P, id, Now.AddMinutes(-minutesAgo), archived, favorite);
 
     [Fact]
-    public void Pending_then_running_then_favorites_then_recent()
+    public void Favorites_then_pending_then_running_then_recent()
     {
         var sessions = new[] { S("old", 90), S("fav", 80, favorite: true), S("run", 70), S("wait", 60), S("new", 1) };
         var list = SidebarSessions.Arrange(sessions, s => s.Id == "wait" ? 2 : 0, s => s.Id == "run", null, showAll: true, showArchived: false);
 
-        Assert.Equal(["wait", "run", "fav", "new", "old"], list.Visible.Select(s => s.Id));
+        Assert.Equal(["fav", "wait", "run", "new", "old"], list.Visible.Select(s => s.Id));
         Assert.Equal(0, list.Hidden);
     }
 
@@ -68,6 +68,10 @@ public class SidebarViewModelTests
         public void OpenAttention(InboxEntry entry) => Calls.Add("attention:" + entry.Key);
 
         public void NewTerminal(ProjectRef project) => Calls.Add("terminal:" + project.WorkspaceId);
+
+        public void NewFile(ProjectRef project) => Calls.Add("file:" + project.WorkspaceId);
+
+        public void NewFolder(ProjectRef project) => Calls.Add("folder:" + project.WorkspaceId);
 
         public void OpenSettings() => Calls.Add("settings");
 

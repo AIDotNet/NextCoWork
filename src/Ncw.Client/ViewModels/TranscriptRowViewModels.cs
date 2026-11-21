@@ -155,6 +155,36 @@ public sealed partial class ThinkingRowViewModel(ThinkingRow row) : RowViewModel
     public bool ShowPlainLabel => !Row.IsStreaming && !HasDuration;
 
     public bool CanExpand => Row.Text.Length > 0;
+
+    /// <summary>折叠状态下正在思考时显示最后一行摘要(最多 120 字),避免十几秒等待里只有静态标签。</summary>
+    public string LivePreview
+    {
+        get
+        {
+            if (!Row.IsStreaming || Row.Text.Length == 0)
+            {
+                return "";
+            }
+
+            var span = Row.Text.AsSpan().TrimEnd();
+            if (span.IsEmpty)
+            {
+                return "";
+            }
+
+            var nl = span.LastIndexOf('\n');
+            if (nl >= 0)
+            {
+                span = span[(nl + 1)..].Trim();
+            }
+
+            return span.Length <= 120 ? span.ToString() : string.Concat(span[..119], "…");
+        }
+    }
+
+    public bool ShowCollapsedPreview => IsStreaming && !IsExpanded && LivePreview.Length > 0;
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(ShowCollapsedPreview));
 }
 
 /// <summary>
@@ -177,7 +207,7 @@ public sealed record DiffLine(string Text, bool IsAdded, bool IsRemoved);
 /// 一次工具调用(转录里的一行文字)。结果一律默认不展示(包括失败的:失败只用红色标出):
 /// 展开看摘要(diff 行 / 命令输出前几行)是纯 UI 状态,用户点开才看。状态、环境标识、统计来自派生行。
 /// </summary>
-public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName, Func<string?>? projectRoot = null) : RowViewModel<ToolRow>(row)
+public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName, Func<string?>? projectRoot = null, Action<string>? openFile = null) : RowViewModel<ToolRow>(row)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
 
@@ -312,6 +342,33 @@ public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> d
 
     /// <summary>可展开 = 有摘要可看。</summary>
     public bool CanExpand => HasPreview;
+
+    /// <summary>如果是当前项目内的文件(Read / Edit / Write),返回项目相对路径,供快捷在工作区标签页打开。</summary>
+    public string? RelativePath
+    {
+        get
+        {
+            if (!TargetIsPath || projectRoot?.Invoke() is not { Length: > 0 } root)
+            {
+                return null;
+            }
+
+            var path = Row.Target.Trim().TrimEnd('/');
+            var r = root.TrimEnd('/');
+            return path.StartsWith(r + "/", StringComparison.Ordinal) ? path[(r.Length + 1)..] : null;
+        }
+    }
+
+    public bool CanOpenFile => openFile is not null && RelativePath is not null;
+
+    [RelayCommand]
+    private void OpenFile()
+    {
+        if (RelativePath is { } path)
+        {
+            openFile?.Invoke(path);
+        }
+    }
 }
 
 /// <summary>子代理卡片(转录里的那一张)。停止 / 转后台 / 点开是 <see cref="SubagentActions"/> 的意图,命令由 <see cref="ConversationViewModel"/> 接上。</summary>
@@ -441,7 +498,15 @@ public sealed class StatusRowViewModel(StatusRow row) : RowViewModel<StatusRow>(
 
     public bool IsUnknown => Row.Kind == RunStatusKind.Unknown;
 
+    public bool IsGenerating => Row.Kind == RunStatusKind.Generating;
+
     public int Attempt => Row.Attempt;
+
+    public int DelaySeconds => Row.DelayMs > 0 ? (int)Math.Max(1, Math.Ceiling(Row.DelayMs / 1000.0)) : 0;
+
+    public bool HasDelay => IsRetrying && DelaySeconds > 0;
+
+    public bool HasNoDelay => IsRetrying && DelaySeconds <= 0;
 }
 
 /// <summary>输入框上方的待办清单。数据来自 SessionView.Todo(Core 的 <see cref="Todos"/> 从转录派生)。</summary>

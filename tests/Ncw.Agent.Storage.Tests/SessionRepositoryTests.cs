@@ -195,7 +195,25 @@ public sealed class SessionRepositoryTests : SessionTestBase
         Assert.False(list.ContainsKey("cron"));
         Assert.False(list["chat"].SkillExtraction);
         Assert.True(list["extract"].SkillExtraction);
+        Assert.True(list["chat"].IsEmpty);
         Assert.Equal("scheduled", Repo.Get("cron")!.Origin); // 它读得到,只是不进列表
+    }
+
+    [Fact]
+    public void List_marks_empty_only_when_no_messages_not_archived_and_default_title()
+    {
+        var empty = Repo.Create(new SessionCreate("ws", "empty"));
+        var named = Repo.Create(new SessionCreate("ws", "named", Title: "自定义标题"));
+        var archived = Repo.Create(new SessionCreate("ws", "archived"));
+        Repo.SetArchived(archived.Id, true);
+        var used = Repo.Create(new SessionCreate("ws", "used"));
+        Repo.Commit(used.Id, new MessageRecord("m1", "user", "[{\"type\":\"text\",\"text\":\"hi\"}]", 10));
+
+        var list = Repo.List("ws").ToDictionary(s => s.Id);
+        Assert.True(list[empty.Id].IsEmpty);
+        Assert.False(list[named.Id].IsEmpty);
+        Assert.False(list[archived.Id].IsEmpty);
+        Assert.False(list[used.Id].IsEmpty);
     }
 
     [Fact]

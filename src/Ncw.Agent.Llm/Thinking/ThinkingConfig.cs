@@ -125,11 +125,12 @@ public static class ThinkingResolver
         var defaultEffort = config.DefaultEffort is { } d && (efforts is null || efforts.Contains(d))
             ? d
             : efforts?.Cast<ReasoningEffort?>().FirstOrDefault(e => e != ReasoningEffort.None) ?? ReasoningEffort.Medium;
+        var canDisable = !(config.Mode == ThinkingMode.Effort && efforts is { Count: > 0 } && !efforts.Contains(ReasoningEffort.None));
         var enabled = config.Mode == ThinkingMode.Always
             || (level == ThinkingLevel.Off
                 ? false
                 : level == ThinkingLevel.Auto
-                    ? config.DefaultEnabled && !(config.Mode == ThinkingMode.Effort && defaultEffort == ReasoningEffort.None)
+                    ? (config.DefaultEnabled || !canDisable) && !(config.Mode == ThinkingMode.Effort && defaultEffort == ReasoningEffort.None)
                     : true);
 
         var baseResult = new ResolvedThinking(config.Mode, enabled, isExplicit);

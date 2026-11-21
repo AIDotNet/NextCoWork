@@ -14,8 +14,27 @@ public static class SubagentLimits
     public const int SummaryChars = 240;
 }
 
+/// <summary>子代理在独立 git worktree 结束后若有未清理的改动或提交,交回给父代理的路径与分支。</summary>
+public sealed record WorktreeInfo(string Path, string Branch);
+
 /// <summary>派一个子代理要说清的事。<see cref="ParentRunId"/> 是派发它的那个 Run(<c>ToolContext.RunId</c>),<see cref="CallId"/> 是 <c>Task</c> 调用的 id(事件配对用)。</summary>
-public sealed record SubagentRequest(RunId ParentRunId, string CallId, string AgentType, string Prompt, string Description, bool Background = false);
+public sealed record SubagentRequest(RunId ParentRunId, string CallId, string AgentType, string Prompt, string Description, bool Background = false)
+{
+    /// <summary>显式指定是否后台运行;null = 按 <see cref="Background"/> 或定义的 <see cref="AgentDefinition.DefaultBackground"/> 决定。</summary>
+    public bool? RunInBackground { get; init; }
+
+    /// <summary>恢复已有子会话的会话 id(<c>resume</c>),保留其 SQLite 转录继续对话。</summary>
+    public string? Resume { get; init; }
+
+    /// <summary>单次调用的最大回合数(与定义上的 <see cref="AgentDefinition.MaxTurns"/> 取较小值)。</summary>
+    public int? MaxTurns { get; init; }
+
+    /// <summary>单次调用覆盖的模型别名。</summary>
+    public string? Model { get; init; }
+
+    /// <summary>单次调用覆盖的隔离策略(仅可从 <see cref="AgentIsolation.None"/> 收窄为 <see cref="AgentIsolation.Worktree"/>)。</summary>
+    public AgentIsolation? Isolation { get; init; }
+}
 
 /// <summary>派发的结局(2.x 的 <c>SubagentOutcome</c>)。三种结局给出<b>三种不同的东西</b>,因为模型下一步该做的事完全不同(换个名字 / 换个 prompt / 什么都别做)。</summary>
 public abstract record SubagentOutcome
@@ -28,10 +47,10 @@ public abstract record SubagentOutcome
     public sealed record Refused(string Reason) : SubagentOutcome;
 
     /// <summary>后台:立即返回。<see cref="Queued"/> 区分「已排队」和「已开始」;<see cref="Detached"/> = 前台派出、被用户转去了后台。</summary>
-    public sealed record Background(RunId ChildRunId, bool Queued = false, bool Detached = false, string? Color = null) : SubagentOutcome;
+    public sealed record Background(RunId ChildRunId, bool Queued = false, bool Detached = false, string? Color = null, WorktreeInfo? Worktree = null) : SubagentOutcome;
 
     /// <summary>前台:子 Run 走完了(<see cref="Status"/> 是终态)。<see cref="Text"/> 是子会话最后一条助手消息的文字。</summary>
-    public sealed record Finished(RunId ChildRunId, RunStatus Status, string Text, string? Color = null, AgentError? Error = null, TokenUsage? Usage = null) : SubagentOutcome;
+    public sealed record Finished(RunId ChildRunId, RunStatus Status, string Text, string? Color = null, AgentError? Error = null, TokenUsage? Usage = null, WorktreeInfo? Worktree = null) : SubagentOutcome;
 }
 
 /// <summary>

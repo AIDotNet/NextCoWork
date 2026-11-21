@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Auth;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Wire;
+using Ncw.Core.Domain;
 
 namespace Ncw.Agent.Catalog;
 
@@ -57,7 +59,7 @@ public sealed partial class ProviderService
     private long _version;
     private volatile ManagedState? _managed;
 
-    private sealed record ManagedState(ProviderRecord Provider, IReadOnlyList<ModelAliasRecord> Aliases);
+    private sealed record ManagedState(IReadOnlyList<ProviderRecord> Providers, IReadOnlyList<ModelAliasRecord> Aliases);
 
     public ProviderService(
         ProviderFileStore file,
@@ -133,9 +135,9 @@ public sealed partial class ProviderService
     /// <summary>托管供应商当前是否在(已登录并同步过模型)。</summary>
     public bool HasManaged => _managed is not null;
 
-    // 文件里的供应商 + 托管那一家(排第一:它的优先级最高,选择器里的顺序也一致)。文件里不可能有 nextcowork 的条目(解析时整条丢弃,别名嵌在条目下面)。
+    // 文件里的供应商 + 托管的四家(文本 / 图片 / 视频 / 音频,排在前面:优先级最高,选择器里的顺序也一致)。文件里不可能有 nextcowork* 的条目(解析时整条丢弃)。
     private IReadOnlyList<ProviderRecord> ListProviders() =>
-        _managed is { } managed ? [managed.Provider, .. _file.ListProviders()] : _file.ListProviders();
+        _managed is { } managed ? [.. managed.Providers, .. _file.ListProviders()] : _file.ListProviders();
 
     private IReadOnlyList<ModelAliasRecord> ListAliases() =>
         _managed is { } managed ? [.. managed.Aliases, .. _file.ListAliases()] : _file.ListAliases();
@@ -152,7 +154,7 @@ public sealed partial class ProviderService
     /// <summary>写入口用:托管供应商的一切(别名、改名、编辑)都由登录同步决定,不接受手动改。</summary>
     private ProviderRecord RequireEditable(string providerId)
     {
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The managed provider's models are synced from the account and cannot be edited here.");
         }
@@ -197,7 +199,7 @@ public sealed partial class ProviderService
             throw new ProviderException(ProviderErrorKeys.InvalidId, "The provider id must be non-empty and must not contain whitespace or \"/\".");
         }
 
-        if (id == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(id))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The managed provider is controlled by the account login and cannot be edited here.");
         }
@@ -208,11 +210,18 @@ public sealed partial class ProviderService
             throw new ProviderException(ProviderErrorKeys.InvalidName, "The provider name must not be empty.");
         }
 
+        if (input.Protocol.KindOf() != input.Kind)
+        {
+            throw new ProviderException(
+                ProviderErrorKeys.InvalidProtocol,
+                $"Protocol '{input.Protocol.NameOf()}' does not belong to provider kind '{input.Kind.NameOf()}'.");
+        }
+
         var existing = Provider(id);
         ProviderRecord saved;
         lock (_gate)
         {
-            saved = _file.PutProvider(new ProviderRecord(id, name, input.Protocol, NormalizeBaseUrl(input.BaseUrl), input.Priority, input.Enabled)
+            saved = _file.PutProvider(new ProviderRecord(id, name, input.Protocol, NormalizeBaseUrl(input.BaseUrl), input.Priority, input.Enabled, input.Kind)
             {
                 ProtocolOptions = MergeProtocolOptions(existing?.ProtocolOptions, input.ProtocolOptions),
                 VideoGeneration = existing?.VideoGeneration,
@@ -229,7 +238,7 @@ public sealed partial class ProviderService
     /// </summary>
     public void Remove(string providerId)
     {
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The built-in provider cannot be removed.");
         }
@@ -324,7 +333,7 @@ public sealed partial class ProviderService
     public async Task<CredentialInfo> SetApiKeyAsync(string providerId, string apiKey, CancellationToken ct = default)
     {
         var provider = Require(providerId);
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The built-in provider's login credential cannot be edited manually.");
         }
@@ -342,7 +351,7 @@ public sealed partial class ProviderService
     public async Task<CredentialInfo> GetCredentialInfoAsync(string providerId, CancellationToken ct = default)
     {
         var provider = Require(providerId);
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             // 托管供应商的「凭据」是账户委托令牌:只告诉有没有,不给后四位(令牌是登录会话的一部分,不是用户的密钥)。
             return new CredentialInfo(await _vault.GetAsync(provider.CredentialRef, ct).ConfigureAwait(false) is not null, null);
@@ -355,7 +364,7 @@ public sealed partial class ProviderService
     public async Task<RevealedCredential> RevealCredentialAsync(string providerId, CancellationToken ct = default)
     {
         var provider = Require(providerId);
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The built-in provider's login credential cannot be revealed.");
         }
@@ -368,7 +377,7 @@ public sealed partial class ProviderService
     public async Task RemoveCredentialAsync(string providerId, CancellationToken ct = default)
     {
         var provider = Require(providerId);
-        if (providerId == ProviderRefs.ManagedProviderId)
+        if (ProviderRefs.IsManagedProviderId(providerId))
         {
             throw new ProviderException(ProviderErrorKeys.ManagedProvider, "The built-in provider's login credential cannot be edited manually.");
         }
@@ -380,8 +389,20 @@ public sealed partial class ProviderService
 
     private (ModelList.ListRequest Request, ProviderConfig Config) ListRequestFor(ProviderRecord provider, ProviderCredential? credential)
     {
-        var config = new ProviderConfig(provider.Id, provider.Name, provider.BaseUrl, provider.Protocol, provider.Priority, provider.Enabled, provider.CredentialRef, provider.CacheTtl);
-        return (ModelList.RequestFor(config, provider.Protocol, credential, _transport, new RequestContext("model-list")), config);
+        var listWire = provider.Protocol == ProviderProtocol.Anthropic ? WireProtocol.Anthropic : WireProtocol.OpenAiChat;
+        var config = new ProviderConfig(provider.Id, provider.Name, provider.BaseUrl, listWire, provider.Priority, provider.Enabled, provider.CredentialRef, provider.CacheTtl);
+        return (ModelList.RequestFor(config, listWire, credential, _transport, new RequestContext("model-list")), config);
+    }
+
+    /// <summary>按「上游声明 → 目录模态 → ID 启发式」把拉回来的模型归类为 text / image / video / audio / other。</summary>
+    internal string ClassifyModel(string providerId, FetchedModel model)
+    {
+        var info = _catalog.Describe(providerId, model.Id);
+        return ModelKindClassifier.Classify(
+            model.Id,
+            model.DeclaredKind,
+            info?.Capabilities.InputModalities,
+            info?.Capabilities.OutputModalities);
     }
 
     private async Task<ProviderCredential?> ResolveCredentialAsync(ProviderRecord provider, CancellationToken ct)
@@ -392,17 +413,18 @@ public sealed partial class ProviderService
     }
 
     /// <summary>
-    /// 从上游拉「这家有哪些模型」。不照预设表拒绝(用户可能已经把地址改成自己的中转):试了再说。先试这家协议那一族的列表端点,
-    /// 失败或一条都解不出时再试另一族(Anthropic 兼容中转很多没有 <c>/v1/models</c>,OpenAI 族的 <c>/models</c> 往往在)。
-    /// 没有密钥时不是直接失败——免鉴权的那几家照样能拉。都拉不到时报这家协议那一族的失败(<see cref="ProviderException"/>,URL 与响应片段已脱敏)。
+    /// 从上游拉「这家有哪些模型」,并按供应商类型(<see cref="ProviderRecord.Kind"/>)过滤掉其余类型的模型。
+    /// 不照预设表拒绝(用户可能已经把地址改成自己的中转):试了再说。文本供应商先试这家协议那一族的列表端点,
+    /// 失败或一条都解不出时再试另一族;图片 / 视频 / 音频供应商走 OpenAI 族 <c>/models</c>。
+    /// 上游返回了可解析的模型但过滤后为 0 条时返回空列表(不是解析失败);一条都解不出来时报 <see cref="ProviderErrorKeys.FetchEmpty"/>。
     /// </summary>
     public Task<IReadOnlyList<FetchedModel>> FetchModelsAsync(string providerId, CancellationToken ct = default) =>
         FetchModelsAsync(Require(providerId), ct);
 
     private async Task<IReadOnlyList<FetchedModel>> FetchModelsAsync(ProviderRecord provider, CancellationToken ct)
     {
-        var listing = await ListModelsAsync(provider, await ResolveCredentialAsync(provider, ct).ConfigureAwait(false), bothFamilies: false, ct).ConfigureAwait(false);
-        if (listing.Models.Count > 0)
+        var (listing, _) = await ListModelsCoreAsync(provider, await ResolveCredentialAsync(provider, ct).ConfigureAwait(false), bothFamilies: false, filterByKind: true, ct).ConfigureAwait(false);
+        if (listing.RawCount > 0)
         {
             return [.. listing.Models.Select(m => new FetchedModel(m.Id, m.DisplayName))];
         }
@@ -541,8 +563,8 @@ public sealed partial class ProviderService
                 _file.PutAlias(new ModelAliasRecord(model, providerId, model)
                 {
                     Priority = priority,
-                    // 目录认识的生图 / 生视频模型带上模态:对话选择器据此把它们排除在聊天候选之外(选中它发消息是一次注定失败的对话)。
-                    Modality = ModalityOf(info),
+                    // 媒体供应商的别名显式标记对应模态;文本供应商仍按目录识别非聊天模态(排除在聊天候选之外)。
+                    Modality = provider.Kind == ProviderKind.Text ? ModalityOf(info, model) : provider.Kind.NameOf(),
                     Extra = new JsonObject { ["catalogOverrides"] = new JsonArray() },
                 });
             }
@@ -552,10 +574,16 @@ public sealed partial class ProviderService
         return Aliases(providerId);
     }
 
-    private static string? ModalityOf(ModelInfo? info) =>
-        info?.Capabilities.OutputModalities is { } outputs
-            ? outputs.Contains("image") ? "image" : outputs.Contains("video") ? "video" : null
-            : null;
+    private static string? ModalityOf(ModelInfo? info, string modelId) =>
+        info is null
+            ? null
+            : ModelKindClassifier.FromModalities(info.Capabilities.InputModalities, info.Capabilities.OutputModalities, modelId) switch
+            {
+                ProviderKinds.Image => ProviderKinds.Image,
+                ProviderKinds.Video => ProviderKinds.Video,
+                ProviderKinds.Audio => ProviderKinds.Audio,
+                _ => null,
+            };
 
     public void RemoveAlias(string providerId, string alias)
     {
@@ -607,9 +635,15 @@ public sealed partial class ProviderService
     /// <summary>逐条编辑别名(2.x <c>model:update</c>):只改给了值的字段,并把它们记进 <c>catalogOverrides</c>(归供应商,不再跟随目录)。</summary>
     public ModelAliasRecord UpdateAlias(AliasUpdate update)
     {
-        RequireEditable(update.ProviderId);
+        var provider = RequireEditable(update.ProviderId);
         var existing = Aliases(update.ProviderId).FirstOrDefault(a => a.Alias == update.Alias)
             ?? throw new ProviderException(ProviderErrorKeys.UnknownAlias, $"Unknown model alias: {update.Alias}");
+        if (!update.ClearProtocolOverride && update.ProtocolOverride is { } po && po.KindOf() != provider.Kind)
+        {
+            throw new ProviderException(
+                ProviderErrorKeys.InvalidProtocol,
+                $"Protocol override '{po.NameOf()}' does not belong to provider kind '{provider.Kind.NameOf()}'.");
+        }
         var overrides = ModelBindingResolver.OverridesOf(existing) ?? ModelBindingResolver.InferOverrides(existing);
         var extra = (JsonObject)existing.Extra.DeepClone();
         var next = existing;
@@ -691,43 +725,87 @@ public sealed partial class ProviderService
     // ── 托管供应商(NextCoWork 账户的模型通道) ──
 
     /// <summary>
-    /// 登录之后同步托管供应商:用账户委托令牌拉平台的 <c>/v1/models</c>,整份替换内存里的那一层(每次都是平台的全量:这家的模型不可编辑,没有「用户删掉的自己回来」的问题)。
-    /// Claude 系的别名带上 <see cref="ManagedProvider.ProtocolFor"/> 的 Anthropic 协议覆盖;窗口 / 能力 / 思考档位全部跟随目录(<c>catalogOverrides = []</c>)。
+    /// 登录之后同步托管供应商:用账户委托令牌拉平台的 <c>/v1/models</c>,按模型类型分流到内置的四家供应商
+    /// (<c>nextcowork</c> 文本、<c>nextcowork-image</c> 图片、<c>nextcowork-video</c> 视频、<c>nextcowork-audio</c> 音频),
+    /// 整份替换内存里的那一层(每次都是平台的全量:内置供应商不可手动编辑)。
+    /// 文本通道里 Claude 系的别名带上 <see cref="ManagedProvider.ProtocolFor"/> 的 Anthropic 协议覆盖;窗口 / 能力 / 思考档位全部跟随目录(<c>catalogOverrides = []</c>)。
     /// 没有令牌(没登录 / 已过期)抛 <see cref="ProviderErrorKeys.NoCredential"/>;拉取失败抛 <see cref="ProviderException"/> 且<b>保留上一份</b>(网络抖动不能让模型选择器空掉)。
-    /// 返回同步到的模型数。
+    /// 返回同步到的总模型数。
     /// </summary>
     public async Task<int> SyncManagedAsync(CancellationToken ct = default)
     {
-        var provider = ManagedProvider.Record(_options.ManagedBaseUrl);
-        if (await _vault.GetAsync(provider.CredentialRef, ct).ConfigureAwait(false) is null)
+        var textProvider = ManagedProvider.Record(ProviderKind.Text, _options.ManagedBaseUrl);
+        if (await _vault.GetAsync(textProvider.CredentialRef, ct).ConfigureAwait(false) is null)
         {
             throw new ProviderException(ProviderErrorKeys.NoCredential, "The account is not signed in, so the NextCoWork models cannot be synced.");
         }
 
-        var fetched = await FetchModelsAsync(provider, ct).ConfigureAwait(false);
-        var aliases = new List<ModelAliasRecord>(fetched.Count);
-        for (var priority = 0; priority < fetched.Count; priority++)
+        var (listing, rawModels) = await ListModelsCoreAsync(
+            textProvider,
+            await ResolveCredentialAsync(textProvider, ct).ConfigureAwait(false),
+            bothFamilies: false,
+            filterByKind: false,
+            ct).ConfigureAwait(false);
+        if (listing.RawCount == 0)
         {
-            var model = fetched[priority];
-            aliases.Add(new ModelAliasRecord(model.Id, provider.Id, model.Id)
+            var first = listing.Attempts[0];
+            throw FetchError(first.ErrorKey ?? ProviderErrorKeys.FetchEmpty, textProvider, first.Url, first.Status, first.Detail);
+        }
+
+        var records = ManagedProvider.Records(_options.ManagedBaseUrl);
+        var buckets = new Dictionary<ProviderKind, List<FetchedModel>>
+        {
+            [ProviderKind.Text] = [],
+            [ProviderKind.Image] = [],
+            [ProviderKind.Video] = [],
+            [ProviderKind.Audio] = [],
+        };
+        foreach (var model in rawModels)
+        {
+            switch (ClassifyModel(ProviderRefs.ManagedProviderId, model))
             {
-                Priority = priority,
-                DisplayName = model.DisplayName,
-                ProtocolOverride = ManagedProvider.ProtocolFor(model.Id),
-                Modality = ModalityOf(_catalog.Describe(provider.Id, model.Id)),
-                Extra = new JsonObject { ["catalogOverrides"] = new JsonArray() },
-            });
+                case ProviderKinds.Text:
+                    buckets[ProviderKind.Text].Add(model);
+                    break;
+                case ProviderKinds.Image:
+                    buckets[ProviderKind.Image].Add(model);
+                    break;
+                case ProviderKinds.Video:
+                    buckets[ProviderKind.Video].Add(model);
+                    break;
+                case ProviderKinds.Audio:
+                    buckets[ProviderKind.Audio].Add(model);
+                    break;
+            }
+        }
+
+        var aliases = new List<ModelAliasRecord>(rawModels.Count);
+        foreach (var provider in records)
+        {
+            var models = buckets[provider.Kind];
+            for (var priority = 0; priority < models.Count; priority++)
+            {
+                var model = models[priority];
+                aliases.Add(new ModelAliasRecord(model.Id, provider.Id, model.Id)
+                {
+                    Priority = priority,
+                    DisplayName = model.DisplayName,
+                    ProtocolOverride = provider.Kind == ProviderKind.Text ? ManagedProvider.ProtocolFor(model.Id)?.ToProviderProtocol() : null,
+                    Modality = provider.Kind == ProviderKind.Text ? null : provider.Kind.NameOf(),
+                    Extra = new JsonObject { ["catalogOverrides"] = new JsonArray() },
+                });
+            }
         }
 
         // 拉的过程中令牌被撤销了(退出登录):不提交,否则迟到的结果会让托管供应商在退出之后复活。
-        if (await _vault.GetAsync(provider.CredentialRef, ct).ConfigureAwait(false) is null)
+        if (await _vault.GetAsync(textProvider.CredentialRef, ct).ConfigureAwait(false) is null)
         {
             throw new ProviderException(ProviderErrorKeys.NoCredential, "The account signed out while the NextCoWork models were being synced.");
         }
 
         lock (_gate)
         {
-            _managed = new ManagedState(provider, aliases);
+            _managed = new ManagedState(records, aliases);
         }
 
         Notify();
@@ -792,7 +870,7 @@ public sealed record AliasUpdate(
     int? MaxOutputTokens = null,
     bool? Enabled = null,
     int? Priority = null,
-    WireProtocol? ProtocolOverride = null,
+    ProviderProtocol? ProtocolOverride = null,
     bool ClearProtocolOverride = false,
     bool? Vision = null,
     JsonObject? ThinkingConfig = null,

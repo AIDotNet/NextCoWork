@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Ncw.Client.Actions;
 using Ncw.Client.Mock;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Client.Transcript;
 using Ncw.Client.ViewModels;
@@ -30,6 +31,7 @@ public class ConversationViewModelTests
         public SendResult SendResult { get; set; } = new(SendOutcome.Started);
         public bool QueueAccepted { get; set; } = true;
         public InteractionResult RespondResult { get; set; } = new(InteractionOutcome.Answered);
+        public List<string> ExecutedPlans { get; } = [];
 
         public Task<SendResult> SendAsync(SessionRef session, string text, SendOptionsDto options, CancellationToken ct = default)
         {
@@ -76,7 +78,27 @@ public class ConversationViewModelTests
             return Task.FromResult(RespondResult);
         }
 
-        public Task<SessionRef?> CreateSessionAsync(ProjectRef project, string? model = null, CancellationToken ct = default) => Task.FromResult<SessionRef?>(null);
+        public Task<SessionRef?> CreateSessionAsync(ProjectRef project, string? model = null, CancellationToken ct = default) =>
+            Task.FromResult<SessionRef?>(new SessionRef(project.DeviceId, "s-plan-exec"));
+
+        public Task<SendResult> ExecutePlanAsync(SessionRef session, PlanApprovalInteractionDto approval, string text, SendOptionsDto options, CancellationToken ct = default)
+        {
+            ExecutedPlans.Add($"{session.DeviceId}:{session.SessionId}:{approval.PlanId}:{options.Mode}");
+            return Task.FromResult(new SendResult(SendOutcome.Started));
+        }
+    }
+
+    private sealed class FakeFileTabs : IFileTabHost
+    {
+        public List<(ProjectRef Project, string Path, int? Line)> Opened { get; } = [];
+
+        public Task OpenAsync(ProjectRef project, string path, int? line = null)
+        {
+            Opened.Add((project, path, line));
+            return Task.CompletedTask;
+        }
+
+        public void CloseInside(ProjectRef project, string path) { }
     }
 
     private static ModelOptionDto[] Options() =>
@@ -171,6 +193,37 @@ public class ConversationViewModelTests
         Assert.DoesNotContain(SessionListReducer.Remove(state, "local", "a").Sessions, s => s.Id == "a");
     }
 
+    [Fact]
+    public async Task Create_session_jumps_to_existing_empty_session_instead_of_creating_unlimited_empty_sessions()
+    {
+        var stores = MockWorkspace.Create(Now);
+        var emptyOld = new SessionSummary("s-empty-old", Project, "新对话", Now.AddMinutes(-10), IsEmpty: true);
+        var emptyNew = new SessionSummary("s-empty-new", Project, "新对话", Now.AddMinutes(-1), IsEmpty: true);
+        stores.Workspace.Update(w => w with { Sessions = w.Sessions.Add(emptyOld).Add(emptyNew) });
+
+        var devices = new Ncw.Client.Devices.DeviceRegistry();
+        var conversations = new ConversationActions(devices);
+        var actions = new SessionActions(stores, devices, conversations);
+
+        // 即使设备未连接，也直接跳转到已有的空白新会话，而不是新建
+        var result = await actions.CreateAsync(Project);
+        Assert.True(result.IsOk);
+        Assert.Equal("s-empty-new", result.Value);
+        Assert.Equal(new SelectionState(Project, "s-empty-new"), stores.Selection.State);
+
+        // 已有消息的空标记会话不会被误复用
+        stores.Conversations.Update(c => ConversationReducer.ApplySession(c, "local",
+            new SessionTopicState(
+                new SessionPageDto(new SessionDto("s-empty-new", "nextcowork", null, "chat", "新对话", "default", "sonnet", null, "code", "auto", false, false, 1, 2),
+                    [new MessageDto("u1", "user", 1, false, "[]")], false, [], [], []),
+                new QueueDto("s-empty-new", 0, []), null)));
+
+        var fallback = await actions.CreateAsync(Project);
+        Assert.True(fallback.IsOk);
+        Assert.Equal("s-empty-old", fallback.Value);
+        Assert.Equal(new SelectionState(Project, "s-empty-old"), stores.Selection.State);
+    }
+
     // ───────────────────────── 输入框状态机 ─────────────────────────
 
     [Theory]
@@ -205,9 +258,35 @@ public class ConversationViewModelTests
         Assert.Equal(["ask", "auto"], ComposerLogic.PermissionModesFor("member"));
         Assert.Equal("ask", ComposerLogic.ClampPermission("full", "member"));
 
-        Assert.Equal(["auto", "off", "low", "high"], ComposerLogic.ThinkingLevels(Options()[0]));
+        Assert.Equal(["auto", "low", "high"], ComposerLogic.ThinkingLevels(Options()[0]));
+        Assert.False(ComposerLogic.CanDisableThinking(Options()[0]));
+        var toggleOrEffortWithNone = Options()[0] with { ReasoningEfforts = ["none", "low", "high"] };
+        Assert.True(ComposerLogic.CanDisableThinking(toggleOrEffortWithNone));
+        Assert.Equal(["auto", "off", "low", "high"], ComposerLogic.ThinkingLevels(toggleOrEffortWithNone));
+        Assert.Equal(["auto"], ComposerLogic.ThinkingLevels(Options()[0] with { ThinkingMode = "always", ReasoningEfforts = null }));
         Assert.Equal(["off"], ComposerLogic.ThinkingLevels(Options()[1]));
         Assert.Equal("off", ComposerLogic.ClampThinking("high", Options()[1]));
+        Assert.Equal("auto", ComposerLogic.ClampThinking("off", Options()[0]));
+    }
+
+    [Fact]
+    public void Switching_to_a_model_that_cannot_disable_thinking_automatically_selects_thinking()
+    {
+        var commands = new FakeCommands();
+        var stores = Stores();
+        var convo = Conversation(stores, commands);
+        var composer = convo.Composer;
+
+        // 切到不支持思考的模型 haiku 时，当前档位被夹到 off；再切回不支持关闭思考的 opus 时，自动回到 auto
+        var haiku = composer.Models.Single(m => m.Alias == "haiku");
+        var opus = composer.Models.Single(m => m.Alias == "opus");
+        composer.PickModelCommand.Execute(haiku);
+        Assert.Equal("off", composer.Thinking);
+        Assert.Equal(["off"], composer.ThinkingChoices);
+
+        composer.PickModelCommand.Execute(opus);
+        Assert.Equal("auto", composer.Thinking);
+        Assert.Equal(["auto", "low", "high"], composer.ThinkingChoices);
     }
 
     [Fact]
@@ -726,5 +805,95 @@ public class ConversationViewModelTests
         Assert.False(card.CanStop);
         Assert.False(convo.NeedsTick);
         Assert.Contains(convo.Rows, r => r is StatusRowViewModel { IsUnknown: true });
+    }
+
+    [Fact]
+    public async Task Denial_passes_feedback_reason_and_plan_approval_supports_new_session()
+    {
+        var (convo, commands, card) = WithApproval();
+        card.Feedback = "use a safer command";
+        await card.DenyCommand.ExecuteAsync(null);
+        var deny = Assert.IsType<ToolPermissionResponseDto>(commands.LastResponse);
+        Assert.Equal((PermissionChoices.Deny, "use a safer command"), (deny.Choice, deny.Reason));
+
+        var plan = new PlanApprovalInteractionDto
+        {
+            Id = "p1", RunId = "run-1", Plan = "1. Step", PlanId = "plan-1", Path = "plan.md", Version = 2,
+        };
+        var stores = Stores(running: true);
+        var planCmds = new FakeCommands();
+        var planConvo = Conversation(stores, planCmds);
+        stores.Conversations.Update(c => ConversationReducer.ApplyInteractions(c, "local", new InteractionsDto(1, [plan])));
+        var planCard = planConvo.Rows.OfType<InteractionRowViewModel>().Single();
+
+        await planCard.ApprovePlanNewSessionCommand.ExecuteAsync(null);
+        Assert.Equal("approveNewSession", Assert.IsType<PlanApprovalResponseDto>(planCmds.LastResponse).Action);
+        Assert.Equal(["local:s-plan-exec:plan-1:code"], planCmds.ExecutedPlans);
+        Assert.Equal("s-plan-exec", stores.Selection.State.SessionId);
+    }
+
+    [Fact]
+    public void Tool_row_opens_workspace_file_only_for_file_operations_inside_project()
+    {
+        var stores = Stores();
+        var convo = Conversation(stores, new FakeCommands());
+        var tabs = new FakeFileTabs();
+        convo.FileTabs = tabs;
+
+        var msg = Assistant("m1",
+            "{\"type\":\"tool_call\",\"callId\":\"c1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/Users/token/code/NextCoWork/src/a.cs\"}}",
+            "{\"type\":\"tool_call\",\"callId\":\"c2\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/tmp/outside.cs\",\"old_string\":\"a\",\"new_string\":\"b\"}}",
+            "{\"type\":\"tool_call\",\"callId\":\"c3\",\"name\":\"Bash\",\"input\":{\"command\":\"git status\"}}");
+        var results = new MessageDto("m2", "user", 2, true,
+            "[{\"type\":\"tool_result\",\"callId\":\"c1\",\"output\":{\"content\":\"ok\"},\"isError\":false},{\"type\":\"tool_result\",\"callId\":\"c2\",\"output\":{\"content\":\"ok\"},\"isError\":false},{\"type\":\"tool_result\",\"callId\":\"c3\",\"output\":{\"content\":\"ok\"},\"isError\":false}]");
+        stores.Conversations.Update(c => ConversationReducer.ApplyMessage(ConversationReducer.ApplyMessage(c, Session, msg), Session, results));
+
+        // 展开工作区以便检查各工具行
+        foreach (var g in convo.Rows.OfType<WorkGroupRowViewModel>().ToList())
+        {
+            g.IsExpanded = true;
+        }
+
+        var tools = convo.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
+        Assert.True(tools["c1"].CanOpenFile);
+        Assert.False(tools["c2"].CanOpenFile);
+        Assert.False(tools["c3"].CanOpenFile);
+
+        tools["c1"].OpenFileCommand.Execute(null);
+        Assert.Equal([(Project, "src/a.cs", null)], tabs.Opened);
+    }
+
+    [Fact]
+    public void Active_run_between_turns_shows_generating_status_and_retry_exposes_delay_seconds()
+    {
+        var stores = Stores(running: true);
+        var convo = Conversation(stores, new FakeCommands());
+
+        // 运行中但既无流式字 / 思考、也无运行中工具 / 审批:末尾出现 Generating 提示
+        var status = Assert.IsType<StatusRowViewModel>(Assert.Single(convo.Rows));
+        Assert.True(status.IsGenerating);
+
+        // 一旦有了思考流式内容,不再额外加 Generating 状态行,折叠态提供单行 LivePreview
+        var run = new RunRef("local", "run-1");
+        stores.Conversations.Update(c => c with
+        {
+            Runs = c.Runs.SetItem(run, RunView.New(run, "s-ncw-1", 1) with
+            {
+                Phase = RunPhase.Running,
+                Thinking = ImmutableDictionary<string, string>.Empty.Add("m1", "First line\nAnalyzing the build error\n"),
+            }),
+        });
+        var thinking = Assert.IsType<ThinkingRowViewModel>(Assert.Single(convo.Rows));
+        Assert.True(thinking.ShowCollapsedPreview);
+        Assert.Equal("Analyzing the build error", thinking.LivePreview);
+
+        // 重试带着延迟秒数
+        stores.Conversations.Update(c => c with
+        {
+            Runs = c.Runs.SetItem(run, c.Runs[run] with { Retry = new ProviderRetryEventDto(2, 2500, "overloaded") }),
+        });
+        var retryStatus = Assert.IsType<StatusRowViewModel>(convo.Rows[^1]);
+        Assert.True(retryStatus.HasDelay);
+        Assert.Equal(3, retryStatus.DelaySeconds);
     }
 }

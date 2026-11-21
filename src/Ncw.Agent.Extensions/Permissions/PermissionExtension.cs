@@ -190,6 +190,24 @@ public sealed class PermissionExtension : IAgentExtension
             && string.Equals(fence.Value, path.Value, PathRules.Comparison(fence.Style));
     }
 
+    private sealed record EvaluatedTarget(Target Target, GateOutcome Outcome, bool AutoReview);
+
+    private async ValueTask<EvaluatedTarget> EvaluateTargetAsync(PermissionRunState run, ToolSpec info, JsonElement input, CancellationToken ct)
+    {
+        var traits = info.Traits;
+        var target = await BuildTargetAsync(run, input, ct).ConfigureAwait(false);
+        var mode = run.Mode;
+        var planTrusted = IsPlanTrusted(run, info.InternalId, target);
+        var readOnly = traits.ReadOnly
+            || planTrusted
+            || (_options.AutoAllowReadOnlyBash && info.InternalId == "Bash" && target.Risk == CommandRisk.ReadOnly);
+        var outcome = PermissionGate.Evaluate(new PermissionQuery(
+            mode, readOnly, traits.Destructive, run.WebSearch, PermissionGate.NetworkSwitchTools.Contains(info.InternalId)));
+        // 危险命令不交给模型审核:审核器是个 128 token 的短请求,它说 allow 不该能替人放行 `rm -rf`。
+        var autoReview = mode == PermissionMode.Auto && traits.Destructive && target.Risk != CommandRisk.Dangerous;
+        return new EvaluatedTarget(target, outcome, autoReview);
+    }
+
     private async ValueTask<PreflightDecision> DecideAsync(ToolInvocation call, ExtensionContext ctx, CancellationToken ct)
     {
         var run = _runs.Get(ctx.RunId);
@@ -201,15 +219,9 @@ public sealed class PermissionExtension : IAgentExtension
 
         var info = call.Tool.Info;
         var traits = info.Traits;
-        var target = await BuildTargetAsync(run, call.Input, ct).ConfigureAwait(false);
-        var risk = target.Risk;
-        var mode = run.Mode;
-        var planTrusted = IsPlanTrusted(run, info.InternalId, target);
-        var readOnly = traits.ReadOnly
-            || planTrusted
-            || (_options.AutoAllowReadOnlyBash && info.InternalId == "Bash" && risk == CommandRisk.ReadOnly);
-        var outcome = PermissionGate.Evaluate(new PermissionQuery(
-            mode, readOnly, traits.Destructive, run.WebSearch, PermissionGate.NetworkSwitchTools.Contains(info.InternalId)));
+        var evaluated = await EvaluateTargetAsync(run, info, call.Input, ct).ConfigureAwait(false);
+        var target = evaluated.Target;
+        var outcome = evaluated.Outcome;
 
         var rules = await _rules.ReadAsync(run.RuleContext, ct).ConfigureAwait(false);
         var early = PermissionDecisions.DecideBeforeHooks(outcome, PermissionRules.MatchFirst(rules.Deny, info.InternalId, target.Subjects.Loose));
@@ -219,24 +231,44 @@ public sealed class PermissionExtension : IAgentExtension
         }
 
         var verdict = await CollectVerdictAsync(new PreToolContext(run, call, call.Input), ctx.Log, ct).ConfigureAwait(false);
+        if (verdict.Deny is { } hookDeny)
+        {
+            return PreflightDecision.Deny(hookDeny);
+        }
+
+        var hookEdited = false;
+        if (verdict.UpdatedInput is { ValueKind: JsonValueKind.Object } updated)
+        {
+            // ★ Hook 改写参数后必须拿新参数重跑一次门禁与规则检查:否则 Hook 可以把一条放行的命令改写成命中 deny 规则或绕过 ask 规则的调用。
+            hookEdited = true;
+            call = call with { Input = updated.Clone() };
+            evaluated = await EvaluateTargetAsync(run, info, call.Input, ct).ConfigureAwait(false);
+            target = evaluated.Target;
+            outcome = evaluated.Outcome;
+            early = PermissionDecisions.DecideBeforeHooks(outcome, PermissionRules.MatchFirst(rules.Deny, info.InternalId, target.Subjects.Loose));
+            if (early.Denied)
+            {
+                return PreflightDecision.Deny(early.Reason);
+            }
+        }
+
         var final = PermissionDecisions.DecideAfterHooks(
             outcome,
             verdict,
             PermissionRules.MatchFirst(rules.Ask, info.InternalId, target.Subjects.Loose),
             PermissionRules.MatchFirst(rules.Allow, info.InternalId, target.Subjects.Strict),
-            // 危险命令不交给模型审核:审核器是个 128 token 的短请求,它说 allow 不该能替人放行 `rm -rf`。
-            autoReview: mode == PermissionMode.Auto && traits.Destructive && risk != CommandRisk.Dangerous);
+            evaluated.AutoReview);
         switch (final.Kind)
         {
             case FinalKind.Deny:
                 return PreflightDecision.Deny(final.Reason);
             case FinalKind.Allow:
-                return PreflightDecision.Allow;
+                return hookEdited ? PreflightDecision.Edit(call.Input) : PreflightDecision.Allow;
             case FinalKind.Review:
                 switch (await ReviewAsync(run, call, ct).ConfigureAwait(false))
                 {
                     case ReviewResult.Allow:
-                        return PreflightDecision.Allow;
+                        return hookEdited ? PreflightDecision.Edit(call.Input) : PreflightDecision.Allow;
                     case ReviewResult.Deny:
                         return PreflightDecision.Deny("The configured AI reviewer denied this potentially unsafe operation.");
                 }
@@ -246,7 +278,7 @@ public sealed class PermissionExtension : IAgentExtension
 
         // 子代理到此为止——它没有人可问。当场拒绝而不是挂起(2.x 真实发生过的死锁:跑满一小时、六百多次工具调用之后毫无进展)。
         // 拒绝进转录、模型看得见,它可以换个做法或者把这一步交回给主代理。位置在钩子与规则之后:一条 allow 规则仍然应该让子代理跑起来。
-        var suggested = PermissionRules.Suggest(info.InternalId, target.Subjects.Strict, exactBash: risk == CommandRisk.Dangerous);
+        var suggested = PermissionRules.Suggest(info.InternalId, target.Subjects.Strict, exactBash: target.Risk == CommandRisk.Dangerous);
         if (run.IsSubagent)
         {
             return PreflightDecision.Deny(
@@ -265,7 +297,7 @@ public sealed class PermissionExtension : IAgentExtension
             Env = run.EnvironmentRef,
             SuggestedRule = suggested,
             AllowedScopes = RememberScopes.Session | RememberScopes.Global | (run.Root is null ? RememberScopes.None : RememberScopes.Project),
-            Risk = risk,
+            Risk = target.Risk,
             OutsideWorkspace = target.Outside,
         };
 
@@ -278,10 +310,10 @@ public sealed class PermissionExtension : IAgentExtension
         switch (permission.Choice)
         {
             case PermissionChoice.AllowOnceChoice:
-                return PreflightDecision.Allow;
+                return hookEdited ? PreflightDecision.Edit(call.Input) : PreflightDecision.Allow;
             case PermissionChoice.AllowAlwaysChoice always:
                 await RememberAsync(run, always.Scope, suggested, ctx, ct).ConfigureAwait(false);
-                return PreflightDecision.Allow;
+                return hookEdited ? PreflightDecision.Edit(call.Input) : PreflightDecision.Allow;
             case PermissionChoice.AllowEditedChoice edited:
                 return await RecheckEditedAsync(run, call, edited.Input, ctx, ct).ConfigureAwait(false);
             case PermissionChoice.DenyChoice deny:
@@ -374,14 +406,20 @@ public sealed class PermissionExtension : IAgentExtension
         string? deny = null;
         var allow = false;
         var ask = false;
+        JsonElement? updatedInput = null;
         foreach (var hook in _hooks)
         {
             try
             {
-                var v = await hook.EvaluateAsync(context, ct).ConfigureAwait(false);
+                var current = updatedInput is { } edited ? context with { Call = context.Call with { Input = edited }, Input = edited } : context;
+                var v = await hook.EvaluateAsync(current, ct).ConfigureAwait(false);
                 deny ??= v.Deny;
                 allow |= v.Allow;
                 ask |= v.Ask;
+                if (v.UpdatedInput is { ValueKind: JsonValueKind.Object } next)
+                {
+                    updatedInput = next.Clone();
+                }
             }
             catch (Exception e) when (!(e is OperationCanceledException && ct.IsCancellationRequested))
             {
@@ -389,11 +427,12 @@ public sealed class PermissionExtension : IAgentExtension
             }
         }
 
+        var interceptorContext = updatedInput is { } rewritten ? context with { Call = context.Call with { Input = rewritten }, Input = rewritten } : context;
         foreach (var interceptor in _interceptors)
         {
             try
             {
-                var v = await interceptor.InterceptAsync(context, ct).ConfigureAwait(false);
+                var v = await interceptor.InterceptAsync(interceptorContext, ct).ConfigureAwait(false);
                 deny ??= v.Deny;
                 ask |= v.Ask;
             }
@@ -403,7 +442,7 @@ public sealed class PermissionExtension : IAgentExtension
             }
         }
 
-        return new HookVerdict(deny, allow, ask);
+        return new HookVerdict(deny, allow, ask, updatedInput);
     }
 
     private async ValueTask<ReviewResult> ReviewAsync(PermissionRunState run, ToolInvocation call, CancellationToken ct)

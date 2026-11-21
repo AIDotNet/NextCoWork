@@ -41,7 +41,7 @@ public sealed record SessionCreate(
     string? PermissionMode = null);
 
 /// <summary>侧边栏的一行。<c>Running</c> 永远是 false:运行状态不在库里,由 Agent 的运行注册表在上层合并。</summary>
-public sealed record SessionListItem(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool Running, bool SkillExtraction);
+public sealed record SessionListItem(string Id, string Title, long UpdatedAt, bool Archived, bool Favorited, bool Running, bool SkillExtraction, bool IsEmpty = false);
 
 /// <summary>会话元数据 + 消息条数(不读任何消息正文)。</summary>
 public sealed record SessionSummary(SessionRecord Session, long MessageCount);

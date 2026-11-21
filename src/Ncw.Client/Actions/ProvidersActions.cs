@@ -128,6 +128,10 @@ public sealed class ProvidersActions(DeviceRegistry devices) : ViewModels.IProvi
 
     // ── 内置模版(后加的能力 providers.templates)──
 
+    /// <summary>设备支持供应商类型区分与媒体协议(<c>providers.media</c>)。</summary>
+    public bool SupportsMedia(string deviceId) =>
+        devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.ProviderMedia);
+
     /// <summary>设备给内置模版(老设备不报这个能力:添加供应商只有「自定义」)。</summary>
     public bool SupportsTemplates(string deviceId) =>
         devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.ProviderTemplates);

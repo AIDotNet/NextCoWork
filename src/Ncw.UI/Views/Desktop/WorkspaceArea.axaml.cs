@@ -1,13 +1,16 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Shortcuts;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop;
 
@@ -27,6 +30,20 @@ public partial class WorkspaceArea : UserControl
         TabStrip.ContainerPrepared += OnTabPrepared;
     }
 
+    private void OnTabDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is Control { DataContext: WorkspaceTabViewModel { File: { } file } })
+        {
+            file.PinCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (sender is Control { DataContext: WorkspaceTabViewModel { SessionId: { } sessionId } } && _panel?.FindSessionItem(sessionId) is { } session)
+        {
+            session.RenameCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     /// <summary>
     /// 新标签淡入(docs/design/03 §9.4)。标签集合每次变化都整批重建(<c>WorkspaceViewModel.Refresh</c>),所以不能用 ArriveOnAttach(每次都会整排闪);
     /// 这里按 key 认「真正新出现的」:上一批里没有、且和上一批有交集(同一个项目;换项目 / 首次显示是整批换掉,不播放),一次最多一个(新建会话、打开文件)。
@@ -38,6 +55,7 @@ public partial class WorkspaceArea : UserControl
             return;
         }
 
+        AttachTabMenu(e.Container, tab);
         if (IsNewTab(tab.Key))
         {
             NcwMotion.Arrive(e.Container, NcwArrival.Fade, tier: NcwMotionTier.Fast);
@@ -52,6 +70,36 @@ public partial class WorkspaceArea : UserControl
             // 这一批 Clear + Add 都处理完后再记下「现在显示着的」
             _tabsSnapshotPending = true;
             Dispatcher.UIThread.Post(SnapshotTabs, DispatcherPriority.Background);
+        }
+    }
+
+    private void AttachTabMenu(Control container, WorkspaceTabViewModel tab)
+    {
+        if (_shell is not { } shell)
+        {
+            return;
+        }
+
+        var target = container.GetVisualDescendants().OfType<PlainButton>().FirstOrDefault() ?? container;
+        List<NcwMenus.Item> items = [];
+        if (tab.SessionId is { } sessionId && shell.Panel.FindSessionItem(sessionId) is { } session)
+        {
+            var pinLabel = NcwTexts.Get(session.IsFavorite ? NcwTextKind.UnpinSession : NcwTextKind.PinSession);
+            items.Add(new(NcwTexts.Get(NcwTextKind.Rename), session.RenameCommand) { Glyph = ArcIcons.Pencil });
+            items.Add(new(pinLabel, session.ToggleFavoriteCommand) { Glyph = Lucide.Geometry(session.IsFavorite ? LucideIconKind.PinOff : LucideIconKind.Pin) });
+            items.Add(new(NcwTexts.Get(session.IsArchived ? NcwTextKind.Unarchive : NcwTextKind.Archive), session.ToggleArchivedCommand) { Glyph = ArcIcons.Archive });
+            items.Add(new(NcwTexts.Get(NcwTextKind.CloseTab), shell.Workspace.CloseCommand, tab, SeparatorBefore: true) { Glyph = ArcIcons.X });
+            items.Add(new(NcwTexts.Get(NcwTextKind.DeleteSession), session.DeleteCommand, IsDestructive: true, SeparatorBefore: true) { Glyph = ArcIcons.Trash2 });
+        }
+        else if (tab.File is { } file)
+        {
+            items.Add(new(NcwTexts.Get(NcwTextKind.FilePinTab), file.PinCommand) { IsDisabled = !file.IsPreview, Glyph = Lucide.Geometry(LucideIconKind.Pin) });
+            items.Add(new(NcwTexts.Get(NcwTextKind.CloseTab), shell.Workspace.CloseCommand, tab, SeparatorBefore: true) { Glyph = ArcIcons.X });
+        }
+
+        if (items.Count > 0)
+        {
+            NcwMenus.Attach(target, items);
         }
     }
 
@@ -142,14 +190,14 @@ public partial class WorkspaceArea : UserControl
 
     private void OnPanelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ProjectPanelViewModel.ActiveSession))
+        if (e.PropertyName is nameof(ProjectPanelViewModel.ActiveSession) or nameof(ProjectPanelViewModel.HasProject))
         {
             RebuildMoreMenu();
         }
     }
 
     /// <summary>
-    /// 右上角「更多」菜单。只描述条目:当前会话的操作用会话行的同一组命令(最终都到 SessionActions,规则 4),
+    /// 右上角「更多」菜单与标签栏「+」新建菜单。只描述条目:当前会话的操作用会话行的同一组命令(最终都到 SessionActions,规则 4),
     /// 全局命令走 <see cref="ShellViewModel.Execute"/>(和快捷键、命令面板同一个入口),行尾显示当前生效的快捷键。
     /// </summary>
     private void RebuildMoreMenu()
@@ -159,12 +207,14 @@ public partial class WorkspaceArea : UserControl
             return;
         }
 
+        RebuildNewMenu(shell);
         List<NcwMenus.Item> items = [];
         var session = shell.Panel.ActiveSession;
         if (session is not null)
         {
+            var pinLabel = NcwTexts.Get(session.IsFavorite ? NcwTextKind.UnpinSession : NcwTextKind.PinSession);
             items.Add(new(NcwTexts.Get(NcwTextKind.Rename), session.RenameCommand) { Glyph = ArcIcons.Pencil });
-            items.Add(new(NcwTexts.Get(session.IsFavorite ? NcwTextKind.Unfavorite : NcwTextKind.Favorite), session.ToggleFavoriteCommand) { Glyph = ArcIcons.Star });
+            items.Add(new(pinLabel, session.ToggleFavoriteCommand) { Glyph = Lucide.Geometry(session.IsFavorite ? LucideIconKind.PinOff : LucideIconKind.Pin) });
             items.Add(new(NcwTexts.Get(session.IsArchived ? NcwTextKind.Unarchive : NcwTextKind.Archive), session.ToggleArchivedCommand) { Glyph = ArcIcons.Archive });
         }
 
@@ -177,6 +227,41 @@ public partial class WorkspaceArea : UserControl
         }
 
         NcwMenus.Populate(MoreMenu, items);
+    }
+
+    private void RebuildNewMenu(ShellViewModel shell)
+    {
+        var hasProject = shell.Panel.HasProject;
+        List<NcwMenus.Item> items =
+        [
+            new(NcwTexts.Get(NcwTextKind.NewSession), shell.Sidebar.NewSessionCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = ArcIcons.SquarePen,
+                Hint = ShortcutText.CurrentGesture(AppCommand.NewSession) is { Length: > 0 } g1 ? ShortcutText.Format(g1) : null,
+            },
+            new(NcwTexts.Get(NcwTextKind.NewTerminal), shell.Sidebar.NewTerminalCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = ArcIcons.Terminal,
+            },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFile), shell.Sidebar.NewFileCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = Lucide.Geometry(LucideIconKind.FilePlus),
+            },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFolder), shell.Sidebar.NewFolderCommand)
+            {
+                IsDisabled = !hasProject,
+                Glyph = Lucide.Geometry(LucideIconKind.FolderPlus),
+            },
+            new(NcwTexts.Get(NcwTextKind.ScheduledTasks), shell.Sidebar.OpenScheduledTasksCommand, SeparatorBefore: true)
+            {
+                Glyph = Lucide.Geometry(LucideIconKind.CalendarClock),
+            },
+            Global(shell, AppCommand.AddProject, ArcIcons.Folder),
+        ];
+        NcwMenus.Populate(NewMenu, items);
     }
 
     private static NcwMenus.Item Global(ShellViewModel shell, AppCommand command, Avalonia.Media.Geometry glyph, bool separatorBefore = false) =>

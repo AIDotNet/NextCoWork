@@ -154,11 +154,18 @@ public class BundleBuilderTests
     [Fact]
     public void The_committed_icns_exists_and_is_a_real_icns_file()
     {
-        var path = RepoLayout.Find().MacIcon;
+        var repo = RepoLayout.Find();
+        var path = repo.MacIcon;
 
         Assert.True(File.Exists(path), path);
         var head = File.ReadAllBytes(path).AsSpan(0, 4);
         Assert.Equal("icns", System.Text.Encoding.ASCII.GetString(head));
+
+        Assert.True(File.Exists(repo.WinIcon), repo.WinIcon);
+        var icoHead = File.ReadAllBytes(repo.WinIcon).AsSpan(0, 4);
+        Assert.Equal([0, 0, 1, 0], icoHead.ToArray());
+
+        Assert.True(File.Exists(repo.LinuxIcon), repo.LinuxIcon);
     }
 
     [Fact]

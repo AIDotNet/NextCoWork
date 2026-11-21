@@ -935,4 +935,129 @@ public sealed class SubagentRunTests : IDisposable
         Assert.Equal(maxContext, _rig.Factory.Created.Single(t => t.RunId == child.RunId).Options.MaxContext);
         Assert.Equal("code", child.Options.Mode); // 子代理始终按编程模式运行
     }
+
+    // ───────────────────────── CC Subagent 增强特性: disallowedTools / maxTurns / model / background / resume / worktree ─────────────────────────
+
+    [Fact]
+    public async Task DisallowedTools_excludes_specified_tools_even_when_tools_is_inherited_or_allowed()
+    {
+        File.WriteAllText(Path.Combine(_rig.AgentsDir, "no-write.md"), "---\ndescription: reader\ndisallowedTools: Write, Edit\n---\nNo edits.\n");
+
+        var child = await RunOneChild("no-write");
+        var tools = SubRig.ToolNames(_rig.RequestsOf(child.SessionId)[0]);
+
+        Assert.Contains("Read", tools);
+        Assert.DoesNotContain("Write", tools);
+        Assert.DoesNotContain("Edit", tools);
+    }
+
+    [Fact]
+    public async Task MaxTurns_caps_subagent_turns_and_stops_with_max_turns_error()
+    {
+        File.WriteAllText(Path.Combine(_rig.AgentsDir, "bounded.md"), "---\ndescription: bounded\nmaxTurns: 5\n---\nWork fast.\n");
+        var args = """{"description":"bounded","prompt":"loop","subagent_type":"bounded","max_turns":1}""";
+        _rig.Script("s1", SubRig.Calls(("c1", "Task", args)), Up.Text("parent ok"));
+        _rig.Script(SubRig.ChildSession("s1", "p1"), SubRig.Calls(("r1", "Read", """{"file_path":"README.md"}""")), Up.Text("second turn"));
+        File.WriteAllText(Path.Combine(_rig.WorkRoot, "README.md"), "hi");
+
+        await SubRig.Settled(_rig.Start("s1", "go"));
+
+        var result = _rig.ToolResults("s1").Single();
+        Assert.True(result.IsError);
+        Assert.Contains("max_turns", SubRig.Text(result));
+        Assert.Single(_rig.RequestsOf(SubRig.ChildSession("s1", "p1")));
+    }
+
+    [Fact]
+    public async Task Background_definition_and_per_call_model_override_take_effect()
+    {
+        File.WriteAllText(Path.Combine(_rig.AgentsDir, "bg-agent.md"), "---\ndescription: bg\nbackground: true\nmodel: cheap\n---\nBg.\n");
+        var args = """{"description":"bg","prompt":"work","subagent_type":"bg-agent","model":"fast-override"}""";
+        _rig.Script("s1", SubRig.Calls(("c1", "Task", args)), Up.Text("parent waiting"));
+        var gate = new TaskCompletionSource();
+        _rig.Script(SubRig.ChildSession("s1", "p1"), Up.Gate(gate.Task, "bg finished"));
+
+        var parent = _rig.Start("s1", "go");
+        var child = await _rig.WaitForChild("p1");
+        Assert.NotNull(child.Background);
+        Assert.Equal("fast-override", child.Options!.Model.Alias);
+
+        gate.SetResult();
+        await SubRig.Settled(parent);
+    }
+
+    [Fact]
+    public async Task Resume_reuses_child_session_transcript_and_rejects_foreign_session_ids()
+    {
+        _rig.Script("s1", SubRig.Calls(("c1", "Task", SubRig.TaskArgs(prompt: "step 1"))), Up.Text("mid"));
+        _rig.Script(SubRig.ChildSession("s1", "p1"), Up.Text("first answer"), Up.Text("second answer"));
+
+        // 先跑第一轮拿到子会话 id
+        var p1 = _rig.Start("s1", "first", "p1");
+        await SubRig.Settled(p1);
+        var childSessionId = SubRig.ChildSession("s1", "p1");
+
+        // 第二轮用 resume 续聊同一个子会话 + 尝试恢复不存在/非法的会话 id 被拒
+        var resumeArgs = $$"""{"description":"continue","prompt":"step 2","subagent_type":"general-purpose","resume":"{{childSessionId}}"}""";
+        var badResumeArgs = """{"description":"bad","prompt":"x","subagent_type":"general-purpose","resume":"foreign-session"}""";
+        _rig.Script("s1", SubRig.Calls(("c3", "Task", resumeArgs), ("c4", "Task", badResumeArgs)), Up.Text("all done"));
+
+        await SubRig.Settled(_rig.Start("s1", "second", "p2"));
+
+        var resumedRequests = _rig.RequestsOf(childSessionId);
+        Assert.Equal(2, resumedRequests.Count);
+        Assert.Contains("first answer", string.Join('\n', resumedRequests[1].Messages.SelectMany(m => m.Parts).OfType<TextPart>().Select(p => p.Text))); // 第二次请求带上了第一次的转录
+        var results = _rig.ToolResults("s1");
+        Assert.Contains(results, r => r.CallId == "c3" && !r.IsError && SubRig.Text(r) == "second answer");
+        Assert.Contains(results, r => r.CallId == "c4" && r.IsError && SubRig.Text(r).Contains("Cannot resume subagent session"));
+    }
+
+    [Fact]
+    public async Task Isolation_worktree_creates_git_worktree_auto_cleans_when_clean_and_preserves_when_dirty()
+    {
+        // 在临时工作根初始化真实的 git 仓库
+        RunGit(_rig.WorkRoot, "init");
+        RunGit(_rig.WorkRoot, "config", "user.email", "test@example.com");
+        RunGit(_rig.WorkRoot, "config", "user.name", "Test");
+        File.WriteAllText(Path.Combine(_rig.WorkRoot, "main.txt"), "base\n");
+        RunGit(_rig.WorkRoot, "add", ".");
+        RunGit(_rig.WorkRoot, "commit", "-m", "init");
+
+        // 1. 干净退出 → worktree 与临时分支自动清理,结果不带 worktree 尾注
+        var cleanArgs = """{"description":"clean wt","prompt":"check","subagent_type":"general-purpose","isolation":"worktree"}""";
+        _rig.Script("s1", SubRig.Calls(("c1", "Task", cleanArgs)), Up.Text("ok1"));
+        _rig.Script(SubRig.ChildSession("s1", "p1"), Up.Text("all clean"));
+        await SubRig.Settled(_rig.Start("s1", "go1", "p1"));
+        Assert.Equal("all clean", SubRig.Text(_rig.ToolResults("s1").Single(r => r.CallId == "c1")));
+        Assert.False(Directory.Exists(Path.Combine(_rig.WorkRoot, ".next-cowork", "worktrees", "p1-sub-1")));
+
+        // 2. 子代理在 worktree 里写了新文件 → 保留 worktree 与分支,结果附带路径与分支,主工作区干净
+        var dirtyArgs = """{"description":"dirty wt","prompt":"edit","subagent_type":"general-purpose","isolation":"worktree"}""";
+        _rig.Script("s1", SubRig.Calls(("c2", "Task", dirtyArgs)), Up.Text("ok2"));
+        var child2Session = SubRig.ChildSession("s1", "p2", 2);
+        _rig.Script(child2Session,
+            SubRig.Calls(("w1", "Write", """{"file_path":"feature.txt","content":"from worktree"}""")),
+            Up.Text("wrote feature"));
+        await SubRig.Settled(_rig.Start("s1", "go2", "p2"));
+
+        var dirtyResult = _rig.ToolResults("s1").Single(r => r.CallId == "c2");
+        Assert.Contains("wrote feature", SubRig.Text(dirtyResult));
+        Assert.Contains("[worktree:", SubRig.Text(dirtyResult));
+        Assert.Contains("ncw/subagent/p2-sub-2", SubRig.Text(dirtyResult));
+        Assert.False(File.Exists(Path.Combine(_rig.WorkRoot, "feature.txt")));
+        Assert.True(File.Exists(Path.Combine(_rig.WorkRoot, ".next-cowork", "worktrees", "p2-sub-2", "feature.txt")));
+    }
+
+    private static void RunGit(string cwd, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        p.WaitForExit();
+        Assert.Equal(0, p.ExitCode);
+    }
 }

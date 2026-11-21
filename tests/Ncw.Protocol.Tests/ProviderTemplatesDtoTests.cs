@@ -32,6 +32,14 @@ public class ProviderTemplatesDtoTests
         Assert.Equal(GoldenV1ProviderTemplates.Of("templates.list"), Convert.ToHexStringLower(Encode(Sample)));
 
     [Fact]
+    public void Old_templates_without_kind_still_decode_as_text()
+    {
+        var decoded = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1ProviderTemplates.ListWithoutKind), PayloadShapes.GetShape<ProviderTemplatesResult>());
+        Assert.Equal(3, decoded.Templates.Length);
+        Assert.All(decoded.Templates, t => Assert.Equal("text", t.Kind));
+    }
+
+    [Fact]
     public void List_is_a_member_query_under_its_own_capability()
     {
         var list = Assert.Single(ProviderTemplatesMethods.All);

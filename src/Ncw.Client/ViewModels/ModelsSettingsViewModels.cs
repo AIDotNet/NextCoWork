@@ -28,9 +28,19 @@ public sealed record ProviderProblemRow(string? ProviderId, string Key, string D
 public sealed record TestResult(TestState State, int? LatencyMs, string? ErrorKey);
 
 /// <summary>供应商下的一个模型别名(设置页的一行)。</summary>
-public sealed partial class AliasItemViewModel(ModelsSettingsViewModel owner, ModelAliasDto dto) : ObservableObject
+public sealed partial class AliasItemViewModel(
+    ModelsSettingsViewModel owner,
+    ModelAliasDto dto,
+    string providerKind = ProviderKinds.Text,
+    bool isManaged = false) : ObservableObject
 {
     public ModelAliasDto Dto { get; private set; } = dto;
+
+    public string ProviderKind { get; private set; } = providerKind;
+
+    public bool IsTextKind => ProviderKind == ProviderKinds.Text;
+
+    public bool IsManaged { get; private set; } = isManaged;
 
     public string Alias => Dto.Alias;
 
@@ -40,15 +50,21 @@ public sealed partial class AliasItemViewModel(ModelsSettingsViewModel owner, Mo
 
     public string WindowText => ComposerLogic.WindowText(Dto.ContextWindow);
 
-    public bool SupportsImages => Dto.SupportsImages;
+    public bool SupportsImages => IsTextKind && Dto.SupportsImages;
 
-    public bool CanThink => Dto.ThinkingConfigJson is not null || Dto.ReasoningEffortsJson is not null;
+    public bool CanThink => IsTextKind && (Dto.ThinkingConfigJson is not null || Dto.ReasoningEffortsJson is not null);
+
+    public string? Modality => Dto.Modality;
 
     public bool IsEnabled => Dto.Enabled;
 
-    public void Update(ModelAliasDto dto)
+    public void Update(ModelAliasDto dto) => Update(dto, ProviderKind, IsManaged);
+
+    public void Update(ModelAliasDto dto, string providerKind, bool isManaged)
     {
         Dto = dto;
+        ProviderKind = providerKind;
+        IsManaged = isManaged;
         OnPropertyChanged(string.Empty);
     }
 
@@ -82,6 +98,15 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
     public string Id => Dto.Id;
 
     public string Name => Dto.Name;
+
+    public string Kind => ProviderKinds.Normalize(Dto.Kind) ?? ProviderKinds.Text;
+
+    public bool IsTextKind => Kind == ProviderKinds.Text;
+
+    /// <summary>登录 NextCoWork 后自动提供的内置托管供应商(不可手动编辑 / 删除)。</summary>
+    public bool IsManaged => ProviderKinds.IsManagedId(Id);
+
+    public bool CanManage => !IsManaged;
 
     public string Protocol => Dto.Protocol;
 
@@ -139,7 +164,7 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
         {
             if (byAlias.TryGetValue(next[i].Alias, out var existing))
             {
-                existing.Update(next[i]);
+                existing.Update(next[i], Kind, IsManaged);
                 var at = Aliases.IndexOf(existing);
                 if (at != i)
                 {
@@ -148,7 +173,7 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
             }
             else
             {
-                Aliases.Insert(i, new AliasItemViewModel(owner, next[i]));
+                Aliases.Insert(i, new AliasItemViewModel(owner, next[i], Kind, IsManaged));
             }
         }
 
@@ -204,13 +229,24 @@ public sealed partial class ProviderItemViewModel(ModelsSettingsViewModel owner,
 /// <summary>导入弹窗:从上游拉到的模型列表,勾选后「更新列表」整表替换这家的别名。</summary>
 public sealed partial class ImportModelsViewModel : ObservableObject
 {
+    public ImportModelsViewModel()
+    {
+        Models.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
+    }
+
     [ObservableProperty] public partial bool IsOpen { get; set; }
 
-    [ObservableProperty] public partial bool IsLoading { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
+    public partial bool IsLoading { get; set; }
 
     [ObservableProperty] public partial string ProviderName { get; set; } = "";
 
-    [ObservableProperty] public partial string? ErrorKey { get; set; }
+    [ObservableProperty] public partial string ProviderKind { get; set; } = ProviderKinds.Text;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError), nameof(IsEmpty))]
+    public partial string? ErrorKey { get; set; }
 
     public string ProviderId { get; set; } = "";
 
@@ -218,7 +254,8 @@ public sealed partial class ImportModelsViewModel : ObservableObject
 
     public bool HasError => ErrorKey is not null;
 
-    partial void OnErrorKeyChanged(string? value) => OnPropertyChanged(nameof(HasError));
+    /// <summary>已拉完、没报错,但按当前供应商类型过滤后没有匹配模型。</summary>
+    public bool IsEmpty => !IsLoading && !HasError && Models.Count == 0;
 }
 
 /// <summary>正在进行的登录(<c>providers.oauth</c> 主题的最新进度):授权 URL / 配对码由控制端展示并打开浏览器。</summary>
@@ -330,9 +367,31 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
     }
 
+    public static IReadOnlyList<string> Kinds => ProviderKinds.All;
+
     public ObservableCollection<DeviceChoice> DeviceChoices { get; } = [];
 
     public ObservableCollection<ProviderItemViewModel> Providers { get; } = [];
+
+    /// <summary>按当前 <see cref="SelectedKind"/> 筛选出的供应商列表。</summary>
+    public ObservableCollection<ProviderItemViewModel> FilteredProviders { get; } = [];
+
+    /// <summary>列表栏当前筛选的供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>)。</summary>
+    [ObservableProperty] public partial string SelectedKind { get; set; } = ProviderKinds.Text;
+
+    public bool HasFilteredProviders => FilteredProviders.Count > 0;
+
+    partial void OnSelectedKindChanged(string value)
+    {
+        var normalized = ProviderKinds.Normalize(value) ?? ProviderKinds.Text;
+        if (normalized != value)
+        {
+            SelectedKind = normalized;
+            return;
+        }
+
+        SyncFilteredProviders();
+    }
 
     public ImportModelsViewModel Import { get; } = new();
 
@@ -408,9 +467,42 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         if (value is not null)
         {
             ShowsDiscovery = false;
+            if (Providers.FirstOrDefault(p => p.Id == value) is { } picked && picked.Kind != SelectedKind)
+            {
+                SelectedKind = picked.Kind;
+            }
         }
 
         SyncSelection();
+    }
+
+    private void SyncFilteredProviders()
+    {
+        var wanted = Providers.Where(p => p.Kind == SelectedKind).ToList();
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var at = FilteredProviders.IndexOf(wanted[i]);
+            if (at == i)
+            {
+                continue;
+            }
+
+            if (at >= 0)
+            {
+                FilteredProviders.Move(at, i);
+            }
+            else
+            {
+                FilteredProviders.Insert(i, wanted[i]);
+            }
+        }
+
+        while (FilteredProviders.Count > wanted.Count)
+        {
+            FilteredProviders.RemoveAt(FilteredProviders.Count - 1);
+        }
+
+        OnPropertyChanged(nameof(HasFilteredProviders));
     }
 
     /// <summary>列表栏的「模型目录」项。</summary>
@@ -501,7 +593,7 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
             vm.AccountLabel = current?.Auth?.Email ?? current?.Label;
             vm.NeedsReauth = current?.NeedsReauth ?? false;
             vm.IsSigningIn = mirror.OAuth is { } progress && progress.ProviderId == vm.Id;
-            if (wanted[i].HasCredential && wanted[i].OAuthIssuer is null && _credentialsRequested.Add(wanted[i].Id))
+            if (wanted[i].HasCredential && wanted[i].OAuthIssuer is null && !ProviderKinds.IsManagedId(wanted[i].Id) && _credentialsRequested.Add(wanted[i].Id))
             {
                 _ = LoadCredentialAsync(vm);
             }
@@ -512,6 +604,7 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
             Providers.RemoveAt(Providers.Count - 1);
         }
 
+        SyncFilteredProviders();
         OnPropertyChanged(nameof(HasProviders));
         if (_pendingSelection is { } pending && Providers.Any(p => p.Id == pending))
         {
@@ -600,28 +693,29 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     }
 
     /// <summary>这个地址对应的模版(派生:<see cref="ProviderTemplateMatch"/>)。</summary>
-    public ProviderTemplateDto? TemplateOf(string baseUrl, string protocol) =>
-        ProviderTemplateMatch.Find(baseUrl, protocol, [.. _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol))]) is { } hit
+    public ProviderTemplateDto? TemplateOf(string baseUrl, string protocol, string? kind = null) =>
+        ProviderTemplateMatch.Find(baseUrl, protocol, [.. _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol, t.Kind))], kind) is { } hit
             ? _templates.First(t => t.Id == hit.Id)
             : null;
 
     /// <summary>列表、详情、发现候选的 logo 都跟着模版走(模版到了或供应商变了时重算)。</summary>
     private void ApplyLogos()
     {
-        if (_templates.Count == 0)
+        var refs = _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol, t.Kind)).ToList();
+        foreach (var p in Providers)
+        {
+            p.Logo = p.IsManaged ? "nextcowork"
+                : refs.Count > 0 ? ProviderTemplateMatch.Find(p.BaseUrl, p.Protocol, refs, p.Kind)?.Service : null;
+        }
+
+        if (refs.Count == 0)
         {
             return;
         }
 
-        var refs = _templates.Select(t => new TemplateRef(t.Id, t.Service, t.BaseUrl, t.Protocol)).ToList();
-        foreach (var p in Providers)
-        {
-            p.Logo = ProviderTemplateMatch.Find(p.BaseUrl, p.Protocol, refs)?.Service;
-        }
-
         foreach (var c in Discovery.Items)
         {
-            c.Logo = ProviderTemplateMatch.Find(c.BaseUrl, c.Protocol, refs)?.Service;
+            c.Logo = ProviderTemplateMatch.Find(c.BaseUrl, c.Protocol, refs, ProviderKinds.Text)?.Service;
         }
     }
 
@@ -712,7 +806,7 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         }
 
         var text = _text();
-        var editor = new ProviderEditorViewModel(_providers, device, _templates, [.. Providers.Select(p => p.Id)], Discovery.ImportableCount, text.TemplateVariant)
+        var editor = new ProviderEditorViewModel(_providers, device, _templates, [.. Providers.Select(p => p.Id)], Discovery.ImportableCount, text.TemplateVariant, SelectedKind)
         {
             ShowDebug = form => _dialogs().ShowProviderDebugAsync(form),
         };
@@ -722,12 +816,12 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     /// <summary>「编辑」:同一个弹窗,直接进表单(id 只读)。</summary>
     internal async Task EditAsync(ProviderItemViewModel provider)
     {
-        if (DeviceId is not { } device || !CanEdit)
+        if (DeviceId is not { } device || !CanEdit || provider.IsManaged)
         {
             return;
         }
 
-        var editor = new ProviderEditorViewModel(_providers, device, provider.Dto, TemplateOf(provider.BaseUrl, provider.Protocol))
+        var editor = new ProviderEditorViewModel(_providers, device, provider.Dto, TemplateOf(provider.BaseUrl, provider.Protocol, provider.Kind))
         {
             ShowDebug = form => _dialogs().ShowProviderDebugAsync(form),
         };
@@ -771,16 +865,16 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
     internal async Task SetProviderEnabledAsync(ProviderItemViewModel provider, bool enabled)
     {
-        if (DeviceId is { } device)
+        if (DeviceId is { } device && !provider.IsManaged)
         {
             var dto = provider.Dto;
-            Report(await _providers.UpsertAsync(device, new ProvidersUpsertParams(dto.Id, dto.Name, dto.Protocol, dto.BaseUrl, dto.Priority, enabled, dto.ProtocolOptionsJson)));
+            Report(await _providers.UpsertAsync(device, new ProvidersUpsertParams(dto.Id, dto.Name, dto.Protocol, dto.BaseUrl, dto.Priority, enabled, dto.ProtocolOptionsJson, dto.Kind)));
         }
     }
 
     internal async Task RemoveProviderAsync(ProviderItemViewModel provider)
     {
-        if (DeviceId is not { } device)
+        if (DeviceId is not { } device || provider.IsManaged)
         {
             return;
         }
@@ -805,7 +899,7 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
 
         var dto = provider.Dto;
         var known = provider.Aliases.Select(a => a.Upstream).Distinct(StringComparer.Ordinal).ToList();
-        var form = new ProviderDebugViewModel(_providers, device, new ProviderDebugTargetDto(dto.Id), dto.Name, dto.BaseUrl, dto.Protocol, known);
+        var form = new ProviderDebugViewModel(_providers, device, new ProviderDebugTargetDto(dto.Id, Kind: dto.Kind), dto.Name, dto.BaseUrl, dto.Protocol, known, kind: dto.Kind);
         return _dialogs().ShowProviderDebugAsync(form);
     }
 
@@ -841,7 +935,8 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
         var effective = _stores.Providers.State.Devices.TryGetValue(device, out var mirror)
             ? mirror.Options.FirstOrDefault(o => o.ProviderId == alias.ProviderId && o.Alias == alias.Alias)
             : null;
-        await _dialogs().ShowModelEditorAsync(new ModelEditorViewModel(_providers, device, alias, effective));
+        var providerKind = Providers.FirstOrDefault(p => p.Id == alias.ProviderId)?.Kind ?? effective?.Kind ?? ProviderKinds.Text;
+        await _dialogs().ShowModelEditorAsync(new ModelEditorViewModel(_providers, device, alias, effective, providerKind));
     }
 
     internal async Task RemoveAliasAsync(ModelAliasDto alias)
@@ -855,13 +950,14 @@ public sealed partial class ModelsSettingsViewModel : ObservableObject
     /// <summary>打开「从上游导入」:拉这家的模型列表,已配置的预先勾上。</summary>
     internal async Task OpenImportAsync(ProviderItemViewModel provider)
     {
-        if (DeviceId is not { } device)
+        if (DeviceId is not { } device || provider.IsManaged)
         {
             return;
         }
 
         Import.ProviderId = provider.Id;
         Import.ProviderName = provider.Name;
+        Import.ProviderKind = provider.Kind;
         Import.Models.Clear();
         Import.ErrorKey = null;
         Import.IsLoading = true;

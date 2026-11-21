@@ -48,7 +48,8 @@ internal sealed class ExtensionDomain : IAsyncDisposable
     public ExtensionHostContext Context { get; }
 
     /// <param name="registeredCommands">一方扩展经 <c>RegisterCommand</c> 贡献的命令(从探测用的扩展宿主收集;延迟取,避免循环依赖)。</param>
-    public static ExtensionDomain Create(ExtensionHostContext context, ToolRegistry tools, Func<IReadOnlyList<CommandDefinition>> registeredCommands)
+    public static ExtensionDomain Create(
+        ExtensionHostContext context, ToolRegistry tools, Func<IReadOnlyList<CommandDefinition>> registeredCommands, IHookEvaluator? hookEvaluator = null)
     {
         var services = context.Services;
         var revisions = new ExtensionRevisions(context.Topics);
@@ -57,7 +58,7 @@ internal sealed class ExtensionDomain : IAsyncDisposable
         var plugins = Ncw.Agent.Host.Plugins.PluginsHost.Create(context, tools, sessionId => sessions.Get(sessionId)?.WorkspaceId);
         var skills = SkillsHost.CreateSkills(context, services.SkillMarket, plugins.SkillSource);
         var commands = SkillsHost.CreateCommands(context, registeredCommands);
-        var hooks = HooksHost.Create(context, services.HookEvaluator);
+        var hooks = HooksHost.Create(context, hookEvaluator ?? services.HookEvaluator);
         var mcp = McpHost.Create(context, tools, new McpHostOptions { Http = services.McpHttp, Options = services.Mcp, Delayer = services.McpDelayer });
         skills.Changed += revisions.BumpSkills;
         commands.Changed += revisions.BumpCommands;

@@ -17,7 +17,8 @@ public sealed record UiPrefs(
     UiMotionPreference Motion = UiMotionPreference.System,
     ImmutableDictionary<AppCommand, string>? Shortcuts = null,
     AttentionPrefs? Attention = null,
-    UiThemePreference Theme = UiThemePreference.Dark)
+    UiThemePreference Theme = UiThemePreference.Dark,
+    double SidebarFilesRatio = UiPrefs.SidebarFilesDefaultRatio)
 {
     /// <summary>用户改过的快捷键(docs/design/03 §11);没改过是空表。</summary>
     public ImmutableDictionary<AppCommand, string> ShortcutOverrides => Shortcuts ?? ImmutableDictionary<AppCommand, string>.Empty;
@@ -26,6 +27,9 @@ public sealed record UiPrefs(
     public AttentionPrefs AttentionOrDefault => Attention ?? AttentionPrefs.Default;
 
     /// <summary>左侧边栏(项目树,docs/design/03 §1)。旧版本「项目栏 + 项目面板」存下的宽度超出新范围时由 <see cref="Normalize"/> 夹紧。</summary>
+    public const double SidebarFilesDefaultRatio = 0.48;
+    public const double SidebarFilesMinRatio = 0.2;
+    public const double SidebarFilesMaxRatio = 0.8;
     public const double SidebarDefaultWidth = 280;
     public const double SidebarMinWidth = 240;
     public const double SidebarMaxWidth = 420;
@@ -38,6 +42,7 @@ public sealed record UiPrefs(
     /// <summary>读进来的值可能来自旧版本或被手改过:夹到合法范围,去掉不认识的页签。</summary>
     public UiPrefs Normalize() => this with
     {
+        SidebarFilesRatio = Clamp(SidebarFilesRatio, SidebarFilesMinRatio, SidebarFilesMaxRatio, SidebarFilesDefaultRatio),
         SidebarWidth = Clamp(SidebarWidth, SidebarMinWidth, SidebarMaxWidth, SidebarDefaultWidth),
         InspectorWidth = Clamp(InspectorWidth, InspectorMinWidth, InspectorMaxWidth, InspectorDefaultWidth),
         InspectorTabs = InspectorTabs.IsDefault
@@ -55,6 +60,7 @@ public sealed record UiPrefs(
     // ImmutableArray 默认按引用比较;偏好里需要按内容比较,Store 才能识别「没有变化」。
     public bool Equals(UiPrefs? other) =>
         other is not null
+        && SidebarFilesRatio.Equals(other.SidebarFilesRatio)
         && SidebarWidth.Equals(other.SidebarWidth)
         && InspectorWidth.Equals(other.InspectorWidth)
         && IsSidebarOpen == other.IsSidebarOpen
@@ -66,7 +72,7 @@ public sealed record UiPrefs(
         && ShortcutOverrides.All(kv => other.ShortcutOverrides.TryGetValue(kv.Key, out var v) && v == kv.Value)
         && (InspectorTabs.IsDefault ? [] : InspectorTabs).SequenceEqual(other.InspectorTabs.IsDefault ? [] : other.InspectorTabs);
 
-    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen, Motion, Theme);
+    public override int GetHashCode() => HashCode.Combine(SidebarWidth, InspectorWidth, IsSidebarOpen, IsInspectorOpen, Motion, Theme, SidebarFilesRatio);
 }
 
 /// <summary>

@@ -431,7 +431,7 @@ public sealed partial class SchedulesViewModel : ManagementPageViewModel
             return;
         }
 
-        var options = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled)
+        var options = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled && o.IsChatModel)
             .Select(o => new ChoiceItem(GeneralSettingsViewModel.PickKey(new ModelPickDto(o.Alias, o.ProviderId)), $"{o.DisplayName} · {o.ProviderName}")).ToList();
         List<ChoiceItem> items = [new("", null), .. options];
         if (!items.SequenceEqual(Editor.ModelChoices))

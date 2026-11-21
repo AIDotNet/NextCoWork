@@ -11,11 +11,12 @@
   <!-- 一个供应商的操作和模型别名(手机卡片展开后、桌面详情区共用)。
        常用的两三个直接放;退出登录、删除密钥、删除供应商这些少用 / 危险的收进「⋯」(删除标红放最后,03 §11.6) -->
   <StackPanel Spacing="8">
+    <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText ProviderManagedHint}" IsVisible="{Binding IsManaged}" />
     <WrapPanel Orientation="Horizontal">
       <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding TestCommand}" Content="{l:NcwText ProviderTest}" />
       <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding SignInCommand}" IsVisible="{Binding IsOAuth}" Content="{l:NcwText ProviderSignIn}" />
-      <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" Content="{l:NcwText ProviderImportModels}" />
-      <ui:NcwDropdownMenu Margin="0,0,6,6" DataContextChanged="OnProviderMenuDataContext">
+      <ui:NcwButton Margin="0,0,6,6" Variant="Secondary" Command="{Binding ImportModelsCommand}" IsVisible="{Binding CanManage}" Content="{l:NcwText ProviderImportModels}" />
+      <ui:NcwDropdownMenu Margin="0,0,6,6" IsVisible="{Binding CanManage}" DataContextChanged="OnProviderMenuDataContext">
         <ui:NcwDropdownMenu.Trigger>
           <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
             <lucide:LucideIcon Kind="Ellipsis" Size="16" />
@@ -31,12 +32,14 @@
             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             <WrapPanel Grid.Row="1" Orientation="Horizontal">
               <TextBlock Classes="mono" Margin="0,0,8,0" Text="{Binding Upstream}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-              <Border Classes="chip" Margin="0,0,4,0"><TextBlock Classes="hint" Text="{Binding WindowText}" /></Border>
+              <Border Classes="chip" Margin="0,0,4,0" IsVisible="{Binding IsTextKind}"><TextBlock Classes="hint" Text="{Binding WindowText}" /></Border>
               <Border Classes="chip" Margin="0,0,4,0" IsVisible="{Binding SupportsImages}"><TextBlock Classes="hint" Text="{l:NcwText ModelVision}" /></Border>
               <Border Classes="chip" IsVisible="{Binding CanThink}"><TextBlock Classes="hint" Text="{l:NcwText ModelThinking}" /></Border>
+              <Border Classes="chip" IsVisible="{Binding !IsTextKind}"><TextBlock Classes="hint" Text="{Binding ProviderKind, Converter={x:Static cv:ProviderKindTextConverter.Instance}, ConverterParameter=Short}" /></Border>
             </WrapPanel>
-            <ui:NcwSwitch Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
-            <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" VerticalAlignment="Center">
+            <ui:NcwSwitch Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
+                          IsVisible="{Binding !IsManaged}" AutomationProperties.Name="{l:NcwText ProviderEnabled}" />
+            <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" VerticalAlignment="Center" IsVisible="{Binding !IsManaged}">
               <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding EditCommand}" AutomationProperties.Name="{l:NcwText ModelEditorTitle}" arc:Tooltip.Tip="{l:NcwText ModelEditorTitle}">
                 <lucide:LucideIcon Kind="Pencil" Size="13" />
               </ui:NcwButton>

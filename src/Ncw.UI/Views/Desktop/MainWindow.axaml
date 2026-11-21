@@ -7,6 +7,7 @@
               x:Class="Ncw.UI.Views.Desktop.MainWindow"
               x:DataType="vm:ShellViewModel"
               Title="NextCoWork"
+              Icon="avares://Ncw.UI/Assets/AppIcon.ico"
               Width="1500"
               Height="900"
               MinWidth="760"

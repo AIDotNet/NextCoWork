@@ -142,11 +142,20 @@ public sealed class OrchestrationRig : IDisposable
             Log = _log,
         });
 
+        RunRegistry? registryForHooks = null;
+        var hookEvaluator = new LlmHookEvaluator(new LlmHookEvaluatorOptions
+        {
+            Llm = router,
+            ResolveModel = Resolve,
+            ReadMessages = sessionId => _repo.History(sessionId).Select(MessageCodec.FromRecord).ToList(),
+            ActiveModel = (_, runId) => registryForHooks?.Get(new RunId(runId))?.Model,
+        });
         _hooks = new HooksService(new HooksServiceOptions
         {
             GlobalEnvironment = _env,
             GlobalSettingsPath = EnvPath.Parse(Path.Combine(_root, "global-settings.json"), Style),
             ResolveProject = (_, _) => ValueTask.FromResult<HookProjectTarget?>(new HookProjectTarget(_env, EnvPath.Parse(_workspace, Style))),
+            Evaluator = hookEvaluator,
             Log = _log,
         });
         // Notification 钩子订阅交互闸门的 tool_permission(Host 在 ConversationService 里同样接)。
@@ -222,6 +231,7 @@ public sealed class OrchestrationRig : IDisposable
             Interactions = new GateView(_gate),
             Shells = _shells,
         });
+        registryForHooks = _registry;
         _subagents.Bind(_registry);
         _kit.Bind(_registry);
     }
@@ -868,7 +878,7 @@ public sealed class OrchestrationRig : IDisposable
 
         public void OnCreated(RunHandle run)
         {
-            var runtime = new ToolRuntime { Environment = rig._env, WorkspaceId = run.WorkspaceId, Root = EnvPath.Parse(rig._workspace, Style), Shells = rig._shells };
+            var runtime = new ToolRuntime { Environment = rig._env, WorkspaceId = run.WorkspaceId, Root = run.WorkspaceRoot ?? EnvPath.Parse(rig._workspace, Style), Shells = rig._shells };
             _runtimes[run.RunId] = runtime;
             if (run.Origin == RunOrigin.Subagent)
             {

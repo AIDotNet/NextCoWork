@@ -16,7 +16,7 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
 {
     public async Task<string?> PromptTextAsync(string title, string description, string label, string? initial)
     {
-        var input = new Input { Label = label, Text = initial ?? string.Empty };
+        var input = new NcwInput { Label = label, Text = initial ?? string.Empty };
         var dialog = new Dialog
         {
             Title = title,
@@ -28,6 +28,22 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
                 new DialogAction(NcwTexts.Get(NcwTextKind.Save), true, ButtonVariant.Primary),
             ]),
         };
+
+        input.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Enter)
+            {
+                dialog.Close(true);
+                e.Handled = true;
+            }
+        };
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (input.Focus())
+            {
+                input.SelectAll();
+            }
+        }, DispatcherPriority.Loaded);
 
         var result = await dialog.ShowAsync(owner);
         return result is true ? input.Text : null;

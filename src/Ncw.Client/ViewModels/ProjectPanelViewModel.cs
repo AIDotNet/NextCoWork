@@ -101,6 +101,22 @@ public sealed partial class ProjectPanelViewModel : ObservableObject
 
     partial void OnShowArchivedChanged(bool value) => Refresh();
 
+    /// <summary>这个项目里的会话(不按搜索 / 归档过滤),供工作区会话标签的右键菜单 / 双击改名复用同一套意图。</summary>
+    public SessionItemViewModel? FindSessionItem(string sessionId)
+    {
+        var selection = _stores.Selection.State;
+        var workspace = _stores.Workspace.State;
+        if (selection.Project is not { } project || workspace.Sessions.FirstOrDefault(s => s.Project == project && s.Id == sessionId) is not { } summary)
+        {
+            return null;
+        }
+
+        workspace.Devices.TryGetValue(project.DeviceId, out var device);
+        var connection = device?.Connection ?? DeviceConnection.Connecting;
+        return new SessionItemViewModel(summary, SessionActivityView.Of(summary.Id, device?.Index, connection),
+            summary.Id == selection.SessionId, _rows, SessionActivityView.PendingOf(summary.Id, device?.Index, connection));
+    }
+
     private void Refresh()
     {
         var selection = _stores.Selection.State;

@@ -156,6 +156,7 @@ public sealed class SlashTextConverter : IValueConverter
         SlashAction.Goal => NcwTexts.Get(_hint ? NcwTextKind.SlashGoalHint : NcwTextKind.SlashGoalDescription),
         SlashAction.Compact => NcwTexts.Get(_hint ? NcwTextKind.SlashCompactHint : NcwTextKind.SlashCompactDescription),
         SlashAction.Model => NcwTexts.Get(_hint ? NcwTextKind.SlashModelHint : NcwTextKind.SlashModelDescription),
+        SlashAction.Plan => NcwTexts.Get(_hint ? NcwTextKind.SlashPlanHint : NcwTextKind.SlashPlanDescription),
         _ => _hint ? null : NcwTexts.Get(NcwTextKind.SlashClearDescription),
     };
 
@@ -179,10 +180,28 @@ public sealed class SlashNoticeConverter : IValueConverter
         SlashNoticeKind.ModelAmbiguous => NcwTexts.Format(NcwTextKind.SlashModelAmbiguous, notice.Arg ?? ""),
         SlashNoticeKind.ModelUnavailable => NcwTexts.Format(NcwTextKind.SlashModelUnavailable, notice.Arg ?? ""),
         SlashNoticeKind.ModelSwitched => NcwTexts.Format(NcwTextKind.SlashModelSwitched, notice.Arg ?? ""),
+        SlashNoticeKind.PlanEnabled => NcwTexts.Get(NcwTextKind.SlashPlanEnabled),
+        SlashNoticeKind.PlanDisabled => NcwTexts.Get(NcwTextKind.SlashPlanDisabled),
         _ => NcwTexts.Get(NcwTextKind.SlashUnavailable),
     };
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as SlashNotice);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>上下文分段标识(<c>system</c> / <c>tools</c> / <c>instructions</c> / <c>messages</c>)→ 当前语言名称。</summary>
+public sealed class ContextSegmentTitleConverter : IValueConverter
+{
+    public static readonly ContextSegmentTitleConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => NcwTexts.Get((value as string) switch
+    {
+        "tools" => NcwTextKind.ContextCardTools,
+        "instructions" => NcwTextKind.ContextCardInstructions,
+        "messages" => NcwTextKind.ContextCardMessages,
+        _ => NcwTextKind.ContextCardSystem,
+    });
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
@@ -264,6 +283,19 @@ public sealed class CompactTriggerTextConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>重试等待提示(次数 + 秒数)。</summary>
+public sealed class RetryDelayTextConverter : IValueConverter
+{
+    public static readonly RetryDelayTextConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is StatusRowViewModel row && row.DelaySeconds > 0
+            ? NcwTexts.Format(NcwTextKind.StatusRetryingWithDelay, row.Attempt, row.DelaySeconds)
+            : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>错误行的文字:有设备给的 messageKey 就翻译(翻译不了就退回英文诊断),没有就直接显示诊断。</summary>
 public sealed class ErrorTextConverter : IValueConverter
 {
@@ -310,6 +342,11 @@ public sealed class ProtocolTextConverter : IValueConverter
         "anthropic" => "Anthropic Messages",
         "openai-chat" => "OpenAI Chat",
         "openai-responses" => "OpenAI Responses",
+        "openai-images" => NcwTexts.Get(NcwTextKind.ProtocolOpenAiImages),
+        "volcengine-images" => NcwTexts.Get(NcwTextKind.ProtocolVolcengineImages),
+        "openai-videos" => NcwTexts.Get(NcwTextKind.ProtocolOpenAiVideos),
+        "volcengine-videos" => NcwTexts.Get(NcwTextKind.ProtocolVolcengineVideos),
+        "openai-audio" => NcwTexts.Get(NcwTextKind.ProtocolOpenAiAudio),
         _ => protocol ?? "",
     };
 
@@ -318,8 +355,7 @@ public sealed class ProtocolTextConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>设备给的供应商错误 key(<c>providers.*</c>)/ 操作结局 → 文字。不认识的 key 显示通用失败。</summary>
-/// <summary>调试弹窗协议分段上的短名字(三段并排放得下)。</summary>
+/// <summary>调试弹窗协议分段上的短名字(并排放得下)。</summary>
 public sealed class ProtocolShortTextConverter : IValueConverter
 {
     public static readonly ProtocolShortTextConverter Instance = new();
@@ -329,10 +365,38 @@ public sealed class ProtocolShortTextConverter : IValueConverter
         "anthropic" => "Anthropic",
         "openai-chat" => "OpenAI Chat",
         "openai-responses" => "Responses",
+        "openai-images" => "OpenAI",
+        "volcengine-images" => NcwTexts.Get(NcwTextKind.ProtocolVolcengineImagesShort),
+        "openai-videos" => "OpenAI",
+        "volcengine-videos" => NcwTexts.Get(NcwTextKind.ProtocolVolcengineVideosShort),
+        "openai-audio" => "OpenAI Audio",
         _ => protocol ?? "",
     };
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => Text(value as string);
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>)→ 文字。<c>ConverterParameter=Short</c> 返回短名。</summary>
+public sealed class ProviderKindTextConverter : IValueConverter
+{
+    public static readonly ProviderKindTextConverter Instance = new();
+
+    public static string Text(string? kind, bool shortForm = false) => NcwTexts.Get((kind, shortForm) switch
+    {
+        ("image", true) => NcwTextKind.ProviderKindShortImage,
+        ("video", true) => NcwTextKind.ProviderKindShortVideo,
+        ("audio", true) => NcwTextKind.ProviderKindShortAudio,
+        (_, true) => NcwTextKind.ProviderKindShortText,
+        ("image", false) => NcwTextKind.ProviderKindImage,
+        ("video", false) => NcwTextKind.ProviderKindVideo,
+        ("audio", false) => NcwTextKind.ProviderKindAudio,
+        _ => NcwTextKind.ProviderKindText,
+    });
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        Text(value as string, string.Equals(parameter as string, "Short", StringComparison.OrdinalIgnoreCase));
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
@@ -390,6 +454,8 @@ public sealed class ProviderErrorTextConverter : IValueConverter
         "providers.invalidBaseUrl" => NcwTextKind.ProvErrInvalidBaseUrl,
         "providers.invalidId" => NcwTextKind.ProvErrInvalidId,
         "providers.invalidName" => NcwTextKind.ProvErrInvalidName,
+        "providers.invalidKind" or "providers.file.invalidKind" => NcwTextKind.ProvErrInvalidKind,
+        "providers.invalidProtocol" or "providers.file.invalidProtocol" => NcwTextKind.ProvErrInvalidProtocol,
         "providers.managedProvider" or "providers.file.managedId" => NcwTextKind.ProvErrManaged,
         "providers.noCredential" => NcwTextKind.ProvErrNoCredential,
         "providers.loginCancelled" => NcwTextKind.ProvErrLoginCancelled,

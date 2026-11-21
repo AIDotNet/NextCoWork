@@ -192,8 +192,12 @@ public class NcwApp : Application
                     () => Avalonia.Threading.Dispatcher.UIThread.Post(() => desktop.Shutdown())));
             }
 
+            var host = new MobileHostServices
+            {
+                AttachmentPicker = new NcwDesktopAttachmentPicker(() => desktop.MainWindow),
+            };
             shell = new ShellViewModel(stores, devices: devices, inspector: UseMockData ? MockInspectorServices.Create(stores) : null,
-                account: _account, links: _account is null ? null : new LinkRouter(_account), updates: _updates);
+                host: host, account: _account, links: _account is null ? null : new LinkRouter(_account), updates: _updates);
             shell.Settings.Appearance.SystemReducesMotion = () => NcwMotion.SystemReducesMotionProbe();
             if (!UseMockData)
             {

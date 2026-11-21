@@ -55,9 +55,9 @@ public partial class ConversationView : UserControl
         InitializeComponent();
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         DetachedFromVisualTree += (_, _) => ReleaseLightboxAirspace();
-        Transcript.ContainerPrepared += OnContainerPrepared;
-        Transcript.ContainerClearing += (_, e) => NcwMotion.Rest(e.Container);
-        Transcript.TemplateApplied += (_, e) => AttachScroller(e.NameScope.Find<ScrollViewer>("PART_Scroller"));
+        TranscriptHost.Inner.ContainerPrepared += OnContainerPrepared;
+        TranscriptHost.Inner.ContainerClearing += (_, e) => NcwMotion.Rest(e.Container);
+        TranscriptHost.Inner.TemplateApplied += (_, e) => AttachScroller(e.NameScope.Find<ScrollViewer>("PART_Scroller"));
         JumpButton.PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty || e.Property == BoundsProperty)
@@ -339,7 +339,7 @@ public partial class ConversationView : UserControl
             // 第一次打开会话时整个对话区由外层 ShowMotion 淡入,这里不重复)。关闭级别下是空操作。
             if (_arrivalSession is not null && _vm.Session is not null)
             {
-                NcwMotion.Arrive(Transcript, NcwArrival.Fade, tier: NcwMotionTier.Fast);
+                NcwMotion.Arrive(TranscriptHost.Inner, NcwArrival.Fade, tier: NcwMotionTier.Fast);
             }
 
             _arrivalSession = _vm.Session;
@@ -381,8 +381,6 @@ public partial class ConversationView : UserControl
 
     private void OnContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
-        // 展开着的「工作区」成员缩进一格(容器会被回收复用,每次都要重写)
-        e.Container.Margin = e.Container.DataContext is RowViewModel { InWorkGroup: true } ? new Thickness(18, 0, 0, 0) : default;
         if (e.Container.DataContext is RowViewModel row && _arriving.Remove(row))
         {
             NcwMotion.Arrive(e.Container, NcwArrival.Rise);
@@ -501,74 +499,17 @@ public partial class ConversationView : UserControl
 
         Dispatcher.UIThread.Post(() =>
         {
-            Transcript.ScrollIntoView(index);
+            TranscriptHost.Inner.ScrollIntoView(index);
             UpdateJumpButton();
         }, DispatcherPriority.Loaded);
     }
 
-    /// <summary>缩略图被实例化并挂上视觉树(虚拟化列表只给视野附近的行实例化):这时才向设备取字节,滚出去没挂上的不取。</summary>
-    private void OnThumbAttached(object? sender, VisualTreeAttachmentEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is ImageThumbViewModel thumb)
-        {
-            _ = thumb.EnsureLoadedAsync();
-        }
-    }
-
-    private void OnOpenImage(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is ImageThumbViewModel thumb)
-        {
-            _vm?.OpenImageCommand.Execute(thumb);
-        }
-    }
+    internal void OpenImage(ImageThumbViewModel thumb) => _vm?.OpenImageCommand.Execute(thumb);
 
     /// <summary>点灯箱的空白处关闭;点图片本身不关(<see cref="OnLightboxImagePressed"/> 拦住冒泡)。</summary>
     private void OnLightboxBackdropPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) => _vm?.CloseLightboxCommand.Execute(null);
 
     private void OnLightboxImagePressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) => e.Handled = true;
-
-    /// <summary>复制一条消息的文字(<c>Tag</c> 绑的是消息正文):本机剪贴板,纯 UI 动作,不经设备。</summary>
-    private async void OnCopyText(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.Tag is string text && text.Length > 0 && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
-        {
-            try
-            {
-                await clipboard.SetTextAsync(text);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // 剪贴板被别的程序占着:复制失败不值得打断对话
-            }
-        }
-    }
-
-    private void OnToggleThinking(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is ThinkingRowViewModel row)
-        {
-            if (!row.IsExpanded)
-            {
-                PauseFollowing();
-            }
-
-            row.IsExpanded = !row.IsExpanded;
-        }
-    }
-
-    private void OnToggleWorkGroup(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is WorkGroupRowViewModel row)
-        {
-            if (!row.IsExpanded)
-            {
-                PauseFollowing(); // 展开会让内容变高,和展开思考块 / 工具行一样先暂停跟随最新
-            }
-
-            row.IsExpanded = !row.IsExpanded;
-        }
-    }
 
     private void OnToggleTodo(object? sender, RoutedEventArgs e)
     {

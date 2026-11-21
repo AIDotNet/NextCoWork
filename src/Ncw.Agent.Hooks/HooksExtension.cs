@@ -22,6 +22,8 @@ public static class HookPrompts
 
     public const string PreToolBlockedFallback = "A PreToolUse hook blocked this call.";
 
+    public const string PreCompactBlockedFallback = "A PreCompact hook blocked compaction.";
+
     public const string InputBlockedFallback = "A UserPromptSubmit hook blocked this prompt.";
 }
 
@@ -76,17 +78,65 @@ public sealed class HooksExtension : IAgentExtension
     public void Register(IExtensionRegistry registry)
     {
         registry.Transform(SessionExtensionPoints.Input, OnInputAsync);
-        registry.Mutate(SessionExtensionPoints.BeforeRun, (draft, ctx, _) =>
-        {
-            _runs[ctx.RunId.Value] = new RunInfo(draft.Request.Depth);
-            return ValueTask.CompletedTask;
-        });
+        registry.Mutate(SessionExtensionPoints.BeforeRun, OnBeforeRunAsync);
+        registry.Gate(SessionExtensionPoints.BeforeCompact, OnBeforeCompactAsync);
         registry.Transform(LoopExtensionPoints.AfterTool, OnAfterToolAsync);
         registry.Gate(LoopExtensionPoints.TurnEnd, OnTurnEndAsync);
         registry.On(LoopExtensionPoints.RunEnd, OnRunEnd);
     }
 
     private int DepthOf(RunId runId) => _runs.TryGetValue(runId.Value, out var info) ? info.Depth : 0;
+
+    // ───────────────────────── SubagentStart ─────────────────────────
+
+    private async ValueTask OnBeforeRunAsync(RunDraft draft, ExtensionContext ctx, CancellationToken ct)
+    {
+        _runs[ctx.RunId.Value] = new RunInfo(draft.Request.Depth);
+        if (draft.Request.Depth <= 0)
+        {
+            return;
+        }
+
+        if (await _service.TryResolveAsync(_workspaceId, ct).ConfigureAwait(false) is not { } target)
+        {
+            return;
+        }
+
+        var agentType = draft.Request.AgentType;
+        var reports = await _service.RunEventAsync(
+            new HookEventRequest(HookEvents.SubagentStart, target.Environment, target.Root, ctx.SessionId, ctx.RunId.Value, _workspaceId)
+            {
+                Customize = p => p with { AgentType = agentType },
+            }, ct).ConfigureAwait(false);
+        var injected = string.Join('\n', reports.Select(r => r.AdditionalContext ?? "").Where(s => s.Length > 0));
+        if (injected.Length > 0)
+        {
+            draft.HeadSections.Add($"<hook-context>\n{injected}\n</hook-context>");
+        }
+    }
+
+    // ───────────────────────── PreCompact ─────────────────────────
+
+    private async ValueTask<CompactGateDecision> OnBeforeCompactAsync(CompactGateInput input, ExtensionContext ctx, CancellationToken ct)
+    {
+        if (await _service.TryResolveAsync(_workspaceId, ct).ConfigureAwait(false) is not { } target)
+        {
+            return CompactGateDecision.Proceed;
+        }
+
+        var reports = await _service.RunEventAsync(
+            new HookEventRequest(HookEvents.PreCompact, target.Environment, target.Root, ctx.SessionId, ctx.RunId.Value, _workspaceId)
+            {
+                Customize = p => p with { Trigger = input.Trigger, CustomInstructions = input.Instructions },
+            }, ct).ConfigureAwait(false);
+        if (reports.FirstOrDefault(r => r.Blocks) is { } blocked)
+        {
+            var reason = string.IsNullOrWhiteSpace(blocked.Reason) ? HookPrompts.PreCompactBlockedFallback : blocked.Reason;
+            return CompactGateDecision.Cancel(reason);
+        }
+
+        return CompactGateDecision.Proceed;
+    }
 
     // ───────────────────────── UserPromptSubmit ─────────────────────────
 
@@ -131,33 +181,43 @@ public sealed class HooksExtension : IAgentExtension
 
     private async ValueTask<AfterToolPayload> OnAfterToolAsync(AfterToolPayload payload, ExtensionContext ctx, CancellationToken ct)
     {
-        if (await _service.TryResolveAsync(_workspaceId, ct).ConfigureAwait(false) is not { } target)
+        var preContext = _service.ConsumePreToolContext(ctx.RunId.Value, payload.Invocation.CallId);
+        var parts = new List<string>();
+        if (preContext.Length > 0)
         {
-            return payload;
+            parts.Add(preContext);
         }
 
         var result = payload.Result;
-        var output = string.Join('\n', result.Content.OfType<TextPart>().Select(p => p.Text));
-        var reports = await _service.RunEventAsync(
-            new HookEventRequest(HookEvents.PostToolUse, target.Environment, target.Root, ctx.SessionId, ctx.RunId.Value, _workspaceId)
+        var blocked = false;
+        if (await _service.TryResolveAsync(_workspaceId, ct).ConfigureAwait(false) is { } target)
+        {
+            var output = string.Join('\n', result.Content.OfType<TextPart>().Select(p => p.Text));
+            var reports = await _service.RunEventAsync(
+                new HookEventRequest(HookEvents.PostToolUse, target.Environment, target.Root, ctx.SessionId, ctx.RunId.Value, _workspaceId)
+                {
+                    ToolInternalId = payload.Invocation.Tool.Info.InternalId,
+                    ToolName = payload.Invocation.Name,
+                    ToolInput = payload.Invocation.Input,
+                    Customize = p => p with { ToolOutput = output, ToolIsError = result.IsError },
+                }, ct).ConfigureAwait(false);
+            if (reports.Count > 0)
             {
-                ToolInternalId = payload.Invocation.Tool.Info.InternalId,
-                ToolName = payload.Invocation.Name,
-                ToolInput = payload.Invocation.Input,
-                Customize = p => p with { ToolOutput = output, ToolIsError = result.IsError },
-            }, ct).ConfigureAwait(false);
-        if (reports.Count == 0)
-        {
-            return payload;
+                blocked = reports.Any(r => r.Outcome == HookOutcome.Blocked);
+                var postContext = string.Join('\n', reports.Select(r => r.AdditionalContext ?? r.Reason ?? "").Where(s => s.Length > 0));
+                if (blocked && postContext.Length == 0)
+                {
+                    postContext = HookPrompts.PostToolBlockedFallback;
+                }
+
+                if (postContext.Length > 0)
+                {
+                    parts.Add(postContext);
+                }
+            }
         }
 
-        var blocked = reports.Any(r => r.Outcome == HookOutcome.Blocked);
-        var context = string.Join('\n', reports.Select(r => r.AdditionalContext ?? r.Reason ?? "").Where(s => s.Length > 0));
-        if (blocked && context.Length == 0)
-        {
-            context = HookPrompts.PostToolBlockedFallback;
-        }
-
+        var context = string.Join('\n', parts);
         if (context.Length == 0)
         {
             return payload;
@@ -209,6 +269,7 @@ public sealed class HooksExtension : IAgentExtension
     private ValueTask OnRunEnd(RunEndEvent end, ExtensionContext ctx, CancellationToken ct)
     {
         _runs.TryRemove(ctx.RunId.Value, out var info);
+        _service.ClearPreToolContexts(ctx.RunId.Value);
         var status = end.Status switch { RunStatus.Done => "done", RunStatus.Aborted => "aborted", _ => "error" };
         var depth = info?.Depth ?? 0;
         if (depth > 0)
@@ -269,13 +330,49 @@ internal sealed class HookPreToolSource(HooksService service) : IPreToolVerdictS
             deny = string.IsNullOrWhiteSpace(blocked.Reason) ? HookPrompts.PreToolBlockedFallback : blocked.Reason;
         }
 
-        return new HookVerdict(deny, reports.Any(r => r.Decision == HookDecision.Allow), reports.Any(r => r.Decision == HookDecision.Ask));
+        if (deny is null)
+        {
+            var preContext = string.Join('\n', reports.Select(r => r.AdditionalContext ?? "").Where(s => s.Length > 0));
+            if (preContext.Length > 0)
+            {
+                service.RecordPreToolContext(run.RunId.Value, context.Call.CallId, preContext);
+            }
+        }
+
+        var updatedInput = deny is null
+            ? reports.LastOrDefault(r => !r.Blocks && r.UpdatedInput is not null)?.UpdatedInput
+            : null;
+        return new HookVerdict(deny, reports.Any(r => r.Decision == HookDecision.Allow), reports.Any(r => r.Decision == HookDecision.Ask), updatedInput);
     }
 }
 
 public sealed partial class HooksService
 {
     private HookPreToolSource? _preTool;
+    private readonly ConcurrentDictionary<string, string> _preToolContexts = new(StringComparer.Ordinal);
+
+    internal void RecordPreToolContext(string runId, string callId, string context)
+    {
+        var key = PreToolKey(runId, callId);
+        _preToolContexts.AddOrUpdate(key, context, (_, existing) => $"{existing}\n{context}");
+    }
+
+    internal string ConsumePreToolContext(string runId, string callId) =>
+        _preToolContexts.TryRemove(PreToolKey(runId, callId), out var value) ? value : "";
+
+    internal void ClearPreToolContexts(string runId)
+    {
+        var prefix = runId + "\0";
+        foreach (var key in _preToolContexts.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                _preToolContexts.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private static string PreToolKey(string runId, string callId) => $"{runId}\0{callId}";
 
     /// <summary>PreToolUse 的接入口:交给 <c>PermissionExtension(hooks: …)</c>。</summary>
     public IPreToolVerdictSource PreToolSource => _preTool ??= new HookPreToolSource(this);

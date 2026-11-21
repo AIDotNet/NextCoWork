@@ -31,7 +31,7 @@ public static class ModelBindingResolver
         // 目录校验沿用 2.x:输出上限不超过上下文窗口。
         maxOutput = Math.Min(maxOutput, contextWindow);
 
-        var protocol = alias.ProtocolOverride ?? provider.Protocol;
+        var protocol = alias.TextProtocolOverride ?? provider.TextProtocol ?? WireProtocol.OpenAiChat;
         var storedVision = alias.Capability("visionInput") ?? alias.Capability("vision");
         var visionOwned = overrides.Contains("capabilities.vision") || overrides.Contains("capabilities.visionInput");
         var supportsImages = visionOwned ? storedVision ?? true : info?.Capabilities.Vision ?? storedVision ?? true;
@@ -50,7 +50,7 @@ public static class ModelBindingResolver
             maxOutput,
             alias.IsEnabled,
             supportsImages,
-            alias.ProtocolOverride,
+            alias.TextProtocolOverride,
             thinking,
             efforts,
             adapter.Preset,

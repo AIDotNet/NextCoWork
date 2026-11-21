@@ -13,6 +13,13 @@ public enum AgentSourceKind
 
 public sealed record AgentSource(AgentSourceKind Kind, string Path);
 
+/// <summary>子代理的工作区隔离策略(<c>isolation: worktree</c>)。</summary>
+public enum AgentIsolation
+{
+    None,
+    Worktree,
+}
+
 /// <summary>
 /// 子代理定义(照搬 Claude Code 的 <c>agents/*.md</c>;2.x <c>shared/domain/agent-def.ts</c>)。
 /// <code>
@@ -46,6 +53,18 @@ public sealed record AgentDefinition(string Name, string Description, string Pro
     /// 子代理自己的权限档位。★ 最终档位是 <c>min(父 Run 的实时值, 这个)</c>:它只能<b>收窄</b>,永远不能放宽(<see cref="PermissionModes.Min"/>)。
     /// </summary>
     public PermissionMode? PermissionMode { get; init; }
+
+    /// <summary>禁用工具名单(黑名单;可与 <see cref="Tools"/> 叠加:允许 ∩ ¬禁用 ∩ 非交互)。</summary>
+    public IReadOnlyList<string>? DisallowedTools { get; init; }
+
+    /// <summary>最大回合数(超过即以 <see cref="Session.SessionErrorKeys.MaxTurns"/> 收尾)。null = 不限制。</summary>
+    public int? MaxTurns { get; init; }
+
+    /// <summary>是否在没有显式传 <c>run_in_background</c> 时默认以后台方式启动(<c>background: true</c>)。</summary>
+    public bool DefaultBackground { get; init; }
+
+    /// <summary>工作区隔离(<c>isolation: worktree</c> 创建临时 git worktree)。</summary>
+    public AgentIsolation Isolation { get; init; } = AgentIsolation.None;
 
     /// <summary>列表上那个小圆点。<b>纯装饰</b>,不进提示词、不影响运行(<see cref="AgentColors"/>)。</summary>
     public string? Color { get; init; }

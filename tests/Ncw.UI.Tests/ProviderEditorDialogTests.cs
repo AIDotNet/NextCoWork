@@ -54,11 +54,13 @@ public class ProviderEditorDialogTests
         T("baichuan", "百川", ProviderTemplateGroups.China, "openai-chat", "https://api.baichuan-ai.com/v1"),
         T("siliconflow", "硅基流动", ProviderTemplateGroups.Aggregator, "openai-chat", "https://api.siliconflow.cn/v1"),
         T("lmstudio", "LM Studio", ProviderTemplateGroups.Local, "openai-chat", "http://localhost:1234/v1", needsKey: false),
+        T("volcengine-image", "火山方舟", ProviderTemplateGroups.China, "volcengine-images", "https://ark.cn-beijing.volces.com/api/v3", featured: true, service: "volcengine", kind: "image"),
+        T("volcengine-video", "火山方舟", ProviderTemplateGroups.China, "volcengine-videos", "https://ark.cn-beijing.volces.com/api/v3", featured: true, service: "volcengine", kind: "video"),
     ];
 
     private static ProviderTemplateDto T(string id, string name, string group, string protocol, string url, bool featured = false, bool needsKey = true,
-        string? service = null, string? variant = null) =>
-        new(id, service ?? id, name, group, variant, protocol, url, needsKey ? $"https://{id}.example/keys" : null, needsKey, featured);
+        string? service = null, string? variant = null, string kind = "text") =>
+        new(id, service ?? id, name, group, variant, protocol, url, needsKey ? $"https://{id}.example/keys" : null, needsKey, featured, kind);
 
     private static void Dispatch()
     {
@@ -211,6 +213,35 @@ public class ProviderEditorDialogTests
 
             Assert.Equal(1, asked);
             Assert.Null(form.SavedProviderId);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Switching_kind_in_the_editor_dialog_shows_volcengine_image_and_video_templates()
+    {
+        var (window, dialogs) = Host(dark: true);
+        try
+        {
+            var form = Form(new FakeCommands(), discoverable: 0);
+            var shown = dialogs.ShowProviderEditorAsync(form);
+            Dispatch();
+
+            form.Kind = "image";
+            Dispatch();
+            Assert.Contains(form.Groups.SelectMany(g => g.Items), i => i.Id == "volcengine-image");
+            Assert.DoesNotContain(form.Groups.SelectMany(g => g.Items), i => i.Id == "deepseek");
+
+            form.Kind = "video";
+            Dispatch();
+            Assert.Contains(form.Groups.SelectMany(g => g.Items), i => i.Id == "volcengine-video");
+
+            window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            Dispatch();
+            await shown.WaitAsync(TimeSpan.FromSeconds(5));
         }
         finally
         {

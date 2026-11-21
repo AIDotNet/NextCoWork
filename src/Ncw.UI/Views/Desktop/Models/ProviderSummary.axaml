@@ -14,7 +14,9 @@
   <StackPanel Grid.Column="1" Spacing="3">
     <WrapPanel Orientation="Horizontal">
       <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0" />
+      <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static cv:ProviderKindTextConverter.Instance}, ConverterParameter=Short}" /></Border>
       <Border Classes="chip" Margin="0,0,6,0"><TextBlock Classes="hint" Text="{Binding Protocol, Converter={x:Static cv:ProtocolTextConverter.Instance}}" /></Border>
+      <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsManaged}"><TextBlock Classes="hint" Text="{l:NcwText ProviderBuiltIn}" /></Border>
       <Border Classes="chip" Margin="0,0,6,0" IsVisible="{Binding IsOAuth}"><TextBlock Classes="hint" Text="{l:NcwText ProviderAccountLogin}" /></Border>
       <Border Classes="chip" IsVisible="{Binding NeedsReauth}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" Text="{l:NcwText ProviderNeedsReauth}" /></Border>
     </WrapPanel>

@@ -59,6 +59,7 @@
           </StackPanel>
           <TextBlock IsVisible="{Binding HasError}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}"
                      Text="{Binding ErrorKey, Converter={x:Static cv:ProviderErrorTextConverter.Instance}}" />
+          <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap" Text="{l:NcwText ImportModelsNoMatching}" />
           <ScrollViewer MaxHeight="260">
             <ItemsControl ItemsSource="{Binding Models}">
               <ItemsControl.ItemTemplate>

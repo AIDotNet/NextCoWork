@@ -293,4 +293,39 @@ public sealed class CommandHookRunnerTests : IAsyncLifetime
         Assert.Null(prompt.ToolName);
         Assert.Equal(false, stop.StopHookActive);
     }
+
+    [Fact]
+    public void ParseDecision_reads_updatedInput_and_claude_code_hookSpecificOutput()
+    {
+        var flat = CommandHookRunner.ParseDecision("""{"decision":"allow","reason":"rewritten","additionalContext":"note","updatedInput":{"command":"echo safe"}}""");
+        Assert.Equal(HookDecision.Allow, flat.Decision);
+        Assert.Equal("rewritten", flat.Reason);
+        Assert.Equal("note", flat.AdditionalContext);
+        Assert.Equal("echo safe", flat.UpdatedInput!.Value.GetProperty("command").GetString());
+
+        var specific = CommandHookRunner.ParseDecision("""
+            {"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"check this","additionalContext":"extra","updatedInput":{"command":"ls -la"}}}
+            """);
+        Assert.Equal(HookDecision.Ask, specific.Decision);
+        Assert.Equal("check this", specific.Reason);
+        Assert.Equal("extra", specific.AdditionalContext);
+        Assert.Equal("ls -la", specific.UpdatedInput!.Value.GetProperty("command").GetString());
+    }
+
+    [Fact]
+    public void Payload_json_includes_precompact_and_subagent_start_fields_when_present_only()
+    {
+        var compact = new HookPayload { Event = HookEvents.PreCompact, SessionId = "s", RunId = "r", WorkspaceRoot = "/w", Scope = HookScope.Project, Trigger = "manual", CustomInstructions = "focus on api" };
+        var subStart = new HookPayload { Event = HookEvents.SubagentStart, SessionId = "s", RunId = "r", WorkspaceRoot = "/w", Scope = HookScope.Project, AgentType = "code-reviewer" };
+        var subStop = new HookPayload { Event = HookEvents.SubagentStop, SessionId = "s", RunId = "r", WorkspaceRoot = "/w", Scope = HookScope.Project, Status = "done" };
+
+        using var cDoc = JsonDocument.Parse(compact.ToJson());
+        using var sDoc = JsonDocument.Parse(subStart.ToJson());
+        using var eDoc = JsonDocument.Parse(subStop.ToJson());
+
+        Assert.Equal("manual", cDoc.RootElement.GetProperty("trigger").GetString());
+        Assert.Equal("focus on api", cDoc.RootElement.GetProperty("custom_instructions").GetString());
+        Assert.Equal("code-reviewer", sDoc.RootElement.GetProperty("agent_type").GetString());
+        Assert.False(eDoc.RootElement.TryGetProperty("agent_type", out _));
+    }
 }

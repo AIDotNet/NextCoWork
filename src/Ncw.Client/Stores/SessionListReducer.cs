@@ -14,7 +14,7 @@ public static class SessionListReducer
     public static WorkspaceState ApplyList(WorkspaceState state, ProjectRef project, IEnumerable<SessionListItemDto> items)
     {
         var mine = items
-            .Select(i => new SessionSummary(i.Id, project, i.Title, DateTimeOffset.FromUnixTimeMilliseconds(i.UpdatedAt), i.Archived, i.Favorited))
+            .Select(i => new SessionSummary(i.Id, project, i.Title, DateTimeOffset.FromUnixTimeMilliseconds(i.UpdatedAt), i.Archived, i.Favorited, i.IsEmpty))
             .ToImmutableArray();
         var others = state.Sessions.Where(s => s.Project != project);
         var next = ImmutableArray.CreateRange(others.Concat(mine));
@@ -37,7 +37,10 @@ public static class SessionListReducer
             return state;
         }
 
-        var next = existing with { Title = meta.Title, UpdatedAt = updatedAt, Archived = meta.Archived, Favorited = meta.Favorited };
+        var stillDefaultTitle = meta.TitleSource == "default"
+            || (meta.TitleSource is null && meta.Title.Trim() is "" or "新对话" or "New conversation" or "New chat");
+        var isEmpty = existing.IsEmpty && !meta.Archived && stillDefaultTitle;
+        var next = existing with { Title = meta.Title, UpdatedAt = updatedAt, Archived = meta.Archived, Favorited = meta.Favorited, IsEmpty = isEmpty };
         return next == existing ? state : state with { Sessions = state.Sessions.SetItem(index, next) };
     }
 

@@ -253,4 +253,38 @@ public class ProviderDebugDialogTests
             window.Close();
         }
     }
+
+    [AvaloniaFact]
+    public async Task Media_provider_debugger_hides_chat_only_controls_and_displays_volcengine_endpoint()
+    {
+        var (window, dialogs) = Host(dark: true);
+        try
+        {
+            var commands = new FakeCommands();
+            var form = new ProviderDebugViewModel(
+                commands,
+                "dev",
+                new ProviderDebugTargetDto("volcengine-image", Kind: "image"),
+                "火山方舟",
+                "https://ark.cn-beijing.volces.com/api/v3",
+                "volcengine-images",
+                knownModels: ["doubao-seedream-4-5-251128"],
+                kind: "image");
+            var shown = dialogs.ShowProviderDebugAsync(form);
+            Dispatch();
+
+            Assert.Equal("https://ark.cn-beijing.volces.com/api/v3/images/generations", Named<SelectableTextBlock>(window, "UrlText").Text);
+            Assert.False(Named<NcwSelect>(window, "ThinkingSelect").IsEffectivelyVisible);
+            Assert.False(Named<NcwNumberField>(window, "MaxOutputField").IsEffectivelyVisible);
+            Assert.False(Named<NcwCheckbox>(window, "ToolCheck").IsEffectivelyVisible);
+
+            window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            Dispatch();
+            await shown.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
 }

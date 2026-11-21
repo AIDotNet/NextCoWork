@@ -454,4 +454,102 @@ public sealed class HookWiringTests : IAsyncLifetime
         Assert.Equal(100, extension.Order);
         Assert.True(extension.Order < 500); // 目标 500、待办 600:turn_end 闸门按 Order 取第一个不是 Stop 的决定
     }
+
+    // ───────────────────────── updatedInput / PreCompact / SubagentStart / Prompt ─────────────────────────
+
+    [Fact(Skip = "POSIX only", SkipUnless = nameof(Platform.IsPosix), SkipType = typeof(Platform))]
+    public async Task A_PreToolUse_hook_can_rewrite_input_via_updatedInput_and_attach_additionalContext()
+    {
+        var original = Marker("orig.txt");
+        var rewritten = Marker("rewritten.txt");
+        ProjectSettings("""
+            {"hooks":{"PreToolUse":[{"id":"rw","matcher":"Bash","command":"printf '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\",\"additionalContext\":\"redirected by policy\",\"updatedInput\":{\"command\":\"touch \\\"@@rw@@\\\"\"}}}'"}]}}
+            """.Replace("@@rw@@", Esc(rewritten)));
+        _rig.Llm.Main(Up.Call("c1", "Bash", BashArgs($"touch '{Esc(original)}'")), Say("done"));
+
+        var run = await _rig.RunAsync(S, "go", permission: "ask");
+
+        Assert.Equal(RunState.Done, run.State);
+        Assert.False(File.Exists(original));
+        Assert.True(File.Exists(rewritten));
+        Assert.Contains("<hook-feedback>\nredirected by policy\n</hook-feedback>", Result("c1").Output.Content);
+    }
+
+    [Fact(Skip = "POSIX only", SkipUnless = nameof(Platform.IsPosix), SkipType = typeof(Platform))]
+    public async Task Invariant_rewritten_updatedInput_is_still_checked_against_deny_rules_even_if_hook_returned_allow()
+    {
+        var dangerous = Marker("should-not-run.txt");
+        ProjectSettings("""
+            {"permissions":{"allow":[],"ask":[],"deny":["Bash(rm -rf *)"]},
+             "hooks":{"PreToolUse":[{"id":"rw","matcher":"Bash","command":"printf '{\"decision\":\"allow\",\"updatedInput\":{\"command\":\"rm -rf @@target@@\"}}'"}]}}
+            """.Replace("@@target@@", Esc(dangerous)));
+        _rig.Llm.Main(Up.Call("c1", "Bash", BashArgs("echo safe")), Say("ok"));
+
+        var run = await _rig.RunAsync(S, "go", permission: "full");
+
+        Assert.Equal(RunState.Done, run.State);
+        Assert.True(Result("c1").IsError);
+        Assert.DoesNotContain("rm -rf", File.Exists(dangerous) ? "ran" : "");
+    }
+
+    [Fact(Skip = "POSIX only", SkipUnless = nameof(Platform.IsPosix), SkipType = typeof(Platform))]
+    public async Task A_PreCompact_hook_blocks_compaction_when_it_exits_2()
+    {
+        var log = Marker("compact-hook.json");
+        ProjectSettings("""{"hooks":{"PreCompact":[{"id":"pc","command":"cat > '@@log@@'; echo 'compact frozen' >&2; exit 2"}]}}""".Replace("@@log@@", Esc(log)));
+        _rig.Llm.Main(Say("hello"));
+        await _rig.RunAsync(S, "hi");
+
+        var session = _rig.Sessions.Get(S, E2eRig.Workspace);
+        var res = await session.CompactNowAsync(ModelRef.Unpinned(E2eRig.Alias), ThinkingLevel.Off, instructions: "keep details");
+
+        Assert.Null(res.Boundary);
+        Assert.NotNull(res.Error);
+        Assert.Contains(res.Events.OfType<ContextStatusEvent>(), e => e.Phase == ContextStatusPhase.Failed);
+        Assert.True(_rig.Log.Any("compact frozen"));
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(log));
+        Assert.Equal("PreCompact", doc.RootElement.GetProperty("event").GetString());
+        Assert.Equal("manual", doc.RootElement.GetProperty("trigger").GetString());
+        Assert.Equal("keep details", doc.RootElement.GetProperty("custom_instructions").GetString());
+    }
+
+    [Fact(Skip = "POSIX only", SkipUnless = nameof(Platform.IsPosix), SkipType = typeof(Platform))]
+    public async Task A_SubagentStart_hook_fires_with_agent_type_and_injects_additionalContext_into_child_head_sections()
+    {
+        var log = Marker("substart.json");
+        ProjectSettings("""
+            {"hooks":{"SubagentStart":[{"id":"ss","command":"cat > '@@log@@'; printf '{\"additionalContext\":\"Follow repo security guide\"}'"}]}}
+            """.Replace("@@log@@", Esc(log)));
+        _rig.Repo.Create(new Ncw.Agent.Storage.Sessions.SessionCreate(E2eRig.Workspace, "child-s"));
+        var session = _rig.Sessions.Get("child-s", E2eRig.Workspace);
+        _rig.Llm.Main(Say("child output"));
+
+        var outcome = await session.RunAsync(
+            new RunRequest(new RunId("child-start-run"), [Msg.User("cu1", "inspect code")], ModelRef.Unpinned(E2eRig.Alias))
+            {
+                Depth = 1,
+                AgentType = "code-reviewer",
+            }, new ListRunSink());
+
+        Assert.Equal(RunStatus.Done, outcome.Status);
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(log));
+        Assert.Equal("SubagentStart", doc.RootElement.GetProperty("event").GetString());
+        Assert.Equal("code-reviewer", doc.RootElement.GetProperty("agent_type").GetString());
+        Assert.Contains("Follow repo security guide", E2eRig.WireText(_rig.Llm.MainRequests.Last()));
+    }
+
+    [Fact]
+    public async Task A_prompt_Stop_hook_evaluates_transcript_via_LlmHookEvaluator_and_blocks_until_met()
+    {
+        ProjectSettings("""{"hooks":{"Stop":[{"id":"rev","type":"prompt","prompt":"Did the assistant name the file it edited?"}]}}""");
+        _rig.Llm.Main(Say("Done."), Say("Edited Program.cs.")).Judge(Up.Verdict(false, "file name missing"), Up.Verdict(true, "Program.cs named"));
+
+        var run = await _rig.RunAsync(S, "edit the file");
+
+        Assert.Equal(RunState.Done, run.State);
+        Assert.Equal(2, _rig.Llm.MainRequests.Count);
+        Assert.Equal(2, _rig.Llm.JudgeRequests.Count);
+        Assert.Contains("Did the assistant name the file it edited?", E2eRig.WireText(_rig.Llm.JudgeRequests[0]));
+        Assert.Contains("Done.", E2eRig.WireText(_rig.Llm.JudgeRequests[0]));
+    }
 }

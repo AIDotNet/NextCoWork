@@ -284,24 +284,24 @@ public interface ITransportListener            // 设备:每种承载一个监�
 | `catalog.model.delete` / `restore` | command | owner | 从目录里隐藏一个模型(同步数据再来也不会回来;已有的其他覆盖保留)/ 恢复 |
 | `catalog.overrides.list` | query | viewer | 全部覆盖 |
 | `catalog.settings.get` / `set` | query / command | viewer / owner | 自动更新开关与间隔(分钟,夹在 15 分钟到 7 天);关掉自动更新定时器就停,「立即更新」仍可用 |
-| `providers.list` | query | member | 全量 `ProvidersTopicState`(供应商、别名、坏条目诊断、账号) |
-| `providers.models.list` | query | member | 模型选择器的候选(用户配过的全部模型,含停用的,窗口 / 能力 / 思考档位已按目录解析) |
+| `providers.list` | query | member | 全量 `ProvidersTopicState`(供应商、别名、坏条目诊断、账号)。**能力 `providers.media`** 下 `ProviderDto` 末尾追加带默认值的 `Kind`(`text` / `image` / `video` / `audio`,缺省 `text`),旧载荷仍可按缺省解码(仍是协议 v1);`Protocol` 支持 `anthropic` / `openai-chat` / `openai-responses` / `openai-images` / `volcengine-images` / `openai-videos` / `volcengine-videos` / `openai-audio` |
+| `providers.models.list` | query | member | 模型选择器的候选(用户配过的全部模型,含停用的,窗口 / 能力 / 思考档位已按目录解析)。`ModelOptionDto` 末尾追加带默认值的 `Kind`(`text` / `image` / `video` / `audio`,缺省 `text`),`IsChatModel` 仅对 `text` 类型且纯文本输出的模型为真 |
 | `providers.resolve` | query | member | 「模型 + 可选供应商」会落在哪条绑定上(和路由同一段规则),带价格;没落上时 `issue` 说明原因 |
 | `providers.accounts.list` | query | member | 一家的账号(行 + 登录态摘要) |
-| `providers.upsert` / `remove` | command | owner | 新建或更新 / 删除供应商(连带别名、账号、密钥)。凭据 ref 由 id 派生,不接受调用方给的值 |
+| `providers.upsert` / `remove` | command | owner | 新建或更新 / 删除供应商(连带别名、账号、密钥)。凭据 ref 由 id 派生,不接受调用方给的值。`ProvidersUpsertParams` 末尾追加可选 `Kind`(缺省时按 `Protocol` 推断,两者冲突时拒绝);四家内置托管供应商(`nextcowork` / `nextcowork-image` / `nextcowork-video` / `nextcowork-audio`)拒绝一切写入 |
 | `providers.test` | query | owner | 连通性测试:用模型列表端点探一次(不烧 token),结局是结构化结果,不是错误 |
 | `providers.credential.set` / `info` / `remove` | command / query / command | owner | 存一把 API Key(只回摘要)/ 摘要 / 清掉 |
 | `providers.credential.reveal` | query | owner,**仅本机通道** | 明文单次返回,不进任何列表和广播 |
-| `providers.models.fetch` | query | owner | 从上游拉「这家有哪些模型」(导入弹窗)。先试这家协议那一族的列表端点,失败或一条都解不出时再试另一族(Anthropic `/v1/models` + `x-api-key`、OpenAI 族 `/models` + Bearer);都拉不到才报错,报的是这家协议那一族的失败 |
+| `providers.models.fetch` | query | owner | 从上游拉「这家有哪些模型」(导入弹窗),并**先按这家供应商的类型(`text` / `image` / `video` / `audio`)过滤掉其他类型的模型**。文本供应商先试这家协议那一族的列表端点,失败或一条都解不出时再试另一族(Anthropic `/v1/models` + `x-api-key`、OpenAI 族 `/models` + Bearer);媒体供应商走 OpenAI 族 `/models` + Bearer。原始列表解不出才报错;原始有数据但过滤后为 0 条时返回空列表 |
 | `providers.models.setAliases` / `update` / `rename` / `remove` | command | owner | 整表替换别名 / 逐条编辑(写入后归供应商,不再跟随目录)/ 改名 / 删除 |
 | `providers.accounts.remove` / `setEnabled` / `setLabel` / `setCurrent` / `reorder` / `clearLimit` / `pause` | command | owner | 账号池操作,结果是这一家的账号全量 |
 | `providers.oauth.start` / `addAccount` / `reauth` | command | owner | 走一遍 OAuth;**登录结束(成功、失败、取消)才返回**,进度走 `providers.oauth` 主题;同一时刻只有一条登录,再次发起先掐掉上一条 |
 | `providers.oauth.signOut` / `cancel` / `submitCode` | command | owner | 退出当前账号 / 取消正在进行的登录 / 把授权页给的回调码交回(`needsPastedCode` 的登录) |
 | `providers.discovery.scan` | query | owner | **能力 `providers.discovery`**(后加的能力,老设备不报就不调)。在设备上找其他客户端已经配好的供应商(Claude Code、Codex、cc-switch、opencode、常见环境变量),只读、不写任何东西。结果每条带来源、建议的 id / 名字 / 协议 / 地址、密钥后四位、模型提示,以及和现有供应商的关系(`new` / `imported` / `conflict`);**密钥明文从不出设备** |
 | `providers.discovery.import` | command | owner | 能力同上。按候选 id 导入:设备**重新扫一遍**、在设备上直接建供应商并存密钥(控制端从头到尾碰不到明文),有模型提示的同时建别名;id 冲突时加后缀;逐条给结果(成功的供应商 id / 失败的 key)。扫描后来源变了(候选没了)这一条报 `providers.discovery.gone` |
-| `providers.templates.list` | query | member | **能力 `providers.templates`**(后加的能力,老设备不报:添加供应商只有「自定义」)。「添加供应商」的内置模版:一个端点一条(`deepseek`、`deepseek-anthropic`、`moonshot-intl`……),带所属服务(控制端据此找 logo)、分组(`intl` / `cn` / `aggregator` / `local`)、端点标签(`intl` / `anthropic`)、协议、地址、拿 key 的地址、要不要 key、是否「常用」。静态数据,和自动发现共用 Agent 的已知服务表(`Ncw.Agent.Catalog/Providers/Templates`);名字是品牌名不本地化,分组和端点标签是开放的字符串,控制端认不出就放「其他」/ 原样显示。冻结向量 `GoldenV1ProviderTemplates` |
-| `providers.debug.models` | query | owner | **能力 `providers.debug`**(后加的能力,老设备不报:「测试」退回 `providers.test`)。调试弹窗的模型候选:对一个**调试对象**(`ProviderDebugTargetDto`:已保存的供应商 id,和 / 或草稿的地址、协议、key)把两族列表端点都试一遍,逐条给尝试结果(族、URL、状态码、条数、失败 key + 已脱敏的说明)和合并后的模型(每个模型带「哪一族报了它」)。都拉不到不是错误,结果里模型为空,控制端让用户手填 |
-| `providers.debug.run` | command | owner | 能力同上。用**选定的协议 + 模型**对调试对象发一条真实的流式请求(和对话同一套编码、鉴权、传输装饰、解码代码,只是不走重试 / 换家 / 账号轮换 / 用量记录),**跑完才返回**完整记录 `ProviderDebugResultDto`:脱敏后的请求(方法、URL、头、正文)、状态码与响应头、错误正文、全部 SSE 事件(带相对毫秒)、解码出的回复 / 思考 / 工具调用、停止原因、用量、首字与总耗时、失败 key。进度走 `providers.debug/<runId>` 主题(`runId` 由控制端生成,先订阅再调用);取消就是取消这次调用(取消帧),设备随即掐断上游连接。调试对象带草稿 key 时 key 只用于这一次请求,不落盘;请求头里的 key 一律显示成 `••••后四位`,响应 / 事件 / 说明里出现的 key 抹成 `[redacted]` |
+| `providers.templates.list` | query | member | **能力 `providers.templates`**(后加的能力,老设备不报:添加供应商只有「自定义」)。「添加供应商」的内置模版:一个端点一条(`deepseek`、`deepseek-anthropic`、`moonshot-intl`、`volcengine-image`、`volcengine-video`……),带所属服务(控制端据此找 logo)、分组(`intl` / `cn` / `aggregator` / `local`)、端点标签(`intl` / `anthropic`)、协议、地址、拿 key 的地址、要不要 key、是否「常用」与末尾可选 `Kind`(缺省 `text`)。静态数据,和自动发现共用 Agent 的已知服务表(`Ncw.Agent.Catalog/Providers/Templates`);名字是品牌名不本地化,分组和端点标签是开放的字符串,控制端认不出就放「其他」/ 原样显示。冻结向量 `GoldenV1ProviderTemplates` |
+| `providers.debug.models` | query | owner | **能力 `providers.debug`**(后加的能力,老设备不报:「测试」退回 `providers.test`)。调试弹窗的模型候选:对一个**调试对象**(`ProviderDebugTargetDto`:已保存的供应商 id,和 / 或草稿的地址、协议、key、可选 `Kind`)拉取列表并按类型过滤(文本两族都试,媒体走 OpenAI 族),逐条给尝试结果(族、URL、状态码、条数、失败 key + 已脱敏的说明)和合并后的模型(每个模型带「哪一族报了它」)。都拉不到不是错误,结果里模型为空,控制端让用户手填 |
+| `providers.debug.run` | command | owner | 能力同上。用**选定的协议 + 模型**对调试对象发一条真实的请求(文本协议走与对话同一套编码 / 鉴权 / 传输装饰 / 解码代码;媒体协议走 `ImageMediaCodec` / `VideoMediaCodec` / `AudioMediaCodec`,含火山图片 `image: []` 与火山视频 `/contents/generations/tasks`),**跑完才返回**完整记录 `ProviderDebugResultDto`:脱敏后的请求(方法、URL、头、正文)、状态码与响应头、错误正文、全部事件(带相对毫秒)、解码出的回复 / 思考 / 工具调用或媒体响应摘要、停止原因、用量、首字与总耗时、失败 key。进度走 `providers.debug/<runId>` 主题(`runId` 由控制端生成,先订阅再调用);取消就是取消这次调用(取消帧),设备随即掐断上游连接。调试对象带草稿 key 时 key 只用于这一次请求,不落盘;请求头里的 key 一律显示成 `••••后四位`,响应 / 事件 / 说明里出现的 key 抹成 `[redacted]` |
 
 **子代理 / 计划 / 目标**(能力 `subagents` / `planning`,承载 本机 + 远程;实现:`Ncw.Agent.Host/Conversation/OrchestrationHandlers`,领域层 `Ncw.Agent.Subagents` / `Ncw.Agent.Planning`)。方法声明齐全(种类、角色、能力、承载),command 带幂等键:
 

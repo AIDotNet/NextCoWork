@@ -210,7 +210,7 @@ public sealed class AgentSession(string sessionId, string workspaceId, AgentSess
 }
 ```
 
-- `RunRequest`:`RunId`、`Input`(消息 id 由调用方给)、`Model`、`Thinking`、`MaxContext`、`Depth`、`Settings`(Run 开始时的设置快照:`AutoCompact`、`MaxOutputTokens`、压缩模型与工作区覆盖、个性化、文件工具外部名、全局指令、导入指令)、
+- `RunRequest`:`RunId`、`Input`(消息 id 由调用方给)、`Model`、`Thinking`、`MaxContext`、`Depth`、`AgentType`、`MaxTurns`(超过上限时 `PrepareTurnAsync` 以 `session.maxTurns` 收尾)、`WorkspaceRoot`(可覆盖会话级工作根,供 `isolation: worktree` 子代理使用)、`Settings`(Run 开始时的设置快照:`AutoCompact`、`MaxOutputTokens`、压缩模型与工作区覆盖、个性化、文件工具外部名、全局指令、导入指令)、
   `AgentPrompt` / `ModePrompt`、**编排层的两个钩子** `TakeSteering`(引导队列,取走即消费)和 `EnrichToolContext`(派生出带 `Interact` / `SpawnSubagent` 的工具上下文,套在会话层的 `SessionToolContext` 外面)。
 - 一个 Run 的顺序:取会话锁(失败 → `session.busy`)→ 读库里整段历史 → `session_start`(每个会话对象一次)→ `input` 变换 + 文件引用归一化 → `before_run` → 读项目指令和 git(Run 开始时定死)→ 交给 `AgentLoop`,
   事件原样转给 `IRunSink`(含会话层自己放进回合计划里的 `context_usage` / `context_status`)→ 循环结束后 `run_end` 扩展点 → **释放会话锁 → 发 `run_settled` → `run_settled` 扩展点**。

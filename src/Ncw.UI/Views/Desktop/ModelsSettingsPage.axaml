@@ -37,9 +37,15 @@
           </StackPanel>
         </ui:NcwButton>
       </Grid>
-      <TextBlock Classes="hint" Text="{l:NcwText NoProviders}" IsVisible="{Binding !HasProviders}" ui:NcwMotion.ShowMotion="Fade" />
+      <ui:NcwSegmented HorizontalAlignment="Left" SelectedValue="{Binding SelectedKind, Mode=TwoWay}">
+        <ui:NcwSegmentedOption Value="text" Label="{l:NcwText ProviderKindShortText}" />
+        <ui:NcwSegmentedOption Value="image" Label="{l:NcwText ProviderKindShortImage}" />
+        <ui:NcwSegmentedOption Value="video" Label="{l:NcwText ProviderKindShortVideo}" />
+        <ui:NcwSegmentedOption Value="audio" Label="{l:NcwText ProviderKindShortAudio}" />
+      </ui:NcwSegmented>
+      <TextBlock Classes="hint" Text="{l:NcwText NoProvidersForKind}" IsVisible="{Binding !HasFilteredProviders}" ui:NcwMotion.ShowMotion="Fade" />
 
-      <ItemsControl ItemsSource="{Binding Providers}">
+      <ItemsControl ItemsSource="{Binding FilteredProviders}">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Spacing="8" />
@@ -57,6 +63,7 @@
                   <models:ProviderSummary Grid.Column="1" />
                   <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Top">
                     <ui:NcwSwitch Margin="0,0,6,0" VerticalAlignment="Center" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
+                                  IsVisible="{Binding CanManage}"
                                   AutomationProperties.Name="{l:NcwText ProviderEnabled}" arc:Tooltip.Tip="{l:NcwText ProviderEnabled}" />
                     <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleExpandedCommand}" AutomationProperties.Name="{l:NcwText ProviderModels}" arc:Tooltip.Tip="{l:NcwText ProviderModels}">
                       <lucide:LucideIcon Classes="chevronDown" Classes.open="{Binding IsExpanded}" Kind="ChevronDown" Size="15" />

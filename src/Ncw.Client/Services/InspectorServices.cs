@@ -116,8 +116,19 @@ public sealed class NoLocalFiles : ILocalFiles
 /// </summary>
 public interface IFileTabHost
 {
+    /// <summary>前台文件(没有工作区或前台是会话时为 null),用于文件树定位。</summary>
+    Ncw.Client.ViewModels.FilePreviewViewModel? ActiveFile => null;
+
     /// <summary>打开(已打开就切过去)项目里的一个文件。<paramref name="line"/> 是内容搜索命中的行。</summary>
     Task OpenAsync(Ncw.Core.Domain.ProjectRef project, string path, int? line = null);
+
+    /// <summary>打开临时预览;后续预览复用项目里的唯一预览槽。</summary>
+    Task OpenPreviewAsync(Ncw.Core.Domain.ProjectRef project, string path, int? line = null) => OpenAsync(project, path, line);
+
+    /// <summary>把已经打开的预览固定为常驻标签。</summary>
+    void PinFile(Ncw.Core.Domain.ProjectRef project, string path)
+    {
+    }
 
     /// <summary>文件被重命名 / 删除了:它(以及它下面的文件)的标签关掉。</summary>
     void CloseInside(Ncw.Core.Domain.ProjectRef project, string path);

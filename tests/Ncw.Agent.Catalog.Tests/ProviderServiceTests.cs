@@ -291,12 +291,12 @@ public sealed class ProviderServiceTests : IDisposable
     {
         _fx.AddProvider();
         Service.SetAliases("gw", ["m"]);
-        Assert.Equal(WireProtocol.Anthropic, Service.UpdateAlias(new AliasUpdate("gw", "m", ProtocolOverride: WireProtocol.Anthropic)).ProtocolOverride);
+        Assert.Equal(Ncw.Agent.Llm.Media.ProviderProtocol.Anthropic, Service.UpdateAlias(new AliasUpdate("gw", "m", ProtocolOverride: Ncw.Agent.Llm.Media.ProviderProtocol.Anthropic)).ProtocolOverride);
         Assert.Equal(WireProtocol.Anthropic, _fx.Resolver.Bindings[0].ProtocolOverride);
         Assert.Null(Service.UpdateAlias(new AliasUpdate("gw", "m", ClearProtocolOverride: true)).ProtocolOverride);
         // 只改别的字段不能顺手清掉它。
-        Service.UpdateAlias(new AliasUpdate("gw", "m", ProtocolOverride: WireProtocol.OpenAiResponses));
-        Assert.Equal(WireProtocol.OpenAiResponses, Service.UpdateAlias(new AliasUpdate("gw", "m", Priority: 5)).ProtocolOverride);
+        Service.UpdateAlias(new AliasUpdate("gw", "m", ProtocolOverride: Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiResponses));
+        Assert.Equal(Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiResponses, Service.UpdateAlias(new AliasUpdate("gw", "m", Priority: 5)).ProtocolOverride);
     }
 
     [Fact]
@@ -452,7 +452,7 @@ public sealed class ProviderServiceTests : IDisposable
     {
         _fx.Http.Fallback = (_, _) => Task.FromResult(FakeHttp.Json(HttpStatusCode.Unauthorized, """{"error":{"message":"bad key sk-draft-abcdef123456"}}"""));
 
-        var listing = await Service.ListModelsAsync(new DebugTarget(null, " https://draft.example.com/v1 ", WireProtocol.OpenAiChat, "sk-draft-abcdef123456"));
+        var listing = await Service.ListModelsAsync(new DebugTarget(null, " https://draft.example.com/v1 ", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, "sk-draft-abcdef123456"));
 
         Assert.Empty(listing.Models);
         Assert.All(listing.Attempts, a => Assert.Equal(ProviderErrorKeys.FetchRejected, a.ErrorKey));
@@ -484,7 +484,7 @@ public sealed class ProviderServiceTests : IDisposable
         var events = new List<Ncw.Agent.Llm.Diagnostics.ProbeEvent>();
 
         var result = await Service.DebugAsync(
-            new DebugRequest(new DebugTarget("gw"), WireProtocol.OpenAiChat, "nice", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false), events.Add);
+            new DebugRequest(new DebugTarget("gw"), Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, "nice", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false), events.Add);
 
         Assert.True(result.Ok, result.Failure?.Message);
         Assert.Equal("OK", result.Text);
@@ -502,7 +502,7 @@ public sealed class ProviderServiceTests : IDisposable
     {
         _fx.AddProvider();
         var error = await Assert.ThrowsAsync<ProviderException>(() =>
-            Service.DebugAsync(new DebugRequest(new DebugTarget("gw"), WireProtocol.OpenAiChat, "  ", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false)));
+            Service.DebugAsync(new DebugRequest(new DebugTarget("gw"), Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, "  ", "", 32, Ncw.Agent.Llm.ThinkingLevel.Auto, false)));
         Assert.Equal(ProviderErrorKeys.DebugModelRequired, error.Key);
         Assert.Empty(_fx.Http.Requests);
     }
@@ -557,5 +557,59 @@ public sealed class ProviderServiceTests : IDisposable
 
         Assert.Equal(0, await Service.EnsureAccountsSeededAsync());
         Assert.Empty(_fx.Accounts.List());
+    }
+
+    // ── 按类型过滤模型与媒体供应商路由隔离 ──
+
+    [Fact]
+    public async Task Fetching_models_filters_upstream_models_by_provider_kind_and_returns_empty_when_only_other_kinds_exist()
+    {
+        const string MixedUpstream = """
+            {"data":[
+              {"id":"gpt-5.4"},
+              {"id":"doubao-seedream-4-5-251128"},
+              {"id":"doubao-seedance-1-5-pro-251215"},
+              {"id":"whisper-large-v3"},
+              {"id":"text-embedding-3-large"}
+            ]}
+            """;
+
+        Service.Upsert(new ProviderRecord("p-text", "Text", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, "https://x.example/v1", Kind: Ncw.Agent.Llm.Media.ProviderKind.Text));
+        Service.Upsert(new ProviderRecord("p-img", "Image", Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages, "https://ark.cn-beijing.volces.com/api/v3", Kind: Ncw.Agent.Llm.Media.ProviderKind.Image));
+        Service.Upsert(new ProviderRecord("p-vid", "Video", Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineVideos, "https://ark.cn-beijing.volces.com/api/v3", Kind: Ncw.Agent.Llm.Media.ProviderKind.Video));
+        Service.Upsert(new ProviderRecord("p-aud", "Audio", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiAudio, "https://x.example/v1", Kind: Ncw.Agent.Llm.Media.ProviderKind.Audio));
+
+        _fx.Http.Fallback = (_, _) => Task.FromResult(FakeHttp.Json(HttpStatusCode.OK, MixedUpstream));
+
+        Assert.Equal(["gpt-5.4"], (await Service.FetchModelsAsync("p-text")).Select(m => m.Id).ToArray());
+        Assert.Equal(["doubao-seedream-4-5-251128"], (await Service.FetchModelsAsync("p-img")).Select(m => m.Id).ToArray());
+        Assert.Equal(["doubao-seedance-1-5-pro-251215"], (await Service.FetchModelsAsync("p-vid")).Select(m => m.Id).ToArray());
+        Assert.Equal(["whisper-large-v3"], (await Service.FetchModelsAsync("p-aud")).Select(m => m.Id).ToArray());
+
+        // 上游合法返回了模型但全是文本模型时,图片供应商过滤后得空数组而非抛 FetchEmpty
+        _fx.Http.Fallback = (_, _) => Task.FromResult(FakeHttp.Json(HttpStatusCode.OK, """{"data":[{"id":"gpt-5.4"}]}"""));
+        Assert.Empty(await Service.FetchModelsAsync("p-img"));
+    }
+
+    [Fact]
+    public void Media_providers_stay_out_of_text_router_appear_as_non_chat_options_and_resolve_via_media_resolver()
+    {
+        Service.Upsert(new ProviderRecord("chat-gw", "Chat GW", Ncw.Agent.Llm.Media.ProviderProtocol.OpenAiChat, "https://chat.example/v1", Priority: 10, Kind: Ncw.Agent.Llm.Media.ProviderKind.Text));
+        Service.SetAliases("chat-gw", ["gpt-5.4"]);
+        Service.Upsert(new ProviderRecord("ark-img", "火山图片", Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages, "https://ark.cn-beijing.volces.com/api/v3", Priority: 20, Kind: Ncw.Agent.Llm.Media.ProviderKind.Image));
+        Service.SetAliases("ark-img", ["doubao-seedream-4-5-251128"]);
+
+        Assert.Equal(["chat-gw"], _fx.Resolver.Providers.Select(p => p.Id).ToArray());
+        Assert.Equal(["gpt-5.4"], _fx.Resolver.Bindings.Select(b => b.Alias).ToArray());
+        Assert.False(_fx.Resolver.Resolve(new ModelSelection("doubao-seedream-4-5-251128")).Found);
+
+        var imgOption = _fx.Resolver.Options().Single(o => o.ProviderId == "ark-img");
+        Assert.False(imgOption.IsChatModel);
+        Assert.Equal(Ncw.Agent.Llm.Media.ProviderKind.Image, imgOption.Kind);
+        Assert.Equal(Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages, imgOption.Protocol);
+
+        var media = _fx.Resolver.ResolveMedia(new ModelSelection("doubao-seedream-4-5-251128"), Ncw.Agent.Llm.Media.ProviderKind.Image);
+        Assert.NotNull(media);
+        Assert.Equal(("ark-img", Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages), (media.Provider.Id, media.Protocol));
     }
 }

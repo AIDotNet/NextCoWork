@@ -24,6 +24,8 @@ public class ComposerSlashTests
 
         public List<string> Enqueued { get; } = [];
 
+        public List<(SessionRef Session, string Mode)> SetModes { get; } = [];
+
         public Task<SendResult> SendAsync(SessionRef session, string text, SendOptionsDto options, CancellationToken ct = default)
         {
             Sent.Add(text);
@@ -53,6 +55,12 @@ public class ComposerSlashTests
         {
             Compacts.Add((instructions, options.Model));
             return Task.FromResult(CompactResult);
+        }
+
+        public Task<bool> SetModeAsync(SessionRef session, string mode, CancellationToken ct = default)
+        {
+            SetModes.Add((session, mode));
+            return Task.FromResult(true);
         }
     }
 
@@ -116,6 +124,7 @@ public class ComposerSlashTests
     [InlineData("/COMPACT", SlashAction.Compact, "")]
     [InlineData("  /model   sonnet  ", SlashAction.Model, "sonnet")]
     [InlineData("/clear", SlashAction.Clear, "")]
+    [InlineData("/plan", SlashAction.Plan, "")]
     [InlineData("/compact keep the API decisions\nand the open bugs", SlashAction.Compact, "keep the API decisions\nand the open bugs")]
     public void A_builtin_name_followed_by_whitespace_or_the_end_is_a_local_action(string text, SlashAction action, string args) =>
         Assert.Equal(new SlashInvocation(action, args), ComposerSlash.Parse(text));
@@ -156,10 +165,11 @@ public class ComposerSlashTests
         var (composer, _, _) = Create();
         await OpenMenu(composer, "/");
 
-        Assert.Equal(["/goal", "/compact", "/model", "/clear", "/review"], composer.SlashCommands.Select(c => c.Command));
+        Assert.Equal(["/goal", "/compact", "/model", "/clear", "/plan", "/review"], composer.SlashCommands.Select(c => c.Command));
         Assert.All(composer.SlashCommands, c => Assert.True(c.IsAvailable));
         Assert.Equal(SlashAction.Compact, composer.SlashCommands[1].Action);
-        Assert.Null(composer.SlashCommands[4].Action);
+        Assert.Equal(SlashAction.Plan, composer.SlashCommands[4].Action);
+        Assert.Null(composer.SlashCommands[5].Action);
         Assert.True(composer.SlashCommands[0].IsActive);
         Assert.Contains("goal", composer.CommandNames); // 草稿开头的 /goal 画成 token
 
@@ -372,5 +382,37 @@ public class ComposerSlashTests
         await composer.SubmitCommand.ExecuteAsync(null);
 
         Assert.Equal(["/review src/a.cs"], commands.Sent); // 假的展开原样返回:走的是发送这条路
+    }
+
+    // ───────────────────────── /plan ─────────────────────────
+
+    [Fact]
+    public async Task Plan_toggles_mode_and_exits_cleanly()
+    {
+        var (composer, commands, _) = Create();
+        composer.Draft = "/plan";
+        await composer.SubmitCommand.ExecuteAsync(null);
+
+        Assert.True(composer.IsPlanMode);
+        Assert.Equal("plan", composer.SessionMode);
+        Assert.Equal(new SlashNotice(SlashNoticeKind.PlanEnabled), composer.Notice);
+        Assert.True(composer.NoticeIsInfo);
+        Assert.Equal("", composer.Draft);
+        Assert.Equal([(Session, "plan")], commands.SetModes);
+        Assert.Empty(commands.Sent);
+
+        composer.Draft = "/plan";
+        await composer.SubmitCommand.ExecuteAsync(null);
+
+        Assert.False(composer.IsPlanMode);
+        Assert.Equal("code", composer.SessionMode);
+        Assert.Equal(new SlashNotice(SlashNoticeKind.PlanDisabled), composer.Notice);
+        Assert.Equal([(Session, "plan"), (Session, "code")], commands.SetModes);
+
+        composer.Update(Session, new SessionDto("s-1", "ws", null, "user", "t", null, "opus", "anthropic", "plan", "auto", false, false, 1, 2), null, null, SessionActivity.Idle, DeviceConnection.Connected, "owner", Models());
+        Assert.True(composer.IsPlanMode);
+        await composer.ExitPlanModeCommand.ExecuteAsync(null);
+        Assert.False(composer.IsPlanMode);
+        Assert.Equal("code", composer.SessionMode);
     }
 }

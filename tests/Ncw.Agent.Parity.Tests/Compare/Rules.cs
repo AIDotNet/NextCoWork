@@ -23,6 +23,10 @@ public static partial class Rules
         @"^<system-reminder>\nProject instructions for this workspace[\s\S]*?<project-instructions>\n(?<ctx><hook-context>\n[\s\S]*?\n</hook-context>)\n</project-instructions>[\s\S]*</system-reminder>$",
         RegexOptions.Compiled);
 
+    private static readonly Regex HookWorkspaceRootPattern = new(
+        "\"workspaceRoot\":\"[^\"]+\"",
+        RegexOptions.Compiled);
+
     public static IReadOnlyList<Rule> All { get; } =
     [
         // ───────────── 事件(循环层 / 会话层的事件词汇) ─────────────
@@ -281,6 +285,43 @@ public static partial class Rules
 
                 body.Remove("thinking");
                 return true;
+            }),
+
+        EditBoth("REQ-HOOK-EVALUATOR-WORKSPACE-ROOT", Section.Requests,
+            new(Parity, "prompt 型判定器载荷里的临时 `workspaceRoot` 随运行目录变化"),
+            "prompt 型 Stop 钩子的 Hook input 里包含本次回放的临时工作区绝对路径(2.x 和 C# 每次运行各自生成的临时目录名不同);只把它统一替换成 <workspaceRoot>,其余字段和转录逐字比较。",
+            request =>
+            {
+                var body = request["body"]!.AsObject();
+                if (SystemText(body)?.StartsWith("You are evaluating a stop-condition hook", StringComparison.Ordinal) != true
+                    || body["messages"] is not JsonArray messages)
+                {
+                    return false;
+                }
+
+                var changed = false;
+                foreach (var message in messages)
+                {
+                    if (message?["content"] is not JsonArray blocks)
+                    {
+                        continue;
+                    }
+
+                    foreach (var block in blocks)
+                    {
+                        if (Str(block, "text") is { } text && text.Contains("\"workspaceRoot\":\"", StringComparison.Ordinal))
+                        {
+                            var replaced = HookWorkspaceRootPattern.Replace(text, "\"workspaceRoot\":\"<workspaceRoot>\"");
+                            if (!string.Equals(replaced, text, StringComparison.Ordinal))
+                            {
+                                block!["text"] = replaced;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+
+                return changed;
             }),
 
         EditBoth("REQ-REVIEWER-THINKING", Section.Requests,

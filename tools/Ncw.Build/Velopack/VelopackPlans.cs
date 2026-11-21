@@ -27,8 +27,14 @@ internal static class VelopackPlans
             args.Add(bundle.Rid.Os switch { OsFamily.MacOs => "[osx]", OsFamily.Windows => "[win]", _ => "[linux]" });
         }
 
+        var icon = bundle.Rid.Os switch
+        {
+            OsFamily.MacOs => repo.MacIcon,
+            OsFamily.Windows => repo.WinIcon,
+            _ => repo.LinuxIcon,
+        };
         args.AddRange(["pack", "-u", PackId, "-v", version, "-p", bundle.PackDir, "-e", bundle.Rid.DesktopExecutable, "-o", outDir, "-c", channel,
-            "--packTitle", BundleLayout.AppName, "--packAuthors", BundleLayout.AppName]);
+            "--packTitle", BundleLayout.AppName, "--packAuthors", BundleLayout.AppName, "--icon", icon]);
         if (releaseNotes is not null)
         {
             args.AddRange(["--releaseNotes", releaseNotes]);

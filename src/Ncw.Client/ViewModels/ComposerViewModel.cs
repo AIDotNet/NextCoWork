@@ -15,7 +15,7 @@ public sealed record ModelChoice(string ProviderId, string ProviderName, string 
 
     public static ModelChoice Of(ModelOptionDto o) => new(
         o.ProviderId, o.ProviderName, o.Alias, o.DisplayName.Length > 0 ? o.DisplayName : o.Alias,
-        ComposerLogic.WindowText(o.ContextWindow), o.SupportsImages, o.ThinkingMode is not null, o.Enabled && o.ProviderEnabled);
+        ComposerLogic.WindowText(o.ContextWindow), o.SupportsImages, o.ThinkingMode is not null and not "unsupported", o.Enabled && o.ProviderEnabled);
 }
 
 /// <summary>排队消息的一行。<see cref="IsPromoted"/> = 已经「插话」(下一个回合边界送进正在跑的 Run)。</summary>
@@ -62,6 +62,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     private string _rememberedModel = "";
     private string? _rememberedProvider;
     private string _rememberedPermission = "";
+    private string _rememberedMode = "";
     private List<ModelOptionDto> _options = [];
     private SessionActivity _activity;
     private DeviceConnection _connection = DeviceConnection.Connecting;
@@ -73,6 +74,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     private (string Device, string Workspace)? _commandsFor;
     private IReadOnlyList<CommandDto> _projectCommands = [];
     private bool _restoring;
+    private string _preferredThinking = "auto";
 
     public ComposerViewModel(IConversationCommands commands, IComposerLookups? lookups = null, TimeSpan? suggestDelay = null, AttachmentTrayViewModel? attachments = null,
         IGoalCommands? goals = null)
@@ -105,6 +107,20 @@ public sealed partial class ComposerViewModel : ObservableObject
     /// <summary><c>auto</c> / <c>off</c> / <c>minimal</c> …… <c>max</c>。</summary>
     [ObservableProperty] public partial string Thinking { get; private set; } = "auto";
 
+    /// <summary>会话模式(<c>code</c> / <c>plan</c>)。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPlanMode))]
+    public partial string SessionMode { get; private set; } = "code";
+
+    public bool IsPlanMode => SessionMode == "plan";
+
+    /// <summary>最近一次上下文占用明细(由上层推送,解除对祖先视图的依赖)。</summary>
+    [ObservableProperty] public partial ContextUsageEventDto? Context { get; private set; }
+
+    [ObservableProperty] public partial int ContextPercent { get; private set; }
+
+    [ObservableProperty] public partial bool HasContext { get; private set; }
+
     [ObservableProperty] public partial ModelChoice? SelectedModel { get; private set; }
 
     /// <summary>最近一次发送失败的原因(成功后清掉)。界面按它写提示。</summary>
@@ -118,7 +134,8 @@ public sealed partial class ComposerViewModel : ObservableObject
     public bool HasNotice => Notice is not null;
 
     /// <summary>提示只是告知(用法、已切换),不是出了问题:界面用次要色而不是警告色。</summary>
-    public bool NoticeIsInfo => Notice?.Kind is SlashNoticeKind.GoalUsage or SlashNoticeKind.ModelSwitched or SlashNoticeKind.CompactNothing;
+    public bool NoticeIsInfo => Notice?.Kind is SlashNoticeKind.GoalUsage or SlashNoticeKind.ModelSwitched or SlashNoticeKind.CompactNothing
+        or SlashNoticeKind.PlanEnabled or SlashNoticeKind.PlanDisabled;
 
     partial void OnNoticeChanged(SlashNotice? value)
     {
@@ -289,6 +306,9 @@ public sealed partial class ComposerViewModel : ObservableObject
         var nextPermission = meta?.PermissionMode ?? "";
         var permissionChanged = changedSession || nextPermission != _rememberedPermission;
         _rememberedPermission = nextPermission;
+        var nextMode = meta?.Mode ?? "";
+        var modeChanged = changedSession || nextMode != _rememberedMode;
+        _rememberedMode = nextMode;
         _workspaceId = meta?.WorkspaceId ?? _workspaceId;
         _options = [.. options.Where(o => o.IsChatModel)];
 
@@ -308,7 +328,8 @@ public sealed partial class ComposerViewModel : ObservableObject
 
         SyncModels(changedSession, rememberedChanged);
         SyncPermission(changedSession, permissionChanged, role);
-        Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
+        SyncMode(changedSession, modeChanged);
+        Thinking = ComposerLogic.ClampThinking(_preferredThinking, CurrentOption());
         Sync(PermissionChoices, ComposerLogic.PermissionModesFor(role));
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
         OnPropertyChanged(nameof(CanUseFull));
@@ -343,6 +364,22 @@ public sealed partial class ComposerViewModel : ObservableObject
         var picked = !changedSession ? Permission : null;
         var chosen = (permissionChanged ? remembered : null) ?? picked ?? remembered ?? "ask";
         Permission = ComposerLogic.ClampPermission(chosen, role);
+    }
+
+    private void SyncMode(bool changedSession, bool modeChanged)
+    {
+        var remembered = _rememberedMode == "plan" ? "plan" : "code";
+        var picked = !changedSession ? SessionMode : null;
+        SessionMode = (modeChanged ? remembered : null) ?? picked ?? remembered;
+    }
+
+    /// <summary>更新当前会话的上下文占用(单一真源派生后推入)。</summary>
+    public void UpdateContext(ContextUsageEventDto? usage)
+    {
+        var valid = usage is { Window: > 0 };
+        Context = valid ? usage : null;
+        HasContext = valid;
+        ContextPercent = valid ? (int)Math.Clamp(Math.Round(100.0 * usage!.Used / usage.Window), 0, 100) : 0;
     }
 
     private ModelOptionDto? CurrentOption() =>
@@ -620,6 +657,18 @@ public sealed partial class ComposerViewModel : ObservableObject
         CancelSuggestions();
     }
 
+    /// <summary>文件树与文件标签引用同一条输入框意图;没有会话时不积攒无主的引用。</summary>
+    public void ReferenceFile(string path)
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        var name = path[(path.LastIndexOf('/') + 1)..];
+        PickFile(new FileSuggestionItem(path, name, path.LastIndexOf('/') is > 0 and var i ? path[..i] : ""));
+    }
+
     /// <summary>去掉一个文件引用:草稿里它的 <c>@名字</c>(连同后面一个空格)一起删掉。</summary>
     [RelayCommand]
     private void RemoveFile(FileRefChip chip)
@@ -675,7 +724,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
 
         SelectedModel = choice;
-        Thinking = ComposerLogic.ClampThinking(Thinking, CurrentOption());
+        Thinking = ComposerLogic.ClampThinking(_preferredThinking, CurrentOption());
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
         RefreshState();
         if (_session is { } session && (choice.Alias != _rememberedModel || choice.ProviderId != _rememberedProvider))
@@ -709,7 +758,11 @@ public sealed partial class ComposerViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SetThinking(string level) => Thinking = ComposerLogic.ClampThinking(level, CurrentOption());
+    private void SetThinking(string level)
+    {
+        _preferredThinking = level;
+        Thinking = ComposerLogic.ClampThinking(level, CurrentOption());
+    }
 
     [RelayCommand]
     private void InsertSlash(SlashCommandItem item) => ReplaceDraft(item.Command + " ");
@@ -720,7 +773,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         ModelProviderId: SelectedModel is { } m && (m.Alias != _rememberedModel || m.ProviderId != _rememberedProvider) ? m.ProviderId : _rememberedProvider,
         Thinking: Thinking,
         MaxContext: false,
-        Mode: "",
+        Mode: IsPlanMode ? "plan" : "",
         PermissionMode: Permission);
 
     // ───────────────────────── 意图 ─────────────────────────
@@ -855,6 +908,7 @@ public sealed partial class ComposerViewModel : ObservableObject
             SlashAction.Goal => GoalAsync(session, slash.Args),
             SlashAction.Compact => CompactAsync(session, slash.Args),
             SlashAction.Model => ModelAsync(slash.Args),
+            SlashAction.Plan => PlanAsync(session, slash.Args),
             _ => ClearAsync(),
         };
         return _slashTask;
@@ -1026,6 +1080,39 @@ public sealed partial class ComposerViewModel : ObservableObject
         ConsumeDraft();
         NewSessionRequested?.Invoke();
         return Task.CompletedTask;
+    }
+
+    private async Task PlanAsync(SessionRef session, string args)
+    {
+        var next = args.Trim().ToLowerInvariant() switch
+        {
+            "off" or "code" or "exit" => "code",
+            "on" or "plan" or "enter" => "plan",
+            "" => IsPlanMode ? "code" : "plan",
+            _ => IsPlanMode ? "code" : "plan",
+        };
+        ConsumeDraft();
+        await SetPlanModeAsync(session, next);
+    }
+
+    /// <summary>退出规划模式切回编码模式(输入框状态徽章点击)。</summary>
+    [RelayCommand]
+    private Task ExitPlanModeAsync() =>
+        _session is { } session ? SetPlanModeAsync(session, "code") : Task.CompletedTask;
+
+    private async Task SetPlanModeAsync(SessionRef session, string mode)
+    {
+        var previous = SessionMode;
+        SessionMode = mode;
+        var ok = await _commands.SetModeAsync(session, mode);
+        if (!ok)
+        {
+            SessionMode = previous;
+            Show(new SlashNotice(SlashNoticeKind.Unavailable));
+            return;
+        }
+
+        Show(new SlashNotice(mode == "plan" ? SlashNoticeKind.PlanEnabled : SlashNoticeKind.PlanDisabled));
     }
 
     private void RestoreDraft(string text)

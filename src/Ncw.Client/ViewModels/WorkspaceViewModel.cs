@@ -52,8 +52,47 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
 
     // ───────────────────────── 打开 / 激活 / 关闭 ─────────────────────────
 
-    /// <summary>打开一个文件标签(已经打开就切过去)。点文件树的文件、点搜索结果、新建文件后都走这里。</summary>
-    public async Task OpenAsync(ProjectRef project, string path, int? line = null)
+    /// <summary>路径段点击时,交给文件树展开并选中对应项目路径。</summary>
+    public Action<ProjectRef, string>? RevealRequested { get; set; }
+
+    /// <summary>引用文件时,交给当前会话的输入框追加路径。</summary>
+    public Action<ProjectRef, string>? ReferenceRequested { get; set; }
+
+    /// <summary>当前项目是否有可接受文件引用的会话。</summary>
+    public Func<ProjectRef, bool>? CanReferenceRequested { get; set; }
+
+    /// <summary>会话可用性发生变化时,同步所有项目的文件引用按钮。</summary>
+    public void RefreshReferenceAvailability()
+    {
+        foreach (var files in _filesOf.Values)
+        {
+            foreach (var file in files.Values)
+            {
+                file.RefreshReferenceAvailability();
+            }
+        }
+    }
+
+    /// <summary>程序化打开文件固定为常驻标签,已经打开时激活并固定。</summary>
+    public Task OpenAsync(ProjectRef project, string path, int? line = null) => OpenCoreAsync(project, path, line, false);
+
+    /// <summary>单击文件树打开临时预览;每个项目至多一个,不会替换编辑中的文件。</summary>
+    public Task OpenPreviewAsync(ProjectRef project, string path, int? line = null) => OpenCoreAsync(project, path, line, true);
+
+    /// <summary>把临时预览固定为常驻标签。</summary>
+    public void PinFile(ProjectRef project, string path)
+    {
+        _filesOf.GetValueOrDefault(project)?.GetValueOrDefault(path)?.PinCommand.Execute(null);
+    }
+
+    /// <summary>返回项目当前选中的会话,但不关闭打开的文件标签。</summary>
+    public void ShowConversation(ProjectRef project)
+    {
+        _activeFile.Remove(project);
+        Refresh();
+    }
+
+    private async Task OpenCoreAsync(ProjectRef project, string path, int? line, bool isPreview)
     {
         if (_files is null)
         {
@@ -65,23 +104,51 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
             _filesOf[project] = files = [];
         }
 
-        var created = false;
-        if (!files.TryGetValue(path, out var preview))
-        {
-            preview = new FilePreviewViewModel(_files, project, path, CanWrite(project), line, _local, LocalRoot(project));
-            files[path] = preview;
-            created = true;
-        }
-
         if (!_open.TryGetValue(project, out var list))
         {
             _open[project] = list = [];
         }
 
+        var created = false;
+        var insertAt = list.Count;
+        if (!files.TryGetValue(path, out var preview))
+        {
+            if (isPreview && files.Values.FirstOrDefault(f => f.IsPreview) is { } previous)
+            {
+                if (previous.IsDirty || previous.IsEditing)
+                {
+                    previous.PinCommand.Execute(null);
+                }
+                else
+                {
+                    insertAt = list.IndexOf(new TabKey(true, previous.Path));
+                    RemoveFile(project, previous.Path);
+                }
+            }
+
+            preview = new FilePreviewViewModel(_files, project, path, CanWrite(project), line, _local, LocalRoot(project))
+            {
+                IsPreview = isPreview,
+                RevealRequested = (p, target) => RevealRequested?.Invoke(p, target),
+                ReferenceRequested = (p, target) =>
+                {
+                    ReferenceRequested?.Invoke(p, target);
+                    ShowConversation(p);
+                },
+                CanReferenceRequested = p => ReferenceRequested is not null && CanReferenceRequested?.Invoke(p) == true,
+            };
+            files[path] = preview;
+            created = true;
+        }
+        else if (!isPreview)
+        {
+            preview.PinCommand.Execute(null);
+        }
+
         var key = new TabKey(true, path);
         if (!list.Contains(key))
         {
-            list.Add(key);
+            list.Insert(Math.Clamp(insertAt, 0, list.Count), key);
         }
 
         _activeFile[project] = path;
@@ -91,8 +158,6 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
             await preview.LoadAsync().ConfigureAwait(true);
         }
     }
-
-    Task IFileTabHost.OpenAsync(ProjectRef project, string path, int? line) => OpenAsync(project, path, line);
 
     /// <summary>文件被重命名 / 删除:它(或它下面的文件)的标签直接关掉,不再询问(文件已经不在了)。</summary>
     public void CloseInside(ProjectRef project, string path)
@@ -288,6 +353,14 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
             activePath = null;
         }
 
+        if (files is not null)
+        {
+            foreach (var file in files.Values)
+            {
+                file.RefreshReferenceAvailability();
+            }
+        }
+
         var device = workspace.Devices.GetValueOrDefault(project.DeviceId);
         var connection = device?.Connection ?? DeviceConnection.Connecting;
         var tabs = new List<WorkspaceTabViewModel>();
@@ -303,11 +376,14 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
                 continue;
             }
 
+            var summary = known.GetValueOrDefault(key.Id);
             tabs.Add(WorkspaceTabViewModel.ForSession(
                 key.Id,
-                known.TryGetValue(key.Id, out var s) ? s.Title : _stores.Conversations.State.Sessions.GetValueOrDefault(new SessionRef(project.DeviceId, key.Id))?.Meta.Title ?? "",
+                summary?.Title ?? _stores.Conversations.State.Sessions.GetValueOrDefault(new SessionRef(project.DeviceId, key.Id))?.Meta.Title ?? "",
                 SessionActivityView.Of(key.Id, device?.Index, connection),
-                activePath is null && key.Id == selection.SessionId));
+                activePath is null && key.Id == selection.SessionId,
+                summary?.Favorited ?? false,
+                summary?.Archived ?? false));
         }
 
         if (!tabs.SequenceEqual(Tabs, TabComparer.Instance))
@@ -328,7 +404,8 @@ public sealed partial class WorkspaceViewModel : ObservableObject, IFileTabHost
         public static readonly TabComparer Instance = new();
 
         public bool Equals(WorkspaceTabViewModel? x, WorkspaceTabViewModel? y) =>
-            x is not null && y is not null && x.Key == y.Key && x.Title == y.Title && x.Activity == y.Activity && x.IsActive == y.IsActive && ReferenceEquals(x.File, y.File);
+            x is not null && y is not null && x.Key == y.Key && x.Title == y.Title && x.Activity == y.Activity
+            && x.IsActive == y.IsActive && x.IsFavorite == y.IsFavorite && x.IsArchived == y.IsArchived && ReferenceEquals(x.File, y.File);
 
         public int GetHashCode(WorkspaceTabViewModel obj) => obj.Key.GetHashCode(StringComparison.Ordinal);
     }
@@ -347,8 +424,8 @@ public sealed class WorkspaceTabViewModel
         IsActive = isActive;
     }
 
-    public static WorkspaceTabViewModel ForSession(string sessionId, string title, SessionActivity activity, bool isActive) =>
-        new("s:" + sessionId, title, isActive) { SessionId = sessionId, Activity = activity };
+    public static WorkspaceTabViewModel ForSession(string sessionId, string title, SessionActivity activity, bool isActive, bool isFavorite = false, bool isArchived = false) =>
+        new("s:" + sessionId, title, isActive) { SessionId = sessionId, Activity = activity, IsFavorite = isFavorite, IsArchived = isArchived };
 
     public static WorkspaceTabViewModel ForFile(FilePreviewViewModel file, bool isActive) =>
         new("f:" + file.Path, file.Name, isActive) { File = file, Path = file.Path };
@@ -375,6 +452,10 @@ public sealed class WorkspaceTabViewModel
     public bool IsRunning => Activity == SessionActivity.Running;
 
     public bool IsUnknown => Activity == SessionActivity.Unknown;
+
+    public bool IsFavorite { get; private init; }
+
+    public bool IsArchived { get; private init; }
 
     public bool IsActive { get; }
 }

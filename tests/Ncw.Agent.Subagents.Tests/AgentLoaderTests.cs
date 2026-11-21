@@ -402,4 +402,52 @@ public sealed class AgentLoaderTests : IDisposable
         await Assert.ThrowsAsync<EnvironmentException>(() =>
             AgentLoader.ScanAsync(new AgentScanInput(null, null, env, LocalEnvironment.PathOf(_project))));
     }
+
+    // ───────────────────────── Claude Code 兼容扩展字段 ─────────────────────────
+
+    [Fact]
+    public async Task Parses_disallowedTools_maxTurns_effort_background_and_isolation_worktree()
+    {
+        Put(_global, "cc-agent.md", """
+            ---
+            description: Isolated reviewer
+            disallowedTools: Write, Edit
+            maxTurns: 7
+            effort: max
+            background: true
+            isolation: worktree
+            ---
+            Review carefully.
+            """);
+
+        var result = await Scan();
+        var agent = result.Agents.Single(a => a.Name == "cc-agent");
+
+        Assert.Equal(["Write", "Edit"], agent.DisallowedTools);
+        Assert.Equal(7, agent.MaxTurns);
+        Assert.Equal(ThinkingLevel.Max, agent.Thinking);
+        Assert.True(agent.DefaultBackground);
+        Assert.Equal(AgentIsolation.Worktree, agent.Isolation);
+    }
+
+    [Fact]
+    public async Task Invalid_maxTurns_or_isolation_records_a_diagnostic_and_ignores_only_that_field()
+    {
+        Put(_global, "bad-meta.md", """
+            ---
+            description: Meta check
+            maxTurns: 9999
+            isolation: container
+            ---
+            Body text.
+            """);
+
+        var result = await Scan();
+        var agent = result.Agents.Single(a => a.Name == "bad-meta");
+
+        Assert.Null(agent.MaxTurns);
+        Assert.Equal(AgentIsolation.None, agent.Isolation);
+        Assert.Contains(result.Diagnostics, d => d.Key == AgentDiagnosticKeys.MaxTurnsInvalid);
+        Assert.Contains(result.Diagnostics, d => d.Key == AgentDiagnosticKeys.IsolationInvalid);
+    }
 }

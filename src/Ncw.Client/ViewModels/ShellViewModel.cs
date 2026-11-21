@@ -59,6 +59,28 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         // 文件在主工作区里作为标签页打开:文件页签只负责「点了哪个」,预览与编辑在标签里
         Workspace = new WorkspaceViewModel(stores, Sessions, inspectorServices.Files, () => Dialogs, () => Inspector.Text, () => Inspector.LocalFiles);
         Inspector.Files.Tabs = Workspace;
+        Conversation.FileTabs = Workspace;
+        Inspector.Files.ReferenceRequested = ReferenceFile;
+        Workspace.ReferenceRequested = ReferenceFile;
+        Workspace.CanReferenceRequested = project => Stores.Selection.State.Project == project && Conversation.HasSession;
+        Workspace.RevealRequested = (project, path) =>
+        {
+            if (Stores.Selection.State.Project == project)
+            {
+                if (IsInspectorNarrow)
+                {
+                    IsInspectorDrawerOpen = true;
+                }
+                else
+                {
+                    IsInspectorOpen = true;
+                }
+
+                Inspector.ActivateCommand.Execute(InspectorTabKind.Files);
+                Inspector.Files.IsExpanded = true;
+                _ = Inspector.Files.RevealPathAsync(path);
+            }
+        };
         DataActions = new DataActions(Devices, () => StartupHost, () => RequestExit);
         DataGate = new DataGateViewModel(stores, Devices, DataActions);
         // 启动加载界面(docs/design/03 §10):事实由 StartupRecorder 锁存进 Store,ViewModel 只读;和数据页读同一份数据状态,同一时刻只有一个全屏层
@@ -91,22 +113,29 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Conversation.ElsewhereRequested += () => GoToNextAttention(elsewhereOnly: true);
         Conversation.ProviderSettingsRequested += () => OpenSettingsSection(SettingsSection.Models);
         Conversation.NewSessionRequested += () => Execute(AppCommand.NewSession);
-        // 当前会话改过文件:检查器自动给出「审查」页签(事实来自对话转录,检查器只拿一个布尔)
+        // 当前会话改过文件:审查面板读取对话转录派生的标记。
         Conversation.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ConversationViewModel.HasFileChanges))
             {
                 Inspector.SessionHasChanges = Conversation.HasFileChanges;
             }
+            else if (e.PropertyName == nameof(ConversationViewModel.HasSession))
+            {
+                UpdateFileReferenceAvailability();
+                Workspace.RefreshReferenceAvailability();
+            }
         };
         Inspector.SessionHasChanges = Conversation.HasFileChanges;
+        stores.Selection.Changed += UpdateFileReferenceAvailability;
+        UpdateFileReferenceAvailability();
         stores.Selection.Changed += UpdatePendingElsewhere;
         UpdatePendingElsewhere();
         Attention = new AttentionMonitor(stores, Inbox, () => AttentionSink, () => new AttentionContext(
             IsWindowActive(), Conversation.Session is { } open ? (open.DeviceId, open.SessionId) : null), clock);
         Palette.Invoked += OnPaletteInvoked;
         // 桌面左侧边栏(docs/design/03 §1):项目树 + 全局入口;要外壳做的事经 ISidebarHost 回到这里
-        Sidebar = new SidebarViewModel(stores, Actions, this, Projects, Sessions, Inbox, () => Dialogs, () => Text);
+        Sidebar = new SidebarViewModel(stores, Actions, this, Projects, Sessions, Inbox, () => Dialogs, () => Text, Inspector.Files);
         stores.Prefs.Changed += OnPrefsChanged;
         stores.Selection.Changed += TrackRecentProject;
         TrackRecentProject();
@@ -243,6 +272,8 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
 
     private string? _lastAttentionKey;
 
+    private void UpdateFileReferenceAvailability() => Inspector.Files.IsReferenceAvailable = Conversation.HasSession;
+
     private void UpdatePendingElsewhere()
     {
         var open = Conversation.Session;
@@ -314,6 +345,19 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
                 OpenSettingsSection(section);
                 break;
         }
+    }
+
+    /// <summary>树行与文件页的引用共用一个入口,不把别的项目文件混进当前会话。</summary>
+    private void ReferenceFile(ProjectRef project, string path)
+    {
+        if (Stores.Selection.State.Project != project || !Conversation.HasSession)
+        {
+            return;
+        }
+
+        Conversation.Composer.ReferenceFile(path);
+        Workspace.ShowConversation(project);
+        ViewRequested?.Invoke(ShellViewRequest.FocusComposer);
     }
 
     /// <summary>最近选过的项目(最近的在前,纯 UI 状态):⌃Tab 在最近两个项目之间切换。</summary>
@@ -450,7 +494,7 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
     /// <summary>当前打开的会话:转录、待办、目标条、输入框。</summary>
     public ConversationViewModel Conversation { get; }
 
-    /// <summary>右侧面板:默认文件管理器。</summary>
+    /// <summary>右侧面板:默认改动审查,文件树共享给左侧。</summary>
     public InspectorViewModel Inspector { get; }
 
     /// <summary>启动时的数据页(接管 2.x 数据的进度、被挡住时的重试)。</summary>
@@ -605,14 +649,36 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
 
     void ISidebarHost.OpenAttention(InboxEntry entry) => OpenAttention(entry.DeviceId, entry.WorkspaceId, entry.SessionId, entry.Key);
 
-    void ISidebarHost.NewTerminal(ProjectRef project)
+    void ISidebarHost.NewTerminal(ProjectRef project) => NewTerminalIn(project);
+
+    void ISidebarHost.NewFile(ProjectRef project) => NewFileIn(project);
+
+    void ISidebarHost.NewFolder(ProjectRef project) => NewFolderIn(project);
+
+    void ISidebarHost.OpenSettings() => Execute(AppCommand.OpenSettings);
+
+    public void NewTerminalIn(ProjectRef project)
     {
         Actions.Select(project);
         OpenInspectorTab(InspectorTabKind.Terminal);
         Inspector.Terminals.NewTerminalCommand.Execute(null);
     }
 
-    void ISidebarHost.OpenSettings() => Execute(AppCommand.OpenSettings);
+    public void NewFileIn(ProjectRef project)
+    {
+        Actions.Select(project);
+        OpenInspectorTab(InspectorTabKind.Files);
+        Inspector.Files.IsExpanded = true;
+        _ = Inspector.Files.NewFileCommand.ExecuteAsync(null);
+    }
+
+    public void NewFolderIn(ProjectRef project)
+    {
+        Actions.Select(project);
+        OpenInspectorTab(InspectorTabKind.Files);
+        Inspector.Files.IsExpanded = true;
+        _ = Inspector.Files.NewFolderCommand.ExecuteAsync(null);
+    }
 
     Ncw.Client.Services.ILocalFiles ISidebarHost.LocalFiles => Inspector.LocalFiles;
 

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
+using Ncw.Core.Domain;
 using Ncw.Protocol.Methods;
 
 namespace Ncw.Client.ViewModels;
@@ -61,12 +62,15 @@ public sealed partial class ModelEditorViewModel : ObservableObject
 
     /// <param name="alias">别名里存着的(显示名称、协议覆盖、存着的思考配置)。</param>
     /// <param name="effective">设备算好的有效值(模型候选里对应的那一行);设备还没给就退回 <paramref name="alias"/> 里存着的。</param>
-    public ModelEditorViewModel(IModelEditorCommands commands, string deviceId, ModelAliasDto alias, ModelOptionDto? effective)
+    /// <param name="providerKind">所属供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>)。</param>
+    public ModelEditorViewModel(IModelEditorCommands commands, string deviceId, ModelAliasDto alias, ModelOptionDto? effective, string? providerKind = null)
     {
         _commands = commands;
         _deviceId = deviceId;
         _alias = alias.Alias;
         ProviderId = alias.ProviderId;
+        ProviderKind = (providerKind is not null ? ProviderKinds.Normalize(providerKind) : ProviderKinds.Normalize(effective?.Kind)) ?? ProviderKinds.Text;
+        AvailableProtocolChoices = ["", .. ProviderEndpoints.ProtocolsFor(ProviderKind)];
         Upstream = alias.UpstreamModel;
         ProviderProtocol = effective?.Protocol is { } p && alias.ProtocolOverride is null ? p : null;
 
@@ -91,7 +95,7 @@ public sealed partial class ModelEditorViewModel : ObservableObject
         SupportsImages = effective?.SupportsImages ?? alias.SupportsImages;
         Protocol = alias.ProtocolOverride ?? "";
         ThinkingMode = _storedThinking is not null ? Str(_storedThinking["mode"]) ?? "unsupported" : ThinkingAuto;
-        DefaultEnabled = Bool(_storedThinking?["defaultEnabled"]) ?? true;
+        DefaultEnabled = (Bool(_storedThinking?["defaultEnabled"]) ?? true) || (_storedThinking is not null && Str(_storedThinking["mode"]) == "effort" && !efforts.Contains("none"));
         DefaultEffort = Str(_storedThinking?["defaultEffort"]) is { } stored && efforts.Contains(stored) ? stored : PreferredEffort(efforts);
         BudgetTokens = Int(_storedThinking?["defaultBudgetTokens"]) ?? 10_000;
         EffectiveThinkingMode = effective?.ThinkingMode;
@@ -102,6 +106,13 @@ public sealed partial class ModelEditorViewModel : ObservableObject
     private static readonly string[] Modes = ["unsupported", "always", "toggle", "budget", "effort"];
 
     public string ProviderId { get; }
+
+    public string ProviderKind { get; }
+
+    public bool IsTextKind => ProviderKind == ProviderKinds.Text;
+
+    /// <summary>当前供应商类型下可选的请求协议(首项空串 = 跟随供应商)。</summary>
+    public IReadOnlyList<string> AvailableProtocolChoices { get; }
 
     public string Upstream { get; }
 
@@ -144,7 +155,8 @@ public sealed partial class ModelEditorViewModel : ObservableObject
 
     public bool ShowsThinkingDetails => ShowsDefaultEnabled || ShowsBudget || ShowsEfforts;
 
-    public bool ShowsDefaultEnabled => ThinkingMode is "toggle" or "budget" or "effort";
+    public bool ShowsDefaultEnabled =>
+        ThinkingMode is "toggle" or "budget" || (ThinkingMode == "effort" && Efforts.Any(e => e.Value == "none" && e.IsSelected));
 
     public bool ShowsBudget => ThinkingMode == "budget";
 
@@ -179,7 +191,15 @@ public sealed partial class ModelEditorViewModel : ObservableObject
 
     partial void OnProtocolChanged(string value) => Touch();
 
-    partial void OnThinkingModeChanged(string value) => Touch();
+    partial void OnThinkingModeChanged(string value)
+    {
+        if (!ShowsDefaultEnabled && value is "always" or "effort")
+        {
+            DefaultEnabled = true;
+        }
+
+        Touch();
+    }
 
     partial void OnDefaultEnabledChanged(bool value) => Touch();
 
@@ -189,6 +209,13 @@ public sealed partial class ModelEditorViewModel : ObservableObject
 
     private void OnEffortsChanged()
     {
+        if (!ShowsDefaultEnabled && ThinkingMode is "always" or "effort")
+        {
+            DefaultEnabled = true;
+        }
+
+        OnPropertyChanged(nameof(ShowsDefaultEnabled));
+        OnPropertyChanged(nameof(ShowsThinkingDetails));
         OnPropertyChanged(nameof(DefaultEffortChoices));
         // 默认强度跟着勾选走:取消勾选了当前默认,就换成剩下里最合适的那一个
         if (DefaultEffort is null || !DefaultEffortChoices.Contains(DefaultEffort))
@@ -263,6 +290,11 @@ public sealed partial class ModelEditorViewModel : ObservableObject
         if (s.Alias.Length == 0)
         {
             return Errors.AliasRequired;
+        }
+
+        if (!IsTextKind)
+        {
+            return null;
         }
 
         if (s.ContextWindow < MinimumTokens)

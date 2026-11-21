@@ -74,9 +74,10 @@ public sealed partial class ProviderDebugViewModel : ObservableObject
     /// <param name="protocol">打开时选中的协议(供应商 / 草稿当前的协议)。</param>
     /// <param name="knownModels">这家已经配过的上游模型(排在候选前面,拉列表失败时也有得选)。</param>
     /// <param name="canApplyProtocol">从编辑弹窗打开:跑通了别的协议可以「使用这个协议」。</param>
+    /// <param name="kind">供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>);缺省时由协议推断。</param>
     public ProviderDebugViewModel(
         IProviderDebugCommands commands, string deviceId, ProviderDebugTargetDto target, string providerName, string baseUrl, string protocol,
-        IReadOnlyList<string>? knownModels = null, bool canApplyProtocol = false)
+        IReadOnlyList<string>? knownModels = null, bool canApplyProtocol = false, string? kind = null)
     {
         _commands = commands;
         _deviceId = deviceId;
@@ -85,8 +86,10 @@ public sealed partial class ProviderDebugViewModel : ObservableObject
         _knownModels = knownModels ?? [];
         ProviderName = providerName;
         BaseUrl = baseUrl.Trim();
-        InitialProtocol = ProviderEndpoints.Protocols.Contains(protocol) ? protocol : ProviderEndpoints.OpenAiChat;
-        foreach (var p in ProviderEndpoints.Protocols)
+        Kind = (kind is not null ? ProviderKinds.Normalize(kind) : null) ?? ProviderEndpoints.KindOfProtocol(protocol) ?? ProviderKinds.Text;
+        var available = ProviderEndpoints.ProtocolsFor(Kind);
+        InitialProtocol = available.Contains(protocol) ? protocol : ProviderEndpoints.DefaultProtocolFor(Kind);
+        foreach (var p in available)
         {
             Protocols.Add(new DebugProtocolItem(p));
         }
@@ -103,6 +106,10 @@ public sealed partial class ProviderDebugViewModel : ObservableObject
     public string ProviderName { get; }
 
     public string BaseUrl { get; }
+
+    public string Kind { get; }
+
+    public bool IsTextKind => Kind == ProviderKinds.Text;
 
     public string InitialProtocol { get; }
 
@@ -132,14 +139,14 @@ public sealed partial class ProviderDebugViewModel : ObservableObject
     [RelayCommand]
     private void SelectProtocol(string? protocol)
     {
-        if (protocol is not null && !IsRunning && ProviderEndpoints.Protocols.Contains(protocol))
+        if (protocol is not null && !IsRunning && Protocols.Any(p => p.Protocol == protocol))
         {
             SelectedProtocol = protocol;
         }
     }
 
     /// <summary>按所选协议拼出来的请求地址(和设备同一条规则)。</summary>
-    public string? FinalUrl => ProviderEndpoints.ChatUrl(BaseUrl, SelectedProtocol);
+    public string? FinalUrl => ProviderEndpoints.EndpointUrl(BaseUrl, SelectedProtocol);
 
     // ── 模型 ──
 

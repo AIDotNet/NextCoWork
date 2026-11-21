@@ -1,3 +1,4 @@
+using Ncw.Core.Domain;
 using PolyType;
 
 namespace Ncw.Protocol.Methods;
@@ -11,11 +12,12 @@ namespace Ncw.Protocol.Methods;
 // ───────────────────────── 供应商与别名 ─────────────────────────
 
 /// <summary>一个供应商(不含凭据)。</summary>
-/// <param name="Protocol"><c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c>。</param>
+/// <param name="Protocol">文本:<c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c>;图片:<c>openai-images</c> / <c>volcengine-images</c>;视频:<c>openai-videos</c> / <c>volcengine-videos</c>;音频:<c>openai-audio</c>。</param>
 /// <param name="CacheTtl"><c>5m</c> / <c>1h</c>(Anthropic 提示词缓存的生存期)。</param>
 /// <param name="ProtocolOptionsJson">协议选项(JSON 对象文本);没有为 null。</param>
 /// <param name="HasCredential">有没有配过 key / 登录过(只是个布尔,绝不带任何凭据内容)。</param>
 /// <param name="OAuthIssuer">走账号登录的供应商给出 issuer;API Key 供应商为 null。</param>
+/// <param name="Kind">供应商类型:<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>(缺省 <c>text</c>)。</param>
 public sealed record ProviderDto(
     string Id,
     string Name,
@@ -26,7 +28,8 @@ public sealed record ProviderDto(
     string CacheTtl,
     string? ProtocolOptionsJson,
     bool HasCredential,
-    string? OAuthIssuer);
+    string? OAuthIssuer,
+    string Kind = ProviderKinds.Text);
 
 /// <summary>供应商下的一个模型别名绑定(主键 <c>(ProviderId, Alias)</c>)。</summary>
 /// <param name="CatalogOverrides">归供应商管的字段名(列在里面的字段不再跟随目录,其余跟随)。</param>
@@ -141,7 +144,7 @@ public sealed record ProviderErrorDto(string Key, Dictionary<string, string> Par
 
 public sealed record ProviderRefParams(string ProviderId);
 
-/// <summary><c>providers.upsert</c>:新建或更新。<see cref="Priority"/> / <see cref="Enabled"/> 缺省 = 50 / 启用(更新时也按缺省值写,不是「不改」)。凭据 ref 由 id 派生,不接受调用方给的值。</summary>
+/// <summary><c>providers.upsert</c>:新建或更新。<see cref="Priority"/> / <see cref="Enabled"/> 缺省 = 50 / 启用(更新时也按缺省值写,不是「不改」)。<see cref="Kind"/> 缺省时由 <see cref="Protocol"/> 推断。凭据 ref 由 id 派生,不接受调用方给的值。</summary>
 public sealed record ProvidersUpsertParams(
     string Id,
     string Name,
@@ -149,7 +152,8 @@ public sealed record ProvidersUpsertParams(
     string BaseUrl,
     int? Priority = null,
     bool? Enabled = null,
-    string? ProtocolOptionsJson = null);
+    string? ProtocolOptionsJson = null,
+    string? Kind = null);
 
 /// <summary><c>providers.credential.set</c>:存一把 API Key。方向是控制端 → Agent;Agent 只回摘要。</summary>
 public sealed record CredentialSetParams(string ProviderId, string ApiKey);
@@ -199,6 +203,7 @@ public sealed record ModelsListParams(bool ChatOnly = false);
 
 /// <summary>模型选择器里的一行(用户配过的全部模型,含停用的:界面应当显示并标成不可用,否则用户会以为自己的配置丢了)。</summary>
 /// <param name="ThinkingMode">思考模式(<c>effort</c> / <c>budget</c> / <c>toggle</c> 等,控制端不认识的值按未知处理);null = 不支持。</param>
+/// <param name="Kind">所属供应商类型:<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>(缺省 <c>text</c>)。</param>
 public sealed record ModelOptionDto(
     string ProviderId,
     string ProviderName,
@@ -213,7 +218,8 @@ public sealed record ModelOptionDto(
     bool IsChatModel,
     string? ThinkingMode,
     string[]? ReasoningEfforts,
-    string Protocol);
+    string Protocol,
+    string Kind = ProviderKinds.Text);
 
 public sealed record ModelOptionsResult(ModelOptionDto[] Options);
 
@@ -369,6 +375,15 @@ public static class ProvidersMethods
 
     private static MethodDef<TP, TR> C<TP, TR>(string name, Role role) =>
         new(name, MethodKind.Command, role, Transports.Any, PayloadShapes.GetShape<TP>(), PayloadShapes.GetShape<TR>()) { Capability = Capabilities.Providers };
+}
+
+public static partial class Capabilities
+{
+    /// <summary>
+    /// 供应商类型区分与媒体协议支持(图片 / 视频 / 音频供应商、按类型过滤上游模型、火山方舟图片与视频协议、四家内置托管供应商)。
+    /// 相关 DTO 末尾追加的 <c>Kind</c> 均带默认值,旧版对端不带 <c>Kind</c> 的载荷照常解码。
+    /// </summary>
+    public const string ProviderMedia = "providers.media";
 }
 
 [GenerateShapeFor<ProviderDto>]

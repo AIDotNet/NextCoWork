@@ -232,8 +232,8 @@ public class MotionScreenshotTests : IDisposable
         var stores = ConversationScreenshotTests.Tools();
         var (window, _, vm) = Render(stores, 1200, true);
         Advance(600);
-        var transcript = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "Transcript");
-        var historyContainers = transcript.GetVisualDescendants().OfType<ContentPresenter>().Where(p => p.DataContext is RowViewModel).ToList();
+        var transcript = window.GetVisualDescendants().OfType<TranscriptList>().First(i => i.Name == "TranscriptHost");
+        var historyContainers = transcript.Inner.GetVisualDescendants().OfType<ContentPresenter>().Where(p => p.DataContext is RowViewModel).ToList();
         Assert.NotEmpty(historyContainers);
         Assert.All(historyContainers, p => Assert.False(NcwMotion.IsArriving(p)));    // 打开会话时的历史行:没有进入动画
 
@@ -247,7 +247,7 @@ public class MotionScreenshotTests : IDisposable
 
         var fresh = vm.Conversation.Rows.OfType<UserRowViewModel>().Last();   // 新追加的用户消息(待处理的审批卡片是原来就有的,只是被挪了位置)
         Assert.Contains(vm.Conversation.Rows, r => r == fresh);
-        var container = transcript.GetVisualDescendants().OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.DataContext, fresh));
+        var container = transcript.Inner.GetVisualDescendants().OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.DataContext, fresh));
         Assert.NotNull(container);
         Assert.True(NcwMotion.IsArriving(container!));                                // 刚追加的行:进入动画
         Advance(40);
@@ -265,7 +265,7 @@ public class MotionScreenshotTests : IDisposable
         var stores = ConversationScreenshotTests.Tools();
         var (window, _, _) = Render(stores, 1200, true);
         Advance(600);
-        var transcript = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "Transcript");
+        var transcript = window.GetVisualDescendants().OfType<TranscriptList>().First(i => i.Name == "TranscriptHost").Inner;
         var strip = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "TabStrip");
         Assert.False(NcwMotion.IsArriving(transcript));                               // 第一次打开会话:外层负责,转录自己不再淡一次
         Assert.All(strip.GetRealizedContainers(), c => Assert.False(NcwMotion.IsArriving(c)));

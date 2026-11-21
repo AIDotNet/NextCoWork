@@ -43,7 +43,7 @@ public class ComposerPasteTests
         public override DateTimeOffset GetUtcNow() => now.ToUniversalTime();
     }
 
-    private static (Window Window, ComposerView Composer, ComposerViewModel Vm, FakeUploader Uploader) Render()
+    private static (Window Window, ComposerView Composer, ComposerViewModel Vm, FakeUploader Uploader, Ncw.Client.Stores.ClientStores Stores) Render()
     {
         var stores = ConversationFixtures.Base("s-ncw-2");
         ConversationFixtures.Session(stores, "s-ncw-2", []);
@@ -57,7 +57,7 @@ public class ComposerPasteTests
         var composer = window.GetVisualDescendants().OfType<ComposerView>().First(c => c.IsEffectivelyVisible);
         composer.FocusInput();
         Dispatch();
-        return (window, composer, vm.Conversation.Composer, uploader);
+        return (window, composer, vm.Conversation.Composer, uploader, stores);
     }
 
     private static void Dispatch()
@@ -91,7 +91,7 @@ public class ComposerPasteTests
     [AvaloniaFact]
     public async Task Pasting_a_bitmap_via_keyboard_uploads_a_png_attachment_without_changing_draft()
     {
-        var (window, composer, vm, uploader) = Render();
+        var (window, composer, vm, uploader, _) = Render();
         var clipboard = TopLevel.GetTopLevel(window)!.Clipboard!;
         using var bitmap = MakeBitmap();
         await clipboard.SetDataAsync(MakeTransfer(item =>
@@ -116,7 +116,7 @@ public class ComposerPasteTests
     [AvaloniaFact]
     public async Task Pasting_a_non_image_file_inserts_its_local_path_instead_of_filename_or_attachment()
     {
-        var (window, composer, vm, uploader) = Render();
+        var (window, composer, vm, uploader, _) = Render();
         var dir = Directory.CreateTempSubdirectory("ncw-paste-");
         try
         {
@@ -153,7 +153,7 @@ public class ComposerPasteTests
     [AvaloniaFact]
     public async Task Pasting_multiple_files_separates_their_paths_by_newline_and_attaches_image_files()
     {
-        var (window, composer, vm, uploader) = Render();
+        var (window, composer, vm, uploader, _) = Render();
         var dir = Directory.CreateTempSubdirectory("ncw-paste-multi-");
         try
         {
@@ -206,7 +206,7 @@ public class ComposerPasteTests
     [AvaloniaFact]
     public async Task Pasting_plain_text_falls_back_to_inserting_text_at_caret()
     {
-        var (window, composer, vm, _) = Render();
+        var (window, composer, vm, _, _) = Render();
         var clipboard = TopLevel.GetTopLevel(window)!.Clipboard!;
         await clipboard.SetTextAsync("hello");
 
@@ -225,7 +225,7 @@ public class ComposerPasteTests
     [AvaloniaFact]
     public async Task TextBox_paste_command_triggers_PastingFromClipboard_for_folders_and_images()
     {
-        var (window, composer, vm, _) = Render();
+        var (window, composer, vm, _, _) = Render();
         var dir = Directory.CreateTempSubdirectory("ncw-paste-folder-");
         try
         {
@@ -247,5 +247,77 @@ public class ComposerPasteTests
         {
             dir.Delete(recursive: true);
         }
+    }
+
+    [AvaloniaFact]
+    public async Task Dropping_files_and_images_via_DropAsync_attaches_images_and_inserts_paths()
+    {
+        var (window, _, vm, uploader, _) = Render();
+        var dir = Directory.CreateTempSubdirectory("ncw-drop-");
+        try
+        {
+            var notePath = Path.Combine(dir.FullName, "notes.txt");
+            var imagePath = Path.Combine(dir.FullName, "diagram.png");
+            await File.WriteAllTextAsync(notePath, "hello");
+            using (var bmp = MakeBitmap())
+            {
+                bmp.Save(imagePath, new PngBitmapEncoderOptions());
+            }
+
+            var noteFile = await window.StorageProvider.TryGetFileFromPathAsync(notePath);
+            var imgFile = await window.StorageProvider.TryGetFileFromPathAsync(imagePath);
+            Assert.NotNull(noteFile);
+            Assert.NotNull(imgFile);
+
+            var transfer = new DataTransfer();
+            var i1 = new DataTransferItem();
+            i1.SetFile(noteFile);
+            transfer.Add(i1);
+            var i2 = new DataTransferItem();
+            i2.SetFile(imgFile);
+            transfer.Add(i2);
+
+            var inserted = new List<string>();
+            var handled = await ComposerClipboard.DropAsync(transfer, vm, inserted.Add, new FakeClock(Now));
+            Dispatch();
+
+            Assert.True(handled);
+            Assert.Equal([notePath], inserted);
+            var att = Assert.Single(vm.Attachments.Items);
+            Assert.Equal("diagram.png", att.Name);
+            Assert.True(att.IsDone);
+            Assert.Single(uploader.Uploaded);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public void Desktop_attachment_picker_exposes_photo_library_and_composer_displays_plan_pill_and_context_meter()
+    {
+        var (window, composer, vm, _, stores) = Render();
+        var picker = new Ncw.UI.Controls.NcwDesktopAttachmentPicker(() => window);
+        Assert.True(picker.IsAvailable(AttachmentSource.PhotoLibrary));
+        Assert.False(picker.IsAvailable(AttachmentSource.Camera));
+
+        ConversationFixtures.Run(stores, "run-ctx", "s-ncw-2", r => r with
+        {
+            Context = new ContextUsageEventDto(120_000, 200_000, false, []),
+        });
+        var session = new Ncw.Client.Stores.SessionRef("local", "s-ncw-2");
+        stores.Conversations.Update(c => c with
+        {
+            Sessions = c.Sessions.SetItem(session, c.Sessions[session] with { Meta = c.Sessions[session].Meta with { Mode = "plan" } }),
+        });
+        Dispatch();
+
+        Assert.True(vm.HasContext);
+        Assert.Equal(60, vm.ContextPercent);
+        Assert.True(vm.IsPlanMode);
+        var meter = composer.FindControl<Ncw.UI.Controls.PlainButton>("ContextMeter");
+        Assert.NotNull(meter);
+        Assert.True(meter.IsEffectivelyVisible);
     }
 }

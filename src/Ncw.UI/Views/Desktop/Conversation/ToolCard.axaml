@@ -15,8 +15,9 @@
     完整内容不在转录里画(太长),按需在以后的详情页看。
   -->
   <StackPanel Margin="0,1">
-    <ui:PlainButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,3" CornerRadius="8" Click="OnToggle" IsEnabled="{Binding CanExpand}"
-                    arc:Tooltip.Tip="{Binding Tip}">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
+      <ui:PlainButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,3" CornerRadius="8" Click="OnToggle" IsEnabled="{Binding CanExpand}"
+                      arc:Tooltip.Tip="{Binding Tip}">
       <!-- 严格单行:图标 | 工具名(至少 44、至多 160:常见的短名各行对齐,长名如 visualize_read_me / MCP 工具不被截成「visuali…」)|
            目标(只吃剩余宽度,放不下从末尾截断)| 改动量 · 状态 · 设备·环境 · 箭头(靠右)。
            目标必须是 * 列里的一个 TextBlock:放成 Auto 列时按内容宽度量,长命令会画到右侧的状态 / 环境标识上面(两段文字叠在一起)。
@@ -63,7 +64,13 @@
           </Panel>
         </StackPanel>
       </Grid>
-    </ui:PlainButton>
+      </ui:PlainButton>
+      <ui:PlainButton Grid.Column="1" Width="24" Height="24" CornerRadius="6" VerticalAlignment="Center"
+                      IsVisible="{Binding CanOpenFile}" Command="{Binding OpenFileCommand}"
+                      AutomationProperties.Name="{l:NcwText ToolOpenFile}" arc:Tooltip.Tip="{l:NcwText ToolOpenFile}">
+        <lucide:LucideIcon Kind="ExternalLink" Size="12" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      </ui:PlainButton>
+    </Grid>
     <!-- 失败的调用:输出的第一行(为什么失败),一行红字,不用点开才知道 -->
     <TextBlock Classes="hint mono failed" Margin="28,0,0,2" IsVisible="{Binding HasFailureLine}" Text="{Binding FailureLine}"
                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />

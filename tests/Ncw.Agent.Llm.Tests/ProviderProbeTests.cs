@@ -208,4 +208,53 @@ public sealed class ProviderProbeTests
         Assert.Equal("••••abcd", ProviderProbe.Mask(Key));
         Assert.Equal("••••", ProviderProbe.Mask("short"));
     }
+
+    private sealed class MediaStubHttp(Func<HttpRequestMessage, HttpResponseMessage> responder) : IUpstreamHttp
+    {
+        public List<string> Urls { get; } = [];
+
+        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Urls.Add(request.RequestUri!.ToString());
+            return Task.FromResult(responder(request));
+        }
+    }
+
+    [Fact]
+    public async Task Media_probes_hit_volcengine_image_and_video_endpoints_and_scrub_credentials()
+    {
+        var stub = new MediaStubHttp(req => req.RequestUri!.AbsolutePath.EndsWith("/images/generations", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"data":[{"url":"https://tos.example/probe.png"}]}""", System.Text.Encoding.UTF8, "application/json"),
+            }
+            : new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("{\"error\":{\"message\":\"invalid key " + Key + "\"}}", System.Text.Encoding.UTF8, "application/json"),
+            });
+        var probe = new ProviderProbe(stub);
+
+        var img = await probe.RunMediaAsync(new MediaProbeRequest(
+            "https://ark.cn-beijing.volces.com/api/v3",
+            Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineImages,
+            "doubao-seedream-4-5-251128",
+            new ApiKeyCredential(Key),
+            "a tiny bonsai"));
+        Assert.True(img.Ok, img.Failure?.Message);
+        Assert.Equal("https://ark.cn-beijing.volces.com/api/v3/images/generations", img.Url);
+        Assert.Equal("Bearer ••••abcd", img.RequestHeaders.Single(h => h.Name == "authorization").Value);
+        Assert.Contains("https://tos.example/probe.png", img.Text, StringComparison.Ordinal);
+
+        var vid = await probe.RunMediaAsync(new MediaProbeRequest(
+            "https://ark.cn-beijing.volces.com/api/v3",
+            Ncw.Agent.Llm.Media.ProviderProtocol.VolcengineVideos,
+            "doubao-seedance-1-5-pro-251215",
+            new ApiKeyCredential(Key),
+            "ocean waves"));
+        Assert.False(vid.Ok);
+        Assert.Equal("https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", vid.Url);
+        Assert.Equal(ProbeFailureKind.Rejected, vid.Failure!.Kind);
+        Assert.DoesNotContain(Key, vid.ResponseBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(Key, vid.Failure.Message, StringComparison.Ordinal);
+    }
 }

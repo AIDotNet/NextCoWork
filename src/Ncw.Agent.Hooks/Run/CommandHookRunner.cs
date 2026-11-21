@@ -82,14 +82,14 @@ public static class CommandHookRunner
         }
 
         var parsed = ParseDecision(stdout);
-        return new HookRunReport(hook.Id, scope, 0, stdout, stderr, duration, HookOutcome.Ok, parsed.Decision, parsed.Reason, parsed.AdditionalContext);
+        return new HookRunReport(hook.Id, scope, 0, stdout, stderr, duration, HookOutcome.Ok, parsed.Decision, parsed.Reason, parsed.AdditionalContext, UpdatedInput: parsed.UpdatedInput);
     }
 
     private static string Clean(string value) => value.Replace("\0", "", StringComparison.Ordinal);
 
     private static string Cap(string text, int max) => text.Length > max ? text[..max] : text;
 
-    internal readonly record struct Parsed(HookDecision? Decision, string? Reason, string? AdditionalContext);
+    internal readonly record struct Parsed(HookDecision? Decision, string? Reason, string? AdditionalContext, JsonElement? UpdatedInput = null);
 
     /// <summary>钩子 stdout 里那个可选的结构化回包。</summary>
     internal static Parsed ParseDecision(string stdout)
@@ -116,29 +116,57 @@ public static class CommandHookRunner
             HookDecision? decision = null;
             string? reason = null;
             string? context = null;
-            if (doc.RootElement.TryGetProperty("decision", out var d) && d.ValueKind == JsonValueKind.String)
+            JsonElement? updatedInput = null;
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("decision", out var d) && d.ValueKind == JsonValueKind.String)
             {
-                decision = d.GetString() switch
-                {
-                    "allow" => HookDecision.Allow,
-                    "deny" => HookDecision.Deny,
-                    "ask" => HookDecision.Ask,
-                    _ => null, // 认不出的值忽略掉,不当成 deny
-                };
+                decision = ParseDecisionValue(d.GetString());
             }
 
-            if (doc.RootElement.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String)
+            if (root.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String)
             {
                 reason = r.GetString();
             }
 
-            if (doc.RootElement.TryGetProperty("additionalContext", out var c) && c.ValueKind == JsonValueKind.String)
+            if (root.TryGetProperty("additionalContext", out var c) && c.ValueKind == JsonValueKind.String)
             {
                 context = c.GetString();
             }
 
+            if (root.TryGetProperty("updatedInput", out var ui) && ui.ValueKind == JsonValueKind.Object)
+            {
+                updatedInput = ui.Clone();
+            }
+
+            // 兼容 Claude Code 的 hookSpecificOutput 结构;嵌套字段在顶层缺省时生效,两者同在以顶层为准(permissionDecision 优先级同 decision)
+            if (root.TryGetProperty("hookSpecificOutput", out var specific) && specific.ValueKind == JsonValueKind.Object)
+            {
+                if (decision is null && specific.TryGetProperty("permissionDecision", out var pd) && pd.ValueKind == JsonValueKind.String)
+                {
+                    decision = ParseDecisionValue(pd.GetString());
+                }
+
+                if (reason is null && specific.TryGetProperty("permissionDecisionReason", out var pdr) && pdr.ValueKind == JsonValueKind.String)
+                {
+                    reason = pdr.GetString();
+                }
+
+                if (context is null && specific.TryGetProperty("additionalContext", out var sc) && sc.ValueKind == JsonValueKind.String)
+                {
+                    context = sc.GetString();
+                }
+
+                if (updatedInput is null && specific.TryGetProperty("updatedInput", out var sui) && sui.ValueKind == JsonValueKind.Object)
+                {
+                    updatedInput = sui.Clone();
+                }
+            }
+
             // 合法 JSON、但一个认得的字段都没有——当普通文本用:不然 echo '{"foo":"bar"}' 的输出会被静默丢掉,中间没有任何报错。
-            return decision is null && reason is null && context is null ? new Parsed(null, null, text) : new Parsed(decision, reason, context);
+            return decision is null && reason is null && context is null && updatedInput is null
+                ? new Parsed(null, null, text)
+                : new Parsed(decision, reason, context, updatedInput);
         }
         catch (JsonException)
         {
@@ -146,4 +174,12 @@ public static class CommandHookRunner
             return new Parsed(null, null, text);
         }
     }
+
+    private static HookDecision? ParseDecisionValue(string? value) => value switch
+    {
+        "allow" => HookDecision.Allow,
+        "deny" => HookDecision.Deny,
+        "ask" => HookDecision.Ask,
+        _ => null, // 认不出的值忽略掉,不当成 deny
+    };
 }

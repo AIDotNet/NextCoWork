@@ -51,7 +51,7 @@ public sealed record DeviceInfo(
 public sealed record SavedDevice(string DeviceId, string Name, string Fingerprint, string Host, int Port, string Role, string RouteToken, long PairedAt, string? Relay = null);
 
 /// <summary>会话列表里的一行(<c>sessions.list</c> 的镜像;完整会话由 session/&lt;id&gt; 主题提供)。运行状态不在这里,只由 activeRuns 回答。</summary>
-public sealed record SessionSummary(string Id, ProjectRef Project, string Title, DateTimeOffset UpdatedAt, bool Archived = false, bool Favorited = false);
+public sealed record SessionSummary(string Id, ProjectRef Project, string Title, DateTimeOffset UpdatedAt, bool Archived = false, bool Favorited = false, bool IsEmpty = false);
 
 /// <summary>「终端和智能体」分区里的一项。</summary>
 public sealed record TerminalSummary(string Id, ProjectRef Project, string Title, TerminalKind Kind);

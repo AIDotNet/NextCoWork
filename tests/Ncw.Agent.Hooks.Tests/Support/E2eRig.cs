@@ -121,11 +121,19 @@ public sealed class E2eRig : IAsyncDisposable
         Gate = new InteractionGate(new SeqIds("i"));
         PermissionRuns = new PermissionRuns();
         Ids = new SeqIds("x");
+        RunRegistry? registryForHooks = null;
         Hooks = new HooksService(new HooksServiceOptions
         {
             GlobalEnvironment = Env,
             GlobalSettingsPath = EnvPath.Parse(Path.Combine(_base, "profile", "settings.json"), HookFixture.Style),
             ResolveProject = (id, _) => ValueTask.FromResult(id == Workspace ? new HookProjectTarget(Env, Root) : null),
+            Evaluator = new LlmHookEvaluator(new LlmHookEvaluatorOptions
+            {
+                Llm = Llm,
+                ResolveModel = ResolveAlias,
+                ReadMessages = sessionId => Repo.History(sessionId).Select(MessageCodec.FromRecord).ToList(),
+                ActiveModel = (sessionId, runId) => registryForHooks?.Get(new RunId(runId))?.Model ?? new ModelRef("p1", Alias),
+            }),
             Log = Log,
         });
         Hooks.AttachNotifications(Gate, PermissionRuns);
@@ -164,6 +172,7 @@ public sealed class E2eRig : IAsyncDisposable
             Extensions = [new HostLikeRunExtension(this), .. Kit.RunExtensions],
             Interactions = new GateView(Gate),
         });
+        registryForHooks = Registry;
         Kit.Bind(Registry);
     }
 

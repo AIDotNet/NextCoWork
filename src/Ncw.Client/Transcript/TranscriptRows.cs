@@ -90,9 +90,10 @@ public enum RunStatusKind
     Retrying,
     Compacting,
     Unknown,
+    Generating,
 }
 
-/// <summary>转录末尾的运行状态提示:上游重试中、正在压缩、设备断开(状态未知)。</summary>
+/// <summary>转录末尾的运行状态提示:上游重试中、正在压缩、设备断开(状态未知)、等待模型生成首字 / 下一轮。</summary>
 public sealed record StatusRow(string Key, RunStatusKind Kind, int Attempt, int DelayMs) : TranscriptRow(Key);
 
 /// <summary>一条挂起的交互(审批、提问、计划批准、目标提案……)。<see cref="Interaction"/> 是 Store 里的那一份,不拷贝。</summary>

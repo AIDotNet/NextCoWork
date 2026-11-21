@@ -33,6 +33,8 @@ public class InspectorTabsTests
     public void Remaining_excludes_added()
     {
         Assert.Equal([InspectorTabKind.Review, InspectorTabKind.Terminal, InspectorTabKind.Context, InspectorTabKind.History], InspectorTabs.Remaining([InspectorTabKind.Git]));
+        Assert.DoesNotContain(InspectorTabKind.Files, InspectorTabs.Addable);
+        Assert.Contains(InspectorTabKind.Review, InspectorTabs.Addable);
     }
 }
 
@@ -52,12 +54,13 @@ public class InspectorViewModelTests
     }
 
     [Fact]
-    public void Defaults_to_file_manager_with_tree_of_selected_project()
+    public void Defaults_to_files_and_shares_selected_project_tree_with_sidebar()
     {
         var (_, shell) = Create();
         var inspector = shell.Inspector;
 
         Assert.True(inspector.IsFiles);
+        Assert.Same(inspector.Files, shell.Sidebar.Files);
         Assert.Equal("NextCoWork", inspector.Files.ProjectName);
         var src = Assert.Single(inspector.Files.Tree.Roots, n => n.Name == "src");
         Assert.True(src.IsExpanded);
@@ -65,6 +68,18 @@ public class InspectorViewModelTests
         Assert.True(src.HasChangedDescendant);
         // 目录在前
         Assert.True(inspector.Files.Tree.Roots.TakeWhile(n => n.IsDirectory).Count() >= 3);
+    }
+
+    [Fact]
+    public void Files_base_cannot_be_closed_or_duplicated()
+    {
+        var (_, shell) = Create();
+        shell.Inspector.AddCommand.Execute(InspectorTabKind.Files);
+        shell.Inspector.CloseCommand.Execute(InspectorTabKind.Files);
+
+        Assert.True(shell.Inspector.IsFiles);
+        Assert.False(Assert.Single(shell.Inspector.Tabs, t => t.Kind == InspectorTabKind.Files).IsClosable);
+        Assert.DoesNotContain(InspectorTabKind.Files, shell.Stores.Prefs.State.InspectorTabs);
     }
 
     [Fact]
@@ -148,5 +163,65 @@ public class InspectorViewModelTests
         Assert.Equal(["src", "README.md"], inspector.Files.Tree.Roots.Select(n => n.Name));
         Assert.Null(inspector.Files.Tree.Failure);
         Assert.True(git.Calls.Count(c => c == "refresh") >= 2); // 连上之后概览也重新取了
+    }
+
+    [Fact]
+    public void Context_tab_reflects_live_session_usage_segments_and_todos()
+    {
+        var (stores, shell) = Create();
+        var inspector = shell.Inspector;
+        var run = new RunRef("local", "run-live");
+        var meta = new Ncw.Protocol.Methods.SessionDto("s-ncw-1", "nextcowork", null, "user", "t", null, "opus", null, "code", "auto", false, false, 1, 2);
+        var todoCall = new Ncw.Protocol.Methods.MessageDto("m1", "assistant", 1, false,
+            "[{\"type\":\"tool_call\",\"callId\":\"tc1\",\"name\":\"TodoWrite\",\"input\":{\"todos\":[{\"content\":\"Write tests\",\"status\":\"in_progress\",\"activeForm\":\"Writing tests\"}]}}]");
+        var todoDone = new Ncw.Protocol.Methods.MessageDto("m2", "user", 2, true,
+            "[{\"type\":\"tool_result\",\"callId\":\"tc1\",\"output\":{\"content\":\"ok\"},\"isError\":false}]");
+        var sessionState = new Ncw.Protocol.Methods.SessionTopicState(
+            new Ncw.Protocol.Methods.SessionPageDto(meta, [todoCall, todoDone], false, [], [], []),
+            new Ncw.Protocol.Methods.QueueDto("s-ncw-1", 1, []),
+            "run-live");
+        stores.Conversations.Update(c =>
+        {
+            var next = ConversationReducer.ApplySession(c, "local", sessionState);
+            return next with
+            {
+                Runs = next.Runs.SetItem(run, RunView.New(run, "s-ncw-1", 1) with
+                {
+                    Context = new Ncw.Protocol.Methods.ContextUsageEventDto(102_000, 200_000, false,
+                    [
+                        new Ncw.Protocol.Methods.ContextSegmentDto("system", 20_000),
+                        new Ncw.Protocol.Methods.ContextSegmentDto("messages", 82_000),
+                    ]),
+                }),
+            };
+        });
+
+        Assert.True(inspector.HasContext);
+        Assert.Equal(51, inspector.ContextPercent);
+        Assert.Equal("102K", inspector.ContextUsedText);
+        Assert.Equal("200K", inspector.ContextWindowText);
+        Assert.Equal(2, inspector.ContextSegments.Count);
+        Assert.True(inspector.HasTodo);
+        Assert.True(inspector.Todo!.Items.Count > 0);
+    }
+
+    [Fact]
+    public async Task History_tab_loads_review_runs_and_opening_a_run_switches_to_review()
+    {
+        var (stores, shell) = Create();
+        stores.Review.Update(m => ReviewReducer.Apply(m, "local", "run-1",
+            new Ncw.Protocol.Methods.ReviewChangeSetDto("run-1", "s-ncw-1", "nextcowork", Ncw.Protocol.Methods.ReviewStates.Applied, 1, 5, 1,
+                [new Ncw.Protocol.Methods.ReviewFileEntryDto("src/a.cs", Ncw.Protocol.Methods.ReviewChangeKinds.Modified, 5, 1, false, true)], 100)));
+        var inspector = shell.Inspector;
+        inspector.AddCommand.Execute(InspectorTabKind.History);
+        await Task.Yield();
+
+        Assert.True(inspector.IsHistory);
+        Assert.True(inspector.Review.HasRuns);
+        var run = inspector.Review.Runs[0];
+        inspector.OpenReviewRunCommand.Execute(run);
+
+        Assert.True(inspector.IsReview);
+        Assert.Equal(run.RunId, inspector.Review.Selected?.RunId);
     }
 }

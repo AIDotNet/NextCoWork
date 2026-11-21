@@ -11,7 +11,7 @@
              x:DataType="vm:SidebarProjectViewModel">
   <!--
     侧边栏项目树里的一个项目(docs/design/03 §1「左侧边栏」):一行项目标题 + 展开后的会话。
-    标题行 = 展开箭头 · 20px 图标 · 名字(当前项目加粗)· 设备名 · 右侧状态(收起时:待处理数 / 运行中 / 离线);悬停时右侧换成「+」「⋯」。
+    标题行 = 展开箭头 · 20px 图标 · 名字(当前项目加粗)· 设备名 · 右侧状态(收起时:待处理数 / 运行中 / 离线);悬停时在独立列追加「+」「⋯」。
     拖放只认标题行(Header);右键菜单和「⋯」是同一份(code-behind)。
   -->
   <UserControl.Styles>
@@ -21,11 +21,14 @@
     <Style Selector="Grid#Header StackPanel#HoverActions">
       <Setter Property="IsVisible" Value="False" />
     </Style>
-    <Style Selector="Grid#Header:pointerover Panel#Status">
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
     <Style Selector="Grid#Header:pointerover StackPanel#HoverActions">
       <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Grid#Header">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Grid#Header.selected">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
     </Style>
     <Style Selector="TextBlock.current">
       <Setter Property="FontWeight" Value="SemiBold" />
@@ -33,13 +36,14 @@
   </UserControl.Styles>
 
   <StackPanel>
-    <Grid x:Name="Header" Height="30" ColumnDefinitions="22,*" Background="Transparent">
-      <ui:PlainButton Width="20" Height="20" CornerRadius="5" HorizontalAlignment="Left" Command="{Binding ToggleExpandedCommand}"
+    <Grid x:Name="Header" Height="30" ColumnDefinitions="3,22,*,Auto" Classes.selected="{Binding Tile.IsSelected}">
+      <Border Width="2" CornerRadius="1" Margin="0,4" Background="{arc:ArcDesignTokenResource Accent}" IsVisible="{Binding Tile.IsSelected}" />
+      <ui:PlainButton Grid.Column="1" Width="20" Height="20" CornerRadius="5" HorizontalAlignment="Left" Command="{Binding ToggleExpandedCommand}"
                       AutomationProperties.Name="{Binding Tile.Name}">
         <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12"
                            HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
       </ui:PlainButton>
-      <ui:PlainButton x:Name="RowButton" Grid.Column="1" Padding="4,0,6,0" CornerRadius="7" Command="{Binding ActivateCommand}"
+      <ui:PlainButton x:Name="RowButton" Grid.Column="2" Padding="4,0,6,0" CornerRadius="7" Command="{Binding ActivateCommand}"
                       AutomationProperties.Name="{Binding Tile.Name}" arc:Tooltip.Tip="{Binding Tile.Tooltip}">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
           <!-- 图标:用户设过的文字 + 底色,或自定义图片;没设过不画(默认的首字母色块和名字重复)。离线时变淡 -->
@@ -49,18 +53,18 @@
             </Panel.Styles>
             <Border CornerRadius="5" Background="{Binding Tile.Color, Converter={x:Static cv:HexBrushConverter.Instance}}" IsVisible="{Binding !Tile.HasImage}">
               <TextBlock Text="{Binding Tile.Glyph}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         FontSize="9" FontWeight="SemiBold" Foreground="White" />
+                         FontSize="9" FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
             </Border>
             <Border CornerRadius="5" Background="{arc:ArcDesignTokenResource SurfaceRaised}" IsVisible="{Binding Tile.HasImage}">
               <Border CornerRadius="5" Background="{Binding Tile.Image, Converter={x:Static cv:ProjectIconBrushConverter.Instance}}" />
             </Border>
           </Panel>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6" VerticalAlignment="Center">
             <TextBlock Text="{Binding Tile.Name}" Classes.current="{Binding Tile.IsSelected}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-            <TextBlock Classes="hint" Text="{Binding DeviceLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+            <TextBlock Grid.Column="1" Classes="hint" Text="{Binding DeviceLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                        IsVisible="{Binding DeviceLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          </StackPanel>
-          <!-- 右侧状态(悬停时让位给「+」「⋯」) -->
+          </Grid>
+          <!-- 状态保留自己的列,悬停操作不会盖住它。 -->
           <Panel x:Name="Status" Grid.Column="2" VerticalAlignment="Center">
             <lucide:LucideIcon Kind="WifiOff" Size="12" IsVisible="{Binding Tile.IsOffline}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <Border Classes="pendingPill" IsVisible="{Binding ShowsPending}" ui:NcwMotion.ShowMotion="Fade">
@@ -71,11 +75,14 @@
           </Panel>
         </Grid>
       </ui:PlainButton>
-      <StackPanel x:Name="HoverActions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,3,0" Spacing="1">
-        <ui:PlainButton Width="22" Height="22" CornerRadius="6" Command="{Binding NewSessionCommand}"
-                        AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
-          <lucide:LucideIcon Kind="Plus" Size="13" HorizontalAlignment="Center" />
-        </ui:PlainButton>
+      <StackPanel x:Name="HoverActions" Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,3,0" Spacing="1">
+        <ui:NcwDropdownMenu x:Name="NewMenu">
+          <ui:NcwDropdownMenu.Trigger>
+            <ui:PlainButton Width="22" Height="22" CornerRadius="6" AutomationProperties.Name="{l:NcwText NewSession}" arc:Tooltip.Tip="{l:NcwText NewSession}">
+              <lucide:LucideIcon Kind="Plus" Size="13" HorizontalAlignment="Center" />
+            </ui:PlainButton>
+          </ui:NcwDropdownMenu.Trigger>
+        </ui:NcwDropdownMenu>
         <ui:NcwDropdownMenu x:Name="MoreMenu">
           <ui:NcwDropdownMenu.Trigger>
             <ui:PlainButton Width="22" Height="22" CornerRadius="6" AutomationProperties.Name="{l:NcwText SidebarProjectMenu}" arc:Tooltip.Tip="{l:NcwText More}">
@@ -88,22 +95,24 @@
 
     <!-- 展开后的会话:有待处理的 → 运行中的 → 收藏的 → 其余(SidebarSessions.Arrange),最多 4 条 -->
     <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
-      <StackPanel Margin="18,0,0,4">
-        <ItemsControl ItemsSource="{Binding Sessions}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="vm:SessionItemViewModel">
-              <conv:SessionRow />
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding ShowsEmpty}" Text="{l:NcwText SidebarNoSessions}" />
-        <ui:PlainButton Padding="8,4" HorizontalAlignment="Left" Command="{Binding ToggleShowAllCommand}" IsVisible="{Binding HasMore}">
-          <TextBlock Classes="hint" Text="{Binding HiddenCount, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=SidebarShowMore}" />
-        </ui:PlainButton>
-        <ui:PlainButton Padding="8,4" HorizontalAlignment="Left" Command="{Binding ToggleShowAllCommand}" IsVisible="{Binding CanShowLess}">
-          <TextBlock Classes="hint" Text="{l:NcwText SidebarShowLess}" />
-        </ui:PlainButton>
-      </StackPanel>
+      <Border Margin="14,0,0,4" BorderThickness="1,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <StackPanel Margin="8,0,0,0">
+          <ItemsControl ItemsSource="{Binding Sessions}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:SessionItemViewModel">
+                <conv:SessionRow />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Classes="hint" Margin="8,4" IsVisible="{Binding ShowsEmpty}" Text="{l:NcwText SidebarNoSessions}" />
+          <ui:PlainButton Padding="8,4" HorizontalAlignment="Left" Command="{Binding ToggleShowAllCommand}" IsVisible="{Binding HasMore}">
+            <TextBlock Classes="hint" Text="{Binding HiddenCount, Converter={x:Static cv:CountTextConverter.Instance}, ConverterParameter=SidebarShowMore}" />
+          </ui:PlainButton>
+          <ui:PlainButton Padding="8,4" HorizontalAlignment="Left" Command="{Binding ToggleShowAllCommand}" IsVisible="{Binding CanShowLess}">
+            <TextBlock Classes="hint" Text="{l:NcwText SidebarShowLess}" />
+          </ui:PlainButton>
+        </StackPanel>
+      </Border>
     </ui:NcwCollapsible>
   </StackPanel>
 </UserControl>

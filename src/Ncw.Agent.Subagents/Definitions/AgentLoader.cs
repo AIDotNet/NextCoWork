@@ -22,6 +22,8 @@ public static class AgentDiagnosticKeys
     public const string ToolsNone = "agents.toolsNone";
     public const string PermissionModeInvalid = "agents.permissionModeInvalid";
     public const string ThinkingInvalid = "agents.thinkingInvalid";
+    public const string MaxTurnsInvalid = "agents.maxTurnsInvalid";
+    public const string IsolationInvalid = "agents.isolationInvalid";
 }
 
 /// <summary>一条加载诊断:哪个文件 / 目录、什么原因。<see cref="Params"/> 是结构化参数(名字、值)。</summary>
@@ -214,6 +216,7 @@ public static class AgentLoader
             return null;
         }
 
+        var disallowedTools = ResolveDisallowedTools(fm, file, diagnostics);
         var mode = ResolvePermissionMode(fm, file, diagnostics, out var modeInvalid);
         if (modeInvalid)
         {
@@ -225,10 +228,10 @@ public static class AgentLoader
         // 也不校验这家是否还在:加载器够不着路由器,校验在运行时那一侧,查不到就退回只按别名择优。
         var modelProviderId = model is null ? null : FrontmatterParser.String(fm, "modelProviderId");
 
-        // thinking: 读不懂就当没写,不作废(它只影响花多少钱和想多深)。诊断里必须说清「照哪一档跑」。
+        // thinking(以及 CC 别名 effort): 读不懂就当没写,不作废(它只影响花多少钱和想多深)。诊断里必须说清「照哪一档跑」。
         // inherit 不是合法的文件取值:文件里「跟随」表达为没有这一行。
         ThinkingLevel? thinking = null;
-        if (FrontmatterParser.String(fm, "thinking")?.Trim().ToLowerInvariant() is { } rawThinking)
+        if ((FrontmatterParser.String(fm, "thinking") ?? FrontmatterParser.String(fm, "effort"))?.Trim().ToLowerInvariant() is { } rawThinking)
         {
             if (SubagentThinkingSelection.TryParseLevel(rawThinking, out var level))
             {
@@ -244,6 +247,43 @@ public static class AgentLoader
             }
         }
 
+        int? maxTurns = null;
+        if ((FrontmatterParser.String(fm, "maxTurns") ?? FrontmatterParser.String(fm, "max-turns"))?.Trim() is { Length: > 0 } rawMaxTurns)
+        {
+            if (int.TryParse(rawMaxTurns, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedTurns)
+                && parsedTurns is >= 1 and <= 500)
+            {
+                maxTurns = parsedTurns;
+            }
+            else
+            {
+                diagnostics.Add(Diagnostic(
+                    file.Value,
+                    AgentDiagnosticKeys.MaxTurnsInvalid,
+                    $"maxTurns \"{rawMaxTurns}\" is not an integer in 1..500; the line was ignored.",
+                    ("value", rawMaxTurns)));
+            }
+        }
+
+        var defaultBackground = string.Equals(FrontmatterParser.String(fm, "background")?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+
+        var isolation = AgentIsolation.None;
+        if (FrontmatterParser.String(fm, "isolation")?.Trim().ToLowerInvariant() is { Length: > 0 } rawIsolation)
+        {
+            if (rawIsolation == "worktree")
+            {
+                isolation = AgentIsolation.Worktree;
+            }
+            else if (rawIsolation != "none")
+            {
+                diagnostics.Add(Diagnostic(
+                    file.Value,
+                    AgentDiagnosticKeys.IsolationInvalid,
+                    $"isolation \"{rawIsolation}\" is not supported (expected \"worktree\"); the line was ignored.",
+                    ("value", rawIsolation)));
+            }
+        }
+
         // 颜色读不懂就当没写,不作废:纯装饰,为一条坏颜色让用户的子代理消失,代价完全不成比例。
         var rawColor = FrontmatterParser.String(fm, "color")?.Trim().ToLowerInvariant();
         var color = rawColor is not null && AgentColors.IsColor(rawColor) ? rawColor : null;
@@ -255,10 +295,14 @@ public static class AgentLoader
             new AgentSource(scope, file.Value))
         {
             Tools = tools,
+            DisallowedTools = disallowedTools,
             Model = model is null ? null : AgentText.StripControlChars(model),
             ModelProviderId = modelProviderId is null ? null : AgentText.StripControlChars(modelProviderId),
             Thinking = thinking,
             PermissionMode = mode,
+            MaxTurns = maxTurns,
+            DefaultBackground = defaultBackground,
+            Isolation = isolation,
             Color = color,
         };
     }
@@ -293,6 +337,23 @@ public static class AgentLoader
         }
 
         return tools;
+    }
+
+    private static IReadOnlyList<string>? ResolveDisallowedTools(Frontmatter fm, EnvPath file, List<AgentDiagnostic> diagnostics)
+    {
+        var raw = FrontmatterParser.List(fm, "disallowedTools") ?? FrontmatterParser.List(fm, "disallowed-tools");
+        if (raw is null)
+        {
+            return null;
+        }
+
+        var (tools, unknown) = AgentToolNames.NormalizeList(raw);
+        if (unknown.Count > 0)
+        {
+            diagnostics.Add(Diagnostic(file.Value, AgentDiagnosticKeys.ToolsUnknown, $"Unrecognised tool names in disallowedTools (ignored): {string.Join(", ", unknown)}.", ("names", string.Join(", ", unknown))));
+        }
+
+        return tools.Count == 0 ? null : tools;
     }
 
     /// <summary>

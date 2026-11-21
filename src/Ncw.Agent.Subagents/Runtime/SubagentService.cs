@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using Ncw.Agent.Catalog;
+using Ncw.Agent.Environments;
 using Ncw.Agent.Extensions.Interactions;
 using Ncw.Agent.Extensions.Permissions;
 using Ncw.Agent.Kernel.Loop;
@@ -39,6 +40,9 @@ public sealed class SubagentServiceDeps
     public TimeProvider Clock { get; init; } = TimeProvider.System;
 
     public ILoopDiagnostics Log { get; init; } = NullLoopDiagnostics.Instance;
+
+    /// <summary>工作区 id → (执行环境, 项目根);<c>isolation: worktree</c> 在该项目根上创建临时 git worktree。</summary>
+    public Func<string, (IExecutionEnvironment Environment, EnvPath Root)?>? ResolveProject { get; init; }
 }
 
 /// <summary>
@@ -87,9 +91,11 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
 
         /// <summary>父 Run 中止 → 中止这个子 Run 的登记(子 Run 结束时摘掉)。</summary>
         public CancellationTokenRegistration AbortLink;
+
+        public SubagentWorktree? Worktree;
     }
 
-    private sealed record ChildResult(RunStatus Status, string Text, AgentError? Error, DateTimeOffset? EndedAt, TokenUsage? Usage);
+    private sealed record ChildResult(RunStatus Status, string Text, AgentError? Error, DateTimeOffset? EndedAt, TokenUsage? Usage, WorktreeInfo? Worktree = null);
 
     private sealed record ChildStart(ChildRun Child, Task<ChildResult> Result);
 
@@ -175,7 +181,7 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         }
 
         var parentOptions = parent.Options ?? new SendOptions(settings.Model!.ToRef());
-        var selection = ChooseModel(definition, settings, parentOptions);
+        var selection = ChooseModel(definition, settings, parentOptions, request.Model);
         var thinking = _deps.Models.NormalizeThinking(SubagentThinkingSelection.Select(definition.Thinking, settings.Thinking, parentOptions.Thinking), selection);
 
         // ★ 取 min,不是取子代理声明的那个:否则一个被投毒的 MCP 工具描述可以诱导主 Agent 派一个子 Agent 去做它自己不被允许做的事——这是真实的提权路径。
@@ -185,11 +191,57 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         var definedMode = definition.PermissionMode ?? PermissionMode.Full;
         var mode = PermissionModes.Min(parentMode, definedMode);
 
+        string childSessionId;
         var childRunId = SubagentIds.ChildRun(parent.RunId, Interlocked.Increment(ref _sequence));
-        var childSessionId = SubagentIds.ChildSession(parent.SessionId, childRunId);
+        if (request.Resume is { Length: > 0 } resumeRaw)
+        {
+            var resumeId = resumeRaw.Trim();
+            var existing = _deps.Sessions.Get(resumeId);
+            if (existing is null || existing.ParentSessionId != parent.SessionId || existing.WorkspaceId != parent.WorkspaceId)
+            {
+                return new SubagentOutcome.Refused(
+                    $"Cannot resume subagent session \"{resumeId}\": no matching child session belongs to this conversation. Omit `resume` to start a fresh subagent.");
+            }
+
+            if (registry.ActiveRuns().Runs.Any(r => r.SessionId == existing.Id))
+            {
+                return new SubagentOutcome.Refused(
+                    $"Subagent session \"{existing.Id}\" is still running; wait for it to finish before resuming it.");
+            }
+
+            childSessionId = existing.Id;
+        }
+        else
+        {
+            childSessionId = SubagentIds.ChildSession(parent.SessionId, childRunId);
+        }
+
+        var isolation = request.Isolation == AgentIsolation.Worktree || definition.Isolation == AgentIsolation.Worktree
+            ? AgentIsolation.Worktree
+            : AgentIsolation.None;
+        SubagentWorktree? worktree = null;
+        if (isolation == AgentIsolation.Worktree)
+        {
+            var project = _deps.ResolveProject?.Invoke(parent.WorkspaceId);
+            if (project is null)
+            {
+                return new SubagentOutcome.Refused("Cannot isolate subagent in a git worktree: this workspace has no project root.");
+            }
+
+            var (created, wtError) = await SubagentWorktree.TryCreateAsync(project.Value.Environment, project.Value.Root, childRunId.Value, ct).ConfigureAwait(false);
+            if (created is null)
+            {
+                return new SubagentOutcome.Refused(wtError ?? "Failed to create git worktree for isolated subagent.");
+            }
+
+            worktree = created;
+        }
+
+        var background = request.RunInBackground ?? (request.Background || definition.DefaultBackground);
         var child = new ChildRun(childRunId, parent.RunId, parent.SessionId, parent.WorkspaceId, request.CallId, childSessionId, definition, request.Description, definedMode)
         {
-            Background = request.Background,
+            Background = background,
+            Worktree = worktree,
         };
         _children[childRunId] = child;
         var options = new SendOptions(selection.ToRef(), thinking, parentOptions.MaxContext, "code", mode.ToWire());
@@ -201,7 +253,7 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         {
             slot = _queue.Acquire(new SlotRequest<ChildStart>(
                 signal,
-                Blocking: !request.Background, // 后台派发不阻塞父 Run,所以它不算死锁判据里的「卡住了」
+                Blocking: !background, // 后台派发不阻塞父 Run,所以它不算死锁判据里的「卡住了」
                 Start: () => StartChild(child, parent, request, options, mode),
                 OnQueued: ahead =>
                 {
@@ -214,14 +266,19 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         catch
         {
             _children.TryRemove(childRunId, out _);
+            if (worktree is not null)
+            {
+                await SafeRemoveWorktreeAsync(worktree).ConfigureAwait(false);
+            }
+
             throw;
         }
 
         // ★ 这里依赖 Acquire 的同步不变式:它在返回之前就决定好了「直接启动」还是「入队」,所以 queued 此刻已经是准的。
-        if (request.Background)
+        if (background)
         {
             _ = ObserveBackgroundAsync(slot, child, parent.SessionId, request.CallId);
-            return new SubagentOutcome.Background(childRunId, queued, Color: definition.Color);
+            return new SubagentOutcome.Background(childRunId, queued, Color: definition.Color, Worktree: worktree?.Info);
         }
 
         SlotResult<ChildStart> acquired;
@@ -232,6 +289,11 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         catch (Exception e)
         {
             _children.TryRemove(childRunId, out _);
+            if (worktree is not null)
+            {
+                await SafeRemoveWorktreeAsync(worktree).ConfigureAwait(false);
+            }
+
             _deps.Log.Warn($"[subagent] could not start {childRunId}.", e);
             return new SubagentOutcome.Refused($"The subagent could not be started: {e.Message}. Do this step yourself.");
         }
@@ -239,6 +301,11 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         if (acquired is SlotResult<ChildStart>.Refused refused)
         {
             _children.TryRemove(childRunId, out _);
+            if (worktree is not null)
+            {
+                await SafeRemoveWorktreeAsync(worktree).ConfigureAwait(false);
+            }
+
             // 死锁拒绝要留痕:它基本等价于「用户把并发上限配得太小,而代理在套娃」——生产里这是唯一能发现那件事的途径。
             if (refused.Reason == SlotRefusal.Deadlock)
             {
@@ -289,7 +356,7 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         }
 
         var result = await started.Result.ConfigureAwait(false);
-        return new SubagentOutcome.Finished(childRunId, result.Status, result.Text, definition.Color, result.Error, result.Usage);
+        return new SubagentOutcome.Finished(childRunId, result.Status, result.Text, definition.Color, result.Error, result.Usage, result.Worktree);
     }
 
     /// <summary>
@@ -306,10 +373,14 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
     /// 反过来别名本身查不到时<b>不动它</b>——那是用户写错了模型名,静默换一个模型跑完再交回结果,比失败难查得多。
     /// 设置里那个「默认子代理」悬空时落到下一档(父 Run):这一栏是偏好,不是硬约束。
     /// </summary>
-    private ModelSelection ChooseModel(AgentDefinition definition, SubagentSettings settings, SendOptions parentOptions)
+    private ModelSelection ChooseModel(AgentDefinition definition, SubagentSettings settings, SendOptions parentOptions, string? overrideModel = null)
     {
         ModelSelection? declared = null;
-        if (definition.Model is { Length: > 0 } alias)
+        if (!string.IsNullOrWhiteSpace(overrideModel))
+        {
+            declared = new ModelSelection(overrideModel.Trim());
+        }
+        else if (definition.Model is { Length: > 0 } alias)
         {
             declared = definition.ModelProviderId is { Length: > 0 } providerId && !_deps.Models.Exists(new ModelSelection(alias, providerId))
                 ? new ModelSelection(alias)
@@ -351,8 +422,22 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
 
         var message = new Message(new MessageId($"{child.Id.Value}:prompt"), Role.User, [new TextPart(request.Prompt)], _deps.Clock.GetUtcNow());
         var template = _deps.Requests.Create(new RunTemplate(child.Id, child.ChildSessionId, parent.WorkspaceId, [message], options, RunOrigin.Subagent));
-        // 子代理拿到的是一个全新的上下文窗(派生 id 的会话天然没有历史);角色提示词追加在基础提示词之后,不替换。
-        var runRequest = template with { Depth = parent.Depth + 1, AgentPrompt = definition.Prompt };
+        var maxTurns = (definition.MaxTurns, request.MaxTurns) switch
+        {
+            (int a, int b) => Math.Min(a, b),
+            (int a, null) => a,
+            (null, int b) => b,
+            _ => (int?)null,
+        };
+        // 子代理拿到的是一个全新的上下文窗(派生 id 或恢复的子会话);角色提示词追加在基础提示词之后,不替换。
+        var runRequest = template with
+        {
+            Depth = parent.Depth + 1,
+            AgentPrompt = definition.Prompt,
+            AgentType = definition.Name,
+            MaxTurns = maxTurns,
+            WorkspaceRoot = child.Worktree?.Path,
+        };
 
         var monitor = new ChildMonitor(registry, parent.RunId, child.Id, request.CallId, _deps.Clock, _deps.Log);
         var launched = registry.Launch(new RunLaunch(child.ChildSessionId, parent.WorkspaceId, runRequest)
@@ -362,6 +447,7 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
             ParentSessionId = parent.SessionId,
             Options = options,
             PermissionMode = mode.ToWire(),
+            WorkspaceRoot = child.Worktree?.Path,
             Subscriptions = [monitor.Subscription],
         });
         if (launched is not LaunchResult.Started started)
@@ -402,6 +488,11 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
             {
                 await granted.Value.Result.ConfigureAwait(false);
                 return;
+            }
+
+            if (child.Worktree is { } wt)
+            {
+                await SafeRemoveWorktreeAsync(wt).ConfigureAwait(false);
             }
 
             var reason = ((SlotResult<ChildStart>.Refused)acquired).Reason;
@@ -461,13 +552,22 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
 
             PostEnd(child, status, summary, error, handle);
 
+            WorktreeInfo? preservedWorktree = null;
+            if (child.Worktree is { } wt)
+            {
+                preservedWorktree = await SafeFinalizeWorktreeAsync(wt).ConfigureAwait(false);
+            }
+
             if (background)
             {
-                _reports.ChildFinished(new BackgroundReport(child.ParentSessionId, child.CallId, child.Id, child.Definition.Name, text, summary), status);
+                var bgText = preservedWorktree is null
+                    ? text
+                    : $"{text}\n\n[worktree: {preservedWorktree.Path} (branch {preservedWorktree.Branch})]";
+                _reports.ChildFinished(new BackgroundReport(child.ParentSessionId, child.CallId, child.Id, child.Definition.Name, bgText, summary), status);
             }
 
             RaiseEach(Stopped, new SubagentStopped(child.ParentSessionId, child.ParentRunId, child.CallId, child.Id, child.ChildSessionId, child.Definition.Name, status, background));
-            return new ChildResult(status, text, error, handle.EndedAt, monitor.Usage);
+            return new ChildResult(status, text, error, handle.EndedAt, monitor.Usage, preservedWorktree);
         }
         catch (Exception e)
         {
@@ -494,6 +594,31 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
         if (seq == 0 && child.Background)
         {
             _deps.Log.Warn($"[subagent] background child finished after parent: {child.Id}");
+        }
+    }
+
+    private async Task<WorktreeInfo?> SafeFinalizeWorktreeAsync(SubagentWorktree worktree)
+    {
+        try
+        {
+            return await worktree.FinalizeAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _deps.Log.Warn($"[subagent] could not finalize worktree {worktree.Path.Value}.", e);
+            return worktree.Info;
+        }
+    }
+
+    private async Task SafeRemoveWorktreeAsync(SubagentWorktree worktree)
+    {
+        try
+        {
+            await worktree.RemoveAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _deps.Log.Warn($"[subagent] could not remove worktree {worktree.Path.Value}.", e);
         }
     }
 
@@ -529,7 +654,7 @@ public sealed class SubagentService : ISubagentLauncher, IRunExtension, ISlotOcc
             return;
         }
 
-        runs.Register(parentState.ForSubagent(run.RunId, gate.OpenRun(run.RunId, run.Depth), child.DefinedMode));
+        runs.Register(parentState.ForSubagent(run.RunId, gate.OpenRun(run.RunId, run.Depth), child.DefinedMode, child.Worktree?.Path));
     }
 
     public void OnEnded(RunHandle run, RunStatus status, AgentError? error)

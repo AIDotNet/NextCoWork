@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ncw.Agent.Llm.Auth;
 using Ncw.Agent.Llm.History;
+using Ncw.Agent.Llm.Media;
 using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Sse;
 using Ncw.Agent.Llm.Thinking;
@@ -72,10 +74,18 @@ public sealed record ProbeRequest(
     ThinkingLevel Thinking,
     bool WithTool);
 
+/// <summary>一次非文本(图片 / 视频 / 音频)调试请求的输入。</summary>
+public sealed record MediaProbeRequest(
+    string BaseUrl,
+    ProviderProtocol Protocol,
+    string Model,
+    ProviderCredential? Credential,
+    string Prompt);
+
 /// <summary>一次调试的完整记录。所有文本都已脱敏;<see cref="Events"/> 可能被截断(<see cref="EventsTruncated"/>)。</summary>
 public sealed record ProbeResult(
     bool Ok,
-    WireProtocol Protocol,
+    ProviderProtocol Protocol,
     string Model,
     string Method,
     string Url,
@@ -138,7 +148,7 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
     /// <param name="onEvent">每条记录下来的事件(在发请求的线程上同步调用;抛出的异常被吞掉,调试照常进行)。</param>
     public async Task<ProbeResult> RunAsync(ProbeRequest request, Action<ProbeEvent>? onEvent = null, CancellationToken ct = default)
     {
-        var run = new Run(request, _options, onEvent);
+        var run = new Run(request.Protocol.ToProviderProtocol(), request.Binding.UpstreamModel, request.Credential, _options, onEvent);
         var protocol = request.Protocol;
         var url = WireProtocols.JoinUrl(request.Provider.BaseUrl, protocol.PathOf());
         run.Url = run.Scrub(url);
@@ -195,7 +205,7 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
                 using var response = await http.SendAsync(message, token).ConfigureAwait(false);
                 run.Status = (int)response.StatusCode;
                 run.ResponseHeaders = run.MaskHeaders(response.Headers, response.Content.Headers);
-                run.Emit(ProbeEventKind.Response, run.Status.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                run.Emit(ProbeEventKind.Response, run.Status.Value.ToString(CultureInfo.InvariantCulture),
                     string.Join('\n', run.ResponseHeaders.Select(h => $"{h.Name}: {h.Value}")));
 
                 if (!response.IsSuccessStatusCode)
@@ -258,6 +268,144 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
         }
     }
 
+    /// <summary>图片 / 视频 / 音频协议的单条真实请求调试。同样只发一次、脱敏、不抛业务异常。</summary>
+    public async Task<ProbeResult> RunMediaAsync(MediaProbeRequest request, Action<ProbeEvent>? onEvent = null, CancellationToken ct = default)
+    {
+        var run = new Run(request.Protocol, request.Model, request.Credential, _options, onEvent);
+        var token = request.Credential switch
+        {
+            ApiKeyCredential k => k.ApiKey,
+            OAuthCredential o => o.AccessToken,
+            _ => null,
+        };
+
+        EncodedMediaHttp encoded;
+        try
+        {
+            encoded = request.Protocol switch
+            {
+                ProviderProtocol.OpenAiImages => ImageMediaCodec.BuildRequest(ImageProtocol.OpenAiImages, request.BaseUrl, new ImageGenerateRequest(request.Model, request.Prompt), token, _options.UserAgent),
+                ProviderProtocol.VolcengineImages => ImageMediaCodec.BuildRequest(ImageProtocol.VolcengineImages, request.BaseUrl, new ImageGenerateRequest(request.Model, request.Prompt), token, _options.UserAgent),
+                ProviderProtocol.OpenAiVideos => VideoMediaCodec.BuildCreateRequest(VideoProtocol.OpenAiVideos, request.BaseUrl, new VideoCreateRequest(request.Model, request.Prompt), token, _options.UserAgent),
+                ProviderProtocol.VolcengineVideos => VideoMediaCodec.BuildCreateRequest(VideoProtocol.VolcengineVideos, request.BaseUrl, new VideoCreateRequest(request.Model, request.Prompt), token, _options.UserAgent),
+                ProviderProtocol.OpenAiAudio => AudioMediaCodec.BuildSpeechRequest(AudioProtocol.OpenAiAudio, request.BaseUrl, new AudioSpeechRequest(request.Model, request.Prompt), token, _options.UserAgent),
+                _ => throw new InvalidOperationException($"Protocol '{request.Protocol.NameOf()}' is not a media protocol."),
+            };
+        }
+        catch (Exception e) when (e is UriFormatException or ArgumentException or InvalidOperationException or FormatException)
+        {
+            return run.Fail(ProbeFailureKind.Local, AgentErrorCode.Provider, e.Message);
+        }
+
+        using (encoded.Message)
+        {
+            run.Url = run.Scrub(encoded.Message.RequestUri?.ToString() ?? encoded.Url);
+            run.RequestHeaders = run.MaskHeaders(encoded.Message.Headers, encoded.Message.Content?.Headers);
+            run.RequestBody = run.Truncate(run.Scrub(PrettyJson(encoded.BodyPreview)), _options.MaxBody);
+            run.Emit(ProbeEventKind.Request, run.Url, run.RequestBody);
+
+            using var total = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            total.CancelAfter(_options.TotalTimeout);
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(total.Token);
+            void ResetIdle() => idle.CancelAfter(_options.IdleTimeout);
+            var callToken = idle.Token;
+            try
+            {
+                ResetIdle();
+                using var response = await http.SendAsync(encoded.Message, callToken).ConfigureAwait(false);
+                run.Status = (int)response.StatusCode;
+                run.ResponseHeaders = run.MaskHeaders(response.Headers, response.Content.Headers);
+                run.Emit(ProbeEventKind.Response, run.Status.Value.ToString(CultureInfo.InvariantCulture),
+                    string.Join('\n', run.ResponseHeaders.Select(h => $"{h.Name}: {h.Value}")));
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    ResetIdle();
+                    var text = await response.Content.ReadAsStringAsync(callToken).ConfigureAwait(false);
+                    run.ResponseBody = run.Truncate(run.Scrub(text), _options.MaxBody);
+                    var error = OpenAiCommon.ToAgentError(run.Status.Value, text);
+                    var kind = run.Status.Value switch
+                    {
+                        401 or 403 => ProbeFailureKind.Rejected,
+                        404 => ProbeFailureKind.NotFound,
+                        _ => ProbeFailureKind.Http,
+                    };
+                    return run.Fail(kind, error.Code, error.Message);
+                }
+
+                ResetIdle();
+                if (request.Protocol == ProviderProtocol.OpenAiAudio)
+                {
+                    var bytes = await response.Content.ReadAsByteArrayAsync(callToken).ConfigureAwait(false);
+                    var mediaType = response.Content.Headers.ContentType?.MediaType ?? "audio/mpeg";
+                    return run.CompleteMedia($"Audio generated ({mediaType}, {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes).", null);
+                }
+
+                var body = await response.Content.ReadAsStringAsync(callToken).ConfigureAwait(false);
+                if (request.Protocol.ToImageProtocol() is not null)
+                {
+                    try
+                    {
+                        var parsed = ImageMediaCodec.ParseResponse(body);
+                        var lines = new List<string> { $"Generated {parsed.Images.Count.ToString(CultureInfo.InvariantCulture)} image(s)." };
+                        for (var i = 0; i < parsed.Images.Count; i++)
+                        {
+                            var item = parsed.Images[i];
+                            if (item.Url is { Length: > 0 } imageUrl)
+                            {
+                                lines.Add($"#{i + 1}: {imageUrl}");
+                            }
+                            else if (item.Base64Json is { Length: > 0 } b64)
+                            {
+                                lines.Add($"#{i + 1}: base64 ({b64.Length.ToString(CultureInfo.InvariantCulture)} chars)");
+                            }
+                            else if (item.ErrorMessage is { Length: > 0 } err)
+                            {
+                                lines.Add($"#{i + 1}: error ({err})");
+                            }
+                        }
+
+                        return run.CompleteMedia(string.Join('\n', lines), parsed.Model);
+                    }
+                    catch (ImageMediaException e)
+                    {
+                        run.ResponseBody = run.Truncate(run.Scrub(body), _options.MaxBody);
+                        return run.Fail(ProbeFailureKind.Stream, AgentErrorCode.Provider, e.Message);
+                    }
+                }
+
+                if (request.Protocol.ToVideoProtocol() is { } videoProtocol)
+                {
+                    try
+                    {
+                        var task = VideoMediaCodec.ParseCreateResponse(videoProtocol, body);
+                        return run.CompleteMedia($"Video task created: id={task.TaskId}, status={task.State.ToString().ToLowerInvariant()}.", null);
+                    }
+                    catch (VideoMediaException e)
+                    {
+                        run.ResponseBody = run.Truncate(run.Scrub(body), _options.MaxBody);
+                        return run.Fail(ProbeFailureKind.Stream, AgentErrorCode.Provider, e.Message);
+                    }
+                }
+
+                return run.CompleteMedia(run.Truncate(body, _options.MaxBody), null);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                var seconds = total.IsCancellationRequested ? _options.TotalTimeout.TotalSeconds : _options.IdleTimeout.TotalSeconds;
+                return run.Fail(ProbeFailureKind.Timeout, AgentErrorCode.Network, $"No response progress within {seconds:0} seconds.");
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException)
+            {
+                return run.Fail(ProbeFailureKind.Network, AgentErrorCode.Network, $"Failed to connect: {e.Message}");
+            }
+        }
+    }
+
     private static LlmRequest BuildRequest(ProbeRequest request)
     {
         var message = new Message(new MessageId("debug-user"), Role.User, [new TextPart(request.Prompt)], DateTimeOffset.UnixEpoch);
@@ -300,7 +448,7 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
     public static string Mask(string secret) => secret.Length >= 12 ? "••••" + secret[^4..] : "••••";
 
     /// <summary>一次调试的可变状态(只在发请求的那条逻辑流上用,不并发)。</summary>
-    private sealed class Run(ProbeRequest request, ProbeOptions options, Action<ProbeEvent>? onEvent)
+    private sealed class Run(ProviderProtocol protocol, string model, ProviderCredential? credential, ProbeOptions options, Action<ProbeEvent>? onEvent)
     {
         private readonly long _started = options.Clock.GetTimestamp();
         private readonly List<ProbeEvent> _events = [];
@@ -308,7 +456,7 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
         private readonly StringBuilder _thinking = new();
         private readonly List<string> _toolCalls = [];
         private readonly Dictionary<string, (string Name, StringBuilder Args)> _openCalls = new(StringComparer.Ordinal);
-        private readonly string[] _secrets = SecretsOf(request.Credential);
+        private readonly string[] _secrets = SecretsOf(credential);
         private bool _truncated;
         private StopReason? _stop;
         private TokenUsage? _usage;
@@ -412,10 +560,21 @@ public sealed partial class ProviderProbe(IUpstreamHttp http, ITransportDecorato
             return Result();
         }
 
+        public ProbeResult CompleteMedia(string summary, string? responseModel)
+        {
+            _firstToken ??= Elapsed;
+            _responseModel = responseModel;
+            _text.Append(summary);
+            Emit(ProbeEventKind.Text, null, summary);
+            _stop = StopReason.EndTurn;
+            Emit(ProbeEventKind.End, nameof(StopReason.EndTurn), "");
+            return Result();
+        }
+
         private ProbeResult Result() => new(
             _failure is null && _stop is not null,
-            request.Protocol,
-            request.Binding.UpstreamModel,
+            protocol,
+            model,
             "POST",
             Url,
             RequestHeaders,

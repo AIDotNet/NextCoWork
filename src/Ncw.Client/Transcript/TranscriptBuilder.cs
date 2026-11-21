@@ -183,6 +183,14 @@ public static class TranscriptBuilder
         {
             rows.Add(new StatusRow("status", RunStatusKind.Compacting, 0, 0));
         }
+        else if (anyRunActive && pending.Count == 0 && !rows.Any(static r =>
+            r is ThinkingRow { IsStreaming: true } or AssistantRow { IsStreaming: true }
+                or ToolRow { Status: ToolRowStatus.Running } or SubagentRow { View.IsActive: true }
+                or WidgetRow { Phase: WidgetPhase.Loading or WidgetPhase.Ready }) &&
+            !runs.Any(static r => r.Tools.Values.Any(static t => t.Status == ToolCallStatus.Running)))
+        {
+            rows.Add(new StatusRow("status", RunStatusKind.Generating, 0, 0));
+        }
 
         foreach (var interaction in pending)
         {

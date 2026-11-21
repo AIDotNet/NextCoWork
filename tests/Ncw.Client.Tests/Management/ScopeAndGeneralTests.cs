@@ -258,6 +258,31 @@ public sealed class GeneralSettingsTests
         await page.ApplyPersonalizationCommand.ExecuteAsync(null);
         Assert.Equal("be brief", kit.Settings.Patches.Single().Personalization!.Instructions);
     }
+
+    [Fact]
+    public async Task Image_auxiliary_picker_offers_only_image_models_while_chat_pickers_exclude_media_models()
+    {
+        var kit = new ManagementKit();
+        kit.Rig.SeedModels(
+            ManagementRig.Option("nextcowork", "claude-sonnet-4-5", "Claude Sonnet 4.5"),
+            new ModelOptionDto("nextcowork-image", "NextCoWork", "doubao-seedream-4-5-251128", "Seedream 4.5", "doubao-seedream-4-5-251128",
+                0, 0, true, true, false, false, null, null, "openai-images", "image"),
+            new ModelOptionDto("nextcowork-video", "NextCoWork", "sora-2", "Sora 2", "sora-2",
+                0, 0, true, true, false, false, null, null, "openai-videos", "video"));
+        kit.Settings.Push(FakeSettings.Defaults() with { DefaultModel = ModelPickDto.None });
+        await kit.Pages.General.ActivateAsync();
+
+        var defaultPick = kit.Pages.General.Picks.Single(p => p.Field == ModelPickField.Default);
+        Assert.Equal(["", "nextcowork\nclaude-sonnet-4-5"], defaultPick.Choices.Select(c => c.Value).ToArray());
+
+        var imagePick = kit.Pages.General.Picks.Single(p => p.Field == ModelPickField.Image);
+        Assert.Equal(["", "nextcowork-image\ndoubao-seedream-4-5-251128"], imagePick.Choices.Select(c => c.Value).ToArray());
+
+        imagePick.Key = "nextcowork-image\ndoubao-seedream-4-5-251128";
+        await Task.Yield();
+        var written = Assert.Single(kit.Settings.Patches).Image!;
+        Assert.Equal(("doubao-seedream-4-5-251128", "nextcowork-image"), (written.Model, written.ProviderId));
+    }
 }
 
 public sealed class ProjectSettingsTests

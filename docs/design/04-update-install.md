@@ -195,8 +195,9 @@ Win/Linux NextCoWork/NextCoWork[.exe]  与  NextCoWork/agent/ncw-agent[.exe] + e
 bundle.json 在包的外面(和包同级):macOS 签名之后包里任何文件都不能再改
 ```
 
-**应用图标**:源图是 2.x 的 1024×1024 `build/icon.png`(已带 macOS 圆角方块和留白),放在 `src/Ncw.Desktop/Assets/AppIcon.png`;`AppIcon.icns` 用 `iconutil` 从它生成后**入库**(不在构建时生成,这样在非 macOS 主机上跨平台打 osx 包也有图标),`bundle` 把它复制进 `Contents/Resources/` 并在 Info.plist 写 `CFBundleIconFile`,缺文件就让 `bundle` 失败(而不是发出一个 Dock 里空白图标的包)。
-**不是从 .app 启动的**(IDE 直接起 `bin/` 下的可执行文件,Dock 会显示默认图标)由 `MacDockIcon` 在 Avalonia 平台初始化后把内嵌的 `AppIcon.png` 设成 `NSApplication.applicationIconImage`(只改 Dock 里这一份,不写文件);从 .app 启动的不动,用包自带的图标。Windows / Linux 的窗口与安装包图标还没做。
+**应用图标**:源图是 2.x 的 1024×1024 `build/icon.png`(已带 macOS 圆角方块和留白),放在 `src/Ncw.Desktop/Assets/AppIcon.png`;`AppIcon.icns`(macOS)和 `AppIcon.ico`(Windows,含 16/24/32/48/64/128/256 px 多尺寸 PNG 帧)从它生成后**入库**(不在构建时生成,这样跨平台打包也有图标)。macOS 上 `bundle` 把 `AppIcon.icns` 复制进 `Contents/Resources/` 并在 Info.plist 写 `CFBundleIconFile`,缺文件就让 `bundle` 失败(而不是发出一个 Dock 里空白图标的包);
+**不是从 .app 启动的**(IDE 直接起 `bin/` 下的可执行文件,Dock 会显示默认图标)由 `MacDockIcon` 在 Avalonia 平台初始化后把内嵌的 `AppIcon.png` 设成 `NSApplication.applicationIconImage`(只改 Dock 里这一份,不写文件);从 .app 启动的不动,用包自带的图标。
+Windows / Linux 上:`Ncw.Desktop.csproj` 设置 `<ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>`(把 Win32 图标资源嵌进 `NextCoWork.exe`,供资源管理器、桌面/开始菜单快捷方式、任务栏使用),`MainWindow.axaml` 设置 `Icon="avares://Ncw.UI/Assets/AppIcon.ico"`(窗口与任务栏图标),`VelopackPlans.Pack` 按目标平台向 `vpk pack` 传 `--icon`(`AppIcon.icns` / `AppIcon.ico` / `AppIcon.png`),使安装器(`Setup.exe` / `.pkg` / `AppImage`)及安装器生成的快捷方式和卸载项均带应用图标。
 
 **进程名称与图标(macOS)**:活动监视器、菜单栏、Dock、⌘Tab 里看到的名字和图标要和 2.x 一样是「NextCoWork」+ 应用图标,不能是可执行文件名 + 通用图标。
 - **应用名**:`NcwApp` 的 `Application.Name = "NextCoWork"`,并在应用上挂自己的原生应用菜单(「关于 NextCoWork」打开设置的「关于」、「设置…」);否则 Avalonia 给的默认菜单是「About Avalonia」。Avalonia 会在后面补上服务、隐藏、退出这些系统项。

@@ -34,7 +34,7 @@ public sealed class PermissionRunState
         StartMode = mode;
     }
 
-    private PermissionRunState(PermissionRunState parent, RunId runId, RunInteractions interactions, PermissionMode defined)
+    private PermissionRunState(PermissionRunState parent, RunId runId, RunInteractions interactions, PermissionMode defined, EnvPath? root)
     {
         _parent = parent;
         _cap = defined;
@@ -42,7 +42,7 @@ public sealed class PermissionRunState
         SessionId = parent.SessionId;
         Environment = parent.Environment;
         Interactions = interactions;
-        Root = parent.Root;
+        Root = root ?? parent.Root;
         WorkspaceId = parent.WorkspaceId;
         UserTask = parent.UserTask;
         ReviewerModel = parent.ReviewerModel;
@@ -116,14 +116,14 @@ public sealed class PermissionRunState
         new(runId, sessionId, runtime.Environment, interactions, mode) { Root = runtime.Root, PlanFence = runtime.WriteFence };
 
     /// <summary>派生子代理的权限状态:档位 = min(父实时值, <paramref name="definedMode"/>),联网开关跟随父,没有围栏,<paramref name="interactions"/> 必须是 <c>depth &gt; 0</c> 的句柄。</summary>
-    public PermissionRunState ForSubagent(RunId childRun, RunInteractions interactions, PermissionMode definedMode)
+    public PermissionRunState ForSubagent(RunId childRun, RunInteractions interactions, PermissionMode definedMode, EnvPath? root = null)
     {
         if (interactions.CanInteract)
         {
             throw new ArgumentException("A subagent's interaction scope must have depth > 0.", nameof(interactions));
         }
 
-        return new PermissionRunState(this, childRun, interactions, definedMode);
+        return new PermissionRunState(this, childRun, interactions, definedMode, root);
     }
 
     public ExecutionEnvironmentRef EnvironmentRef => ExecutionEnvironmentRef.From(Environment);

@@ -26,6 +26,8 @@ public partial class ProviderEditorDialog : UserControl
     {
         InitializeComponent();
         Tag = 3;
+        KindSelect.ItemsSource = ProviderEditorViewModel.Kinds;
+        KindSelect.TextSelector = item => ProviderKindTextConverter.Text(item as string);
         ProtocolSelect.ItemsSource = ProviderEditorViewModel.Protocols;
         ProtocolSelect.TextSelector = item => ProtocolTextConverter.Text(item as string);
         KeyUrlButton.Click += (_, _) =>
@@ -54,6 +56,7 @@ public partial class ProviderEditorDialog : UserControl
             _vm.PropertyChanged += OnVmChanged;
         }
 
+        UpdateProtocols();
         UpdateTestFailed();
     }
 
@@ -61,6 +64,9 @@ public partial class ProviderEditorDialog : UserControl
     {
         switch (e.PropertyName)
         {
+            case nameof(ProviderEditorViewModel.Kind) or nameof(ProviderEditorViewModel.AvailableProtocols):
+                UpdateProtocols();
+                break;
             case nameof(ProviderEditorViewModel.TestFailed) or nameof(ProviderEditorViewModel.TestErrorKey):
                 UpdateTestFailed();
                 break;
@@ -69,6 +75,17 @@ public partial class ProviderEditorDialog : UserControl
                 FocusStep();
                 break;
         }
+    }
+
+    private void UpdateProtocols()
+    {
+        if (_vm is null)
+        {
+            return;
+        }
+
+        ProtocolSelect.ItemsSource = _vm.AvailableProtocols;
+        ProtocolSelect.SelectedValue = _vm.Protocol;
     }
 
     private void UpdateTestFailed() =>

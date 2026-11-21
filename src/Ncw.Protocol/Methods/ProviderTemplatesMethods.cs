@@ -1,3 +1,4 @@
+using Ncw.Core.Domain;
 using PolyType;
 
 namespace Ncw.Protocol.Methods;
@@ -12,10 +13,11 @@ namespace Ncw.Protocol.Methods;
 /// <param name="Name">品牌名(不本地化)。</param>
 /// <param name="Group"><see cref="ProviderTemplateGroups"/>;开放的字符串,控制端认不出的放进「其他」。</param>
 /// <param name="Variant">null = 这家的默认端点;否则 <see cref="ProviderTemplateVariants"/>(开放的字符串)。</param>
-/// <param name="Protocol"><c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c>。</param>
+/// <param name="Protocol">所属类型下的协议名(<c>anthropic</c> / <c>openai-chat</c> / <c>openai-responses</c> / <c>openai-images</c> / <c>volcengine-images</c> / <c>openai-videos</c> / <c>volcengine-videos</c> / <c>openai-audio</c>)。</param>
 /// <param name="KeyUrl">去哪里拿 API Key;不需要 key 的为 null。</param>
 /// <param name="NeedsKey">本机服务(Ollama、LM Studio)为 false。</param>
 /// <param name="Featured">「常用」分组里也放一份。</param>
+/// <param name="Kind">供应商类型:<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>(缺省 <c>text</c>)。</param>
 public sealed record ProviderTemplateDto(
     string Id,
     string Service,
@@ -26,7 +28,8 @@ public sealed record ProviderTemplateDto(
     string BaseUrl,
     string? KeyUrl,
     bool NeedsKey,
-    bool Featured);
+    bool Featured,
+    string Kind = ProviderKinds.Text);
 
 public sealed record ProviderTemplatesResult(ProviderTemplateDto[] Templates);
 

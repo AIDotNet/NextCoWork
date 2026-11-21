@@ -15,7 +15,7 @@ public class TranscriptDetailsTests
         Assert.Equal(expected, ToolRowViewModel.RelativeDir(dir, root));
 
     [Fact]
-    public void Review_tab_appears_when_the_session_changed_files_unless_the_user_added_it()
+    public void Review_tab_appears_for_changes_without_duplicates()
     {
         Assert.Equal([InspectorTabKind.Files], InspectorTabs.Compose([], hasSubagents: false));
         Assert.Equal([InspectorTabKind.Files, InspectorTabKind.Review, InspectorTabKind.Subagents], InspectorTabs.Compose([], hasSubagents: true, hasChanges: true));

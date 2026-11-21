@@ -24,13 +24,15 @@
       </Grid>
     </ui:PlainButton>
     <ui:NcwCollapsible IsOpen="{Binding IsOpen}">
-      <ItemsControl ItemsSource="{Binding Members}" Margin="10,0,0,0">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="vm:SidebarProjectViewModel">
-            <tree:SidebarProjectNode />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <Border Margin="10,0,0,0" Padding="6,0,0,0" BorderThickness="1,0,0,0" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <ItemsControl ItemsSource="{Binding Members}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:SidebarProjectViewModel">
+              <tree:SidebarProjectNode />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
     </ui:NcwCollapsible>
   </StackPanel>
 </UserControl>

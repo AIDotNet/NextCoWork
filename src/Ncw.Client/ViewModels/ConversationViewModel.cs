@@ -69,6 +69,9 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     public ComposerViewModel Composer { get; }
 
+    /// <summary>工作区文件标签宿主(装配时由外壳设成 <see cref="WorkspaceViewModel"/>,工具卡片点击可直达文件标签)。</summary>
+    public IFileTabHost? FileTabs { get; set; }
+
     /// <summary>转录的行(按 key 对齐,原地更新)。视图用虚拟化的列表显示。</summary>
     public ObservableCollection<RowViewModel> Rows { get; } = [];
 
@@ -229,7 +232,8 @@ public sealed partial class ConversationViewModel : ObservableObject
             ContextPercent = 0;
             Context = null;
             NeedsTick = false;
-            Composer.Update(null, null, null, null, SessionActivity.Idle, DeviceConnection.Connecting, null, []);
+            Composer.UpdateContext(null);
+        Composer.Update(null, null, null, null, SessionActivity.Idle, DeviceConnection.Connecting, null, []);
             OnPropertyChanged(nameof(IsEmpty));
             RefreshEmptyContext();
             return;
@@ -284,12 +288,12 @@ public sealed partial class ConversationViewModel : ObservableObject
         var goal = conversations.GoalOf(session);
         Goal = goal is null ? null : new GoalBarViewModel(goal, unknown, ClearGoalCommand);
 
-        var run = conversations.Runs.Values.Where(r => r.Ref.DeviceId == project.DeviceId && r.SessionId == sessionId && r.Context is not null)
-            .OrderByDescending(r => r.Ref.RunId, StringComparer.Ordinal).FirstOrDefault();
-        HasContext = run?.Context is { Window: > 0 };
-        Context = run?.Context is { Window: > 0 } usage ? usage : null;
-        ContextPercent = run?.Context is { Window: > 0 } ctx ? (int)Math.Clamp(Math.Round(100.0 * ctx.Used / ctx.Window), 0, 100) : 0;
+        var usage = LatestContextOf(conversations, session);
+        HasContext = usage is { Window: > 0 };
+        Context = HasContext ? usage : null;
+        ContextPercent = PercentOf(usage);
 
+        Composer.UpdateContext(Context);
         Composer.Update(session, view?.Meta, view?.Queue, ActiveRunOf(conversations, session, view?.ActiveRunId), activity, connection, device?.Role,
             _stores.Providers.State.Of(project.DeviceId).Options);
         OnPropertyChanged(nameof(IsEmpty));
@@ -337,6 +341,16 @@ public sealed partial class ConversationViewModel : ObservableObject
         EmptyChanges = changes;
         HasEmptyChanges = changes > 0;
     }
+
+    /// <summary>最近一次有效的上下文占用(检查器「上下文」页签与会话共用同一条派生)。</summary>
+    public static ContextUsageEventDto? LatestContextOf(ConversationState conversations, SessionRef session) =>
+        conversations.Runs.Values
+            .Where(r => r.Ref.DeviceId == session.DeviceId && r.SessionId == session.SessionId && r.Context is { Window: > 0 })
+            .OrderByDescending(r => r.Ref.RunId, StringComparer.Ordinal)
+            .FirstOrDefault()?.Context;
+
+    public static int PercentOf(ContextUsageEventDto? usage) =>
+        usage is { Window: > 0 } ctx ? (int)Math.Clamp(Math.Round(100.0 * ctx.Used / ctx.Window), 0, 100) : 0;
 
     /// <summary>
     /// 「停止」该打哪个 Run。真源是 Run 的实时状态(<see cref="ConversationState.Runs"/>,随事件和全量广播对账);
@@ -547,7 +561,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         UserRow r => new UserRowViewModel(r, ImagesOf(r)),
         AssistantRow r => new AssistantRowViewModel(r),
         ThinkingRow r => new ThinkingRowViewModel(r),
-        ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot),
+        ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot, OpenToolFile),
         WorkGroupRow r => new WorkGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnWorkGroupToggled),
         WidgetRow r => new WidgetRowViewModel(r, () => _session ?? default, _widgets, DeviceName),
         WorkflowRow r => CreateWorkflowCard(r),
@@ -557,9 +571,35 @@ public sealed partial class ConversationViewModel : ObservableObject
         ErrorRow r => new ErrorRowViewModel(r, RetryCommand, OpenProviderSettingsCommand),
         GoalStatusRow r => new GoalStatusRowViewModel(r),
         StatusRow r => new StatusRowViewModel(r),
-        InteractionRow r => new InteractionRowViewModel(r, _session?.DeviceId ?? "", _commands, DeviceName, OnHandled, _clock),
+        InteractionRow r => new InteractionRowViewModel(r, _session?.DeviceId ?? "", _commands, DeviceName, OnHandled, _clock, ExecutePlanInNewSessionAsync),
         _ => throw new InvalidOperationException($"Unknown transcript row {row.GetType().Name}"),
     };
+
+    private void OpenToolFile(string relativePath)
+    {
+        if (FileTabs is { } tabs && _stores.Selection.State.Project is { } project)
+        {
+            _ = tabs.OpenAsync(project, relativePath);
+        }
+    }
+
+    private async Task ExecutePlanInNewSessionAsync(PlanApprovalInteractionDto plan)
+    {
+        if (_stores.Selection.State.Project is not { } project)
+        {
+            return;
+        }
+
+        var created = await _commands.CreateSessionAsync(project, Composer.SelectedModel?.Alias).ConfigureAwait(true);
+        if (created is not { } next)
+        {
+            return;
+        }
+
+        _stores.Selection.Update(_ => new SelectionState(project, next.SessionId));
+        var options = Composer.Options() with { Mode = "code" };
+        await _commands.ExecutePlanAsync(next, plan, $"Implement the approved plan from {plan.Path}.", options).ConfigureAwait(true);
+    }
 
     private void EnsureSessionWorkflowsLoaded(SessionRef session)
     {

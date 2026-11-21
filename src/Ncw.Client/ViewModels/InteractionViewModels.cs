@@ -83,15 +83,18 @@ public sealed partial class InteractionRowViewModel : RowViewModel<InteractionRo
     private readonly IConversationCommands _commands;
     private readonly Func<string, string> _deviceName;
     private readonly Action<HandledNotice> _handled;
+    private readonly Func<PlanApprovalInteractionDto, Task>? _executePlanNewSession;
     private readonly TimeProvider _clock;
 
-    public InteractionRowViewModel(InteractionRow row, string deviceId, IConversationCommands commands, Func<string, string> deviceName, Action<HandledNotice> handled, TimeProvider clock)
+    public InteractionRowViewModel(InteractionRow row, string deviceId, IConversationCommands commands, Func<string, string> deviceName, Action<HandledNotice> handled, TimeProvider clock,
+        Func<PlanApprovalInteractionDto, Task>? executePlanNewSession = null)
         : base(row)
     {
         _deviceId = deviceId;
         _commands = commands;
         _deviceName = deviceName;
         _handled = handled;
+        _executePlanNewSession = executePlanNewSession;
         _clock = clock;
         Build();
     }
@@ -275,6 +278,30 @@ public sealed partial class InteractionRowViewModel : RowViewModel<InteractionRo
 
     [RelayCommand]
     private Task ApprovePlanAsync() => RespondAsync(new PlanApprovalResponseDto("approveCurrent"));
+
+    [RelayCommand]
+    private async Task ApprovePlanNewSessionAsync()
+    {
+        if (IsBusy || Row.Interaction is not PlanApprovalInteractionDto plan)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await _commands.RespondAsync(_deviceId, Row.Interaction, new PlanApprovalResponseDto("approveNewSession"));
+            ApplyOutcome(result);
+            if (result.Outcome == InteractionOutcome.Answered && _executePlanNewSession is not null)
+            {
+                await _executePlanNewSession(plan);
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     [RelayCommand]
     private Task RequestRevisionAsync() => RespondAsync(new PlanApprovalResponseDto("requestRevision", Feedback.Length > 0 ? Feedback : null));

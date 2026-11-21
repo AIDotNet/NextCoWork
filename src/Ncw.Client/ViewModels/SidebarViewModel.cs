@@ -21,6 +21,12 @@ public interface ISidebarHost
     /// <summary>「新建终端」:选中项目、打开检查器的「终端」页签、新建(和页签里的「+」同一个命令)。</summary>
     void NewTerminal(ProjectRef project);
 
+    /// <summary>「新建文件」:选中项目、打开检查器的「文件」页签并在项目根发起新建文件。</summary>
+    void NewFile(ProjectRef project);
+
+    /// <summary>「新建文件夹」:选中项目、打开检查器的「文件」页签并在项目根发起新建文件夹。</summary>
+    void NewFolder(ProjectRef project);
+
     void OpenSettings();
 
     /// <summary>本机的「在文件管理器中显示 / 复制」。</summary>
@@ -49,9 +55,11 @@ public sealed partial class SidebarViewModel : ObservableObject
     private ProjectRef? _lastSelected;
 
     public SidebarViewModel(ClientStores stores, LayoutActions actions, ISidebarHost host, ProjectActions? projects = null, SessionActions? sessions = null,
-        InboxViewModel? inbox = null, Func<IDialogService>? dialogs = null, Func<IClientText>? text = null)
+        InboxViewModel? inbox = null, Func<IDialogService>? dialogs = null, Func<IClientText>? text = null, FilesPanelViewModel? files = null)
     {
         _stores = stores;
+        Files = files;
+        stores.Prefs.Changed += OnPrefsChanged;
         _actions = actions;
         _host = host;
         _projects = projects;
@@ -71,6 +79,30 @@ public sealed partial class SidebarViewModel : ObservableObject
         OnSelectionChanged();
         RebuildInbox();
     }
+
+    /// <summary>保留旧布局的共享入口;文件浏览器只在右侧检查器渲染。</summary>
+    public FilesPanelViewModel? Files { get; }
+
+    /// <summary>旧左侧文件分栏的比例偏好,保留兼容,当前布局不使用。</summary>
+    public double SidebarFilesRatio
+    {
+        get => _stores.Prefs.State.SidebarFilesRatio;
+        set => _stores.Prefs.Update(p => (p with { SidebarFilesRatio = value }).Normalize());
+    }
+
+    [ObservableProperty] public partial bool IsProjectsSectionOpen { get; private set; } = true;
+
+    [RelayCommand]
+    private void ToggleProjectsSection() => IsProjectsSectionOpen = !IsProjectsSectionOpen;
+
+    [RelayCommand]
+    private void CollapseAllProjects()
+    {
+        _expanded.Clear();
+        Rebuild();
+    }
+
+    private void OnPrefsChanged() => OnPropertyChanged(nameof(SidebarFilesRatio));
 
     /// <summary>项目树的顶层:项目和项目组,顺序就是 <see cref="RailLayout"/>。</summary>
     public ObservableCollection<SidebarNodeViewModel> Items { get; } = [];
@@ -109,6 +141,33 @@ public sealed partial class SidebarViewModel : ObservableObject
         if (_sessions is not null && _stores.Selection.State.Project is { } project)
         {
             await _sessions.CreateAsync(project);
+        }
+    }
+
+    [RelayCommand]
+    private void NewTerminal()
+    {
+        if (_stores.Selection.State.Project is { } project)
+        {
+            _host.NewTerminal(project);
+        }
+    }
+
+    [RelayCommand]
+    private void NewFile()
+    {
+        if (_stores.Selection.State.Project is { } project)
+        {
+            _host.NewFile(project);
+        }
+    }
+
+    [RelayCommand]
+    private void NewFolder()
+    {
+        if (_stores.Selection.State.Project is { } project)
+        {
+            _host.NewFolder(project);
         }
     }
 
@@ -186,6 +245,10 @@ public sealed partial class SidebarViewModel : ObservableObject
     }
 
     internal void NewTerminal(SidebarProjectViewModel project) => _host.NewTerminal(project.Project);
+
+    internal void NewFile(SidebarProjectViewModel project) => _host.NewFile(project.Project);
+
+    internal void NewFolder(SidebarProjectViewModel project) => _host.NewFolder(project.Project);
 
     internal Task RevealAsync(SidebarProjectViewModel project) => _host.LocalFiles.RevealAsync(project.Path);
 
@@ -407,6 +470,12 @@ public sealed partial class SidebarProjectViewModel(RailProjectViewModel tile, S
 
     [RelayCommand]
     private void NewTerminal() => owner.NewTerminal(this);
+
+    [RelayCommand]
+    private void NewFile() => owner.NewFile(this);
+
+    [RelayCommand]
+    private void NewFolder() => owner.NewFolder(this);
 
     [RelayCommand]
     private Task RevealAsync() => owner.RevealAsync(this);

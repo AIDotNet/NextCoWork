@@ -73,6 +73,10 @@ public partial class NcwThinkingView : UserControl
             _dirty = true;
             InvalidateMeasure();
         }
+        else if (change.Property == IsLiveProperty && !IsLive)
+        {
+            _follow = false;
+        }
     }
 
     protected override Size MeasureOverride(Size availableSize)

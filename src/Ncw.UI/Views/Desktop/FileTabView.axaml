@@ -18,16 +18,39 @@
     <Grid RowDefinitions="Auto,Auto,*,Auto">
       <!-- 头:文件名 + 目录 + 工具 -->
       <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="16,8,12,4" MinHeight="36">
-        <StackPanel VerticalAlignment="Center" Spacing="0">
-          <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-          <TextBlock Classes="hint" Text="{Binding Directory}" TextTrimming="CharacterEllipsis" arc:Tooltip.Tip="{Binding Path}" IsVisible="{Binding Directory.Length}" />
-        </StackPanel>
+        <ScrollViewer VerticalAlignment="Center" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:FileBreadcrumbSegment">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                  <ui:PlainButton Padding="4,2" arc:Tooltip.Tip="{Binding Path}"
+                                  Command="{Binding $parent[ItemsControl].((vm:FilePreviewViewModel)DataContext).RevealBreadcrumbCommand}"
+                                  CommandParameter="{Binding}">
+                    <TextBlock Text="{Binding Name}" MaxWidth="220" TextTrimming="CharacterEllipsis" />
+                  </ui:PlainButton>
+                  <lucide:LucideIcon Kind="ChevronRight" Size="12" VerticalAlignment="Center" IsVisible="{Binding !IsFile}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
           <Border Classes="chip" IsVisible="{Binding Line, Converter={x:Static ObjectConverters.IsNotNull}}">
             <TextBlock Classes="hint" Text="{Binding Line, Converter={x:Static cv:LineNumberTextConverter.Instance}}" />
           </Border>
           <Border Classes="chip" IsVisible="{Binding IsChunked}"><TextBlock Classes="hint" Text="{l:NcwText FileReadOnly}" /></Border>
           <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding JustSaved}" ui:NcwMotion.ShowMotion="Fade" ui:NcwMotion.ShowTier="Fast" Text="{l:NcwText FileSaved}" />
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding PinCommand}" IsVisible="{Binding IsPreview}"
+                        AutomationProperties.Name="{l:NcwText FilePinTab}" arc:Tooltip.Tip="{l:NcwText FilePinTab}">
+            <lucide:LucideIcon Kind="Pin" Size="14" />
+          </ui:NcwButton>
+          <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ReferenceCommand}" IsEnabled="{Binding CanReference}"
+                        AutomationProperties.Name="{l:NcwText FilesReferenceInChat}" arc:Tooltip.Tip="{l:NcwText FilesReferenceInChat}">
+            <lucide:LucideIcon Kind="AtSign" Size="14" />
+          </ui:NcwButton>
           <!-- Markdown:渲染 / 源码 -->
           <ui:NcwButton Variant="Ghost" Command="{Binding ToggleRenderedCommand}" IsVisible="{Binding IsMarkdown}" IsEnabled="{Binding !IsEditing}">
             <StackPanel Orientation="Horizontal" Spacing="6">

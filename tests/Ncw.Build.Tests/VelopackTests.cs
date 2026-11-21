@@ -22,6 +22,7 @@ public class VelopackPlanTests
         Assert.Equal("stable", spec.Args[spec.Args.ToList().IndexOf("-c") + 1]);
         Assert.Equal("NextCoWork", spec.Args[spec.Args.ToList().IndexOf("-e") + 1]);
         Assert.EndsWith("NextCoWork.app", spec.Args[spec.Args.ToList().IndexOf("-p") + 1]);
+        Assert.EndsWith("AppIcon.icns", spec.Args[spec.Args.ToList().IndexOf("--icon") + 1]);
         Assert.DoesNotContain("[osx]", spec.Args);
     }
 
@@ -31,13 +32,16 @@ public class VelopackPlanTests
         var spec = Pack(TestKit.WinX64, TestKit.WinX64);
         Assert.Equal("NextCoWork.exe", spec.Args[spec.Args.ToList().IndexOf("-e") + 1]);
         Assert.EndsWith("NextCoWork", spec.Args[spec.Args.ToList().IndexOf("-p") + 1]);
+        Assert.EndsWith("AppIcon.ico", spec.Args[spec.Args.ToList().IndexOf("--icon") + 1]);
     }
 
     [Fact]
     public void Cross_os_packing_adds_the_vpk_os_prefix()
     {
         Assert.Equal("[win]", Pack(TestKit.WinX64, TestKit.MacArm).Args[4]);
-        Assert.Equal("[linux]", Pack(TestKit.LinuxX64, TestKit.MacArm).Args[4]);
+        var linux = Pack(TestKit.LinuxX64, TestKit.MacArm);
+        Assert.Equal("[linux]", linux.Args[4]);
+        Assert.EndsWith("AppIcon.png", linux.Args[linux.Args.ToList().IndexOf("--icon") + 1]);
     }
 
     [Fact]

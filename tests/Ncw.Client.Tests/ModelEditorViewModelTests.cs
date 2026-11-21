@@ -133,8 +133,10 @@ public class ModelEditorViewModelTests
         Assert.DoesNotContain(ModelEditorViewModel.ThinkingAuto, vm.ThinkingModes); // 已经接管了:没有「跟随模型目录」可回
         Assert.Equal(("effort", "high"), (vm.ThinkingMode, vm.DefaultEffort));
         Assert.True(vm.ShowsEfforts);
+        Assert.False(vm.ShowsDefaultEnabled); // 还没勾选 none(不能关闭思考):不显示「默认开启思考」,默认总是开启
 
         vm.Efforts.Single(e => e.Value == "none").IsSelected = true;
+        Assert.True(vm.ShowsDefaultEnabled);
         await vm.SaveCommand.ExecuteAsync(null);
 
         var update = Assert.Single(commands.Updates);

@@ -124,7 +124,7 @@ public interface IExtensionRegistry
 
 | 扩展 | Id / Order | 实际使用的扩展点 / 接缝 | 能否关闭 |
 |---|---|---|---|
-| `HooksExtension` | `hooks` / 100 | `input`(UserPromptSubmit)、`before_run`、`after_tool`、`turn_end`、`run_end`;PreToolUse = `HooksService.PreToolSource`,作为 `PermissionExtension(hooks: …)` 的接入口 | 可(没有配置钩子时等于不存在) |
+| `HooksExtension` | `hooks` / 100 | `input`(UserPromptSubmit)、`before_run`(SubagentStart 注入头块并记深度)、`before_compact`(PreCompact)、`after_tool`、`turn_end`、`run_end`;PreToolUse = `HooksService.PreToolSource`,作为 `PermissionExtension(hooks: …)` 的接入口(支持 `updatedInput`) | 可(没有配置钩子时等于不存在) |
 | `SkillsExtension` | `skills` / 300 | `before_run`、`system_sections`(`# Available Skills`,只列名字和描述)、`compact_attachments`、工具 `Skill` | 可 |
 | `McpService`(不是会话扩展) | — | 工具经 `ToolRegistry`(来源 `mcp:<serverId>`)进每回合快照,**不**经 `RegisterTool`:MCP 工具是动态的(连接、重连、`list_changed`),而 `ExtensionHost.RegisteredTools` 在注册时一次性收集 | 可(服务器逐个启停) |
 

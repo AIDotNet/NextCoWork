@@ -67,20 +67,25 @@ public static class ProviderTemplateItems
     public const string ResultsGroup = "results";
 
     /// <summary>
-    /// 网格的分组(纯函数):没有搜索词时先「常用」,再按 <see cref="ProviderTemplateGroups.All"/> 的顺序,认不出的分组放「其他」,「自定义」总在最后;
-    /// 有搜索词时只有一组「结果」(按名字、id、地址、端点标签匹配,不分大小写),「自定义」不参与搜索。
+    /// 网格的分组(纯函数):按可选 <paramref name="kind"/> 筛选后,没有搜索词时先「常用」,再按 <see cref="ProviderTemplateGroups.All"/> 的顺序,
+    /// 认不出的分组放「其他」,「自定义」总在最后;有搜索词时只有一组「结果」(按名字、id、地址、端点标签匹配,不分大小写),「自定义」不参与搜索。
     /// </summary>
-    public static IReadOnlyList<ProviderTemplateGroupView> Group(IReadOnlyList<ProviderTemplateDto> templates, string? query, Func<string, string>? variantText = null)
+    public static IReadOnlyList<ProviderTemplateGroupView> Group(
+        IReadOnlyList<ProviderTemplateDto> templates,
+        string? query,
+        Func<string, string>? variantText = null,
+        string? kind = null)
     {
+        var scoped = kind is null ? templates : templates.Where(t => ProviderKinds.Normalize(t.Kind) == kind).ToList();
         var q = query?.Trim() ?? "";
         if (q.Length > 0)
         {
-            var hits = templates.Where(t => Matches(t, q, variantText)).Select(t => new ProviderTemplateItem(t)).ToList();
+            var hits = scoped.Where(t => Matches(t, q, variantText)).Select(t => new ProviderTemplateItem(t)).ToList();
             return hits.Count == 0 ? [] : [new ProviderTemplateGroupView(ResultsGroup, hits)];
         }
 
         var groups = new List<ProviderTemplateGroupView>();
-        var featured = templates.Where(t => t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
+        var featured = scoped.Where(t => t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
         if (featured.Count > 0)
         {
             groups.Add(new ProviderTemplateGroupView(FeaturedGroup, featured));
@@ -88,14 +93,14 @@ public static class ProviderTemplateItems
 
         foreach (var g in ProviderTemplateGroups.All)
         {
-            var items = templates.Where(t => t.Group == g && !t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
+            var items = scoped.Where(t => t.Group == g && !t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
             if (items.Count > 0)
             {
                 groups.Add(new ProviderTemplateGroupView(g, items));
             }
         }
 
-        var other = templates.Where(t => !ProviderTemplateGroups.All.Contains(t.Group) && !t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
+        var other = scoped.Where(t => !ProviderTemplateGroups.All.Contains(t.Group) && !t.Featured).Select(t => new ProviderTemplateItem(t)).ToList();
         other.Add(new ProviderTemplateItem(null));
         groups.Add(new ProviderTemplateGroupView(OtherGroup, other));
         return groups;
@@ -116,7 +121,9 @@ public static class ProviderTemplateItems
 /// </summary>
 public sealed partial class ProviderEditorViewModel : ObservableObject
 {
-    public static readonly IReadOnlyList<string> Protocols = ["anthropic", "openai-chat", "openai-responses"];
+    public static readonly IReadOnlyList<string> Protocols = ProviderEndpoints.Protocols;
+
+    public static IReadOnlyList<string> Kinds => ProviderKinds.All;
 
     private readonly IProviderEditorCommands _commands;
     private readonly string _deviceId;
@@ -130,8 +137,9 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     /// <summary>新建。</summary>
     /// <param name="variantText">端点标签的本地化文字(搜索用);没有界面的测试传 null。</param>
     /// <param name="discoverable">这台设备上可以导入的候选数(&gt; 0 时弹窗顶部有一行提示)。</param>
+    /// <param name="initialKind">新建时默认选中的供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>)。</param>
     public ProviderEditorViewModel(IProviderEditorCommands commands, string deviceId, IReadOnlyList<ProviderTemplateDto> templates, IReadOnlyCollection<string> existingIds,
-        int discoverable = 0, Func<string, string>? variantText = null)
+        int discoverable = 0, Func<string, string>? variantText = null, string initialKind = ProviderKinds.Text)
     {
         _commands = commands;
         _deviceId = deviceId;
@@ -140,6 +148,10 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         _variantText = variantText;
         IsNew = true;
         DiscoverableCount = discoverable;
+        _filling = true;
+        Kind = ProviderKinds.Normalize(initialKind) ?? ProviderKinds.Text;
+        Protocol = ProviderEndpoints.DefaultProtocolFor(Kind);
+        _filling = false;
         // 设备没给模版(老设备):直接进「自定义」表单
         if (templates.Count == 0)
         {
@@ -155,7 +167,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         }
     }
 
-    /// <summary>编辑已有的供应商:直接进表单,id 只读;认得出模版的话带上 logo 和「获取 key」。</summary>
+    /// <summary>编辑已有的供应商:直接进表单,id 与类型只读;认得出模版的话带上 logo 和「获取 key」。</summary>
     public ProviderEditorViewModel(IProviderEditorCommands commands, string deviceId, ProviderDto provider, ProviderTemplateDto? template)
     {
         _commands = commands;
@@ -167,6 +179,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         Step = ProviderEditorStep.Form;
         Template = new ProviderTemplateItem(template);
         HasCredential = provider.HasCredential;
+        Kind = ProviderKinds.Normalize(provider.Kind) ?? ProviderKinds.Text;
         Id = provider.Id;
         Name = provider.Name;
         Protocol = provider.Protocol;
@@ -234,9 +247,9 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
 
         var key = ApiKey.Trim();
         var savedId = IsNew ? _createdId : Id;
-        var target = new ProviderDebugTargetDto(savedId, BaseUrl.Trim(), Protocol, key.Length > 0 ? key : null);
+        var target = new ProviderDebugTargetDto(savedId, BaseUrl.Trim(), Protocol, key.Length > 0 ? key : null, Kind);
         var name = Name.Trim().Length > 0 ? Name.Trim() : AdvancedSummary;
-        var form = new ProviderDebugViewModel(debug, _deviceId, target, name, BaseUrl, Protocol, canApplyProtocol: true);
+        var form = new ProviderDebugViewModel(debug, _deviceId, target, name, BaseUrl, Protocol, canApplyProtocol: true, kind: Kind);
         await ShowDebug(form);
         if (form.AppliedProtocol is { } protocol && protocol != Protocol)
         {
@@ -275,7 +288,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     private void RebuildGroups()
     {
         Groups.Clear();
-        foreach (var g in ProviderTemplateItems.Group(_templates, Query, _variantText))
+        foreach (var g in ProviderTemplateItems.Group(_templates, Query, _variantText, Kind))
         {
             Groups.Add(g);
         }
@@ -328,6 +341,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         ApiKey = "";
         if (item.Dto is { } t)
         {
+            Kind = ProviderKinds.Normalize(t.Kind) ?? ProviderKinds.Text;
             Id = ProviderTemplateMatch.SuggestId(t.Id, _existingIds);
             Name = t.Name;
             Protocol = t.Protocol;
@@ -338,7 +352,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         {
             Id = "";
             Name = "";
-            Protocol = "openai-chat";
+            Protocol = ProviderEndpoints.DefaultProtocolFor(Kind);
             BaseUrl = "";
             ShowAdvanced = true;
         }
@@ -371,6 +385,40 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     /// <summary>编辑时:设备上已经有 key(留空 = 不改)。</summary>
     public bool HasCredential { get; private set; }
 
+    /// <summary>供应商类型(<c>text</c> / <c>image</c> / <c>video</c> / <c>audio</c>)。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AvailableProtocols), nameof(IsTextKind))]
+    public partial string Kind { get; set; } = ProviderKinds.Text;
+
+    public bool IsTextKind => Kind == ProviderKinds.Text;
+
+    /// <summary>当前类型可选的协议列表。</summary>
+    public IReadOnlyList<string> AvailableProtocols => ProviderEndpoints.ProtocolsFor(Kind);
+
+    partial void OnKindChanged(string value)
+    {
+        var normalized = ProviderKinds.Normalize(value) ?? ProviderKinds.Text;
+        if (normalized != value)
+        {
+            Kind = normalized;
+            return;
+        }
+
+        if (!ProviderEndpoints.IsProtocolForKind(Protocol, normalized))
+        {
+            Protocol = ProviderEndpoints.DefaultProtocolFor(normalized);
+        }
+
+        if (IsPickStep)
+        {
+            RebuildGroups();
+        }
+        else
+        {
+            Touch();
+        }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     public partial string Id { get; set; } = "";
@@ -379,7 +427,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanSave))]
     public partial string Name { get; set; } = "";
 
-    [ObservableProperty] public partial string Protocol { get; set; } = "openai-chat";
+    [ObservableProperty] public partial string Protocol { get; set; } = ProviderEndpoints.OpenAiChat;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
@@ -411,8 +459,10 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
     [RelayCommand]
     private void ToggleAdvanced() => ShowAdvanced = !ShowAdvanced;
 
-    /// <summary>id 只有新建、还没建出来时能改。</summary>
+    /// <summary>id 和类型只有新建、还没建出来时能改。</summary>
     public bool CanEditId => IsNew && _createdId is null;
+
+    public bool CanEditKind => IsNew && _createdId is null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave), nameof(CanTest))]
@@ -471,7 +521,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
         TestErrorKey = null;
         try
         {
-            var upsert = await _commands.UpsertAsync(_deviceId, new ProvidersUpsertParams(id, Name.Trim(), Protocol, BaseUrl.Trim(), Priority, Enabled, _protocolOptionsJson));
+            var upsert = await _commands.UpsertAsync(_deviceId, new ProvidersUpsertParams(id, Name.Trim(), Protocol, BaseUrl.Trim(), Priority, Enabled, _protocolOptionsJson, Kind));
             if (!upsert.IsOk)
             {
                 ErrorKey = upsert.ErrorKey ?? upsert.Outcome.ToString();
@@ -482,6 +532,7 @@ public sealed partial class ProviderEditorViewModel : ObservableObject
             {
                 _createdId = id;
                 OnPropertyChanged(nameof(CanEditId));
+                OnPropertyChanged(nameof(CanEditKind));
             }
 
             SavedProviderId = id;

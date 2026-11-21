@@ -4,12 +4,13 @@ using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace Ncw.UI.Views.Desktop.Tree;
 
 /// <summary>
 /// 侧边栏里的一个项目。右键菜单和「⋯」是同一份(docs/design/03 §1「项目菜单」):
-/// 新建会话、新建终端、显示 / 隐藏已归档、在文件管理器中显示 / 复制路径、新建 / 移出项目组、更改图标…、从侧边栏移除。
+/// 新建会话、新建终端、新建文件、新建文件夹、显示 / 隐藏已归档、在文件管理器中显示 / 复制路径、新建 / 移出项目组、更改图标…、从侧边栏移除。
 /// </summary>
 public partial class SidebarProjectNode : UserControl
 {
@@ -54,12 +55,19 @@ public partial class SidebarProjectNode : UserControl
             return;
         }
 
-        var tile = vm.Tile;
-        var items = new List<NcwMenus.Item>
+        var newItems = new List<NcwMenus.Item>
         {
             new(NcwTexts.Get(NcwTextKind.NewSession), vm.NewSessionCommand) { Glyph = ArcIcons.SquarePen },
             new(NcwTexts.Get(NcwTextKind.NewTerminal), vm.NewTerminalCommand) { Glyph = ArcIcons.Terminal },
-            new(NcwTexts.Get(vm.ShowsArchived ? NcwTextKind.SidebarHideArchived : NcwTextKind.ShowArchived), vm.ToggleArchivedCommand) { Glyph = ArcIcons.Archive },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFile), vm.NewFileCommand) { Glyph = Lucide.Geometry(LucideIconKind.FilePlus) },
+            new(NcwTexts.Get(NcwTextKind.FilesNewFolder), vm.NewFolderCommand) { Glyph = Lucide.Geometry(LucideIconKind.FolderPlus) },
+        };
+        NcwMenus.Populate(NewMenu, newItems);
+
+        var tile = vm.Tile;
+        var items = new List<NcwMenus.Item>(newItems)
+        {
+            new(NcwTexts.Get(vm.ShowsArchived ? NcwTextKind.SidebarHideArchived : NcwTextKind.ShowArchived), vm.ToggleArchivedCommand, SeparatorBefore: true) { Glyph = ArcIcons.Archive },
         };
         if (vm.IsLocal)
         {

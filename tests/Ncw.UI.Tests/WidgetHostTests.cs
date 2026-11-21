@@ -1,5 +1,7 @@
+using System.Xml.Linq;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
 using Ncw.Agent.Widgets.Sanitizing;
 using Ncw.Client.Widgets;
 using Ncw.UI.Controls;
@@ -19,6 +21,55 @@ public class WidgetHostTests
         }
 
         return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
+    }
+
+    [Theory]
+    [InlineData("src/Ncw.Desktop/Ncw.Desktop.csproj")]
+    [InlineData("tools/WidgetSmoke/WidgetSmoke.csproj")]
+    public void Windows_widget_hosts_use_the_shared_manifest_with_layered_child_window_support(string projectPath)
+    {
+        var root = RepoRoot();
+        var project = Path.Combine(root, projectPath);
+        var manifest = Assert.Single(XDocument.Load(project).Descendants("ApplicationManifest"));
+        var manifestPath = Path.GetFullPath(manifest.Value, Path.GetDirectoryName(project)!);
+        Assert.Equal(Path.Combine(root, "src", "Ncw.Desktop", "app.manifest"), manifestPath);
+
+        var assembly = Assert.IsType<XElement>(XDocument.Load(manifestPath).Root);
+        XNamespace asm = "urn:schemas-microsoft-com:asm.v1";
+        XNamespace compat = "urn:schemas-microsoft-com:compatibility.v1";
+        Assert.Equal(asm + "assembly", assembly.Name);
+        var application = assembly.Element(compat + "compatibility")?.Element(compat + "application");
+        Assert.NotNull(application);
+        Assert.Contains(application.Elements(compat + "supportedOS"), e =>
+            (string?)e.Attribute("Id") == "{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}");
+        Assert.DoesNotContain(assembly.Descendants(), e => e.Name.LocalName is "dpiAware" or "dpiAwareness");
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Web_view_attachment_failure_is_reported_after_the_attach_callback_returns(bool asynchronous)
+    {
+        using var surface = new NcwWidgetSurface();
+        var failures = new List<(WidgetSurfaceFailure, string?)>();
+        surface.Failed += (failure, detail) => failures.Add((failure, detail));
+        var context = SynchronizationContext.Current;
+
+        surface.AttachWebView(asynchronous ? FailLater : Fail);
+
+        Assert.Same(context, SynchronizationContext.Current);
+        Assert.Empty(failures);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((WidgetSurfaceFailure.Unavailable, "cannot create native child window"), Assert.Single(failures));
+
+        static void Fail() => throw new InvalidOperationException("cannot create native child window");
+
+        // 与 Avalonia 的附着入口相同:async void 的异常会回投到捕获的同步上下文。
+        static async void FailLater()
+        {
+            await Task.Yield();
+            Fail();
+        }
     }
 
     [Fact]

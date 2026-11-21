@@ -101,26 +101,29 @@
           </Grid>
           <TextBlock Classes="hint" Text="{l:NcwText ApprovalHoldHint}" />
         </StackPanel>
-        <!-- 桌面:允许一次(⌘↵ 允许当前会话里的第一张审批)/ 总是允许 ▾(菜单里选记住的范围,一步完成)/ 拒绝 -->
-        <WrapPanel Classes="pointerOnly" Orientation="Horizontal">
-          <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding AllowOnceCommand}" IsEnabled="{Binding !IsBusy}">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="{l:NcwText ApprovalAllowOnce}" />
-              <TextBlock x:Name="AllowGesture" Opacity="0.7" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
-            </StackPanel>
-          </ui:NcwButton>
-          <ui:NcwDropdownMenu x:Name="AlwaysMenu" Margin="0,0,8,6" IsVisible="{Binding CanAlwaysAllow}" IsEnabled="{Binding !IsBusy}">
-            <ui:NcwDropdownMenu.Trigger>
-              <ui:NcwButton Variant="Secondary" AutomationProperties.Name="{l:NcwText ApprovalAlwaysAllow}">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <TextBlock Text="{l:NcwText ApprovalAlwaysAllow}" />
-                  <lucide:LucideIcon Kind="ChevronDown" Size="13" VerticalAlignment="Center" />
-                </StackPanel>
-              </ui:NcwButton>
-            </ui:NcwDropdownMenu.Trigger>
-          </ui:NcwDropdownMenu>
-          <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding DenyCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalDeny}" />
-        </WrapPanel>
+        <!-- 桌面:可选拒绝原因 + 允许一次(⌘↵ 允许当前会话里的第一张审批)/ 总是允许 ▾(菜单里选记住的范围,一步完成)/ 拒绝 -->
+        <StackPanel Classes="pointerOnly" Spacing="6">
+          <ui:NcwInput Text="{Binding Feedback, Mode=TwoWay}" PlaceholderText="{l:NcwText ApprovalFeedbackHint}" />
+          <WrapPanel Orientation="Horizontal">
+            <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding AllowOnceCommand}" IsEnabled="{Binding !IsBusy}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{l:NcwText ApprovalAllowOnce}" />
+                <TextBlock x:Name="AllowGesture" Opacity="0.7" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" />
+              </StackPanel>
+            </ui:NcwButton>
+            <ui:NcwDropdownMenu x:Name="AlwaysMenu" Margin="0,0,8,6" IsVisible="{Binding CanAlwaysAllow}" IsEnabled="{Binding !IsBusy}">
+              <ui:NcwDropdownMenu.Trigger>
+                <ui:NcwButton Variant="Secondary" AutomationProperties.Name="{l:NcwText ApprovalAlwaysAllow}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{l:NcwText ApprovalAlwaysAllow}" />
+                    <lucide:LucideIcon Kind="ChevronDown" Size="13" VerticalAlignment="Center" />
+                  </StackPanel>
+                </ui:NcwButton>
+              </ui:NcwDropdownMenu.Trigger>
+            </ui:NcwDropdownMenu>
+            <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding DenyCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText ApprovalDeny}" />
+          </WrapPanel>
+        </StackPanel>
         <!-- 「总是允许」会记下的规则(设备算好的):让人知道记住的是什么,而不是一个笼统的「总是」 -->
         <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding HasSuggestedRule}"
                    Text="{Binding SuggestedRule, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ApprovalRuleHint}" />
@@ -189,6 +192,7 @@
         <ui:NcwInput Text="{Binding Feedback, Mode=TwoWay}" PlaceholderText="{l:NcwText InteractionPlanFeedback}" />
         <WrapPanel Orientation="Horizontal">
           <ui:NcwButton Margin="0,0,8,6" Variant="Primary" Command="{Binding ApprovePlanCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanApprove}" />
+          <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Command="{Binding ApprovePlanNewSessionCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanApproveNewSession}" />
           <ui:NcwButton Margin="0,0,8,6" Variant="Secondary" Command="{Binding RequestRevisionCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanRevise}" />
           <ui:NcwButton Margin="0,0,8,6" Variant="Danger" Command="{Binding RejectPlanCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText InteractionPlanReject}" />
         </WrapPanel>

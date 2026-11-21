@@ -6,6 +6,7 @@
              xmlns:ui="using:Ncw.UI.Controls"
              xmlns:cv="using:Ncw.UI.Converters"
              xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:conv="using:Ncw.UI.Views.Desktop.Conversation"
              x:Class="Ncw.UI.Views.Desktop.Inspector.SubagentsPane"
              x:DataType="vm:InspectorViewModel">
   <!--
@@ -82,61 +83,7 @@
             <TextBlock Classes="hint" Text="{l:NcwText DeviceConnecting}" />
           </StackPanel>
           <TextBlock Classes="hint" IsVisible="{Binding IsEmpty}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" Text="{l:NcwText SubagentTranscriptEmpty}" />
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Rows}" Margin="10,0,10,12">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Spacing="6" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.DataTemplates>
-                <DataTemplate DataType="vm:UserRowViewModel">
-                  <Border Padding="10,6" CornerRadius="10" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
-                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" />
-                  </Border>
-                </DataTemplate>
-                <DataTemplate DataType="vm:AssistantRowViewModel">
-                  <ui:NcwMarkdown Text="{Binding Text}" />
-                </DataTemplate>
-                <DataTemplate DataType="vm:ThinkingRowViewModel">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <lucide:LucideIcon Kind="Brain" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsStreaming}" Text="{l:NcwText Thinking}" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowDuration}"
-                               Text="{Binding Seconds, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ThoughtForSeconds}" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding ShowPlainLabel}" Text="{l:NcwText ThinkingLabel}" />
-                  </StackPanel>
-                </DataTemplate>
-                <DataTemplate DataType="vm:ToolRowViewModel">
-                  <Border Classes="card" Padding="10,6">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                      <Panel Width="14" VerticalAlignment="Center">
-                        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="13" IsVisible="{Binding IsRunning}" Foreground="{arc:ArcDesignTokenResource Accent}" />
-                        <lucide:LucideIcon Kind="CircleCheck" Size="13" IsVisible="{Binding IsDone}" Foreground="{arc:ArcDesignTokenResource Success}" />
-                        <lucide:LucideIcon Kind="CircleAlert" Size="13" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
-                      </Panel>
-                      <TextBlock Grid.Column="1" FontSize="{arc:ArcDesignTokenResource TypeSM}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
-                        <Run Text="{Binding Name}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding Target}" FontSize="{arc:ArcDesignTokenResource TypeXS}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                      </TextBlock>
-                      <TextBlock Grid.Column="2" Classes="hint" Text="{Binding EnvLabel}" VerticalAlignment="Center" IsVisible="{Binding IsCommand}" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-                <DataTemplate DataType="vm:SubagentRowViewModel">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <lucide:LucideIcon Kind="Bot" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding View, Converter={x:Static cv:SubagentTextConverter.Status}}" />
-                  </StackPanel>
-                </DataTemplate>
-                <DataTemplate DataType="vm:ErrorRowViewModel">
-                  <Border Classes="problem">
-                    <TextBlock TextWrapping="Wrap" FontSize="{arc:ArcDesignTokenResource TypeSM}" Text="{Binding Row, Converter={x:Static cv:ErrorTextConverter.Instance}}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.DataTemplates>
-            </ItemsControl>
-          </ScrollViewer>
+          <conv:TranscriptList ItemsSource="{Binding Rows}" IsReadOnly="True" ContentMargin="10,4,10,12" />
         </Panel>
       </Grid>
     </Panel>

@@ -10,12 +10,11 @@
              x:Class="Ncw.UI.Views.Desktop.Conversation.ComposerView"
              x:DataType="vm:ComposerViewModel">
   <!--
-    输入框(docs/design/03 §1、02 B1):多行输入、发送 / 中止、运行中的排队与插话、模型 / 思考 / 权限档位。
-    Enter 发送(运行中是排队),Shift+Enter 换行。能做什么由 ComposerLogic 算(code-behind 只接键盘)。
-    `@` 弹出项目文件候选(files.suggest),选中后变成输入框上方的文件引用 chip,发送时作为文件块一起发出;
-    `/` 弹出设备上的命令清单(commands.list,带说明);内置命令还没接入的保持占位。
+    输入框(docs/design/03 §1、02 B1):多行输入、发送 / 中止、运行中的排队与插话、模型 / 思考 / 权限档位、图片选择与拖拽粘贴。
+    Enter 发送(运行中是排队),⌘/Ctrl+Enter 运行中立刻插话,Shift+Enter 换行。能做什么由 ComposerLogic 算(code-behind 只接键盘与拖拽)。
+    `@` 弹出项目文件候选(files.suggest),选中后写成草稿里的 `@名字` token;删掉 token 就去掉这个引用;
+    `/` 弹出设备上的命令清单(commands.list,含 /goal /compact /model /clear /plan);
     版式见 docs/design/03 §6「输入框版式」:一张卡片(书写区是 Arc 的 token 编辑器,不画自己的框),工具行左边附件 | 模型 | 思考,右边权限 / 上下文环 / 插话 / 主按钮。
-    选中的文件写成草稿里的 `@名字` token(不再是输入框上方的 chip);删掉 token 就去掉这个引用。
   -->
   <UserControl.Styles>
     <!-- 卡片:焦点在里面任何位置时描边加深 -->
@@ -76,7 +75,8 @@
   </UserControl.Styles>
   <Panel>
   <Border x:Name="Card" Classes="panel" Padding="12,10,10,10" CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}" BorderThickness="1"
-          BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource Surface}">
+          BorderBrush="{arc:ArcDesignTokenResource Border}" Background="{arc:ArcDesignTokenResource Surface}"
+          DragDrop.AllowDrop="True">
     <StackPanel Spacing="6">
       <!-- 排队中的消息 -->
       <ItemsControl ItemsSource="{Binding Queue}" IsVisible="{Binding HasQueue}" ui:NcwMotion.ShowMotion="Rise">
@@ -115,7 +115,7 @@
       </Grid>
       <TextBlock Classes="hint" IsVisible="{Binding HasFailure}" ui:NcwMotion.ShowMotion="Fade" Foreground="{arc:ArcDesignTokenResource Danger}"
                  Text="{Binding LastFailure, Converter={x:Static cv:ComposerHintConverter.Failure}}" />
-      <!-- 本地动作(/goal /compact /model)的结果:用法、切换成功是告知,其余是警告 -->
+      <!-- 本地动作(/goal /compact /model /plan)的结果:用法、切换成功是告知,其余是警告 -->
       <TextBlock Classes="hint slashNotice" Classes.warn="{Binding !NoticeIsInfo}" IsVisible="{Binding HasNotice}" ui:NcwMotion.ShowMotion="Fade" TextWrapping="Wrap"
                  Text="{Binding Notice, Converter={x:Static cv:SlashNoticeConverter.Instance}}" />
       <!-- /compact 进行中:要等一次模型调用 -->
@@ -175,6 +175,20 @@
       </ItemsControl>
       <TextBlock Classes="hint" IsVisible="{Binding Attachments.IsUploading}" ui:NcwMotion.ShowMotion="Fade" Text="{l:NcwText AttachmentUploadingWait}" />
 
+      <!-- 计划模式指示条:仅在会话处于 plan 模式时显示,可点 X 切回正常模式 -->
+      <Border IsVisible="{Binding IsPlanMode}" ui:NcwMotion.ShowMotion="Fade" HorizontalAlignment="Left"
+              Padding="8,3" CornerRadius="999" Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+              BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <lucide:LucideIcon Kind="Map" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <TextBlock Classes="caption" VerticalAlignment="Center" Text="{l:NcwText PlanModeActiveBadge}" />
+          <ui:PlainButton Width="18" Height="18" Command="{Binding ExitPlanModeCommand}"
+                          AutomationProperties.Name="{l:NcwText PlanModeExitTip}" arc:Tooltip.Tip="{l:NcwText PlanModeExitTip}">
+            <lucide:LucideIcon Kind="X" Size="11" HorizontalAlignment="Center" />
+          </ui:PlainButton>
+        </StackPanel>
+      </Border>
+
       <!-- 书写区:Arc 的 token 编辑器(不画自己的框,边框是这张卡片)。`@文件`、开头的 `/命令` 是整体的 token,规则在 ComposerLogic.Mentions。
            Enter 由 code-behind 处理(发送 / 排队 / 选中候选),所以 SubmitOnEnter 关掉 -->
       <ui:NcwTokenEditor x:Name="Input" Text="{Binding Draft, Mode=TwoWay}" Placeholder="{l:NcwText ComposerPlaceholder}"
@@ -184,7 +198,7 @@
       <!-- 工具行:左边附件 | 模型 | 思考(一行,不换行,放不下时裁掉),右边权限 / 上下文环 / 插话 / 主按钮 -->
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="-6,0,0,0">
         <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" ClipToBounds="True">
-          <!-- 附件:宿主提供选择器时(手机:相册 / 拍照 / 文件)可用;桌面没有选择器,保持灰掉 -->
+          <!-- 附件:桌面提供图片选择(另有剪贴板粘贴与拖拽);手机提供相册 / 拍照 / 文件 -->
           <ui:NcwDropdownMenu x:Name="AttachMenu" IsEnabled="{Binding Attachments.CanPick}">
             <ui:NcwDropdownMenu.Trigger>
               <ui:PlainButton Classes="tool" Width="28" Height="28" AutomationProperties.Name="{l:NcwText AddAttachment}" arc:Tooltip.Tip="{l:NcwText AddAttachment}">
@@ -238,17 +252,17 @@
           <!-- 上下文占用(最近一次 context_usage;没有数据时不显示)。只在这里显示,标签栏 / 手机导航栏不再重复。
                点开是 Arc 的上下文窗口卡片(NcwContextCard,只展示,见下面的 ContextPopup);Tag 把明细带给弹层里的卡片 -->
           <ui:PlainButton x:Name="ContextMeter" Classes="tool" Height="28" Padding="6,0" Click="OnContextClick"
-                          IsVisible="{Binding $parent[conv:ConversationView].((vm:ConversationViewModel)DataContext).HasContext, FallbackValue=False}"
-                          Tag="{Binding $parent[conv:ConversationView].((vm:ConversationViewModel)DataContext).Context, FallbackValue={x:Null}}"
+                          IsVisible="{Binding HasContext}"
+                          Tag="{Binding Context}"
                           AutomationProperties.Name="{l:NcwText ContextUsage}" arc:Tooltip.Tip="{l:NcwText ContextUsage}">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Panel Width="16" Height="16" VerticalAlignment="Center">
                 <Ellipse StrokeThickness="2" Stroke="{arc:ArcDesignTokenResource BorderStrong}" />
                 <Arc StartAngle="-90" StrokeThickness="2" StrokeLineCap="Round" Stroke="{arc:ArcDesignTokenResource TextSecondary}"
-                     SweepAngle="{Binding $parent[conv:ConversationView].((vm:ConversationViewModel)DataContext).ContextPercent, Converter={x:Static cv:PercentSweepConverter.Instance}, FallbackValue=0}" />
+                     SweepAngle="{Binding ContextPercent, Converter={x:Static cv:PercentSweepConverter.Instance}, FallbackValue=0}" />
               </Panel>
               <TextBlock Classes="caption pct">
-                <Run Text="{Binding $parent[conv:ConversationView].((vm:ConversationViewModel)DataContext).ContextPercent, FallbackValue=0}" /><Run Text="%" />
+                <Run Text="{Binding ContextPercent}" /><Run Text="%" />
               </TextBlock>
             </StackPanel>
           </ui:PlainButton>

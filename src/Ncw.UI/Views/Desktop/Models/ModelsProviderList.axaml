@@ -42,8 +42,14 @@
         <lucide:LucideIcon Kind="Plus" Size="14" />
       </ui:NcwButton>
     </Grid>
-    <TextBlock Classes="hint" Margin="10,4" TextWrapping="Wrap" Text="{l:NcwText NoProviders}" IsVisible="{Binding !HasProviders}" />
-    <ItemsControl x:Name="ProviderItems" ItemsSource="{Binding Providers}">
+    <ui:NcwSegmented x:Name="KindFilter" Margin="4,2,4,6" HorizontalAlignment="Stretch" SelectedValue="{Binding SelectedKind, Mode=TwoWay}">
+      <ui:NcwSegmentedOption Value="text" Label="{l:NcwText ProviderKindShortText}" />
+      <ui:NcwSegmentedOption Value="image" Label="{l:NcwText ProviderKindShortImage}" />
+      <ui:NcwSegmentedOption Value="video" Label="{l:NcwText ProviderKindShortVideo}" />
+      <ui:NcwSegmentedOption Value="audio" Label="{l:NcwText ProviderKindShortAudio}" />
+    </ui:NcwSegmented>
+    <TextBlock Classes="hint" Margin="10,4" TextWrapping="Wrap" Text="{l:NcwText NoProvidersForKind}" IsVisible="{Binding !HasFilteredProviders}" />
+    <ItemsControl x:Name="ProviderItems" ItemsSource="{Binding FilteredProviders}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <StackPanel Spacing="2" />

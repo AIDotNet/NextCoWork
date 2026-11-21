@@ -27,6 +27,8 @@ public partial class ComposerView : UserControl
         // 隧道阶段先看 Enter:Arc 的多行输入框自己会把 Enter 当换行
         Input.AddHandler(KeyDownEvent, OnInputKeyDown, RoutingStrategies.Tunnel);
         Input.PastingFromClipboard += OnInputPasting;
+        Card.AddHandler(DragDrop.DragOverEvent, OnCardDragOver);
+        Card.AddHandler(DragDrop.DropEvent, OnCardDrop);
         SizeChanged += (_, e) => ApplyCompact(e.NewSize.Width);
     }
 
@@ -250,10 +252,49 @@ public partial class ComposerView : UserControl
             return;
         }
 
+        var steerModifier = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        if (e.Key is Key.Enter && e.KeyModifiers == steerModifier && _vm is { State.CanSteer: true } steerVm)
+        {
+            steerVm.SteerCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift) && _vm is { } vm && vm.State.Primary is ComposerPrimary.Send or ComposerPrimary.Queue)
         {
             vm.SubmitCommand.Execute(null);
             e.Handled = true;
+        }
+    }
+
+    private void OnCardDragOver(object? sender, DragEventArgs e)
+    {
+        if (_vm is null || Input.IsReadOnly)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        var supported = e.DataTransfer.Contains(DataFormat.File) || e.DataTransfer.Contains(DataFormat.Bitmap) || e.DataTransfer.Contains(DataFormat.Text);
+        e.DragEffects = supported ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnCardDrop(object? sender, DragEventArgs e)
+    {
+        if (_vm is not { } vm || Input.IsReadOnly)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        try
+        {
+            await ComposerClipboard.DropAsync(e.DataTransfer, vm, Input.InsertText);
+        }
+        catch (Exception)
+        {
+            // 拖拽内容读取失败时不崩界面
         }
     }
 

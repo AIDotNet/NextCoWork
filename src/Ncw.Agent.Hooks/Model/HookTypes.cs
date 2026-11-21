@@ -12,19 +12,31 @@ public static class HookEvents
     public const string PreToolUse = "PreToolUse";
     public const string PostToolUse = "PostToolUse";
     public const string Notification = "Notification";
+    public const string PreCompact = "PreCompact";
     public const string Stop = "Stop";
+    public const string SubagentStart = "SubagentStart";
     public const string SubagentStop = "SubagentStop";
 
     /// <summary>固定顺序(列表、写文件都按它排,不按文件里键的书写顺序)。</summary>
-    public static IReadOnlyList<string> All { get; } = [UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop, SubagentStop];
+    public static IReadOnlyList<string> All { get; } =
+    [
+        UserPromptSubmit,
+        PreToolUse,
+        PostToolUse,
+        Notification,
+        PreCompact,
+        Stop,
+        SubagentStart,
+        SubagentStop,
+    ];
 
     /// <summary>只有这两个事件手里有「工具 + 入参」,别的事件写了 matcher 也无从匹配(被忽略,而不是让这条钩子整个失效)。</summary>
     public static IReadOnlyList<string> ToolScoped { get; } = [PreToolUse, PostToolUse];
 
     /// <summary>
-    /// 能阻断后续动作的三个。<b><c>Stop</c> 的「阻断」方向相反</b>:前两个是「拦住,不让它发生」,Stop 拦的是<b>收尾</b>——拦住的结果是这一轮继续跑。
+    /// 能阻断后续动作的事件。<b><c>Stop</c> 的「阻断」方向相反</b>:其余是「拦住,不让它发生」,Stop 拦的是<b>收尾</b>——拦住的结果是这一轮继续跑。
     /// </summary>
-    public static IReadOnlyList<string> Blocking { get; } = [UserPromptSubmit, PreToolUse, Stop];
+    public static IReadOnlyList<string> Blocking { get; } = [UserPromptSubmit, PreToolUse, PreCompact, Stop];
 
     public static bool IsValid(string? value) => value is not null && All.Contains(value, StringComparer.Ordinal);
 }
@@ -171,7 +183,8 @@ public sealed record HookRunReport(
     string? Reason = null,
     string? AdditionalContext = null,
     string? Preview = null,
-    PromptVerdict? PromptVerdict = null)
+    PromptVerdict? PromptVerdict = null,
+    System.Text.Json.JsonElement? UpdatedInput = null)
 {
     /// <summary>阻断 = 退出码 2 / 结构化 deny / prompt 判未达成。</summary>
     public bool Blocks => Outcome == HookOutcome.Blocked || Decision == HookDecision.Deny;

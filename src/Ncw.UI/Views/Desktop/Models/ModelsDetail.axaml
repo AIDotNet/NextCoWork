@@ -29,6 +29,7 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
               <models:ProviderSummary />
               <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Top" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
+                            IsVisible="{Binding CanManage}"
                             AutomationProperties.Name="{l:NcwText ProviderEnabled}" arc:Tooltip.Tip="{l:NcwText ProviderEnabled}" />
             </Grid>
             <models:ProviderDetail />

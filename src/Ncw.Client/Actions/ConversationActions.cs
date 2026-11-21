@@ -104,12 +104,20 @@ public interface IConversationCommands
         Task.FromResult(false);
 
     /// <summary>
-    /// 输入框里选了一个权限档位:记在会话上(<c>sessions.setPermissionMode</c>);若当前有正在跑的 Run(<paramref name="activeRunId"/> 非空),
+    /// 记住会话的权限档位(<c>sessions.setPermissionMode</c>);若当前有正在跑的 Run(<paramref name="activeRunId"/> 非空),
     /// 同时切这个实时 Run 的权限档位(<c>runs.setPermissionMode</c>,owner 才能调);<paramref name="defaultForWorkspace"/> 非空时
     /// 顺带写成这个项目新会话的默认权限档位(<c>settings.project.update</c>)。没有覆盖它的实现(单测里的假实现)什么也不做。
     /// </summary>
     Task<bool> SetPermissionModeAsync(SessionRef session, string mode, string? activeRunId = null, string? defaultForWorkspace = null, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    /// <summary>切换会话模式(<c>code</c> / <c>plan</c>,<c>sessions.setMode</c>)。没有覆盖它的实现(单测里的假实现)什么也不做。</summary>
+    Task<bool> SetModeAsync(SessionRef session, string mode, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
+    /// <summary>批准计划之后以 <c>code</c> 模式发起执行 Run(<c>runs.executePlan</c>)。</summary>
+    Task<SendResult> ExecutePlanAsync(SessionRef session, PlanApprovalInteractionDto approval, string text, SendOptionsDto options, CancellationToken ct = default) =>
+        Task.FromResult(new SendResult(SendOutcome.Unavailable));
 
     /// <summary>
     /// 立刻压缩会话的上下文(<c>/compact [说明]</c>,<c>context.compact</c>)。<paramref name="instructions"/> 接在摘要提示词的 <c>Additional focus:</c> 后面;
@@ -295,6 +303,26 @@ public sealed class ConversationActions(DeviceRegistry devices, InteractionLedge
         }
 
         return true;
+    }
+
+    /// <summary>切换会话模式(<c>code</c> / <c>plan</c>,<c>sessions.setMode</c>)。更新后的会话经会话主题推回 Store。</summary>
+    public async Task<bool> SetModeAsync(SessionRef session, string mode, CancellationToken ct = default)
+    {
+        if (Link(session.DeviceId) is not { } link)
+        {
+            return false;
+        }
+
+        try
+        {
+            await link.CallAsync(ConversationMethods.SessionsSetMode, new SessionsSetModeParams(session.SessionId, mode), ct,
+                idem: $"setMode:{session.SessionId}:{Ulid.New()}").ConfigureAwait(false);
+            return true;
+        }
+        catch (ProtocolException)
+        {
+            return false;
+        }
     }
 
     /// <summary>打开一个会话:订阅它的主题(快照进 Store,之后的变化跟着更新,断线重连后自动恢复)。</summary>

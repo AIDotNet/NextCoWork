@@ -1,10 +1,11 @@
 namespace Ncw.Agent.Extensions.Permissions;
 
-/// <summary>PreToolUse 钩子 / 插件拦截器跑完之后归纳出来的那三种表态。</summary>
+/// <summary>PreToolUse 钩子 / 插件拦截器跑完之后归纳出来的那几种表态。</summary>
 /// <param name="Deny">有人明确拒绝(带理由)。</param>
 /// <param name="Allow">有钩子明确放行。插件拦截器不能放行(它的 allow 视为弃权,见 <see cref="IToolInterceptor"/>)。</param>
 /// <param name="Ask">有人要求「问人」。</param>
-public readonly record struct HookVerdict(string? Deny = null, bool Allow = false, bool Ask = false)
+/// <param name="UpdatedInput">PreToolUse 钩子改写后的工具入参(Claude Code <c>updatedInput</c>):存在时权限扩展用新入参重跑规则检查并交付 <see cref="Kernel.Loop.PreflightDecision.Edit"/>。</param>
+public readonly record struct HookVerdict(string? Deny = null, bool Allow = false, bool Ask = false, System.Text.Json.JsonElement? UpdatedInput = null)
 {
     public static HookVerdict None => default;
 }

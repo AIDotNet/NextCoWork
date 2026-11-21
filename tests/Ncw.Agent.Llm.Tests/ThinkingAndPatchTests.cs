@@ -73,6 +73,8 @@ public sealed class ThinkingAndPatchTests
     {
         Assert.False(ThinkingResolver.Resolve(ThinkingLevel.Auto, new ThinkingConfig(ThinkingMode.Toggle, DefaultEnabled: false), 8192)!.Enabled);
         Assert.True(ThinkingResolver.Resolve(ThinkingLevel.Off, new ThinkingConfig(ThinkingMode.Always), 8192)!.Enabled);
+        Assert.True(ThinkingResolver.Resolve(ThinkingLevel.Auto, new ThinkingConfig(ThinkingMode.Effort, DefaultEnabled: false), 8192, [ReasoningEffort.Low, ReasoningEffort.High])!.Enabled);
+        Assert.False(ThinkingResolver.Resolve(ThinkingLevel.Auto, new ThinkingConfig(ThinkingMode.Effort, DefaultEnabled: false), 8192, [ReasoningEffort.None, ReasoningEffort.Low, ReasoningEffort.High])!.Enabled);
         Assert.Equal(ReasoningEffort.XHigh, ThinkingResolver.Resolve(ThinkingLevel.XHigh, new ThinkingConfig(ThinkingMode.Effort), 8192)!.Effort);
     }
 

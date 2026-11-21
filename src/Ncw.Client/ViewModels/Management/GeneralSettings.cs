@@ -346,10 +346,13 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
             return;
         }
 
-        var options = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled).ToList();
+        var enabled = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled).ToList();
+        var chatOptions = enabled.Where(o => o.IsChatModel).ToList();
+        var imageOptions = enabled.Where(o => o.Kind == ProviderKinds.Image).ToList();
         foreach (var row in Picks)
         {
             var current = Current(row.Field);
+            var options = row.Field == ModelPickField.Image ? imageOptions : chatOptions;
             var items = new List<ChoiceItem> { new("", null) };
             items.AddRange(options.Select(o => new ChoiceItem(PickKey(new ModelPickDto(o.Alias, o.ProviderId)), $"{o.DisplayName} · {o.ProviderName}")));
             var key = PickKey(current);
@@ -723,7 +726,7 @@ public sealed partial class ProjectSettingsViewModel : ManagementPageViewModel
             return;
         }
 
-        var options = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled)
+        var options = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled && o.IsChatModel)
             .Select(o => new ChoiceItem(GeneralSettingsViewModel.PickKey(new ModelPickDto(o.Alias, o.ProviderId)), $"{o.DisplayName} · {o.ProviderName}")).ToList();
         Fill(ModelChoices, [new ChoiceItem("", null), .. options], Settings?.DefaultModel);
         Fill(CompactChoices, [new ChoiceItem("", null), .. options], Settings?.CompactModel);

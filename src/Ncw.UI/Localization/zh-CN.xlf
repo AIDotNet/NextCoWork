@@ -2013,5 +2013,55 @@
     <unit id="WorkflowNodeNoOutput"><segment><source>No output yet.</source><target state="translated">暂无输出。</target></segment></unit>
     <unit id="WorkflowNodeCopyOutput"><segment><source>Copy output</source><target state="translated">复制输出</target></segment></unit>
     <unit id="WorkflowNodeClose"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
+    <unit id="ContextEmptyHint"><segment><source>Context breakdown appears once the model responds.</source><target state="translated">模型开始回复后这里会显示上下文占用详情。</target></segment></unit>
+    <unit id="TodosEmptyHint"><segment><source>No active to-do items for this session.</source><target state="translated">当前会话还没有待办事项。</target></segment></unit>
+    <unit id="HistoryEmptyHint"><segment><source>No file changes recorded in this session yet.</source><target state="translated">本会话还没有记录到文件改动。</target></segment></unit>
+    <unit id="HistoryOpenInReview"><segment><source>Inspect in Review</source><target state="translated">在审查中查看</target></segment></unit>
+    <unit id="ApprovalFeedbackHint"><segment><source>Optional reason or note (sent on deny)</source><target state="translated">可选：填写拒绝理由或说明</target></segment></unit>
+    <unit id="InteractionPlanApproveNewSession"><segment><source>Approve in new session</source><target state="translated">在新会话中批准执行</target></segment></unit>
+    <unit id="SlashPlanDescription"><segment><source>Toggle Plan mode (design before editing)</source><target state="translated">切换规划模式（先出方案再改代码）</target></segment></unit>
+    <unit id="SlashPlanHint"><segment><source>[on|off]</source><target state="translated">[on|off]</target></segment></unit>
+    <unit id="SlashPlanEnabled"><segment><source>Switched to Plan mode.</source><target state="translated">已切换到规划模式。</target></segment></unit>
+    <unit id="SlashPlanDisabled"><segment><source>Switched to Code mode.</source><target state="translated">已切换到编码模式。</target></segment></unit>
+    <unit id="PlanModeActiveBadge"><segment><source>Plan mode</source><target state="translated">规划模式</target></segment></unit>
+    <unit id="PlanModeExitTip"><segment><source>Exit Plan mode</source><target state="translated">退出规划模式</target></segment></unit>
+    <unit id="ToolOpenFile"><segment><source>Open file</source><target state="translated">打开文件</target></segment></unit>
+    <unit id="StatusGenerating"><segment><source>Generating response…</source><target state="translated">正在生成回复……</target></segment></unit>
+    <unit id="StatusRetryingWithDelay"><segment><source>The provider is retrying (attempt {0}, in {1}s)…</source><target state="translated">上游正在重试(第 {0} 次,{1} 秒后)……</target></segment></unit>
+    <unit id="GeneratingLabel"><segment><source>Generating…</source><target state="translated">生成中……</target></segment></unit>
+    <unit id="ProviderKindLabel"><segment><source>Provider type</source><target state="translated">供应商类型</target></segment></unit>
+    <unit id="ProviderKindText"><segment><source>Text models</source><target state="translated">文本模型</target></segment></unit>
+    <unit id="ProviderKindImage"><segment><source>Image models</source><target state="translated">图片模型</target></segment></unit>
+    <unit id="ProviderKindVideo"><segment><source>Video models</source><target state="translated">视频模型</target></segment></unit>
+    <unit id="ProviderKindAudio"><segment><source>Audio models</source><target state="translated">音频模型</target></segment></unit>
+    <unit id="ProviderKindShortText"><segment><source>Text</source><target state="translated">文本</target></segment></unit>
+    <unit id="ProviderKindShortImage"><segment><source>Image</source><target state="translated">图片</target></segment></unit>
+    <unit id="ProviderKindShortVideo"><segment><source>Video</source><target state="translated">视频</target></segment></unit>
+    <unit id="ProviderKindShortAudio"><segment><source>Audio</source><target state="translated">音频</target></segment></unit>
+    <unit id="ProtocolOpenAiImages"><segment><source>OpenAI Images (/images/generations)</source><target state="translated">OpenAI 图片 (/images/generations)</target></segment></unit>
+    <unit id="ProtocolVolcengineImages"><segment><source>Volcengine Images (/images/generations + image[])</source><target state="translated">火山方舟图片 (/images/generations + image[])</target></segment></unit>
+    <unit id="ProtocolVolcengineImagesShort"><segment><source>Volcengine Img</source><target state="translated">火山图片</target></segment></unit>
+    <unit id="ProtocolOpenAiVideos"><segment><source>OpenAI Videos (/videos)</source><target state="translated">OpenAI 视频 (/videos)</target></segment></unit>
+    <unit id="ProtocolVolcengineVideos"><segment><source>Volcengine Videos (/contents/generations/tasks)</source><target state="translated">火山方舟视频 (/contents/generations/tasks)</target></segment></unit>
+    <unit id="ProtocolVolcengineVideosShort"><segment><source>Volcengine Vid</source><target state="translated">火山视频</target></segment></unit>
+    <unit id="ProtocolOpenAiAudio"><segment><source>OpenAI Audio (/audio/speech &amp; transcriptions)</source><target state="translated">OpenAI 音频 (/audio/speech &amp; transcriptions)</target></segment></unit>
+    <unit id="ProviderBuiltIn"><segment><source>Built-in</source><target state="translated">内置</target></segment></unit>
+    <unit id="ProviderManagedHint"><segment><source>Provided automatically while signed in to NextCoWork. Models are synced and filtered by type.</source><target state="translated">已登录 NextCoWork 账号，系统自动提供内置供应商并按类型同步可用模型。</target></segment></unit>
+    <unit id="NoProvidersForKind"><segment><source>No providers of this type yet</source><target state="translated">暂无该类型的供应商</target></segment></unit>
+    <unit id="ImportModelsNoMatching"><segment><source>Upstream returned models, none of which match this provider type.</source><target state="translated">上游返回了模型列表，但没有符合当前供应商类型的模型。</target></segment></unit>
+    <unit id="ProvErrInvalidKind"><segment><source>Invalid provider type.</source><target state="translated">供应商类型无效。</target></segment></unit>
+    <unit id="ProvErrInvalidProtocol"><segment><source>The selected protocol does not match this provider type.</source><target state="translated">所选协议与供应商类型不匹配。</target></segment></unit>
+    <unit id="ProviderDebugMediaPromptPlaceholder"><segment><source>Enter a test prompt</source><target state="translated">输入测试提示词</target></segment></unit>
+    <unit id="SidebarProjectsAndSessions"><segment><source>Projects &amp; sessions</source><target state="translated">项目与会话</target></segment></unit>
+    <unit id="SidebarCollapseProjects"><segment><source>Collapse projects</source><target state="translated">折叠所有项目</target></segment></unit>
+    <unit id="FilesFilterToggle"><segment><source>Filter files</source><target state="translated">筛选文件</target></segment></unit>
+    <unit id="FilesLocateActive"><segment><source>Reveal active file in tree</source><target state="translated">定位当前文件</target></segment></unit>
+    <unit id="FilesCompactFolders"><segment><source>Compact folders</source><target state="translated">紧凑目录</target></segment></unit>
+    <unit id="FilesReferenceInChat"><segment><source>Reference in chat</source><target state="translated">引用到对话</target></segment></unit>
+    <unit id="FilesInlineName"><segment><source>File or folder name</source><target state="translated">文件或目录名称</target></segment></unit>
+    <unit id="FilesSection"><segment><source>Files</source><target state="translated">文件</target></segment></unit>
+    <unit id="FilePinTab"><segment><source>Pin tab</source><target state="translated">固定标签</target></segment></unit>
+    <unit id="PinSession"><segment><source>Pin session</source><target state="translated">置顶会话</target></segment></unit>
+    <unit id="UnpinSession"><segment><source>Unpin session</source><target state="translated">取消置顶</target></segment></unit>
   </file>
 </xliff>

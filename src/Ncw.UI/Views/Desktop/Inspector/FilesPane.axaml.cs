@@ -2,7 +2,9 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Controls;
 using Ncw.UI.Localization;
@@ -12,7 +14,7 @@ using TKCode.Arc.Icons.Lucide;
 namespace Ncw.UI.Views.Desktop.Inspector;
 
 /// <summary>
-/// 文件页签的视图。code-behind 只管树控件自己的展示:展开 / 收起事件转给 ViewModel(惰性加载由 <see cref="FileTreeViewModel"/> 做)、
+/// 右侧项目文件面板的视图。code-behind 只管树控件自己的展示:展开 / 收起事件转给 ViewModel(惰性加载由 <see cref="FileTreeViewModel"/> 做)、
 /// 列表重建后把该展开的目录在控件里展开、「更多」菜单的条目。右键菜单在每一行(<see cref="FileRow"/>)。
 /// </summary>
 public partial class FilesPane : UserControl
@@ -20,11 +22,15 @@ public partial class FilesPane : UserControl
     private FilesPanelViewModel? _vm;
     private bool _syncing;
 
+    internal bool IsSynchronizing => _syncing;
+
     public FilesPane()
     {
         InitializeComponent();
-        Tree.ChildrenSelector = static node => (node as FileNodeViewModel)?.Children;
-        Tree.HeaderSelector = static node => (node as FileNodeViewModel)?.Name;
+        Tree.DoubleTapped += OnTreeDoubleTapped;
+        AddHandler(KeyDownEvent, OnPaneKeyDown, RoutingStrategies.Tunnel);
+        Tree.ChildrenSelector = static node => (node as FileNodeViewModel)?.DisplayChildren;
+        Tree.HeaderSelector = static node => (node as FileNodeViewModel)?.DisplayName;
         Tree.ItemExpanded += (_, e) =>
         {
             if (!_syncing && e.Item is FileNodeViewModel node)
@@ -53,6 +59,8 @@ public partial class FilesPane : UserControl
         base.OnDataContextChanged(e);
         if (_vm is not null)
         {
+            _vm.UseInlineEditing = false;
+            _vm.CancelInlineEditCommand.Execute(null);
             _vm.Tree.Loaded -= OnLoaded;
             _vm.Tree.Roots.CollectionChanged -= OnRootsChanged;
             _vm.PropertyChanged -= OnViewModelChanged;
@@ -62,6 +70,7 @@ public partial class FilesPane : UserControl
         _vm = DataContext as FilesPanelViewModel;
         if (_vm is not null)
         {
+            _vm.UseInlineEditing = true;
             _vm.Tree.Loaded += OnLoaded;
             _vm.Tree.Roots.CollectionChanged += OnRootsChanged;
             _vm.PropertyChanged += OnViewModelChanged;
@@ -74,6 +83,18 @@ public partial class FilesPane : UserControl
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (!_syncing && e.PropertyName is nameof(FilesPanelViewModel.Selected))
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_vm?.Selected is { } selected)
+                {
+                    Tree.ScrollIntoView(selected);
+                    Dispatcher.UIThread.Post(() => Tree.GetVisualDescendants().OfType<FileRow>().FirstOrDefault(r => r.DataContext is FileNodeViewModel { IsEditing: true })?.FocusInlineEditor(), DispatcherPriority.Background);
+                }
+            }, DispatcherPriority.Loaded);
+        }
+
         if (e.PropertyName is nameof(FilesPanelViewModel.CanWrite))
         {
             RebuildMoreMenu();
@@ -82,7 +103,7 @@ public partial class FilesPane : UserControl
 
     private void OnTreeChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(FileTreeViewModel.ShowIgnored))
+        if (e.PropertyName is nameof(FileTreeViewModel.ShowIgnored) or nameof(FileTreeViewModel.CompactFolders))
         {
             RebuildMoreMenu();
         }
@@ -110,11 +131,17 @@ public partial class FilesPane : UserControl
         {
             if (node is null)
             {
+                // Arc 缓存子项:紧凑链改变后重设源,只影响展示。
+                var selected = _vm.Selected;
+                Tree.ItemsSource = null;
+                Tree.ItemsSource = _vm.Tree.Roots;
                 foreach (var root in _vm.Tree.Roots)
                 {
                     ExpandIfNeeded(root);
                 }
 
+                Tree.SelectedItem = selected;
+                if (selected is not null) Tree.ScrollIntoView(selected);
                 return;
             }
 
@@ -128,7 +155,7 @@ public partial class FilesPane : UserControl
                 Tree.Expand(node);
             }
 
-            foreach (var child in node.Children)
+            foreach (var child in node.DisplayChildren)
             {
                 ExpandIfNeeded(child);
             }
@@ -136,6 +163,11 @@ public partial class FilesPane : UserControl
         finally
         {
             _syncing = false;
+            // 恢复 Arc 选中行会把焦点交回树:所有重建 / 滚动工作完成后,再交给正在编辑的输入框。
+            Dispatcher.UIThread.Post(() =>
+            {
+                Tree.GetVisualDescendants().OfType<FileRow>().FirstOrDefault(r => r.DataContext is FileNodeViewModel { IsEditing: true })?.FocusInlineEditor();
+            }, DispatcherPriority.Background);
         }
     }
 
@@ -151,7 +183,7 @@ public partial class FilesPane : UserControl
             Tree.Expand(node);
         }
 
-        foreach (var child in node.Children)
+        foreach (var child in node.DisplayChildren)
         {
             ExpandIfNeeded(child);
         }
@@ -169,8 +201,39 @@ public partial class FilesPane : UserControl
         [
             new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFile), vm.NewFileCommand, null) { IsDisabled = !vm.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FilePlus) },
             new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesNewFolder), vm.NewFolderCommand, null) { IsDisabled = !vm.CanWrite, Glyph = Lucide.Geometry(LucideIconKind.FolderPlus) },
+            new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesCompactFolders), vm.ToggleCompactFoldersCommand, null) { IsChecked = vm.Tree.CompactFolders, Glyph = Lucide.Geometry(LucideIconKind.Folder) },
             new NcwMenus.Item(NcwTexts.Get(NcwTextKind.FilesShowIgnored), vm.ToggleShowIgnoredCommand, null, SeparatorBefore: true) { IsChecked = vm.Tree.ShowIgnored, Glyph = Lucide.Geometry(vm.Tree.ShowIgnored ? LucideIconKind.Eye : LucideIconKind.EyeOff) },
         ]);
+    }
+
+    private void OnPaneKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_vm is not { } vm) return;
+        if (e.Key == Key.F && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            vm.IsExpanded = true;
+            vm.IsFilterVisible = true;
+            Dispatcher.UIThread.Post(() => SearchBox.Focus(), DispatcherPriority.Background);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && vm.IsFilterVisible && !Tree.GetVisualDescendants().OfType<FileRow>().Any(r => r.DataContext is FileNodeViewModel { IsEditing: true }))
+        {
+            vm.IsFilterVisible = false;
+            vm.Search.Query = "";
+            if ((vm.Selected ?? vm.Tree.Roots.FirstOrDefault()) is { } focus) Tree.FocusItem(focus);
+            e.Handled = true;
+        }
+    }
+
+    private void OnTreeDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        var source = e.Source as Control;
+        var row = source as FileRow ?? source?.FindAncestorOfType<FileRow>();
+        if (row?.DataContext is FileNodeViewModel { IsFile: true, IsDraft: false, IsEditing: false } node && _vm is not null)
+        {
+            _vm.PinFileCommand.Execute(node);
+            e.Handled = true;
+        }
     }
 
     private void OnResultClick(object? sender, RoutedEventArgs e)

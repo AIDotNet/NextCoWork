@@ -56,7 +56,7 @@ public sealed partial class AgentSession
                     Binding = binding,
                     Context = new RequestContext(WorkspaceId, $"{state.Request.RunId.Value}:compact", SessionId),
                     FileTools = settings.FileTools,
-                    ReadFile = (path, token) => Compactor.ReadAttachableFileAsync(_deps.Environment, _deps.WorkspaceRoot, path, token),
+                    ReadFile = (path, token) => Compactor.ReadAttachableFileAsync(_deps.Environment, state.WorkspaceRoot, path, token),
                     ExtraAttachments = attachments.Texts,
                     CustomSummary = (gate as CompactGateDecision.CustomDecision)?.Summary,
                 },

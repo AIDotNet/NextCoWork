@@ -341,4 +341,39 @@ public class ProviderEditorViewModelTests
         Assert.Equal(("deepseek", "DeepSeek 主力", 20, """{"x":1}"""), (upsert.Id, upsert.Name, upsert.Priority, upsert.ProtocolOptionsJson));
         Assert.Empty(commands.Keys); // 留空 = 不改 key
     }
+
+    [Fact]
+    public async Task Switching_provider_kind_filters_templates_switches_available_protocols_and_saves_kind()
+    {
+        ProviderTemplateDto[] mixedTemplates =
+        [
+            .. Templates,
+            new("volcengine-image", "volcengine", "火山方舟", ProviderTemplateGroups.China, null, "volcengine-images", "https://ark.cn-beijing.volces.com/api/v3",
+                "https://console.volcengine.com/ark", true, true, Kind: "image"),
+            new("volcengine-video", "volcengine", "火山方舟", ProviderTemplateGroups.China, null, "volcengine-videos", "https://ark.cn-beijing.volces.com/api/v3",
+                "https://console.volcengine.com/ark", true, true, Kind: "video"),
+            new("openai-audio", "openai", "OpenAI", ProviderTemplateGroups.International, null, "openai-audio", "https://api.openai.com/v1",
+                "https://platform.openai.com/api-keys", true, true, Kind: "audio"),
+        ];
+        var commands = new FakeCommands();
+        var vm = new ProviderEditorViewModel(commands, "dev", mixedTemplates, []);
+
+        vm.Kind = "image";
+        Assert.Equal(["volcengine-image", ProviderTemplateItems.CustomId], vm.Groups.SelectMany(g => g.Items).Select(i => i.Id).ToArray());
+        Assert.Equal(["openai-images", "volcengine-images"], vm.AvailableProtocols);
+        Assert.Equal("openai-images", vm.Protocol);
+
+        vm.PickCommand.Execute(Item(vm, "volcengine-image"));
+        Assert.Equal(("volcengine-image", "image", "volcengine-images"), (vm.Id, vm.Kind, vm.Protocol));
+        vm.ApiKey = "ark-key-8888";
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        var upsert = Assert.Single(commands.Upserts);
+        Assert.Equal(("volcengine-image", "volcengine-images", "image"), (upsert.Id, upsert.Protocol, upsert.Kind));
+
+        var videoVm = new ProviderEditorViewModel(new FakeCommands(), "dev", mixedTemplates, [], initialKind: "video");
+        Assert.Equal("video", videoVm.Kind);
+        Assert.Equal(["openai-videos", "volcengine-videos"], videoVm.AvailableProtocols);
+        Assert.Equal("openai-videos", videoVm.Protocol);
+    }
 }
