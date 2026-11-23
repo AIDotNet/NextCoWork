@@ -22,6 +22,6 @@
     <UseOptimizedPublish>false</UseOptimizedPublish>
     <Company>NextCoWork</Company>
     <Product>NextCoWork</Product>
-    <Version>3.0.6</Version>
+    <Version>3.0.7</Version>
   </PropertyGroup>
 </Project>
