@@ -129,6 +129,15 @@ public class ConversationViewModelTests
 
     private static ConversationViewModel Conversation(ClientStores stores, FakeCommands commands) => new(stores, commands, clock: new Clock());
 
+    /// <summary>把「工作区」和连续工具分组一层层全部展开(展开外层之后才看得见内层表头),以便检查各工具行。</summary>
+    private static void ExpandAllGroups(ConversationViewModel convo)
+    {
+        while (convo.Rows.OfType<IGroupHeaderRowViewModel>().FirstOrDefault(g => !g.IsExpanded) is { } group)
+        {
+            group.IsExpanded = true;
+        }
+    }
+
     // ───────────────────────── 会话列表 ─────────────────────────
 
     private static SessionSummary S(string id, string title, int minutesAgo, bool archived = false, bool favorited = false) =>
@@ -496,6 +505,7 @@ public class ConversationViewModelTests
         stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, "local", "run-1", 1, new ToolStartEventDto("c1", "Bash", "{\"command\":\"ls\"}", new EnvRefDto("local", "local", "", ""))));
         stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, "local", "run-1", 2, new ToolStartEventDto("c2", "Bash", "{\"command\":\"ls\"}", new EnvRefDto("local", "dev-box", "", ""))));
 
+        ExpandAllGroups(convo);
         var tools = convo.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
         Assert.Equal("本机 · local", tools["c1"].EnvLabel);
         Assert.False(tools["c1"].ShowsEnv); // 项目所在的本机环境:不在行上画
@@ -644,10 +654,119 @@ public class ConversationViewModelTests
         var group = Assert.IsType<WorkGroupRowViewModel>(convo.Rows[1]);
         group.IsExpanded = true;
 
-        Assert.Equal(6, convo.Rows.Count);
-        Assert.Equal([false, false, true, true, true, false], convo.Rows.Select(r => r.InWorkGroup));
+        // 工作区里的 Edit、Bash 又是一串连续工具:展开工作区只露出它的表头
+        Assert.Equal(["UserRowViewModel", "WorkGroupRowViewModel", "AssistantRowViewModel", "ToolRunGroupRowViewModel", "AssistantRowViewModel"],
+            convo.Rows.Select(r => r.GetType().Name));
+        Assert.Equal([0, 0, 1, 1, 0], convo.Rows.Select(r => r.GroupDepth));
+        var tools = Assert.IsType<ToolRunGroupRowViewModel>(convo.Rows[3]);
+        tools.IsExpanded = true;
+
+        Assert.Equal(7, convo.Rows.Count);
+        Assert.Equal([0, 0, 1, 1, 2, 2, 0], convo.Rows.Select(r => r.GroupDepth));
         group.IsExpanded = false;
         Assert.Equal(3, convo.Rows.Count);
+        group.IsExpanded = true; // 内层的展开状态按 key 记着,重新展开外层时还是展开的
+        Assert.Equal(7, convo.Rows.Count);
+    }
+
+    // ───────────────────────── 连续工具分组 ─────────────────────────
+
+    private static ClientStores RunningTools()
+    {
+        var stores = Stores(running: true);
+        stores.Conversations.Update(c =>
+        {
+            c = ConversationReducer.ApplyMessage(c, Session, UserMsg("u1", "fix it"));
+            c = ConversationReducer.ApplyMessage(c, Session, Assistant("a1",
+                "{\"type\":\"text\",\"text\":\"let me look\"}",
+                "{\"type\":\"thinking\",\"text\":\"lead\"}",
+                "{\"type\":\"tool_call\",\"callId\":\"c1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/src/a.cs\"}}",
+                "{\"type\":\"thinking\",\"text\":\"middle\"}",
+                "{\"type\":\"tool_call\",\"callId\":\"c2\",\"name\":\"Bash\",\"input\":{\"command\":\"dotnet test\"}}",
+                "{\"type\":\"tool_call\",\"callId\":\"c3\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/src/b.cs\",\"old_string\":\"x\",\"new_string\":\"y\\nz\"}}",
+                "{\"type\":\"thinking\",\"text\":\"trail\"}"));
+            return ConversationReducer.ApplyMessage(c, Session, ToolResults("r1", ("c1", false), ("c2", true)));
+        });
+        return stores;
+    }
+
+    [Fact]
+    public void Consecutive_tools_fold_into_one_row_while_running_and_name_the_current_action()
+    {
+        var rows = TranscriptBuilder.Build(RunningTools().Conversations.State, Session, null, Now, groupToolRuns: true);
+
+        // 开头 / 结尾的思考块留在组外,中间的进组;c3 还没有结果、Run 在跑 = 当前动作
+        Assert.Equal(["UserRow", "AssistantRow", "ThinkingRow", "ToolRunGroupRow", "ToolRow", "ThinkingRow", "ToolRow", "ToolRow", "ThinkingRow"],
+            rows.Select(r => r.GetType().Name).Where(n => n != "StatusRow"));
+        var header = Assert.IsType<ToolRunGroupRow>(rows[3]);
+        Assert.Equal("tools:call:c1", header.Key);
+        Assert.Equal((4, 3, 1, 1, 1, 0, 0, 1), (header.Members, header.Tools, header.Reads, header.Edits, header.Commands, header.Searches, header.Others, header.Failed));
+        Assert.Equal((2, 1), (header.Added, header.Removed));
+        Assert.Equal(new ToolRunActivity(ToolKind.Edit, "Edit", "/src/b.cs", 3), header.Active);
+
+        // 设备断开:不说「正在」(规则 7)
+        Assert.Null(TranscriptBuilder.Build(RunningTools().Conversations.State, Session, null, Now, deviceUnknown: true, groupToolRuns: true).OfType<ToolRunGroupRow>().Single().Active);
+        // 默认(子代理转录等)不分组
+        Assert.DoesNotContain(TranscriptBuilder.Build(RunningTools().Conversations.State, Session, null, Now), r => r is ToolRunGroupRow);
+    }
+
+    [Fact]
+    public void A_single_tool_stays_a_plain_row_and_a_waiting_tool_breaks_the_run()
+    {
+        var stores = Stores(running: true);
+        stores.Conversations.Update(c => ConversationReducer.ApplyMessage(c, Session, Assistant("a1",
+            "{\"type\":\"tool_call\",\"callId\":\"c1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a\"}}",
+            "{\"type\":\"text\",\"text\":\"now the rest\"}",
+            "{\"type\":\"tool_call\",\"callId\":\"c2\",\"name\":\"Read\",\"input\":{\"file_path\":\"/b\"}}",
+            "{\"type\":\"tool_call\",\"callId\":\"c3\",\"name\":\"Grep\",\"input\":{\"pattern\":\"x\"}}",
+            "{\"type\":\"tool_call\",\"callId\":\"c4\",\"name\":\"Write\",\"input\":{\"file_path\":\"/x\",\"content\":\"a\"}}")));
+        stores.Conversations.Update(c => ConversationReducer.ApplyMessage(c, Session, ToolResults("r1", ("c1", false), ("c2", false), ("c3", false))));
+        var approval = new ToolPermissionInteractionDto
+        {
+            Id = "i1", RunId = "run-1", CallId = "c4", ToolName = "Write", InternalId = "write", InputJson = "{\"file_path\":\"/x\"}",
+            Env = new EnvRefDto("local", "local", "", ""), AllowedScopes = ["session"], Version = 1,
+        };
+        stores.Conversations.Update(c => ConversationReducer.ApplyInteractions(c, "local", new InteractionsDto(1, [approval])));
+
+        var rows = TranscriptBuilder.Build(stores.Conversations.State, Session, null, Now, groupToolRuns: true);
+
+        // c1 单独一个:原来的单行;c2、c3 成组;等审批的 c4 在组外原位露出
+        Assert.Equal(["ToolRow", "AssistantRow", "ToolRunGroupRow", "ToolRow", "ToolRow", "ToolRow", "InteractionRow"], rows.Select(r => r.GetType().Name));
+        var header = Assert.IsType<ToolRunGroupRow>(rows[2]);
+        Assert.Equal((2, 2, 1, 1, null), (header.Members, header.Tools, header.Reads, header.Searches, header.Active));
+        Assert.Equal(ToolRowStatus.WaitingApproval, Assert.IsType<ToolRow>(rows[5]).Status);
+    }
+
+    [Fact]
+    public void A_finished_turn_nests_tool_groups_inside_the_work_group()
+    {
+        var rows = TranscriptBuilder.Build(FinishedTurn().Conversations.State, Session, null, Now, groupFinishedWork: true, groupToolRuns: true);
+
+        Assert.Equal(["UserRow", "WorkGroupRow", "AssistantRow", "ToolRunGroupRow", "ToolRow", "ToolRow", "AssistantRow"], rows.Select(r => r.GetType().Name));
+        var work = Assert.IsType<WorkGroupRow>(rows[1]);
+        Assert.Equal((4, 2, 1), (work.Members, work.Actions, work.Failed)); // 成员数含内层表头
+        var tools = Assert.IsType<ToolRunGroupRow>(rows[3]);
+        Assert.Equal((2, 1, 1, 1), (tools.Members, tools.Edits, tools.Commands, tools.Failed));
+    }
+
+    [Fact]
+    public void The_conversation_folds_running_tools_and_keeps_the_header_key_as_the_run_grows()
+    {
+        var stores = RunningTools();
+        var convo = Conversation(stores, new FakeCommands());
+
+        var header = Assert.Single(convo.Rows.OfType<ToolRunGroupRowViewModel>());
+        Assert.DoesNotContain(convo.Rows, r => r is ToolRowViewModel);
+        Assert.Equal((true, 3, "b.cs"), (header.IsActive, header.ActiveIndex, header.ActiveTarget));
+        header.IsExpanded = true;
+        Assert.Equal(3, convo.Rows.OfType<ToolRowViewModel>().Count());
+
+        // c3 有了结果:同一个表头(同一个 key、同一个视图模型)不再有当前动作,展开状态不丢
+        stores.Conversations.Update(c => ConversationReducer.ApplyMessage(c, Session, ToolResults("r2", ("c3", false))));
+        Assert.Same(header, Assert.Single(convo.Rows.OfType<ToolRunGroupRowViewModel>()));
+        Assert.False(header.IsActive);
+        Assert.True(header.IsExpanded);
+        Assert.Equal(3, convo.Rows.OfType<ToolRowViewModel>().Count());
     }
 
     [Fact]
@@ -848,11 +967,7 @@ public class ConversationViewModelTests
             "[{\"type\":\"tool_result\",\"callId\":\"c1\",\"output\":{\"content\":\"ok\"},\"isError\":false},{\"type\":\"tool_result\",\"callId\":\"c2\",\"output\":{\"content\":\"ok\"},\"isError\":false},{\"type\":\"tool_result\",\"callId\":\"c3\",\"output\":{\"content\":\"ok\"},\"isError\":false}]");
         stores.Conversations.Update(c => ConversationReducer.ApplyMessage(ConversationReducer.ApplyMessage(c, Session, msg), Session, results));
 
-        // 展开工作区以便检查各工具行
-        foreach (var g in convo.Rows.OfType<WorkGroupRowViewModel>().ToList())
-        {
-            g.IsExpanded = true;
-        }
+        ExpandAllGroups(convo);
 
         var tools = convo.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
         Assert.True(tools["c1"].CanOpenFile);

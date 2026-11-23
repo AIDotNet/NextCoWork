@@ -16,16 +16,28 @@ namespace Ncw.Client.ViewModels;
 /// </summary>
 public abstract class RowViewModel(string key) : ObservableObject
 {
-    private bool _inWorkGroup;
+    private int _groupDepth;
 
     public string Key { get; } = key;
 
-    /// <summary>这一行是某个展开着的「工作区」分组的成员(界面据此缩进)。位置决定,由 <see cref="ConversationViewModel"/> 在对齐行时标记,创建时就带上(容器准备时要读)。</summary>
-    public bool InWorkGroup
+    /// <summary>
+    /// 这一行在几层展开着的分组里(「工作区」、连续工具分组;0 = 不在组里,界面按层缩进)。
+    /// 位置决定,由 <see cref="ConversationViewModel"/> 在对齐行时标记,创建时就带上(容器准备时要读)。
+    /// </summary>
+    public int GroupDepth
     {
-        get => _inWorkGroup;
-        internal set => SetProperty(ref _inWorkGroup, value);
+        get => _groupDepth;
+        internal set
+        {
+            if (SetProperty(ref _groupDepth, value))
+            {
+                OnPropertyChanged(nameof(InWorkGroup));
+            }
+        }
     }
+
+    /// <summary>这一行是某个展开着的分组的成员。</summary>
+    public bool InWorkGroup => GroupDepth > 0;
 
     /// <summary>用新派生出来的行更新自己;没有变化返回 false。</summary>
     public abstract bool Update(TranscriptRow row);
@@ -117,11 +129,17 @@ public sealed partial class AssistantRowViewModel(AssistantRow row) : RowViewMod
     public bool IsStreaming => Row.IsStreaming;
 }
 
+/// <summary>分组表头(「工作区」、连续工具分组)共同的一面:界面点表头时只认它,不关心是哪一种。</summary>
+public interface IGroupHeaderRowViewModel
+{
+    bool IsExpanded { get; set; }
+}
+
 /// <summary>
 /// 「工作区」分组表头(<see cref="WorkGroupRow"/>):默认收起,展开与否是纯 UI 状态。展开 / 收起由 <see cref="ConversationViewModel"/> 决定成员行在不在转录里,
-/// 所以 <see cref="IsExpanded"/> 变了要通知它(<paramref name="toggled"/>)。摘要的数字来自行,文字由界面拼。
+/// 所以 <see cref="IsExpanded"/> 变了要通知它(<paramref name="toggled"/>:表头 key、是否展开)。摘要的数字来自行,文字由界面拼。
 /// </summary>
-public sealed partial class WorkGroupRowViewModel(WorkGroupRow row, bool expanded, Action<WorkGroupRowViewModel> toggled) : RowViewModel<WorkGroupRow>(row)
+public sealed partial class WorkGroupRowViewModel(WorkGroupRow row, bool expanded, Action<string, bool> toggled) : RowViewModel<WorkGroupRow>(row), IGroupHeaderRowViewModel
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; } = expanded;
 
@@ -133,7 +151,53 @@ public sealed partial class WorkGroupRowViewModel(WorkGroupRow row, bool expande
 
     public bool HasFailed => Row.Failed > 0;
 
-    partial void OnIsExpandedChanged(bool value) => toggled(this);
+    partial void OnIsExpandedChanged(bool value) => toggled(Key, value);
+}
+
+/// <summary>
+/// 连续工具分组表头(<see cref="ToolRunGroupRow"/>,03 §6):默认收起,展开与否是纯 UI 状态(同「工作区」)。
+/// 有「当前动作」时界面显示转圈 +「正在编辑 xxx · 第 N 个操作」,否则显示各类工具的个数;文字由界面按 <see cref="RowViewModel{T}.Row"/> 拼。
+/// </summary>
+public sealed partial class ToolRunGroupRowViewModel(ToolRunGroupRow row, bool expanded, Action<string, bool> toggled) : RowViewModel<ToolRunGroupRow>(row), IGroupHeaderRowViewModel
+{
+    [ObservableProperty] public partial bool IsExpanded { get; set; } = expanded;
+
+    public int Tools => Row.Tools;
+
+    public int Failed => Row.Failed;
+
+    public bool HasFailed => Row.Failed > 0;
+
+    public bool IsActive => Row.Active is not null;
+
+    /// <summary>当前动作是第几个工具(从 1 起;没有当前动作时为 0)。</summary>
+    public int ActiveIndex => Row.Active?.Index ?? 0;
+
+    /// <summary>当前动作的目标:路径只取文件名(完整路径在展开后的工具行里),命令 / 其他是第一行。</summary>
+    public string ActiveTarget => Row.Active is { } active ? TargetNameOf(active.Kind, active.Target) : "";
+
+    public bool HasAdded => Row.Added > 0;
+
+    public bool HasRemoved => Row.Removed > 0;
+
+    public bool HasStats => HasAdded || HasRemoved;
+
+    public string AddedText => $"+{Row.Added}";
+
+    public string RemovedText => $"−{Row.Removed}";
+
+    public static string TargetNameOf(ToolKind kind, string target)
+    {
+        if (kind is not (ToolKind.Read or ToolKind.Edit or ToolKind.Write))
+        {
+            return target;
+        }
+
+        var name = Path.GetFileName(target.TrimEnd('/', '\\'));
+        return name.Length > 0 ? name : target;
+    }
+
+    partial void OnIsExpandedChanged(bool value) => toggled(Key, value);
 }
 
 /// <summary>

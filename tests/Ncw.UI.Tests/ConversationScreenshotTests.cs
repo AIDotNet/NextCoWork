@@ -425,6 +425,14 @@ public class ConversationScreenshotTests
     {
         var (window, _, vm) = Render(Tools(), width, dark);
 
+        // 连续工具分组(03 §6):c1–c4 收成一行摘要,等审批的 c5 在组外原位露出
+        var group = vm.Conversation.Rows.OfType<ToolRunGroupRowViewModel>().Single();
+        Assert.Equal((4, 1, false), (group.Tools, group.Failed, group.IsActive));
+        Assert.Equal(["c5"], vm.Conversation.Rows.OfType<ToolRowViewModel>().Select(t => t.Row.CallId));
+        Snapshot(window, "tools-grouped", width, dark, last: false);
+        ExpandGroups(vm.Conversation);
+        Dispatch();
+
         var tools = vm.Conversation.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
         Assert.True(tools["c1"].IsDone);
         Assert.True(tools["c2"].IsDone && tools["c2"].HasStats);
@@ -560,6 +568,8 @@ public class ConversationScreenshotTests
     public void Tool_rows_hide_their_result_by_default_and_failed_ones_are_only_marked_red()
     {
         var (window, _, vm) = Render(Tools(), 1200, true);
+        ExpandGroups(vm.Conversation);
+        Dispatch();
 
         var tools = vm.Conversation.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
         Assert.All(tools.Values, t => Assert.False(t.IsExpanded)); // 一律默认收起,包括失败的

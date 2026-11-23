@@ -198,7 +198,7 @@
       </DataTemplate>
       <!-- 「工作区」:一轮全部完成后,最后一段回复文字以外的操作收成这一行(默认收起);点开在下面平铺出成员行,成员缩进 -->
       <DataTemplate DataType="vm:WorkGroupRowViewModel">
-        <ui:PlainButton HorizontalAlignment="Left" Margin="0,2" Padding="6,3" Click="OnToggleWorkGroup" AutomationProperties.Name="{l:NcwText WorkGroupTitle}">
+        <ui:PlainButton HorizontalAlignment="Left" Margin="0,2" Padding="6,3" Click="OnToggleGroup" AutomationProperties.Name="{l:NcwText WorkGroupTitle}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
             <lucide:LucideIcon Kind="Layers" Size="13" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
@@ -208,6 +208,32 @@
             <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding HasFailed}" Foreground="{arc:ArcDesignTokenResource Danger}"
                        Text="{Binding Failed, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=WorkGroupFailed}" />
           </StackPanel>
+        </ui:PlainButton>
+      </DataTemplate>
+      <!-- 连续工具分组(03 §6):两段文字之间连续的工具收成一行(默认收起,运行中也收)。有正在跑的工具时是转圈 +「正在编辑 xxx · 第 N 个操作」,
+           否则是各类工具的个数 + 增删行 + 失败数;点开在下面平铺出原来的工具行(缩进) -->
+      <DataTemplate DataType="vm:ToolRunGroupRowViewModel">
+        <ui:PlainButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,1" Padding="6,3" CornerRadius="8" Click="OnToggleGroup"
+                        AutomationProperties.Name="{Binding Row, Converter={x:Static cv:ToolRunTextConverter.Instance}}">
+          <Grid ColumnDefinitions="Auto,14,*,Auto" ColumnSpacing="6">
+            <lucide:LucideIcon Classes="chevron" Classes.open="{Binding IsExpanded}" Kind="ChevronRight" Size="12" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+            <Panel Grid.Column="1" Width="14" Height="14" VerticalAlignment="Center">
+              <lucide:LucideIcon Kind="Wrench" Size="13" IsVisible="{Binding !IsActive}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+              <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="12" IsVisible="{Binding IsActive}" Foreground="{arc:ArcDesignTokenResource Accent}" />
+            </Panel>
+            <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                       Text="{Binding Row, Converter={x:Static cv:ToolRunTextConverter.Instance}}" />
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Classes="hint" TextWrapping="NoWrap" IsVisible="{Binding IsActive}"
+                         Text="{Binding ActiveIndex, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=ToolRunProgress}" />
+              <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasStats}">
+                <TextBlock Classes="hint mono" Text="{Binding AddedText}" TextWrapping="NoWrap" IsVisible="{Binding HasAdded}" Foreground="{arc:ArcDesignTokenResource Success}" />
+                <TextBlock Classes="hint mono" Text="{Binding RemovedText}" TextWrapping="NoWrap" IsVisible="{Binding HasRemoved}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+              </StackPanel>
+              <TextBlock Classes="hint" TextWrapping="NoWrap" IsVisible="{Binding HasFailed}" Foreground="{arc:ArcDesignTokenResource Danger}"
+                         Text="{Binding Failed, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=WorkGroupFailed}" />
+            </StackPanel>
+          </Grid>
         </ui:PlainButton>
       </DataTemplate>
       <!-- 思考块:默认折叠。标题三选一:流式中「思考中…」/ 有耗时「思考了 N 秒」/ 量不出耗时只写「思考」(不画假的「0 秒」)。

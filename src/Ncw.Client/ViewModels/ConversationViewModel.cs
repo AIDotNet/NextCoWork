@@ -271,7 +271,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         var rows = _lastRows;
         if (_forceRebuild || !inputs.SameAs(_lastInputs))
         {
-            rows = TranscriptBuilder.Build(conversations, session, fallback, _clock.GetUtcNow(), unknown, groupFinishedWork: true, sessionRunning: sessionRunning);
+            rows = TranscriptBuilder.Build(conversations, session, fallback, _clock.GetUtcNow(), unknown, groupFinishedWork: true, sessionRunning: sessionRunning, groupToolRuns: true);
             _lastInputs = inputs;
             _lastRows = rows;
             _lastUserText = rows.OfType<UserRow>().LastOrDefault()?.Text ?? _lastUserText;
@@ -384,7 +384,7 @@ public sealed partial class ConversationViewModel : ObservableObject
     {
         // 「这个会话里 Agent 写 / 改过文件」从完整的行算:成员收起后没有视图模型,但文件改动还在,检查器的「审查」页签不能跟着消失
         HasFileChanges = all.Any(static r => r is ToolRow { Kind: ToolKind.Edit or ToolKind.Write, Status: ToolRowStatus.Done });
-        var rows = VisibleRows(all, out var members);
+        var rows = VisibleRows(all, out var depths);
         var wanted = new HashSet<string>(rows.Length, StringComparer.Ordinal);
         foreach (var row in rows)
         {
@@ -414,22 +414,22 @@ public sealed partial class ConversationViewModel : ObservableObject
                 continue;
             }
 
-            var inGroup = members.Contains(row.Key);
+            var depth = depths.GetValueOrDefault(row.Key);
             if (target < Rows.Count && Rows[target].Key == row.Key)
             {
                 Apply(Rows[target], row);
-                Rows[target].InWorkGroup = inGroup;
+                Rows[target].GroupDepth = depth;
             }
             else if (existing.TryGetValue(row.Key, out var vm) && Rows.IndexOf(vm) is var old and >= 0 && old >= target)
             {
                 Rows.Move(old, target);
                 Apply(vm, row);
-                vm.InWorkGroup = inGroup;
+                vm.GroupDepth = depth;
             }
             else
             {
                 var created = Create(row);
-                created.InWorkGroup = inGroup; // 插入之前标好:容器准备时读它来缩进
+                created.GroupDepth = depth; // 插入之前标好:容器准备时读它来缩进
                 Rows.Insert(target, created);
             }
 
@@ -445,24 +445,37 @@ public sealed partial class ConversationViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 「工作区」分组的展开状态(纯 UI 状态,按表头的 key 记;key 取自成员第一行,一轮落库之后稳定)。
-    /// 收起的分组把紧跟在表头后面的 <see cref="WorkGroupRow.Members"/> 行从转录里拿掉(不创建视图模型);展开的分组成员留着,<paramref name="members"/> 收集它们的 key 用来缩进。
+    /// 分组(「工作区」、连续工具分组)的展开状态(纯 UI 状态,按表头的 key 记;key 取自成员第一行,一串变长 / 一轮落库之后都稳定)。
+    /// 收起的分组把紧跟在表头后面的 <see cref="GroupHeaderRow.Members"/> 行从转录里拿掉(不创建视图模型);展开的分组成员留着(里面还可能有收起的内层分组),
+    /// <paramref name="depths"/> 记下每个可见成员在几层展开的分组里,用来缩进。
     /// </summary>
     private readonly HashSet<string> _expandedGroups = new(StringComparer.Ordinal);
 
-    private ImmutableArray<TranscriptRow> VisibleRows(ImmutableArray<TranscriptRow> all, out HashSet<string> members)
+    private ImmutableArray<TranscriptRow> VisibleRows(ImmutableArray<TranscriptRow> all, out Dictionary<string, int> depths)
     {
-        members = [];
-        if (!all.Any(static r => r is WorkGroupRow))
+        depths = new(StringComparer.Ordinal);
+        if (!all.Any(static r => r is GroupHeaderRow))
         {
             return all;
         }
 
         var visible = ImmutableArray.CreateBuilder<TranscriptRow>(all.Length);
+        var ends = new Stack<int>(); // 每个展开着的外层分组的成员截止下标(不含)
         for (var i = 0; i < all.Length; i++)
         {
-            visible.Add(all[i]);
-            if (all[i] is not WorkGroupRow group)
+            while (ends.Count > 0 && i >= ends.Peek())
+            {
+                ends.Pop();
+            }
+
+            var row = all[i];
+            visible.Add(row);
+            if (ends.Count > 0)
+            {
+                depths[row.Key] = ends.Count;
+            }
+
+            if (row is not GroupHeaderRow group)
             {
                 continue;
             }
@@ -470,22 +483,20 @@ public sealed partial class ConversationViewModel : ObservableObject
             var count = Math.Min(group.Members, all.Length - i - 1);
             if (_expandedGroups.Contains(group.Key))
             {
-                for (var m = 1; m <= count; m++)
-                {
-                    visible.Add(all[i + m]);
-                    members.Add(all[i + m].Key);
-                }
+                ends.Push(i + 1 + count);
             }
-
-            i += count;
+            else
+            {
+                i += count;
+            }
         }
 
         return visible.ToImmutable();
     }
 
-    private void OnWorkGroupToggled(WorkGroupRowViewModel group)
+    private void OnGroupToggled(string key, bool expanded)
     {
-        if (!(group.IsExpanded ? _expandedGroups.Add(group.Key) : _expandedGroups.Remove(group.Key)))
+        if (!(expanded ? _expandedGroups.Add(key) : _expandedGroups.Remove(key)))
         {
             return;
         }
@@ -565,7 +576,8 @@ public sealed partial class ConversationViewModel : ObservableObject
         AssistantRow r => new AssistantRowViewModel(r),
         ThinkingRow r => new ThinkingRowViewModel(r),
         ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot, OpenToolFile, _session?.DeviceId, _images, _mediaAttachments),
-        WorkGroupRow r => new WorkGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnWorkGroupToggled),
+        WorkGroupRow r => new WorkGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnGroupToggled),
+        ToolRunGroupRow r => new ToolRunGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnGroupToggled),
         WidgetRow r => new WidgetRowViewModel(r, () => _session ?? default, _widgets, DeviceName),
         WorkflowRow r => CreateWorkflowCard(r),
         SubagentRow r => new SubagentRowViewModel(r, StopSubagentCommand, OpenSubagentCommand),

@@ -573,3 +573,51 @@ public sealed class TokensTextConverter : IValueConverter
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>
+/// 连续工具分组表头(<see cref="Ncw.Client.Transcript.ToolRunGroupRow"/>,03 §6)的一行文字:有当前动作时是「正在编辑 xxx.cs」,
+/// 否则是各类工具的个数(「读取 2 个文件，运行 1 条命令」)。绑定 <c>Row</c>(行一变整份重算)。
+/// </summary>
+public sealed class ToolRunTextConverter : IValueConverter
+{
+    public static readonly ToolRunTextConverter Instance = new();
+
+    public static string Text(Ncw.Client.Transcript.ToolRunGroupRow row)
+    {
+        if (row.Active is { } active)
+        {
+            var kind = active.Kind switch
+            {
+                Ncw.Client.Transcript.ToolKind.Read => NcwTextKind.ToolRunActiveRead,
+                Ncw.Client.Transcript.ToolKind.Edit => NcwTextKind.ToolRunActiveEdit,
+                Ncw.Client.Transcript.ToolKind.Write => NcwTextKind.ToolRunActiveWrite,
+                Ncw.Client.Transcript.ToolKind.Command => NcwTextKind.ToolRunActiveCommand,
+                Ncw.Client.Transcript.ToolKind.Search => NcwTextKind.ToolRunActiveSearch,
+                _ => NcwTextKind.ToolRunActiveOther,
+            };
+            var target = ToolRunGroupRowViewModel.TargetNameOf(active.Kind, active.Target);
+            return NcwTexts.Format(kind, target.Length > 0 ? target : active.Name);
+        }
+
+        var parts = new List<string>(5);
+        void Add(int count, NcwTextKind kind)
+        {
+            if (count > 0)
+            {
+                parts.Add(NcwTexts.Format(kind, count));
+            }
+        }
+
+        Add(row.Reads, NcwTextKind.ToolRunReads);
+        Add(row.Searches, NcwTextKind.ToolRunSearches);
+        Add(row.Edits, NcwTextKind.ToolRunEdits);
+        Add(row.Commands, NcwTextKind.ToolRunCommands);
+        Add(row.Others, NcwTextKind.ToolRunOthers);
+        return string.Join(NcwTexts.Get(NcwTextKind.ToolRunSeparator), parts);
+    }
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is Ncw.Client.Transcript.ToolRunGroupRow row ? Text(row) : null;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}

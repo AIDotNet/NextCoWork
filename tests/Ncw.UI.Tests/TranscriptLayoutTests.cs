@@ -50,6 +50,8 @@ public class TranscriptLayoutTests
         var window = new Window { Width = 1000, Height = 800, Content = shell };
         window.Show();
         Dispatch();
+        ConversationFixtures.ExpandGroups(vm.Conversation);
+        Dispatch();
 
         // 让命令那一行带上非本机的环境标识(SSH 一定画在行上)
         var tool = vm.Conversation.Rows.OfType<ToolRowViewModel>().Single(t => t.Row.CallId == "c1");

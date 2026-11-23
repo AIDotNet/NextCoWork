@@ -126,4 +126,32 @@ public sealed record WidgetRow(
 /// 转录仍然是平铺的:表头后面紧跟 <see cref="Members"/> 行就是这一组的成员,是否展开是纯 UI 状态(<c>ConversationViewModel</c>),收起时成员行不创建视图模型。
 /// <see cref="Actions"/> 是成员里的工具调用 + 子代理个数,<see cref="Failed"/> 是其中失败的工具个数;界面据此拼摘要(Client 不产出界面文字)。
 /// </summary>
-public sealed record WorkGroupRow(string Key, int Members, int Actions, int Failed) : TranscriptRow(Key);
+public sealed record WorkGroupRow(string Key, int Members, int Actions, int Failed) : GroupHeaderRow(Key, Members);
+
+/// <summary>
+/// 分组表头:转录仍然是平铺的,表头后面紧跟的 <see cref="Members"/> 行就是这一组的成员(含嵌套的内层表头和它们的成员)。
+/// 是否展开是纯 UI 状态(<c>ConversationViewModel</c> 按 key 记),收起时成员行不创建视图模型。
+/// </summary>
+public abstract record GroupHeaderRow(string Key, int Members) : TranscriptRow(Key);
+
+/// <summary>组里正在跑的那个工具(表头的「正在编辑 xxx · 第 N 个操作」)。<see cref="Index"/> 是它在组里的工具序号(从 1 起)。</summary>
+public sealed record ToolRunActivity(ToolKind Kind, string Name, string Target, int Index);
+
+/// <summary>
+/// 连续工具分组表头(03 §6「连续工具分组」):两段文字之间连续的工具调用(至少 2 个,可以夹着思考块)收成一行,运行中也收。
+/// 只带数,界面据此拼摘要(Client 不产出界面文字):各类工具个数、失败个数、增删行合计;组里有正在跑的工具且设备没断开时带 <see cref="Active"/>。
+/// key 取第一个工具行的 key,一串变长、从流式到落库都不变。
+/// </summary>
+public sealed record ToolRunGroupRow(
+    string Key,
+    int Members,
+    int Tools,
+    int Reads,
+    int Edits,
+    int Commands,
+    int Searches,
+    int Others,
+    int Failed,
+    int Added,
+    int Removed,
+    ToolRunActivity? Active) : GroupHeaderRow(Key, Members);

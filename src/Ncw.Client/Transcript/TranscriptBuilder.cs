@@ -22,11 +22,12 @@ public static class TranscriptBuilder
     /// <param name="fallbackEnv">落库的旧调用没带环境标识时,用项目所在的环境兜底(设备 + 环境)。</param>
     /// <param name="deviceUnknown">设备断开:转录末尾加「状态未知」,运行中的东西不再当成还在跑(规则 7)。</param>
     /// <param name="groupFinishedWork">已完成的一轮把最后一段文字以外的操作收成「工作区」分组(<see cref="WorkGroupRow"/>)。主对话打开;子代理转录不分组。</param>
+    /// <param name="groupToolRuns">两段文字之间连续的工具调用(至少 2 个)收成一行摘要(<see cref="ToolRunGroupRow"/>),运行中也收。主对话打开;子代理转录不分组。</param>
     /// <param name="sessionRunning">设备的活动 Run 表说这个会话在跑(Core 的 <c>SessionActivityView</c>,和停止按钮同一个真源)。
     /// 队列 / 目标续跑 / 别的控制端发起的 Run,在 Run 镜像到达之前也要有「生成中」(issue #200)。</param>
     public static ImmutableArray<TranscriptRow> Build(
         ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, DateTimeOffset now, bool deviceUnknown = false, bool groupFinishedWork = false,
-        bool sessionRunning = false)
+        bool sessionRunning = false, bool groupToolRuns = false)
     {
         if (!state.Sessions.TryGetValue(session, out var view))
         {
@@ -156,6 +157,12 @@ public static class TranscriptBuilder
             }
         }
 
+        // 先分连续工具、再分工作区:工作区把内层表头连同它的成员一起算作自己的成员
+        if (groupToolRuns)
+        {
+            rows = GroupToolRuns(rows, deviceUnknown);
+        }
+
         if (groupFinishedWork && !anyRunActive && !deviceUnknown && pending.Count == 0)
         {
             rows = GroupFinishedWork(rows);
@@ -258,7 +265,7 @@ public static class TranscriptBuilder
                 return;
             }
 
-            var inGroup = i < lastWork && row is ThinkingRow or ToolRow { MediaKind: null } or SubagentRow or SubagentReportRow or AssistantRow;
+            var inGroup = i < lastWork && row is ThinkingRow or ToolRow { MediaKind: null } or ToolRunGroupRow or SubagentRow or SubagentReportRow or AssistantRow;
             if (inGroup && row is ThinkingRow { IsStreaming: true } or AssistantRow { IsStreaming: true }
                 or ToolRow { Status: ToolRowStatus.Running or ToolRowStatus.WaitingApproval }
                 or SubagentRow { Unknown: true } or SubagentRow { View.IsActive: true })
@@ -289,6 +296,96 @@ public static class TranscriptBuilder
         var failed = members.Count(static m => m is ToolRow { Status: ToolRowStatus.Failed });
         rest.InsertRange(firstMember, members.Prepend(new WorkGroupRow($"work:{members[0].Key}", members.Count, actions, failed)));
         output.AddRange(rest);
+    }
+
+    /// <summary>
+    /// 连续工具分组(03 §6):连续的工具行(可以夹着思考块)至少有 2 个工具时,在它们前面插一个 <see cref="ToolRunGroupRow"/> 表头。
+    /// 一串开头 / 结尾的思考块留在组外(它属于前后的文字);等待审批的工具、生成媒体和其他任何行都把一串断开,不进组(审批卡片、媒体要原位露出)。
+    /// 设备断开时不带「当前动作」(规则 7:不说「正在」)。
+    /// </summary>
+    private static List<TranscriptRow> GroupToolRuns(List<TranscriptRow> rows, bool deviceUnknown)
+    {
+        var result = new List<TranscriptRow>(rows.Count + 4);
+        var i = 0;
+        while (i < rows.Count)
+        {
+            if (!IsToolRunMember(rows[i]))
+            {
+                result.Add(rows[i++]);
+                continue;
+            }
+
+            var end = i;
+            while (end < rows.Count && IsToolRunMember(rows[end]))
+            {
+                end++;
+            }
+
+            // [i, end) 是一串可收的行;去掉两头的思考块后是 [first, last]
+            var first = i;
+            var last = end - 1;
+            while (first <= last && rows[first] is ThinkingRow)
+            {
+                first++;
+            }
+
+            while (last >= first && rows[last] is ThinkingRow)
+            {
+                last--;
+            }
+
+            for (var k = i; k < first; k++)
+            {
+                result.Add(rows[k]);
+            }
+
+            if (first <= last)
+            {
+                var members = rows.GetRange(first, last - first + 1);
+                var tools = members.OfType<ToolRow>().ToList();
+                if (tools.Count >= 2)
+                {
+                    result.Add(ToolRunHeader(members.Count, tools, deviceUnknown));
+                }
+
+                result.AddRange(members);
+                for (var k = last + 1; k < end; k++)
+                {
+                    result.Add(rows[k]);
+                }
+            }
+
+            i = end;
+        }
+
+        return result;
+    }
+
+    private static bool IsToolRunMember(TranscriptRow row) =>
+        row is ThinkingRow or ToolRow { MediaKind: null, Status: not ToolRowStatus.WaitingApproval };
+
+    private static ToolRunGroupRow ToolRunHeader(int members, List<ToolRow> tools, bool deviceUnknown)
+    {
+        ToolRunActivity? active = null;
+        if (!deviceUnknown && tools.FindLastIndex(static t => t.Status == ToolRowStatus.Running) is var running and >= 0)
+        {
+            var tool = tools[running];
+            active = new ToolRunActivity(tool.Kind, tool.Name, tool.Target, running + 1);
+        }
+
+        return new ToolRunGroupRow(
+            $"tools:{tools[0].Key}",
+            members,
+            tools.Count,
+            tools.Count(static t => t.Kind == ToolKind.Read),
+            tools.Count(static t => t.Kind is ToolKind.Edit or ToolKind.Write),
+            tools.Count(static t => t.Kind == ToolKind.Command),
+            tools.Count(static t => t.Kind == ToolKind.Search),
+            tools.Count(static t => t.Kind == ToolKind.Other),
+            tools.Count(static t => t.Status == ToolRowStatus.Failed),
+            tools.Sum(static t => t.Added),
+            tools.Sum(static t => t.Removed),
+            active);
     }
 
     /// <summary>这一行自己就在表明「还在干活」(流式的字、转着的工具、跑着的子代理、等输入的小组件),不需要再加「生成中」。只有空白的流式文字不算。</summary>

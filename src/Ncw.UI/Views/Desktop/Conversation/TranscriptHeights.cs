@@ -32,6 +32,7 @@ public sealed class TranscriptHeights : IRowHeightEstimator
         ToolRowViewModel { VideoPreview: not null } => 2 * ToolbarRow,
         ToolRowViewModel t => OneLineRow + (t.IsExpanded ? (t.PreviewLines.Count + (t.HasMore ? 1 : 0)) * HintLine + 6 : 0),
         WorkGroupRowViewModel => OneLineRow,
+        ToolRunGroupRowViewModel => OneLineRow,
         WidgetRowViewModel => 44 + 160,
         WorkflowRunCardViewModel w => w.IsExpanded ? 52 + 260 : 48,
         CompactRowViewModel => 36,

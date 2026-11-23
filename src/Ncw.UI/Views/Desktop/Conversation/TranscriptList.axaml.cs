@@ -62,8 +62,8 @@ public partial class TranscriptList : UserControl
 
     private void OnContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
-        // 展开着的「工作区」成员缩进一格(容器会被回收复用,每次都要重写)
-        e.Container.Margin = e.Container.DataContext is RowViewModel { InWorkGroup: true } ? new Thickness(18, 0, 0, 0) : default;
+        // 展开着的分组(「工作区」、连续工具分组)成员按层缩进,每层一格(容器会被回收复用,每次都要重写)
+        e.Container.Margin = e.Container.DataContext is RowViewModel { GroupDepth: > 0 and var depth } ? new Thickness(18 * depth, 0, 0, 0) : default;
     }
 
     /// <summary>缩略图被实例化并挂上视觉树(虚拟化列表只给视野附近的行实例化):这时才向设备取字节,滚出去没挂上的不取。</summary>
@@ -112,9 +112,9 @@ public partial class TranscriptList : UserControl
         }
     }
 
-    private void OnToggleWorkGroup(object? sender, RoutedEventArgs e)
+    private void OnToggleGroup(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Control)?.DataContext is WorkGroupRowViewModel row)
+        if ((sender as Control)?.DataContext is IGroupHeaderRowViewModel row)
         {
             if (!row.IsExpanded)
             {

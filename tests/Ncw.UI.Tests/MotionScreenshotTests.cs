@@ -104,6 +104,8 @@ public class MotionScreenshotTests : IDisposable
     {
         NcwMotion.Apply(level);
         var (window, _, vm) = Render(ConversationScreenshotTests.Tools(), width, dark);
+        ConversationFixtures.ExpandGroups(vm.Conversation);
+        Pump();
         var tools = vm.Conversation.Rows.OfType<ToolRowViewModel>().ToDictionary(t => t.Row.CallId);
         var c3 = DetailOf(window, tools["c3"]);
         var c2 = DetailOf(window, tools["c2"]);
@@ -178,6 +180,8 @@ public class MotionScreenshotTests : IDisposable
     {
         NcwMotion.Apply(UiMotionLevel.Full);
         var (window, _, vm) = Render(ConversationScreenshotTests.Tools(), width, dark);
+        ConversationFixtures.ExpandGroups(vm.Conversation);
+        Pump();
         var row = vm.Conversation.Rows.OfType<ToolRowViewModel>().First(t => t.Row.CallId == "c3");
         var detail = DetailOf(window, row);
         var cardHeightClosed = detail.GetVisualAncestors().OfType<ToolCard>().First().Bounds.Height;

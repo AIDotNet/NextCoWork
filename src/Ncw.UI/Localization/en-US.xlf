@@ -448,6 +448,19 @@
     <unit id="WorkGroupTitle"><segment><source>Work</source><target state="final">Work</target></segment></unit>
     <unit id="WorkGroupActions"><segment><source>{0} actions</source><target state="final">{0} actions</target></segment></unit>
     <unit id="WorkGroupFailed"><segment><source>{0} failed</source><target state="final">{0} failed</target></segment></unit>
+    <unit id="ToolRunReads"><segment><source>Read {0} files</source><target state="final">Read {0} files</target></segment></unit>
+    <unit id="ToolRunEdits"><segment><source>Edited {0} files</source><target state="final">Edited {0} files</target></segment></unit>
+    <unit id="ToolRunCommands"><segment><source>Ran {0} commands</source><target state="final">Ran {0} commands</target></segment></unit>
+    <unit id="ToolRunSearches"><segment><source>{0} searches</source><target state="final">{0} searches</target></segment></unit>
+    <unit id="ToolRunOthers"><segment><source>{0} other actions</source><target state="final">{0} other actions</target></segment></unit>
+    <unit id="ToolRunSeparator"><segment><source>, </source><target state="final">, </target></segment></unit>
+    <unit id="ToolRunActiveRead"><segment><source>Reading {0}</source><target state="final">Reading {0}</target></segment></unit>
+    <unit id="ToolRunActiveEdit"><segment><source>Editing {0}</source><target state="final">Editing {0}</target></segment></unit>
+    <unit id="ToolRunActiveWrite"><segment><source>Writing {0}</source><target state="final">Writing {0}</target></segment></unit>
+    <unit id="ToolRunActiveCommand"><segment><source>Running {0}</source><target state="final">Running {0}</target></segment></unit>
+    <unit id="ToolRunActiveSearch"><segment><source>Searching {0}</source><target state="final">Searching {0}</target></segment></unit>
+    <unit id="ToolRunActiveOther"><segment><source>Calling {0}</source><target state="final">Calling {0}</target></segment></unit>
+    <unit id="ToolRunProgress"><segment><source>action {0}</source><target state="final">action {0}</target></segment></unit>
     <unit id="ThinkingLow"><segment><source>Thinking: low</source><target state="final">Thinking: low</target></segment></unit>
     <unit id="ThinkingMax"><segment><source>Thinking: max</source><target state="final">Thinking: max</target></segment></unit>
     <unit id="ThinkingMedium"><segment><source>Thinking: medium</source><target state="final">Thinking: medium</target></segment></unit>

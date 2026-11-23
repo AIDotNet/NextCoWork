@@ -12,6 +12,18 @@ namespace Ncw.UI.Tests;
 /// </summary>
 public static class ConversationFixtures
 {
+    /// <summary>
+    /// 把转录里的分组(「工作区」、连续工具分组,03 §6)一层层全部展开:工具行默认收在表头后面,要检查单个工具行的测试先展开。
+    /// 展开只改纯 UI 状态,调用方随后照常跑一轮布局。
+    /// </summary>
+    public static void ExpandGroups(Ncw.Client.ViewModels.ConversationViewModel conversation)
+    {
+        while (conversation.Rows.OfType<Ncw.Client.ViewModels.IGroupHeaderRowViewModel>().FirstOrDefault(g => !g.IsExpanded) is { } group)
+        {
+            group.IsExpanded = true;
+        }
+    }
+
     public static readonly DateTimeOffset Now = new(2026, 11, 14, 10, 0, 0, TimeSpan.FromHours(8));
     public static readonly ProjectRef Project = new("local", "nextcowork");
     private const string Device = "local";
