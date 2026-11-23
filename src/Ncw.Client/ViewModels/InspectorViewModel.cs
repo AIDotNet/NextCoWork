@@ -42,6 +42,8 @@ public sealed partial class InspectorViewModel : ObservableObject
     private readonly ClientStores _stores;
     private readonly TimeProvider _clock;
     private readonly SubagentActions? _subagents;
+    private readonly IImageSource? _images;
+    private readonly AttachmentActions? _mediaAttachments;
     private ProjectRef? _project;
     private int _runningRuns;
     private bool _initialized;
@@ -51,12 +53,14 @@ public sealed partial class InspectorViewModel : ObservableObject
     /// <summary>用户通过「+」添加的页签,持久化在 Prefs 里(本机界面偏好的唯一真源)。</summary>
     private IReadOnlyList<InspectorTabKind> Added => _stores.Prefs.State.InspectorTabs;
 
-    public InspectorViewModel(ClientStores stores, TimeProvider clock, InspectorServices? services = null)
+    public InspectorViewModel(ClientStores stores, TimeProvider clock, InspectorServices? services = null, IImageSource? images = null, AttachmentActions? mediaAttachments = null)
     {
         _stores = stores;
         _clock = clock;
         services ??= InspectorServices.Over(new DeviceRegistry(), stores);
         _subagents = services.Subagents;
+        _images = images;
+        _mediaAttachments = mediaAttachments;
         Files = new FilesPanelViewModel(services.Files, () => Dialogs, () => Text, () => LocalFiles);
         Git = new GitPanelViewModel(stores, services.Git, () => Dialogs, () => Text);
         Review = new ReviewPanelViewModel(stores, services.Review);
@@ -433,7 +437,7 @@ public sealed partial class InspectorViewModel : ObservableObject
     public void ShowTranscript(SessionRef session, string title)
     {
         CloseTranscript();
-        Transcript = new SubagentTranscriptViewModel(session, title, id => _stores.Workspace.State.Devices.TryGetValue(id, out var device) ? device.Name : id);
+        Transcript = new SubagentTranscriptViewModel(session, title, id => _stores.Workspace.State.Devices.TryGetValue(id, out var device) ? device.Name : id, _images, _mediaAttachments);
         RefreshSubagents();
     }
 

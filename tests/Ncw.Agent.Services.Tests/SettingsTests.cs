@@ -102,6 +102,26 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void Media_picks_preserve_legacy_image_settings_and_store_and_clear_each_pair_independently()
+    {
+        _repo.WriteJson("""{"imageModel":"legacy-image","imageModelProviderId":"legacy-provider","imageGenerationEnabled":false}""");
+        var opening = _settings.Current();
+        Assert.Equal(new ModelPick("legacy-image", "legacy-provider"), opening.Image);
+        Assert.Equal((ModelPick.None, ModelPick.None, false), (opening.Video, opening.Audio, opening.ImageGeneration));
+
+        var video = new ModelPick("video", "video-provider");
+        var audio = new ModelPick("audio", "audio-provider");
+        _settings.Update(new DeviceSettingsPatch { Video = video, Audio = audio });
+        Assert.Equal((opening.Image, video, audio, false), (_settings.Current().Image, _settings.Current().Video, _settings.Current().Audio, _settings.Current().ImageGeneration));
+
+        _settings.Update(new DeviceSettingsPatch { Video = ModelPick.None, Audio = new ModelPick("voice") });
+        var s = _settings.Current();
+        Assert.Equal((opening.Image, ModelPick.None, new ModelPick("voice")), (s.Image, s.Video, s.Audio));
+        Assert.DoesNotContain("videoModelProviderId", _repo.ReadJson()!);
+        Assert.DoesNotContain("audioModelProviderId", _repo.ReadJson()!);
+    }
+
+    [Fact]
     public void An_invalid_field_rejects_the_whole_patch_and_nothing_is_written()
     {
         _settings.Update(new DeviceSettingsPatch { MaxOutputTokens = 8000 });

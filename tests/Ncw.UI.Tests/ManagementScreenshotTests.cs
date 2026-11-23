@@ -193,7 +193,8 @@ public class ManagementScreenshotTests
         new("general", SettingsSection.General, SeedAll, Height: 2300, Check: h =>
         {
             Assert.Equal(PageState.Ready, h.Kit.Pages.General.State);
-            Assert.Equal(8, h.Kit.Pages.General.Picks.Count);
+            Assert.Equal(10, h.Kit.Pages.General.Picks.Count);
+            Assert.Equal(3, h.Kit.Pages.General.MediaPicks.Count);
             Assert.NotEmpty(Find<GeneralSettingsPage>(h));
         }),
         new("project", SettingsSection.Project, SeedAll, Height: 1000, Check: h => Assert.Equal(PageState.Ready, h.Kit.Pages.Project.State)),

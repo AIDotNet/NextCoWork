@@ -467,6 +467,25 @@
     <unit id="ToolInterrupted"><segment><source>Interrupted</source><target state="translated">已中断</target></segment></unit>
     <unit id="ToolMoreLines"><segment><source>{0} more line(s)</source><target state="translated">还有 {0} 行</target></segment></unit>
     <unit id="ToolQueuedAhead"><segment><source>Queued ({0} ahead)</source><target state="translated">排队中(前面还有 {0} 个)</target></segment></unit>
+    <unit id="MediaImageQueued"><segment><source>Queued</source><target state="translated">排队中</target></segment></unit>
+    <unit id="MediaImageGenerating"><segment><source>Generating image…</source><target state="translated">正在生成图片…</target></segment></unit>
+    <unit id="MediaImageLoading"><segment><source>Loading image…</source><target state="translated">正在加载图片…</target></segment></unit>
+    <unit id="MediaImageGenerated"><segment><source>Generated image</source><target state="translated">生成的图片</target></segment></unit>
+    <unit id="MediaImageReady"><segment><source>Image ready</source><target state="translated">图片已生成</target></segment></unit>
+    <unit id="MediaImageFailed"><segment><source>Image generation failed</source><target state="translated">图片生成失败</target></segment></unit>
+    <unit id="MediaImageCopy"><segment><source>Copy image</source><target state="translated">复制图片</target></segment></unit>
+    <unit id="MediaImageCopied"><segment><source>Image copied</source><target state="translated">图片已复制</target></segment></unit>
+    <unit id="MediaImageCopyFailed"><segment><source>Couldn't copy the image</source><target state="translated">无法复制图片</target></segment></unit>
+    <unit id="MediaVideoGenerating"><segment><source>Generating video…</source><target state="translated">正在生成视频…</target></segment></unit>
+    <unit id="MediaVideoGenerationFailed"><segment><source>Video generation failed</source><target state="translated">视频生成失败</target></segment></unit>
+    <unit id="MediaAudioGenerating"><segment><source>Generating audio…</source><target state="translated">正在生成音频…</target></segment></unit>
+    <unit id="MediaAudioGenerationFailed"><segment><source>Audio generation failed</source><target state="translated">音频生成失败</target></segment></unit>
+    <unit id="MediaSaveFailed"><segment><source>Couldn't save the media file</source><target state="translated">无法保存媒体文件</target></segment></unit>
+    <unit id="MediaSaveFileName"><segment><source>Generated media</source><target state="translated">生成的媒体</target></segment></unit>
+    <unit id="ToolMediaPlay"><segment><source>Play video</source><target state="translated">播放视频</target></segment></unit>
+    <unit id="ToolMediaVideoLoading"><segment><source>Loading video…</source><target state="translated">正在加载视频…</target></segment></unit>
+    <unit id="ToolMediaVideoUnavailable"><segment><source>Inline playback is unavailable. You can still save the video.</source><target state="translated">无法内联播放，仍可保存视频。</target></segment></unit>
+    <unit id="ToolMediaVideoFailed"><segment><source>Couldn't play the video</source><target state="translated">无法播放视频</target></segment></unit>
     <unit id="ToolWaitingApproval"><segment><source>Waiting for approval</source><target state="translated">等待审批</target></segment></unit>
     <unit id="Unarchive"><segment><source>Unarchive</source><target state="translated">取消归档</target></segment></unit>
     <unit id="Unfavorite"><segment><source>Remove from favorites</source><target state="translated">取消收藏</target></segment></unit>
@@ -613,6 +632,9 @@
     <unit id="TerminalStarting"><segment><source>Starting…</source><target state="translated">启动中…</target></segment></unit>
     <unit id="TerminalUnavailable"><segment><source>The terminal engine isn't available on this platform.</source><target state="translated">这个平台上没有终端引擎。</target></segment></unit>
     <unit id="TerminalRemote"><segment><source>Remote</source><target state="translated">远程</target></segment></unit>
+    <unit id="TerminalCopy"><segment><source>Copy</source><target state="translated">复制</target></segment></unit>
+    <unit id="TerminalPaste"><segment><source>Paste</source><target state="translated">粘贴</target></segment></unit>
+    <unit id="TerminalClear"><segment><source>Clear screen</source><target state="translated">清屏</target></segment></unit>
     <unit id="SubagentBack"><segment><source>Back to subagents</source><target state="translated">返回子代理列表</target></segment></unit>
     <unit id="SubagentNoChildSession"><segment><source>This card was rebuilt from an old receipt after a restart, so its transcript isn't available.</source><target state="translated">这张卡片是重启后从旧回执重建的,没有记录它的子会话,看不了完整转录。</target></segment></unit>
     <unit id="SubagentOpenUnavailable"><segment><source>Couldn't open the transcript — the device isn't connected.</source><target state="translated">打不开转录:设备没有连接。</target></segment></unit>
@@ -697,6 +719,12 @@
     <unit id="PickFieldCompletion"><segment><source>Typing completion</source><target state="translated">输入补全</target></segment></unit>
     <unit id="PickFieldInlineCompletion"><segment><source>Inline completion</source><target state="translated">行内补全</target></segment></unit>
     <unit id="PickFieldImage"><segment><source>Image generation</source><target state="translated">图像生成</target></segment></unit>
+    <unit id="PickFieldVideo"><segment><source>Video generation</source><target state="translated">视频生成</target></segment></unit>
+    <unit id="PickFieldAudio"><segment><source>Audio generation</source><target state="translated">音频生成</target></segment></unit>
+    <unit id="GeneralMediaToolsTitle"><segment><source>Media tools</source><target state="translated">媒体工具</target></segment></unit>
+    <unit id="GeneralMediaToolsHint"><segment><source>Choose a model and provider for each type of media. Manage available providers in Models &amp; providers.</source><target state="translated">为每种媒体选择模型和供应商。可在「模型与供应商」中管理可用供应商。</target></segment></unit>
+    <unit id="GeneralMediaNotConfigured"><segment><source>Not configured</source><target state="translated">未配置</target></segment></unit>
+    <unit id="GeneralImageGenerationEnabled"><segment><source>Enable image generation</source><target state="translated">启用图像生成</target></segment></unit>
     <unit id="PickFieldSubagent"><segment><source>Subagents</source><target state="translated">子代理</target></segment></unit>
     <unit id="GeneralBehaviorTitle"><segment><source>Permissions and goals</source><target state="translated">权限与目标</target></segment></unit>
     <unit id="GeneralPermissionMode"><segment><source>Default permission mode</source><target state="translated">默认权限档位</target></segment></unit>
@@ -1732,6 +1760,7 @@
     <unit id="CmdOpenReview"><segment><source>Review changes</source><target state="translated">审查改动</target></segment></unit>
     <unit id="CmdOpenGit"><segment><source>Open Git</source><target state="translated">打开 Git</target></segment></unit>
     <unit id="CmdOpenTerminal"><segment><source>Open terminal</source><target state="translated">打开终端</target></segment></unit>
+    <unit id="CmdQuit"><segment><source>Quit NextCoWork</source><target state="translated">退出 NextCoWork</target></segment></unit>
     <unit id="CmdSelectProject"><segment><source>Switch to project {0}</source><target state="translated">切换到第 {0} 个项目</target></segment></unit>
     <unit id="PalettePlaceholder"><segment><source>Type a command, session, project, file or setting…</source><target state="translated">输入命令、会话、项目、文件或设置……</target></segment></unit>
     <unit id="PaletteNoMatch"><segment><source>Nothing matches</source><target state="translated">没有匹配的结果</target></segment></unit>

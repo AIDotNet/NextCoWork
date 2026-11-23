@@ -55,7 +55,8 @@ internal sealed class ConversationService : IAsyncDisposable
     public ConversationService(
         AgentDatabase database, string deviceId, string dataRoot, TimeProvider clock, AgentServices services, TopicHub topics, Func<long> projectsRevision, IModelResolver models,
         ILoopDiagnostics log,
-        Ncw.Agent.Services.Settings.SettingsService? deviceSettings = null)
+        Ncw.Agent.Services.Settings.SettingsService deviceSettings, Ncw.Agent.Host.Providers.ProviderRuntime providerRuntime,
+        SessionRepository sessions, Ncw.Agent.Services.Attachments.AttachmentService attachments)
     {
         _models = models;
         _topics = topics;
@@ -65,19 +66,16 @@ internal sealed class ConversationService : IAsyncDisposable
         Log = log;
         var ids = services.Ids ?? new UlidIdGenerator(clock);
 
-        // 附件登记挂在会话仓库的写入旁路上:消息落盘的同一个事务里把引用到的草稿附件升为 committed(2.x 的 recordMessageAttachments)。
-        var attachmentRepository = new AttachmentRepository(database, clock);
-        Sessions = new SessionRepository(database, clock, attachmentRepository);
-        Attachments = new Ncw.Agent.Services.Attachments.AttachmentService(dataRoot, clock, attachmentRepository, Sessions);
+        Sessions = sessions;
+        Attachments = attachments;
         // 挂起的交互落库(只记元数据);启动时把上次进程遗留的 pending 行收尾为 cancelled。
         Gate = new InteractionGate(ids, clock, new StoredInteractionJournal(new InteractionJournalStore(database, deviceId), clock), Log);
         Workspaces = new WorkspaceRepository(database, clock);
         // 执行环境(本机 + SSH):SSH 连接的指纹确认 / 凭据提问经上面的交互闸门;测试可以用 services.Environments 换成假的(只换「项目 → 环境」的解析,环境清单 / 配置协议照常)。
         Environments = new Ncw.Agent.Host.Environments.EnvironmentService(database, deviceId, dataRoot, clock, services, topics, Gate, ids, Log, Workspaces);
         _environments = services.Environments ?? Environments;
-        var settingsRepository = new SettingsRepository(database);
         // 设备设置(设置页的值):读写只有这一份服务(AgentHost 装配时建好传进来,协议方法和这里读的是同一个)。每个 Run / 每次派发现读。
-        DeviceSettings = deviceSettings ?? new Ncw.Agent.Services.Settings.SettingsService(settingsRepository);
+        DeviceSettings = deviceSettings;
         _localEnvironment = new LocalEnvironment(deviceId);
         Settings = new StoredSessionSettings(DeviceSettings, () => new GlobalInstructions(_localEnvironment, EnvPath.Parse(dataRoot, _localEnvironment.Facts.PathStyle)));
         PermissionRuns = new PermissionRuns();
@@ -90,6 +88,12 @@ internal sealed class ConversationService : IAsyncDisposable
         ToolRegistry.Register(new AskUserQuestionTool(PermissionRuns), ToolRegistry.BuiltinSource);
         ToolRegistry.Register(Web.FetchTool, ToolRegistry.BuiltinSource);
         ToolRegistry.Register(Web.SearchTool, ToolRegistry.BuiltinSource);
+        var media = new MediaGenerationTools(DeviceSettings, providerRuntime.Providers, providerRuntime.Credentials,
+            providerRuntime.Upstream, Web.Http, Attachments, _localEnvironment, clock);
+        foreach (var tool in media.Create())
+        {
+            ToolRegistry.Register(tool, ToolRegistry.BuiltinSource);
+        }
         // 内联可视化(visualize_*,来源 builtin、可被禁用):载荷服务端消毒;交互模式(widget_submit)与动作在子代理里不提供;edit / update 按转录找卡。
         foreach (var tool in Ncw.Agent.Widgets.VisualizeTools.Create(PermissionRuns, new HostWidgetTranscript(Sessions)))
         {

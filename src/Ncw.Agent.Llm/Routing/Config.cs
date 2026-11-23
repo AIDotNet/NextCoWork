@@ -45,7 +45,7 @@ public interface IProviderConfigSource
 public interface IImageResolver
 {
     /// <summary>失败时抛 <see cref="ImageInputException"/>。</summary>
-    ValueTask<string> ResolveAsync(string dataRef, string mime, CancellationToken ct);
+    ValueTask<string> ResolveAsync(string dataRef, string mime, RequestContext context, CancellationToken ct);
 }
 
 public sealed class ImageInputException(AgentError error) : Exception(error.Message)

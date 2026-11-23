@@ -7,6 +7,9 @@ public static partial class Capabilities
     /// <summary>设备 / 项目设置:<c>settings.*</c> 和 <c>settings</c> 主题(读取 member 起,写入 owner)。</summary>
     public const string Settings = "settings";
 
+    /// <summary>设备支持配置图片、视频和音频生成工具,含设置中的可选媒体模型字段。</summary>
+    public const string SettingsMedia = "settings.media";
+
     /// <summary>用量统计:<c>usage.*</c>(只读,viewer 起)。</summary>
     public const string Usage = "usage";
 

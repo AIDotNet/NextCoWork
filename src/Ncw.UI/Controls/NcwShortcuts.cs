@@ -1,6 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Ncw.Client.Shortcuts;
 using Ncw.Client.ViewModels;
 using Ncw.UI.Localization;
@@ -182,9 +184,18 @@ public sealed class NcwShortcutRouter : IDisposable
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (!e.Handled && Handle(e.Key, e.KeyModifiers))
+        if (!e.Handled && !BelongsToTerminal(e) && Handle(e.Key, e.KeyModifiers))
         {
             e.Handled = true;
         }
     }
+
+    /// <summary>
+    /// Windows / Linux 上焦点在终端里时,单独的 Ctrl+字母是 shell 的编辑键(Ctrl+L 清屏、Ctrl+K/W/N/P/B…),交给终端,不当成应用快捷键吃掉
+    /// (issue #194)。macOS 的应用快捷键是 ⌘,不冲突;Ctrl+Tab 之类非字母键照旧。
+    /// </summary>
+    private bool BelongsToTerminal(KeyEventArgs e) =>
+        !ShortcutText.IsMac && e.KeyModifiers == KeyModifiers.Control && e.Key is >= Key.A and <= Key.Z
+        && _top.FocusManager?.GetFocusedElement() is Visual focused
+        && (focused is NcwTerminal || focused.FindAncestorOfType<NcwTerminal>() is not null);
 }

@@ -39,6 +39,7 @@ public enum ToolRowStatus
     Failed,
     WaitingApproval,
     Interrupted,
+    Unknown,
 }
 
 /// <summary>
@@ -58,7 +59,9 @@ public sealed record ToolRow(
     int Added,
     int Removed,
     bool Truncated,
-    int? QueuedAhead) : TranscriptRow(Key);
+    int? QueuedAhead,
+    GeneratedMediaKind? MediaKind = null,
+    GeneratedMedia? Media = null) : TranscriptRow(Key);
 
 /// <summary>子代理卡片(<c>Task</c> 调用)。状态文案、计时、能否停止都来自 Core 的 <see cref="SubagentView"/>,这里只带结果。</summary>
 public sealed record SubagentRow(string Key, SubagentRef Ref, SubagentViewState View, string? Summary, string? Color, bool Unknown) : TranscriptRow(Key);
@@ -79,8 +82,9 @@ public sealed record SubagentReportRow(string Key, string CallId, string ChildRu
 /// <summary>压缩边界。</summary>
 public sealed record CompactRow(string Key, string Trigger, int PreTokens, int PostTokens, string Summary) : TranscriptRow(Key);
 
-/// <summary>错误。<see cref="MessageKey"/> 由界面翻译(没有就显示 <see cref="Message"/> 的英文诊断);<see cref="CanRetry"/> 只有最后一条错误可以重试。</summary>
-public sealed record ErrorRow(string Key, string Code, string Message, string? MessageKey, bool Retryable, bool CanRetry) : TranscriptRow(Key);
+/// <summary>错误。<see cref="MessageKey"/> 由界面翻译(没有就显示 <see cref="Message"/> 的英文诊断);<see cref="CanRetry"/> 只有最后一条错误可以重试。
+/// <see cref="Status"/> 是上游的 HTTP 状态码(有就放进「详情」,便于判断是哪一类失败)。</summary>
+public sealed record ErrorRow(string Key, string Code, string Message, string? MessageKey, bool Retryable, bool CanRetry, int? Status = null) : TranscriptRow(Key);
 
 /// <summary>目标状态(达成 / 未达成 / 已设定 / 已清除)。</summary>
 public sealed record GoalStatusRow(string Key, bool Met, string Condition, string? Reason, bool Failed, bool Cleared, bool Set) : TranscriptRow(Key);

@@ -15,7 +15,7 @@
     完整内容不在转录里画(太长),按需在以后的详情页看。
   -->
   <StackPanel Margin="0,1">
-    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
+    <Grid x:Name="ToolHeader" ColumnDefinitions="*,Auto" ColumnSpacing="2" IsVisible="{Binding !IsMedia}">
       <ui:PlainButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,3" CornerRadius="8" Click="OnToggle" IsEnabled="{Binding CanExpand}"
                       arc:Tooltip.Tip="{Binding Tip}">
       <!-- 严格单行:图标 | 工具名(至少 44、至多 160:常见的短名各行对齐,长名如 visualize_read_me / MCP 工具不被截成「visuali…」)|
@@ -72,10 +72,60 @@
       </ui:PlainButton>
     </Grid>
     <!-- 失败的调用:输出的第一行(为什么失败),一行红字,不用点开才知道 -->
-    <TextBlock Classes="hint mono failed" Margin="28,0,0,2" IsVisible="{Binding HasFailureLine}" Text="{Binding FailureLine}"
+    <TextBlock Classes="hint mono failed" Margin="28,0,0,2" IsVisible="{Binding HasGenericFailureLine}" Text="{Binding FailureLine}"
                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+    <ContentControl Content="{Binding ImagePreview}" IsVisible="{Binding !!ImagePreview}" Margin="0,4,0,6"
+                    HorizontalContentAlignment="Stretch">
+      <ContentControl.ContentTemplate>
+        <DataTemplate x:DataType="vm:ToolRowViewModel">
+          <Grid HorizontalAlignment="Left">
+            <ui:NcwImageReveal x:Name="GeneratedImage" Tool="{Binding}" HorizontalAlignment="Left" />
+            <ui:PlainButton x:Name="MediaImageHit" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                            IsVisible="{Binding !!#GeneratedImage.Source}" Click="OnViewImage"
+                            AutomationProperties.Name="{l:NcwText MsgImageOpen}" arc:Tooltip.Tip="{l:NcwText MsgImageOpen}" />
+            <TextBlock Classes="hint" Text="{l:NcwText MediaImageGenerating}" IsVisible="{Binding IsGeneratingImage}"
+                       AutomationProperties.AccessibilityView="Raw" Margin="12,0,0,9" VerticalAlignment="Bottom"
+                       Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          </Grid>
+        </DataTemplate>
+      </ContentControl.ContentTemplate>
+    </ContentControl>
+    <StackPanel Margin="0,4,0,4" Spacing="4" IsVisible="{Binding ShowsNonImageMediaStatus}">
+      <TextBlock Classes="hint" IsVisible="{Binding IsWaiting}" Text="{l:NcwText ToolWaitingApproval}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsQueued}" Text="{l:NcwText MediaImageQueued}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsGeneratingVideo}" Text="{l:NcwText MediaVideoGenerating}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsGeneratingAudio}" Text="{l:NcwText MediaAudioGenerating}" />
+      <TextBlock Classes="hint failed" IsVisible="{Binding IsVideoGenerationFailed}" Text="{l:NcwText MediaVideoGenerationFailed}" />
+      <TextBlock Classes="hint failed" IsVisible="{Binding IsAudioGenerationFailed}" Text="{l:NcwText MediaAudioGenerationFailed}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsInterrupted}" Text="{l:NcwText ToolInterrupted}" />
+      <TextBlock Classes="hint" IsVisible="{Binding IsMediaUnknown}" Text="{l:NcwText DeviceConnecting}" />
+      <TextBlock Classes="hint failed" IsVisible="{Binding HasFailureLine}" Text="{Binding FailureLine}" />
+    </StackPanel>
+    <ContentControl Content="{Binding VideoPreview}" IsVisible="{Binding !!VideoPreview}" Margin="0,4,0,4" HorizontalContentAlignment="Stretch">
+      <ContentControl.ContentTemplate>
+        <DataTemplate x:DataType="vm:ToolRowViewModel"><ui:NcwVideoPreview Row="{Binding}" /></DataTemplate>
+      </ContentControl.ContentTemplate>
+    </ContentControl>
+    <StackPanel Margin="0,2,0,4" IsVisible="{Binding ShowsMediaActions}">
+      <WrapPanel Orientation="Horizontal" ItemSpacing="4">
+        <ui:PlainButton x:Name="MediaViewButton" Click="OnViewImage" IsVisible="{Binding CanViewMediaImage}" Padding="6,4" CornerRadius="6">
+          <TextBlock Classes="hint" Text="{l:NcwText MsgImageOpen}" />
+        </ui:PlainButton>
+        <ui:PlainButton x:Name="MediaCopyButton" Click="OnCopyImage" IsVisible="{Binding CanViewMediaImage}" Padding="6,4" CornerRadius="6">
+          <TextBlock Classes="hint" Text="{l:NcwText MediaImageCopy}" />
+        </ui:PlainButton>
+        <ui:PlainButton x:Name="MediaSaveButton" Click="OnSaveMedia" IsVisible="{Binding CanSaveMedia}" Padding="6,4" CornerRadius="6">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon Kind="Download" Size="13" />
+            <TextBlock Classes="hint" Text="{l:NcwText FilesSaveAs}" />
+          </StackPanel>
+        </ui:PlainButton>
+      </WrapPanel>
+      <TextBlock x:Name="MediaFeedback" IsVisible="False" Classes="hint" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+      <TextBlock Classes="hint" IsVisible="{Binding ShowsEnv}" Text="{Binding EnvLabel}" />
+    </StackPanel>
     <!-- 结果摘要:统一的展开 / 收起容器(高度弹簧 + 淡入淡出,docs/design/03 §9),缩进一档、左侧一条线,不是卡片 -->
-    <ui:NcwCollapsible IsOpen="{Binding IsExpanded}">
+    <ui:NcwCollapsible IsVisible="{Binding !IsMedia}" IsOpen="{Binding IsExpanded}">
       <Border Margin="12,0,0,2" Padding="12,2,0,2" BorderThickness="2,0,0,0"
               BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
         <StackPanel Spacing="1">

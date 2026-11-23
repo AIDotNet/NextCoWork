@@ -166,7 +166,7 @@ public sealed class AttachmentRepository(AgentDatabase database, TimeProvider? c
         }
     }
 
-    /// <summary>消息内容块里引用的会话附件(<c>image</c> / <c>file_ref</c> 块的 <c>dataRef</c> 是 <c>ncw://</c> URL),去重、保序。</summary>
+    /// <summary>消息内容块里引用的会话附件(媒体生成回执也持有附件引用),去重、保序。</summary>
     public static IReadOnlyList<AttachmentLocator> RefsOf(string partsJson)
     {
         var refs = new List<AttachmentLocator>();
@@ -180,12 +180,21 @@ public sealed class AttachmentRepository(AgentDatabase database, TimeProvider? c
 
             foreach (var part in doc.RootElement.EnumerateArray())
             {
-                if (part.ValueKind == System.Text.Json.JsonValueKind.Object && part.TryGetProperty("dataRef", out var dataRef)
-                    && dataRef.ValueKind == System.Text.Json.JsonValueKind.String && Attachments.ParseUrl(dataRef.GetString() ?? "") is { Scope: Attachments.Session, OwnerId: not null } locator
-                    && !refs.Contains(locator))
+                if (part.ValueKind != System.Text.Json.JsonValueKind.Object)
                 {
-                    refs.Add(locator);
+                    continue;
                 }
+
+                AddRef(part, "dataRef", refs);
+                if (!part.TryGetProperty("type", out var type) || type.ValueKind != System.Text.Json.JsonValueKind.String || type.GetString() != "tool_result"
+                    || !part.TryGetProperty("output", out var output) || output.ValueKind != System.Text.Json.JsonValueKind.Object
+                    || !output.TryGetProperty("details", out var details) || details.ValueKind != System.Text.Json.JsonValueKind.Object
+                    || !details.TryGetProperty("kind", out var kind) || kind.ValueKind != System.Text.Json.JsonValueKind.String || kind.GetString() != "media-generation")
+                {
+                    continue;
+                }
+
+                AddRef(details, "url", refs);
             }
         }
         catch (System.Text.Json.JsonException)
@@ -194,6 +203,16 @@ public sealed class AttachmentRepository(AgentDatabase database, TimeProvider? c
         }
 
         return refs;
+    }
+
+    private static void AddRef(System.Text.Json.JsonElement part, string property, List<AttachmentLocator> refs)
+    {
+        if (part.TryGetProperty(property, out var dataRef) && dataRef.ValueKind == System.Text.Json.JsonValueKind.String
+            && Attachments.ParseUrl(dataRef.GetString() ?? "") is { Scope: Attachments.Session, OwnerId: not null } locator
+            && !refs.Contains(locator))
+        {
+            refs.Add(locator);
+        }
     }
 
     public void CommitByRefs(IReadOnlyList<AttachmentLocator> refs, string messageId, string sessionId) => database.InTransaction(() =>

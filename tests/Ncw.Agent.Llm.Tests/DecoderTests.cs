@@ -1,4 +1,5 @@
 using Ncw.Agent.Llm.Tests.Support;
+using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Wire;
 using static Ncw.Agent.Llm.Tests.Support.Decoding;
 
@@ -619,6 +620,25 @@ public sealed class DecoderTests
         Assert.Equal((AgentErrorCode.Provider, true), Pair(OpenAiCommon.ToAgentError(503, """{"error":{"message":"overloaded"}}""")));
         Assert.Equal((AgentErrorCode.Provider, false), Pair(OpenAiCommon.ToAgentError(400, """{"detail":"Unsupported parameter"}""")));
         Assert.Equal("Unsupported parameter", OpenAiCommon.ToAgentError(400, """{"detail":"Unsupported parameter"}""").Message);
+    }
+
+    [Fact]
+    public void A_generic_gateway_message_keeps_the_real_cause_from_the_rest_of_the_error_object()
+    {
+        // issue #200:聚合网关把真正的原因放在 message 以外
+        var error = OpenAiCommon.ToAgentError(400, """{"error":{"message":"Upstream rejected the request","code":400,"metadata":{"raw":"image format webp is not supported"}}}""");
+
+        Assert.StartsWith("Upstream rejected the request (metadata: ", error.Message);
+        Assert.Contains("image format webp is not supported", error.Message);
+        Assert.Equal("slow", OpenAiCommon.ToAgentError(429, """{"error":{"message":"slow","type":"rate_limit","code":"x"}}""").Message);
+    }
+
+    [Fact]
+    public void Connection_failures_carry_the_inner_exception_cause()
+    {
+        var e = new HttpRequestException("An error occurred while sending the request.", new IOException("The SSL connection could not be established."));
+
+        Assert.Equal("An error occurred while sending the request. → The SSL connection could not be established.", LlmRouter.ExceptionChain(e));
     }
 
     [Fact]

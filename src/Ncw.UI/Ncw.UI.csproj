@@ -14,6 +14,8 @@
     <PackageReference Include="TKCode.Arc.Special" />
     <PackageReference Include="TKCode.Arc.Terminal" />
     <PackageReference Include="TKCode.Arc.Workflow" />
+    <PackageReference Include="TKCode.Arc.Video" />
+    <PackageReference Include="TKCode.Arc.Video.Native" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ncw.Client/Ncw.Client.csproj" />

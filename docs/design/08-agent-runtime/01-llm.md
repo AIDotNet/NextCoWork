@@ -152,6 +152,12 @@ C# 实现:`ILlmClient.StreamAsync(ModelRef, LlmRequest, RequestContext, Cancella
 - 方言由「模型声明 + 模型名」决定:Anthropic(`thinking.budget_tokens` / adaptive 的 `output_config.effort`)、OpenAI Chat(`reasoning_effort`)、Responses(`reasoning.effort`)、
   DeepSeek(`thinking.type` + 扁平 `reasoning_effort`)、GLM/混元(`thinking.type`)、自定义参数路径(白名单)。`standardWire` 声明读标准线形的托管方(Ollama)不套名字方言。
 - Anthropic 开启思考时:删掉 `temperature`;`max_tokens` 不大于预算时抬到 `budget + 4096`。
+- **自适应思考的 Claude(4.6+,`ClaudeThinking.For` 按模型名认,允许中转前缀和点号写法)不走预算方言**(issue #202):Opus 4.7+ / Sonnet 5+ / Haiku 5.5 / Fable 收到
+  `budget_tokens` 直接 400,Opus 5.5 / Fable 还拒绝 `disabled`,Sonnet 5.5 关闭要发 `between_tools`。规则:
+  Anthropic 协议(预设 Auto / Anthropic)下,目录或 2.x 别名里的预算 / 开关声明对这些模型一律当档位处理;开启 = `thinking: {type: adaptive}`
+  (默认只回空思考块的型号加 `display: summarized`,否则界面上的思考行永远是空的)+ 显式档位时 `output_config.effort`(不支持的档位就近往下收敛,minimal → low,4.6 的 xhigh → high,不报错);
+  Auto 只开自适应、不指定档位;显式 Off 按型号发 `disabled` / `between_tools`,关不掉的型号(Opus 5.5、Fable)不发 `thinking`、档位降到 low;
+  4.7+ 和 5.x 一律删掉 `temperature` / `top_p` / `top_k`。Opus 4.5 / Sonnet 4.5 / Haiku 4.5 及更早照旧用 `budget_tokens`。
 - `always` / `unsupported` 模型不收任何思考开关,补丁(包括 `extra_body` 容器)也恢复不了;会话里显式的 Off 压过已保存的模型补丁。
 
 ## 7. 认证

@@ -38,7 +38,7 @@ public static partial class OpenAiCommon
             ?? (body is { ValueKind: JsonValueKind.String } s ? s.GetString() : null);
         if (!string.IsNullOrWhiteSpace(found))
         {
-            return found;
+            return found + Extras(root.Obj("error") ?? root.Obj("detail"));
         }
 
         if (root is not null)
@@ -55,6 +55,41 @@ public static partial class OpenAiCommon
         }
 
         return status is null ? "Upstream request failed" : $"Upstream request failed (HTTP {status})";
+    }
+
+    private static readonly HashSet<string> PlainErrorFields = new(StringComparer.Ordinal) { "message", "type", "code", "param", "status", "error", "detail" };
+
+    /// <summary>
+    /// 聚合网关 / 中转常把真正的原因放在 message 之外(OpenRouter 的 <c>error.metadata.raw</c>、各家的 <c>details</c>),message 只剩
+    /// 「Upstream rejected the request」「Provider returned error」这种套话(issue #200)。嵌套的错误对象里还有别的字段时,把它们原样附在后面(截断)。
+    /// </summary>
+    private static string Extras(JsonElement? detail)
+    {
+        if (detail is not { ValueKind: JsonValueKind.Object } error)
+        {
+            return "";
+        }
+
+        var extra = new System.Text.StringBuilder();
+        foreach (var property in error.EnumerateObject())
+        {
+            if (PlainErrorFields.Contains(property.Name) || property.Value.ValueKind is JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            extra.Append(extra.Length == 0 ? "" : ", ").Append(property.Name).Append(": ").Append(property.Value.ValueKind == JsonValueKind.String
+                ? property.Value.GetString()
+                : property.Value.GetRawText());
+        }
+
+        if (extra.Length == 0)
+        {
+            return "";
+        }
+
+        var text = extra.ToString();
+        return " (" + (text.Length > 600 ? text[..600] + "…" : text) + ")";
     }
 
     /// <summary>HTTP 错误和 200 连接里的流内错误共用。<paramref name="bodyText"/> 是原始响应体。</summary>

@@ -896,4 +896,36 @@ public class ConversationViewModelTests
         Assert.True(retryStatus.HasDelay);
         Assert.Equal(3, retryStatus.DelaySeconds);
     }
+
+    [Fact]
+    public void Generating_follows_the_device_run_index_and_is_not_blocked_by_leftovers_of_finished_runs()
+    {
+        // issue #200:设备说会话在跑(停止按钮亮着),但快照里没有活动 Run、Run 镜像还没到 —— 也要有「生成中」
+        var stores = Stores(running: false);
+        var convo = Conversation(stores, new FakeCommands());
+        Assert.Empty(convo.Rows);
+
+        stores.Workspace.Update(w => w with
+        {
+            Devices = w.Devices.SetItem("local", w.Devices["local"] with
+            {
+                Index = new ActiveRunIndex("local", [new ActiveRun("local", "run-1", "s-ncw-1", "nextcowork", 0)]) { Rev = 2 },
+            }),
+        });
+        Assert.True(Assert.IsType<StatusRowViewModel>(Assert.Single(convo.Rows)).IsGenerating);
+
+        // 之前失败收口的 Run 残留着「运行中」的工具和重试状态:不能压住这一轮的「生成中」,也不能显示成「正在重试」
+        var old = new RunRef("local", "run-0");
+        stores.Conversations.Update(c => c with
+        {
+            Runs = c.Runs.SetItem(old, RunView.New(old, "s-ncw-1", 1) with
+            {
+                Phase = RunPhase.Aborted,
+                Retry = new ProviderRetryEventDto(1, 1000, "overloaded"),
+                Tools = ImmutableDictionary<string, ToolCallView>.Empty.Add("c1", new ToolCallView("c1", "Bash", "{}", ToolCallStatus.Running, null, null)),
+            }),
+        });
+        var status = Assert.IsType<StatusRowViewModel>(convo.Rows[^1]);
+        Assert.True(status.IsGenerating);
+    }
 }

@@ -220,6 +220,31 @@ public sealed class HistoryTransformTests
     }
 
     [Fact]
+    public void Images_of_a_turn_the_upstream_rejected_are_not_replayed_but_unrelated_failures_keep_them()
+    {
+        // issue #200:带图的一轮被 400 拒掉后,后面的纯文字消息也会因为历史里的图片一直失败
+        var rejected = new[]
+        {
+            Msg.User(new TextPart("what is this"), new ImagePart("image/png", "data:image/png;base64,QQ==")),
+            Msg.Assistant(ModelA, new ErrorPart(AgentError.Create(AgentErrorCode.Provider, "Upstream rejected the request", false, 400))),
+            Msg.User("what is this?"),
+        };
+        var rateLimited = new[]
+        {
+            Msg.User(new TextPart("what is this"), new ImagePart("image/png", "data:image/png;base64,QQ==")),
+            Msg.Assistant(ModelA, new ErrorPart(AgentError.Create(AgentErrorCode.RateLimit, "slow", true, 429))),
+            Msg.User("again"),
+        };
+
+        var prepared = HistoryTransform.Prepare(rejected, TargetA);
+        var kept = HistoryTransform.Prepare(rateLimited, TargetA);
+
+        Assert.DoesNotContain(prepared.SelectMany(m => m.Parts), p => p is ImagePart);
+        Assert.Contains(prepared[0].Parts, p => p is TextPart { Text: HistoryTransform.RejectedImagePlaceholder });
+        Assert.Contains(kept.SelectMany(m => m.Parts), p => p is ImagePart);
+    }
+
+    [Fact]
     public void Images_are_kept_when_the_target_supports_them()
     {
         var history = new[] { Msg.User(new ImagePart("image/png", "data:image/png;base64,QQ==")) };

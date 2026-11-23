@@ -111,6 +111,8 @@ public sealed class FakeSettings(ClientStores stores) : ISettingsCommands
 {
     public List<DeviceSettingsPatchDto> Patches { get; } = [];
 
+    public bool SupportsMediaTools(string deviceId) => true;
+
     public List<ProjectSettingsPatchDto> ProjectPatches { get; } = [];
 
     public List<string> Passwords { get; } = [];
@@ -157,6 +159,9 @@ public sealed class FakeSettings(ClientStores stores) : ISettingsCommands
             MaxOutputTokens = patch.MaxOutputTokens ?? s.MaxOutputTokens,
             PermissionReviewer = patch.PermissionReviewer ?? s.PermissionReviewer,
             Image = patch.Image ?? s.Image,
+            Video = patch.Video is { } video ? (video.Model.Length > 0 ? video : null) : s.Video,
+            Audio = patch.Audio is { } audio ? (audio.Model.Length > 0 ? audio : null) : s.Audio,
+            ImageGeneration = patch.ImageGeneration ?? s.ImageGeneration,
             Gateway = patch.Gateway is { } g ? s.Gateway with { AllowRemote = g.AllowRemote ?? s.Gateway.AllowRemote, Enabled = g.Enabled ?? s.Gateway.Enabled } : s.Gateway,
             Data = patch.Data is { } d ? s.Data with { BackupDirectory = d.BackupDirectory ?? s.Data.BackupDirectory, BackupFrequency = d.BackupFrequency ?? s.Data.BackupFrequency } : s.Data,
             Proxy = patch.Proxy is { } p ? s.Proxy with { Enabled = p.Enabled ?? s.Proxy.Enabled, Host = p.Host ?? s.Proxy.Host, Port = p.Port ?? s.Proxy.Port, Mode = p.Mode ?? s.Proxy.Mode } : s.Proxy,

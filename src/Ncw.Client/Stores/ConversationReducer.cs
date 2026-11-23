@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Ncw.Client.Transcript;
 using Ncw.Core.Domain;
 using Ncw.Protocol.Methods;
 
@@ -236,7 +237,9 @@ public static class ConversationReducer
                 var existing = view.Tools.GetValueOrDefault(e.CallId) ?? new ToolCallView(e.CallId, "", "{}", ToolCallStatus.Running, null, null);
                 // 前台的 Task 调用要等子代理跑完才返回,结束就不再排队;后台的立刻返回而派发可能还在排队(直到 subagent_start,或父 Run 结束把排队的取消):排位留着
                 var stillQueued = existing.QueuedAhead is not null && !e.IsError && SubagentReceipts.IsBackgroundCall(existing.InputJson);
-                return (state, view with { Tools = view.Tools.SetItem(e.CallId, existing with { Status = e.IsError ? ToolCallStatus.Failed : ToolCallStatus.Done, Output = e.Content, QueuedAhead = stillQueued ? existing.QueuedAhead : null, DetailsJson = Ncw.Client.Widgets.WidgetCardReader.IsDetails(e.DetailsJson) ? e.DetailsJson : existing.DetailsJson }) });
+                var showsDetails = Ncw.Client.Widgets.WidgetCardReader.IsDetails(e.DetailsJson)
+                    || !e.IsError && GeneratedMedia.KindOf(existing.Name) is { } kind && GeneratedMedia.Read(e.DetailsJson, kind) is not null;
+                return (state, view with { Tools = view.Tools.SetItem(e.CallId, existing with { Status = e.IsError ? ToolCallStatus.Failed : ToolCallStatus.Done, Output = e.Content, QueuedAhead = stillQueued ? existing.QueuedAhead : null, DetailsJson = showsDetails ? e.DetailsJson : existing.DetailsJson }) });
             }
 
             case SubagentStartEventDto or SubagentUpdateEventDto or SubagentEndEventDto:

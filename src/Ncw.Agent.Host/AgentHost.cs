@@ -15,6 +15,7 @@ using Ncw.Agent.Host.Workspace;
 using Ncw.Agent.Kernel.Loop;
 using Ncw.Agent.Storage;
 using Ncw.Agent.Storage.Credentials;
+using Ncw.Agent.Storage.Sessions;
 using Ncw.Protocol.Methods;
 using Ncw.Protocol.Session;
 using Ncw.Protocol.Transport;
@@ -156,10 +157,14 @@ public sealed class AgentHost : IDisposable
             var deviceSettings = new Ncw.Agent.Services.Settings.SettingsService(new SettingsRepository(database));
             var proxyPassword = new ProxyPasswordStore(new Ncw.Agent.Storage.Credentials.CredentialStore(database, _options.DataRoot, Ncw.Agent.Storage.Credentials.NoLegacySecrets.Instance));
             var proxy = new SettingsProxy(deviceSettings, proxyPassword);
-            var providerRuntime = new ProviderRuntime(database, _options.DataRoot, time, services, _topics, _log, deviceSettings, proxy);
+            // 附件与转录共用写入观察器，出站图片解析也经同一个受管附件服务。
+            var attachmentRepository = new AttachmentRepository(database, time);
+            var sessions = new SessionRepository(database, time, attachmentRepository);
+            var attachments = new Ncw.Agent.Services.Attachments.AttachmentService(_options.DataRoot, time, attachmentRepository, sessions);
+            var providerRuntime = new ProviderRuntime(database, _options.DataRoot, time, services, _topics, _log, deviceSettings, proxy, new SessionImageResolver(attachments));
             Volatile.Write(ref _providerRuntime, providerRuntime);
             Volatile.Write(ref _conversation, new ConversationService(
-                database, _identity.DeviceId, _options.DataRoot, time, services, _topics, () => Volatile.Read(ref _projects)?.Revision ?? 0, services.Models ?? providerRuntime, _log, deviceSettings));
+                database, _identity.DeviceId, _options.DataRoot, time, services, _topics, () => Volatile.Read(ref _projects)?.Revision ?? 0, services.Models ?? providerRuntime, _log, deviceSettings, providerRuntime, sessions, attachments));
             var deviceServices = new DeviceServices(database, _options.DataRoot, Version, time, _topics, deviceSettings, proxyPassword, proxy, Conversation(), _log, _router, providerRuntime,
                 onDataReplaced: () => _topics.Publish(DeviceMethods.DeviceTopic.Name, DeviceEvents.ProjectsChanged, projects.List(), PayloadShapes.GetShape<ProjectsListResult>()));
             Volatile.Write(ref _deviceServices, deviceServices);

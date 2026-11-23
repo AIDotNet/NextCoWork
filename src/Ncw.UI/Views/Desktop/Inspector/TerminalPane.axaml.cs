@@ -92,7 +92,7 @@ public partial class TerminalPane : UserControl
 
     private void OnTabChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(TerminalTabViewModel.Phase))
+        if (e.PropertyName is nameof(TerminalTabViewModel.Phase) or nameof(TerminalTabViewModel.Shell))
         {
             Dispatcher.UIThread.Post(() => ApplyPhase(_vm?.Active));
         }
@@ -101,6 +101,7 @@ public partial class TerminalPane : UserControl
     private void ApplyPhase(TerminalTabViewModel? tab)
     {
         SurfaceFrame.IsVisible = tab is { ShowsSurface: true } && !Surface.IsUnavailable;
+        Surface.Shell = tab?.Shell;
         ApprovalCard.IsVisible = tab is { IsAwaitingApproval: true };
         GoneNote.IsVisible = tab is { IsGone: true };
     }

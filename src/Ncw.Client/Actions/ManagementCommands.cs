@@ -8,6 +8,8 @@ namespace Ncw.Client.Actions;
 /// <summary>设备 / 项目设置(<see cref="SettingsActions"/>)。</summary>
 public interface ISettingsCommands
 {
+    bool SupportsMediaTools(string deviceId);
+
     Task<ActionResult<DeviceSettingsState>> UpdateAsync(string deviceId, DeviceSettingsPatchDto patch, CancellationToken ct = default);
 
     Task<ActionResult<ProjectSettingsDto>> GetProjectAsync(string deviceId, string workspaceId, CancellationToken ct = default);

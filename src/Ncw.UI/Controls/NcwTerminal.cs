@@ -5,9 +5,13 @@ using Avalonia.Controls.Documents;
 using Avalonia.Input.Platform;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.ViewModels;
+using Ncw.UI.Localization;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 using TKCode.Arc.DesignTokens;
 using TKCode.Terminal.Avalonia;
 using TKCode.Terminal.Core;
@@ -46,6 +50,9 @@ public sealed class NcwTerminal : Border, ITerminalSurface
             _view.TextEntered += OnTextEntered;
             _view.PointerChanged += OnPointer;
             Background = Brushes.Transparent;
+            // 右键菜单(issue #194):按下右键时按当前状态重建(有没有选中决定「复制」能不能点)。隧道 + 已处理也收,终端视图吃掉指针事件也不影响
+            AddHandler(PointerPressedEvent, OnAnyPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+            RebuildMenu();
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or TypeInitializationException)
         {
@@ -55,6 +62,12 @@ public sealed class NcwTerminal : Border, ITerminalSurface
 
     /// <summary>终端的原生库加载失败(平台不支持)。</summary>
     public bool IsUnavailable { get; private set; }
+
+    /// <summary>这个终端跑的 shell(页签元数据)。清屏后要不要发 Ctrl+L 让 shell 重画提示符取决于它:cmd 不认 Ctrl+L。</summary>
+    public string? Shell { get; set; }
+
+    /// <summary>有没有选中的文字。</summary>
+    public bool HasSelection => _core?.HasSelection ?? false;
 
     public (int Columns, int Rows) Grid { get; private set; } = (80, 24);
 
@@ -237,7 +250,8 @@ public sealed class NcwTerminal : Border, ITerminalSurface
         }
 
         var input = e.Input;
-        var command = e.Modifiers.HasFlag(OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control | KeyModifiers.Shift);
+        var mac = OperatingSystem.IsMacOS();
+        var command = e.Modifiers.HasFlag(mac ? KeyModifiers.Meta : KeyModifiers.Control | KeyModifiers.Shift);
         if (command && input.Action != KeyAction.Release)
         {
             if (input.Key == TerminalKey.V)
@@ -247,17 +261,23 @@ public sealed class NcwTerminal : Border, ITerminalSurface
                 return;
             }
 
-            if (input.Key == TerminalKey.C && _core.HasSelection)
+            if (input.Key == TerminalKey.C)
             {
-                var text = _core.GetSelectionText(TextFormat.Plain);
-                if (!string.IsNullOrEmpty(text) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
-                {
-                    _ = clipboard.SetTextAsync(text);
-                }
-
+                // 没有选中时也吞掉:否则 Ctrl+Shift+C 落到编码器,给 shell 发了一个 ^C
+                CopySelection();
                 e.Handled = true;
                 return;
             }
+        }
+
+        // Windows / Linux:有选中时 Ctrl+C 是复制(和 Windows Terminal 一样),没有选中才是中断
+        if (!mac && e.Modifiers == KeyModifiers.Control && input.Key == TerminalKey.C && input.Action != KeyAction.Release && _core.HasSelection)
+        {
+            CopySelection();
+            _core.ClearSelection();
+            Capture(force: true);
+            e.Handled = true;
+            return;
         }
 
         _encoder.Apply(_core.ReadInputModes());
@@ -279,7 +299,87 @@ public sealed class NcwTerminal : Border, ITerminalSurface
         }
     }
 
-    private async Task PasteAsync()
+    /// <summary>把选中的文字放进剪贴板。没有选中时什么也不做,返回 false。</summary>
+    public bool CopySelection()
+    {
+        if (_core is not { HasSelection: true } core)
+        {
+            return false;
+        }
+
+        var text = core.GetSelectionText(TextFormat.Plain);
+        if (string.IsNullOrEmpty(text) || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            return false;
+        }
+
+        _ = clipboard.SetTextAsync(text);
+        return true;
+    }
+
+    /// <summary>
+    /// 清屏(issue #194):清掉本地显示的屏幕和回滚,再给 shell 发 Ctrl+L 让它重画提示符(bash / zsh / fish / PowerShell 都认;cmd 不认,不发)。
+    /// 只动这块显示面:设备上的输出缓冲不清,切走页签再回来、重连后会按设备缓冲重放。
+    /// </summary>
+    public void Clear()
+    {
+        if (_core is null)
+        {
+            return;
+        }
+
+        // 解析器停在半截转义序列里时注入清屏序列会切断程序的输出;这时只靠 shell 自己清
+        if (_core.IsParserGround)
+        {
+            _core.Clear(ClearTarget.All);
+        }
+
+        _core.ClearSelection();
+        Capture(force: true);
+        if (!IsCmd(Shell))
+        {
+            Input?.Invoke([0x0c]);
+        }
+    }
+
+    /// <summary>shell 是设备报的(可能是从 Mac 控制端看 Windows 设备),两种路径分隔符都要认。</summary>
+    private static bool IsCmd(string? shell)
+    {
+        if (string.IsNullOrWhiteSpace(shell))
+        {
+            return false;
+        }
+
+        var name = shell.Trim().Trim('"');
+        name = name[(name.LastIndexOfAny(['/', '\\']) + 1)..];
+        return name.Equals("cmd", StringComparison.OrdinalIgnoreCase) || name.StartsWith("cmd.exe", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("cmd ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            RebuildMenu();
+        }
+    }
+
+    private void RebuildMenu()
+    {
+        if (IsUnavailable)
+        {
+            return;
+        }
+
+        NcwMenus.Attach(this,
+        [
+            new(NcwTexts.Get(NcwTextKind.TerminalCopy), new RelayCommand(() => CopySelection())) { IsDisabled = !HasSelection, Glyph = ArcIcons.Copy },
+            new(NcwTexts.Get(NcwTextKind.TerminalPaste), new RelayCommand(() => _ = PasteAsync())) { Glyph = Lucide.Geometry(LucideIconKind.ClipboardPaste) },
+            new(NcwTexts.Get(NcwTextKind.TerminalClear), new RelayCommand(Clear), SeparatorBefore: true) { Glyph = Lucide.Geometry(LucideIconKind.Eraser) },
+        ]);
+    }
+
+    public async Task PasteAsync()
     {
         if (_core is null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
         {

@@ -50,12 +50,13 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Rail = new RailViewModel(stores, Actions, () => Dialogs, () => Text, Projects);
         Panel = new ProjectPanelViewModel(stores, Actions, Projects, Sessions, () => Dialogs, () => Text);
         var inspectorServices = inspector ?? new InspectorServices(Files, Git, Review, Terminals, Subagents);
+        var images = new AttachmentImageSource(Attachments);
         Conversation = new ConversationViewModel(stores, Conversations, Subagents, Goals, clock ?? TimeProvider.System, lookups ?? new ComposerLookups(Files, Extensions.Commands),
             new AttachmentTrayViewModel(attachmentUploader ?? Attachments, () => Host.AttachmentPicker),
             new Ncw.Client.Widgets.WidgetHostContext(stores, Widgets, () => Launcher, () => WidgetConfirmations, clock),
-            new MessageActions(Devices, Sessions, Conversations), new AttachmentImageSource(Attachments), inspectorServices.Git,
-            new WorkflowActions(Devices, stores));
-        Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspectorServices);
+            new MessageActions(Devices, Sessions, Conversations), images, inspectorServices.Git,
+            new WorkflowActions(Devices, stores), Attachments);
+        Inspector = new InspectorViewModel(stores, clock ?? TimeProvider.System, inspectorServices, images, Attachments);
         // 文件在主工作区里作为标签页打开:文件页签只负责「点了哪个」,预览与编辑在标签里
         Workspace = new WorkspaceViewModel(stores, Sessions, inspectorServices.Files, () => Dialogs, () => Inspector.Text, () => Inspector.LocalFiles);
         Inspector.Files.Tabs = Workspace;
@@ -236,6 +237,14 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
                 return OpenInspectorTab(InspectorTabKind.Git);
             case AppCommand.OpenTerminal:
                 return OpenInspectorTab(InspectorTabKind.Terminal);
+            case AppCommand.Quit:
+                if (RequestExit is { } exit)
+                {
+                    exit();
+                    return true;
+                }
+
+                return false;
             default:
                 return false;
         }

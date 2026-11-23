@@ -116,6 +116,29 @@ public class ServicesDtoTests
         Assert.Equal(GoldenV1Services.Of(name), Convert.ToHexStringLower(Encode(Samples().Single(s => s.Name == name).Value)));
 
     [Fact]
+    public void A_media_capable_client_decodes_legacy_device_settings_and_a_legacy_patch()
+    {
+        var state = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1Services.SettingsState), PayloadShapes.GetShape<DeviceSettingsState>());
+        var update = FrameCodec.DecodePayload(Convert.FromHexString(GoldenV1Services.SettingsUpdate), PayloadShapes.GetShape<SettingsUpdateParams>());
+
+        Assert.Equal(new DeviceSettingsState(7, Settings()), state);
+        Assert.Null(update.Patch.Video);
+        Assert.Null(update.Patch.Audio);
+    }
+
+    [Fact]
+    public void A_media_settings_patch_distinguishes_a_selected_model_clear_and_no_change()
+    {
+        var shape = PayloadShapes.GetShape<SettingsUpdateParams>();
+        var write = new SettingsUpdateParams(new DeviceSettingsPatchDto(Video: new ModelPickDto("model", "provider"), Audio: ModelPickDto.None));
+
+        var read = FrameCodec.DecodePayload(FrameCodec.EncodePayload(write, shape), shape);
+
+        Assert.Equal(write, read);
+        Assert.Null(read.Patch.Image);
+    }
+
+    [Fact]
     public void A_settings_patch_keeps_absent_keys_distinct_from_null_values_on_the_wire()
     {
         var patch = FrameCodec.DecodePayload(

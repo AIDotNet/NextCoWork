@@ -28,6 +28,9 @@ public static partial class HistoryTransform
 
     public const string ImagePlaceholder = "[image omitted: the current model does not accept image input]";
 
+    /// <summary>上游以「请求本身不合法」拒掉了带这张图的那一轮;之后不再重发它(给模型看的,不是界面文字)。</summary>
+    public const string RejectedImagePlaceholder = "[image omitted: the provider rejected the request that included this image]";
+
     [GeneratedRegex("^[a-zA-Z0-9_-]{1,64}$")]
     private static partial Regex AnthropicToolId();
 
@@ -69,6 +72,7 @@ public static partial class HistoryTransform
         HashSet<string> currentCalls = [];
         HashSet<string> answered = [];
         var idMap = new Dictionary<string, string>();
+        var rejectedImages = TurnsRejectedWithImages(messages);
 
         for (var i = 0; i < messages.Count; i++)
         {
@@ -140,11 +144,11 @@ public static partial class HistoryTransform
                         continue;
                     }
 
-                    parts.Add(StripImages(result with { CallId = id }, target));
+                    parts.Add(StripImages(result with { CallId = id }, target, rejectedImages.Contains(i)));
                 }
                 else
                 {
-                    parts.Add(StripImages(part, target));
+                    parts.Add(StripImages(part, target, rejectedImages.Contains(i)));
                 }
             }
 
@@ -191,24 +195,53 @@ public static partial class HistoryTransform
         return message with { Parts = parts };
     }
 
-    private static Part StripImages(Part part, HistoryTarget target)
+    /// <summary>
+    /// 哪些 user 消息的图片不再重发(issue #200):紧挨在一条以 400 / 413 / 415 / 422 失败的助手消息之前、带着图片的那几条 user 消息。
+    /// 上游因为图片(格式、大小、模型不收图)拒掉请求时,失败的助手消息虽然被跳过,图片还留在历史里,之后每一轮都会被同样拒掉,
+    /// 整个会话就再也发不出去。限流、鉴权、5xx、网络错误不算:那些和图片无关,重试时图片应该还在。
+    /// </summary>
+    private static HashSet<int> TurnsRejectedWithImages(IReadOnlyList<Message> messages)
     {
-        if (target.SupportsImages)
+        var rejected = new HashSet<int>();
+        for (var i = 0; i < messages.Count; i++)
+        {
+            if (messages[i] is not { Role: Role.Assistant } failed
+                || failed.Parts.OfType<ErrorPart>().FirstOrDefault() is not { Error.Status: 400 or 413 or 415 or 422 })
+            {
+                continue;
+            }
+
+            for (var j = i - 1; j >= 0 && messages[j].Role != Role.Assistant; j--)
+            {
+                if (messages[j].Parts.Any(static p => p is ImagePart or ToolResultPart { Output.Images.Count: > 0 }))
+                {
+                    rejected.Add(j);
+                }
+            }
+        }
+
+        return rejected;
+    }
+
+    private static Part StripImages(Part part, HistoryTarget target, bool rejected = false)
+    {
+        if (target.SupportsImages && !rejected)
         {
             return part;
         }
 
+        var placeholder = target.SupportsImages ? RejectedImagePlaceholder : ImagePlaceholder;
         switch (part)
         {
             case ImagePart:
-                return new TextPart(ImagePlaceholder);
+                return new TextPart(placeholder);
             case ToolResultPart { Output.Images.Count: > 0 } result:
                 return result with
                 {
                     Output = result.Output with
                     {
                         Images = null,
-                        Content = result.Output.Content + "\n" + string.Join("\n", result.Output.Images!.Select(_ => ImagePlaceholder)),
+                        Content = result.Output.Content + "\n" + string.Join("\n", result.Output.Images!.Select(_ => placeholder)),
                     },
                 };
             default:

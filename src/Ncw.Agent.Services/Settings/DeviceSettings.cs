@@ -33,6 +33,8 @@ public sealed record DeviceSettings(
     ModelPick Completion,
     ModelPick InlineCompletionModel,
     ModelPick Image,
+    ModelPick Video,
+    ModelPick Audio,
     string DefaultPermissionMode,
     string ModelProposedGoals,
     bool AutoCompact,
@@ -77,7 +79,7 @@ public sealed record DeviceSettings(
     /// <summary>出厂值(2.x 的 <c>DEFAULT_SETTINGS</c>)。</summary>
     public static DeviceSettings Default { get; } = new(
         ModelPick.None, ModelPick.None, ModelPick.None, ModelPick.None, Inherit,
-        ModelPick.None, ModelPick.None, ModelPick.None,
+        ModelPick.None, ModelPick.None, ModelPick.None, ModelPick.None, ModelPick.None,
         "ask", "auto", true, DefaultMaxOutputTokens,
         PromptSuggestions: true, LocalCompletion: true, InlineCompletion: false, ImageGeneration: true,
         "system", DefaultGoalCheckinMinutes, DefaultUpstreamIdleSeconds, AccountRotation: true, Failover: false, "",
@@ -113,6 +115,8 @@ public sealed record DeviceSettings(
             Pick(root, "completionModel", "completionModelProviderId"),
             Pick(root, "inlineCompletionModel", "inlineCompletionModelProviderId"),
             Pick(root, "imageModel", "imageModelProviderId"),
+            Pick(root, "videoModel", "videoModelProviderId"),
+            Pick(root, "audioModel", "audioModelProviderId"),
             OneOf(Str(root, "defaultPermissionMode"), PermissionModes, d.DefaultPermissionMode),
             OneOf(Str(root, "modelProposedGoals"), ProposedGoalPolicies, d.ModelProposedGoals),
             !(root["contextManagement"] is JsonObject cm && cm["autoCompact"] is JsonValue ac && ac.TryGetValue<bool>(out var autoCompact) && !autoCompact),

@@ -169,6 +169,108 @@ public sealed class ThinkingAndPatchTests
         Assert.Equal(5000 + 4096, adapted["max_tokens"]!.GetValue<int>());
     }
 
+    // ───────────────────────── Claude 自适应思考(issue #202) ─────────────────────────
+
+    [Theory]
+    [InlineData("claude-opus-5-5", ClaudeOffMode.Omit)]
+    [InlineData("anthropic/claude-opus-5.5", ClaudeOffMode.Omit)]
+    [InlineData("claude-fable-5-2", ClaudeOffMode.Omit)]
+    [InlineData("claude-sonnet-5-5", ClaudeOffMode.BetweenTools)]
+    [InlineData("us.anthropic.claude-sonnet-5", ClaudeOffMode.Disabled)]
+    [InlineData("claude-opus-4-7", ClaudeOffMode.Disabled)]
+    [InlineData("claude-opus-4-6-20260101", ClaudeOffMode.Disabled)]
+    [InlineData("claude-haiku-5-5", ClaudeOffMode.Disabled)]
+    public void Adaptive_claude_models_are_recognised_by_name(string model, ClaudeOffMode off)
+    {
+        Assert.Equal(off, ClaudeThinking.For(model)!.Off);
+    }
+
+    [Theory]
+    [InlineData("claude-sonnet-4-5")]
+    [InlineData("claude-sonnet-4-20250514")]
+    [InlineData("claude-haiku-4-5")]
+    [InlineData("claude-opus-4-1")]
+    [InlineData("claude-3-5-sonnet-latest")]
+    [InlineData("gpt-6.1")]
+    public void Older_claude_models_keep_the_budget_dialect(string model)
+    {
+        Assert.Null(ClaudeThinking.For(model));
+    }
+
+    [Theory]
+    [InlineData(ThinkingMode.Budget)]
+    [InlineData(ThinkingMode.Effort)]
+    public void Claude_5_5_never_gets_budget_tokens_whatever_the_catalog_declared(ThinkingMode mode)
+    {
+        var config = new ThinkingConfig(mode);
+        var body = Body(("temperature", 0.5));
+
+        var adapted = ThinkingAdapter.Apply(body, Input(WireProtocol.Anthropic, config, ThinkingLevel.High, model: "claude-opus-5-5", maxOutput: 32_000));
+
+        Assert.Equal("adaptive", adapted["thinking"]!["type"]!.GetValue<string>());
+        Assert.Null(adapted["thinking"]!["budget_tokens"]);
+        Assert.Equal("summarized", adapted["thinking"]!["display"]!.GetValue<string>());
+        Assert.Equal("high", adapted["output_config"]!["effort"]!.GetValue<string>());
+        Assert.Null(adapted["temperature"]);
+    }
+
+    [Fact]
+    public void Auto_on_claude_turns_on_adaptive_thinking_without_forcing_an_effort()
+    {
+        var config = new ThinkingConfig(ThinkingMode.Effort);
+
+        var adapted = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.Auto, model: "claude-sonnet-5-5"));
+
+        Assert.Equal("adaptive", adapted["thinking"]!["type"]!.GetValue<string>());
+        Assert.Null(adapted["output_config"]);
+    }
+
+    [Fact]
+    public void Off_is_expressed_the_way_each_claude_model_accepts()
+    {
+        var config = new ThinkingConfig(ThinkingMode.Effort);
+        var efforts = new[] { ReasoningEffort.Low, ReasoningEffort.Medium, ReasoningEffort.High, ReasoningEffort.Max };
+
+        var opus55 = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.Off, model: "claude-opus-5-5", efforts: efforts));
+        var sonnet55 = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.Off, model: "claude-sonnet-5-5", efforts: efforts));
+        var opus48 = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.Off, model: "claude-opus-4-8", efforts: efforts));
+
+        // Opus 5.5 关不掉思考:不发 thinking,降到最低档。
+        Assert.Null(opus55["thinking"]);
+        Assert.Equal("low", opus55["output_config"]!["effort"]!.GetValue<string>());
+        // Sonnet 5.5 只接受 between_tools,且不能带别的字段。
+        Assert.Equal("between_tools", sonnet55["thinking"]!["type"]!.GetValue<string>());
+        Assert.Single(sonnet55["thinking"]!.AsObject());
+        Assert.Null(sonnet55["output_config"]);
+        Assert.Equal("disabled", opus48["thinking"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Unsupported_claude_efforts_are_clamped_instead_of_failing()
+    {
+        var config = new ThinkingConfig(ThinkingMode.Effort);
+
+        var minimal = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.Minimal, model: "claude-opus-5-5"));
+        var xhighOn46 = ThinkingAdapter.Apply(Body(), Input(WireProtocol.Anthropic, config, ThinkingLevel.XHigh, model: "claude-opus-4-6"));
+
+        Assert.Equal("low", minimal["output_config"]!["effort"]!.GetValue<string>());
+        Assert.Equal("high", xhighOn46["output_config"]!["effort"]!.GetValue<string>());
+        Assert.Null(xhighOn46["thinking"]!["display"]); // 4.6 默认就是 summarized
+    }
+
+    [Fact]
+    public void A_saved_patch_cannot_switch_an_explicit_off_back_to_disabled_on_opus_5_5()
+    {
+        var config = new ThinkingConfig(ThinkingMode.Effort);
+        var input = Input(WireProtocol.Anthropic, config, ThinkingLevel.Off, model: "claude-opus-5-5");
+        var patched = Body(("thinking", new JsonObject { ["type"] = "disabled" }));
+
+        var guarded = ThinkingAdapter.Enforce(patched, input);
+
+        Assert.Null(guarded["thinking"]);
+        Assert.Equal("low", guarded["output_config"]!["effort"]!.GetValue<string>());
+    }
+
     // ───────────────────────── 方言与白名单 ─────────────────────────
 
     [Fact]

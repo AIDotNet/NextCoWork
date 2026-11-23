@@ -100,6 +100,15 @@ public static class WireRequests
     /// </summary>
     private static ThinkingConfig? ThinkingConfigFor(LlmRequest request, ModelBinding binding, WireProtocol protocol)
     {
+        // 自适应思考的 Claude(4.6+,issue #202):目录 / 2.x 别名里的预算或开关声明对它们是错的(budget_tokens、disabled 会被 400),
+        // 一律按档位处理,具体线形由 ThinkingAdapter 按型号决定。显式声明不支持 / 总是思考的照旧。
+        if (protocol == WireProtocol.Anthropic && binding.Preset is AdapterPreset.Auto or AdapterPreset.Anthropic
+            && ClaudeThinking.For(binding.UpstreamModel) is not null
+            && binding.Thinking is not { Mode: ThinkingMode.Unsupported or ThinkingMode.Always })
+        {
+            return new ThinkingConfig(ThinkingMode.Effort, binding.Thinking?.DefaultEnabled ?? true, binding.Thinking?.DefaultEffort);
+        }
+
         if (binding.Thinking is { } declared)
         {
             return declared;

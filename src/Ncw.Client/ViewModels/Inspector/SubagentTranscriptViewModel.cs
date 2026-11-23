@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Ncw.Client.Actions;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Client.Transcript;
 
@@ -12,7 +14,8 @@ namespace Ncw.Client.ViewModels;
 /// <c>run/&lt;childRunId&gt;</c> 主题,逐字事件和主智能体走同一个归约函数),行由 <see cref="TranscriptBuilder"/> 从 Store 派生——和主对话同一条路径,不另起一套。
 /// 转录里的审批 / 目标 / 压缩这类行不在只读面板里显示;嵌套的子代理卡片显示为一行(没有操作)。
 /// </summary>
-public sealed partial class SubagentTranscriptViewModel(SessionRef child, string title, Func<string, string> deviceName) : ObservableObject
+public sealed partial class SubagentTranscriptViewModel(SessionRef child, string title, Func<string, string> deviceName, IImageSource? images = null,
+    AttachmentActions? mediaAttachments = null) : ObservableObject
 {
     private static readonly RelayCommand<SubagentRef> NoStop = new(static _ => { }, static _ => false);
 
@@ -76,7 +79,7 @@ public sealed partial class SubagentTranscriptViewModel(SessionRef child, string
         UserRow r => new UserRowViewModel(r),
         AssistantRow r => new AssistantRowViewModel(r),
         ThinkingRow r => new ThinkingRowViewModel(r),
-        ToolRow r => new ToolRowViewModel(r, deviceName),
+        ToolRow r => new ToolRowViewModel(r, deviceName, deviceId: Child.DeviceId, images: images, attachments: mediaAttachments),
         SubagentRow r => new SubagentRowViewModel(r, NoStop, new RelayCommand<SubagentRef>(static _ => { })),
         ErrorRow r => new ErrorRowViewModel(r, new AsyncRelayCommand(static () => Task.CompletedTask, static () => false)),
         _ => throw new InvalidOperationException($"Unexpected row {row.GetType().Name}"),

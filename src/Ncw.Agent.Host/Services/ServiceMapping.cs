@@ -83,7 +83,8 @@ internal static class ServiceMapping
         new ProxySettingsDto(s.Proxy.Enabled, s.Proxy.Mode, s.Proxy.Scheme, s.Proxy.Host, s.Proxy.Port, s.Proxy.AuthEnabled, s.Proxy.AuthUser, s.Proxy.Bypass, hasProxyPassword),
         new GatewaySettingsDto(s.Gateway.Enabled, s.Gateway.AllowRemote, s.Gateway.PreferredPort),
         new DataSettingsDto(s.Data.BackupDirectory, s.Data.BackupFrequency),
-        new PersonalizationSettingsDto(s.Personalization.Name, s.Personalization.Background, s.Personalization.Instructions));
+        new PersonalizationSettingsDto(s.Personalization.Name, s.Personalization.Background, s.Personalization.Instructions),
+        Video: s.Video.IsSet ? ToDto(s.Video) : null, Audio: s.Audio.IsSet ? ToDto(s.Audio) : null);
 
     public static DeviceSettingsPatch FromDto(DeviceSettingsPatchDto p) => new()
     {
@@ -95,6 +96,8 @@ internal static class ServiceMapping
         Completion = p.Completion is null ? null : FromDto(p.Completion),
         InlineCompletionModel = p.InlineCompletionModel is null ? null : FromDto(p.InlineCompletionModel),
         Image = p.Image is null ? null : FromDto(p.Image),
+        Video = p.Video is null ? null : FromDto(p.Video),
+        Audio = p.Audio is null ? null : FromDto(p.Audio),
         DefaultPermissionMode = p.DefaultPermissionMode,
         ModelProposedGoals = p.ModelProposedGoals,
         AutoCompact = p.AutoCompact,

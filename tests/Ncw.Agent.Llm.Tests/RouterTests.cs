@@ -1176,6 +1176,28 @@ public sealed class RouterTests
     }
 
     [Fact]
+    public async Task Claude_5_5_gets_adaptive_thinking_even_when_the_catalog_declared_a_budget()
+    {
+        // issue #202:目录对一手 Anthropic 推理模型推出 Budget 声明,Opus 5.5 收到 budget_tokens / disabled 都会 400。
+        var h = new Harness();
+        h.Config.Add("a", WireProtocol.Anthropic, 1, "claude-opus-5-5", configure: b => b.With(x => x with { Thinking = new ThinkingConfig(ThinkingMode.Budget, DefaultEnabled: false) }));
+        h.Store.Put("provider:a", "k");
+        h.Build();
+        h.Upstream.Enqueue(() => AnthropicText()).Enqueue(() => AnthropicText()).Enqueue(() => AnthropicText());
+
+        await h.RunAsync(Msg.Request([Msg.User("hi")], thinking: ThinkingLevel.High, maxOutput: 32_000));
+        await h.RunAsync(Msg.Request([Msg.User("hi")], thinking: ThinkingLevel.Auto, maxOutput: 32_000));
+        await h.RunAsync(Msg.Request([Msg.User("hi")], thinking: ThinkingLevel.Off, maxOutput: 32_000));
+
+        var high = h.Upstream.Requests[0].Json;
+        Assert.Equal("adaptive", high.Obj("thinking").Str("type"));
+        Assert.Equal("high", high.Obj("output_config").Str("effort"));
+        Assert.False(h.Upstream.Requests[1].Json.TryGetProperty("thinking", out _)); // Auto + 目录默认关:什么都不发,用模型默认
+        Assert.False(h.Upstream.Requests[2].Json.TryGetProperty("thinking", out _)); // 关不掉:不发 disabled
+        Assert.Equal("low", h.Upstream.Requests[2].Json.Obj("output_config").Str("effort"));
+    }
+
+    [Fact]
     public async Task A_legacy_binding_without_a_thinking_declaration_still_honours_an_explicit_off_on_anthropic()
     {
         var h = OnlyA();
@@ -1209,7 +1231,7 @@ public sealed class RouterTests
 
     private sealed class FakeImages : IImageResolver
     {
-        public ValueTask<string> ResolveAsync(string dataRef, string mime, CancellationToken ct) =>
+        public ValueTask<string> ResolveAsync(string dataRef, string mime, RequestContext context, CancellationToken ct) =>
             dataRef.Contains("missing", StringComparison.Ordinal)
                 ? throw new ImageInputException(AgentError.Create(AgentErrorCode.Provider, "attachment missing", false, messageKey: LlmErrorKeys.ImageInput))
                 : ValueTask.FromResult($"data:{mime};base64,UkVTT0xWRUQ=");

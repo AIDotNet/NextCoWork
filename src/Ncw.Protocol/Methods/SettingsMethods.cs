@@ -69,7 +69,9 @@ public sealed record DeviceSettingsDto(
     ProxySettingsDto Proxy,
     GatewaySettingsDto Gateway,
     DataSettingsDto Data,
-    PersonalizationSettingsDto Personalization);
+    PersonalizationSettingsDto Personalization,
+    ModelPickDto? Video = null,
+    ModelPickDto? Audio = null);
 
 /// <summary><c>settings</c> 主题的状态,同时是 <c>settings.changed</c> 的数据(首帧与事件同一个类型,AGENTS.md §3 规则 5)。<see cref="Rev"/> 单调,控制端只收不更旧的。</summary>
 public sealed record DeviceSettingsState(long Rev, DeviceSettingsDto Settings);
@@ -117,7 +119,9 @@ public sealed record DeviceSettingsPatchDto(
     ProxySettingsPatchDto? Proxy = null,
     GatewaySettingsPatchDto? Gateway = null,
     DataSettingsPatchDto? Data = null,
-    PersonalizationPatchDto? Personalization = null);
+    PersonalizationPatchDto? Personalization = null,
+    ModelPickDto? Video = null,
+    ModelPickDto? Audio = null);
 
 public sealed record SettingsUpdateParams(DeviceSettingsPatchDto Patch);
 

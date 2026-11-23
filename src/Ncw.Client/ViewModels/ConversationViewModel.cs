@@ -25,6 +25,7 @@ public sealed partial class ConversationViewModel : ObservableObject
     private readonly GoalActions? _goals;
     private readonly IMessageCommands? _messages;
     private readonly IImageSource? _images;
+    private readonly AttachmentActions? _mediaAttachments;
     private readonly IGitCommands? _git;
     private readonly IWorkflowCommands? _workflows;
     private SessionRef? _workflowsLoadedFor;
@@ -44,11 +45,12 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     public ConversationViewModel(ClientStores stores, IConversationCommands commands, SubagentActions? subagents = null, GoalActions? goals = null, TimeProvider? clock = null, IComposerLookups? lookups = null,
         AttachmentTrayViewModel? attachments = null, Ncw.Client.Widgets.WidgetHostContext? widgets = null, IMessageCommands? messages = null, IImageSource? images = null, IGitCommands? git = null,
-        IWorkflowCommands? workflows = null)
+        IWorkflowCommands? workflows = null, AttachmentActions? mediaAttachments = null)
     {
         _messages = messages;
         _git = git;
         _images = images;
+        _mediaAttachments = mediaAttachments;
         _widgets = widgets;
         _workflows = workflows;
         _stores = stores;
@@ -263,11 +265,13 @@ public sealed partial class ConversationViewModel : ObservableObject
         var info = workspace.Projects.GetValueOrDefault(project);
         var fallback = info is null ? null : new EnvRefDto(project.DeviceId, info.EnvironmentName ?? "local", info.EnvironmentName ?? "local", info.Environment == EnvironmentKind.Ssh ? "ssh" : "local");
         // 只在这份转录的输入真的变了时重新派生 + 对齐:别的会话在流式、会话列表 / 设备 / 模型候选变了,都会走到这里,但和这份转录无关
-        var inputs = TranscriptBuilder.Inputs.Of(conversations, session, fallback, unknown);
+        var activity = SessionActivityView.Of(sessionId, device?.Index, connection);
+        var sessionRunning = activity == SessionActivity.Running;
+        var inputs = TranscriptBuilder.Inputs.Of(conversations, session, fallback, unknown, sessionRunning);
         var rows = _lastRows;
         if (_forceRebuild || !inputs.SameAs(_lastInputs))
         {
-            rows = TranscriptBuilder.Build(conversations, session, fallback, _clock.GetUtcNow(), unknown, groupFinishedWork: true);
+            rows = TranscriptBuilder.Build(conversations, session, fallback, _clock.GetUtcNow(), unknown, groupFinishedWork: true, sessionRunning: sessionRunning);
             _lastInputs = inputs;
             _lastRows = rows;
             _lastUserText = rows.OfType<UserRow>().LastOrDefault()?.Text ?? _lastUserText;
@@ -277,8 +281,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         _forceRebuild = false;
         TryFocus();
 
-        var activity = SessionActivityView.Of(sessionId, device?.Index, connection);
-        IsRunning = activity == SessionActivity.Running;
+        IsRunning = sessionRunning;
         CanEditHistory = _messages is not null && !unknown && !IsRunning && device?.Role is not "viewer";
         MarkRegenerable();
         NeedsTick = !unknown && rows.OfType<SubagentRow>().Any(r => r.View.IsActive);
@@ -561,7 +564,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         UserRow r => new UserRowViewModel(r, ImagesOf(r)),
         AssistantRow r => new AssistantRowViewModel(r),
         ThinkingRow r => new ThinkingRowViewModel(r),
-        ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot, OpenToolFile),
+        ToolRow r => new ToolRowViewModel(r, DeviceName, ProjectRoot, OpenToolFile, _session?.DeviceId, _images, _mediaAttachments),
         WorkGroupRow r => new WorkGroupRowViewModel(r, _expandedGroups.Contains(r.Key), OnWorkGroupToggled),
         WidgetRow r => new WidgetRowViewModel(r, () => _session ?? default, _widgets, DeviceName),
         WorkflowRow r => CreateWorkflowCard(r),

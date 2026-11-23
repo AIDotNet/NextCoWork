@@ -16,6 +16,7 @@ internal static class ServiceHandlers
     public static void Register(MethodRouter router, Func<DeviceServices> services)
     {
         // settings
+        router.DeclareCapability(Capabilities.SettingsMedia);
         router.Handle(SettingsMethods.Get, (_, _, _) => ServiceMapping.Guard(() => services().SettingsState()));
         router.Handle(SettingsMethods.Update, (p, ctx, _) => ServiceMapping.Guard(() =>
         {

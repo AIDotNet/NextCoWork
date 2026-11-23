@@ -728,8 +728,27 @@ public sealed class LlmRouter : ILlmClient
             case CredentialAuthException auth:
                 return new AttemptOutcome(false, auth.Error, sawContent);
             default:
-                return new AttemptOutcome(false, AgentError.Create(AgentErrorCode.Network, $"Failed to connect to '{c.Provider.Name}': {e.Message}"), sawContent);
+                return new AttemptOutcome(false, AgentError.Create(AgentErrorCode.Network, $"Failed to connect to '{c.Provider.Name}': {ExceptionChain(e)}"), sawContent);
         }
+    }
+
+    /// <summary>
+    /// 异常连同内层原因:HttpRequestException 自己只有「An error occurred while sending the request」,
+    /// 真正的原因(DNS、连接被拒、TLS 握手、代理)在 InnerException 里(issue #200)。
+    /// </summary>
+    public static string ExceptionChain(Exception e)
+    {
+        var messages = new List<string>();
+        for (var current = e; current is not null && messages.Count < 4; current = current.InnerException)
+        {
+            var message = current.Message.Trim();
+            if (message.Length > 0 && !messages.Any(m => m.Contains(message, StringComparison.Ordinal)))
+            {
+                messages.Add(message);
+            }
+        }
+
+        return string.Join(" → ", messages);
     }
 
     private static async Task DrainAsync(HttpResponseMessage response, CancellationToken ct)
@@ -759,13 +778,13 @@ public sealed class LlmRouter : ILlmClient
     {
         var target = HistoryTarget.For(protocol, c.Provider.Id, c.Binding.UpstreamModel, c.Binding.SupportsImages);
         var messages = HistoryTransform.Prepare(request.Messages, target);
-        messages = await ResolveImagesAsync(messages, ct).ConfigureAwait(false);
+        messages = await ResolveImagesAsync(messages, context, ct).ConfigureAwait(false);
         var prepared = request with { Messages = messages };
 
         return WireRequests.EncodeBody(c.Provider, c.Binding, prepared, protocol, context, decoration);
     }
 
-    private async ValueTask<IReadOnlyList<Message>> ResolveImagesAsync(IReadOnlyList<Message> messages, CancellationToken ct)
+    private async ValueTask<IReadOnlyList<Message>> ResolveImagesAsync(IReadOnlyList<Message> messages, RequestContext context, CancellationToken ct)
     {
         if (_images is null || !messages.Any(HasUnresolvedImage))
         {
@@ -781,7 +800,7 @@ public sealed class LlmRouter : ILlmClient
                 switch (part)
                 {
                     case ImagePart { DataRef: var r } image when IsRef(r):
-                        parts.Add(image with { DataRef = await _images.ResolveAsync(r, image.Mime, ct).ConfigureAwait(false) });
+                        parts.Add(image with { DataRef = await _images.ResolveAsync(r, image.Mime, context, ct).ConfigureAwait(false) });
                         break;
                     case ToolResultPart { Output.Images: { } images } result when images.Any(i => IsRef(i.DataRef)):
                     {
@@ -789,7 +808,7 @@ public sealed class LlmRouter : ILlmClient
                         foreach (var image in images)
                         {
                             resolved.Add(IsRef(image.DataRef)
-                                ? image with { DataRef = await _images.ResolveAsync(image.DataRef, image.Mime, ct).ConfigureAwait(false) }
+                                ? image with { DataRef = await _images.ResolveAsync(image.DataRef, image.Mime, context, ct).ConfigureAwait(false) }
                                 : image);
                         }
 

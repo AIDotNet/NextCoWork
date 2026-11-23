@@ -109,14 +109,14 @@ public static class Attachments
     {
         ["image/png"] = ".png", ["image/jpeg"] = ".jpg", ["image/gif"] = ".gif", ["image/webp"] = ".webp", ["image/svg+xml"] = ".svg", ["application/pdf"] = ".pdf",
         ["text/plain"] = ".txt", ["text/markdown"] = ".md", ["application/json"] = ".json", ["application/zip"] = ".zip",
-        ["video/mp4"] = ".mp4", ["video/webm"] = ".webm", ["video/quicktime"] = ".mov", ["video/x-matroska"] = ".mkv",
+        ["video/mp4"] = ".mp4", ["video/webm"] = ".webm", ["video/quicktime"] = ".mov", ["video/x-matroska"] = ".mkv", ["audio/mpeg"] = ".mp3",
     };
 
     private static readonly Dictionary<string, string> MimeByExt = new(StringComparer.Ordinal)
     {
         ["png"] = "image/png", ["jpg"] = "image/jpeg", ["jpeg"] = "image/jpeg", ["jfif"] = "image/jpeg", ["gif"] = "image/gif", ["webp"] = "image/webp", ["svg"] = "image/svg+xml",
         ["pdf"] = "application/pdf", ["txt"] = "text/plain", ["md"] = "text/markdown", ["json"] = "application/json", ["zip"] = "application/zip",
-        ["mp4"] = "video/mp4", ["m4v"] = "video/mp4", ["webm"] = "video/webm", ["mov"] = "video/quicktime", ["mkv"] = "video/x-matroska",
+        ["mp4"] = "video/mp4", ["m4v"] = "video/mp4", ["webm"] = "video/webm", ["mov"] = "video/quicktime", ["mkv"] = "video/x-matroska", ["mp3"] = "audio/mpeg",
     };
 
     /// <summary>上传与发送共用的图片白名单;MIME 别名(<c>image/jpg</c>、<c>image/x-png</c>……)不能让预览可见的图片在发送时被拒。</summary>

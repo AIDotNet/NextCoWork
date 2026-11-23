@@ -137,6 +137,9 @@
 **检查器各页签的实现约定**
 
 - **事实在设备,镜像只有一份**:git 概览(`ClientStores.Git`)、变更集摘要(`Review`)、终端元数据(`Terminals`)是 Store 里的镜像,页签只派生;文件树、文件内容、diff、搜索结果是页签自己的纯 UI 状态(`files.*`、`git.diff`、`review.fileDiff` 的结果直接返回给调用方,不进 Store)。终端输出字节也不进 Store,经 `ITerminalSink` 的 UI 适配(`TerminalOutputRelay`)直接写进终端控件。
+- **终端的复制 / 粘贴 / 清屏**(issue #194):左键拖动选中;⌘C / Ctrl+Shift+C 复制(没有选中也不再落成 ^C),Windows / Linux 上有选中时 Ctrl+C 也是复制(和 Windows Terminal 一样);
+  右键菜单「复制(有选中才可点)/ 粘贴 / 清屏」(`NcwTerminal`,`NcwMenus`)。清屏只动显示面:清掉本地屏幕和回滚,再给 shell 发 Ctrl+L 重画提示符(cmd 不认,不发);
+  设备上的输出缓冲不清,换页签 / 重连后按设备缓冲重放。Windows / Linux 上焦点在终端里时,单独的 Ctrl+字母交给 shell(Ctrl+L、Ctrl+K、Ctrl+W…),不被应用快捷键吃掉。
 - **文件预览 / 编辑(文件标签页)**:点文件树 / 搜索结果里的文件,在主工作区复用当前项目的临时预览标签(已打开就切过去;双击 / 编辑固定),盖在会话上;标签上有未保存的修改时显示一个点,关闭前先确认。文件页签只负责「点了哪个」(`IFileTabHost`,由 `WorkspaceViewModel` 实现),重命名 / 删除时关掉对应标签。哪个文件标签在前台是按项目记的纯 UI 状态,选中了别的会话就让位给会话。预览自己实现:Markdown 默认渲染、可切源码(编辑时一定是源码),状态栏显示语言 / 行数 / 大小,「更多」菜单有复制路径 / 显示 / 用默认程序打开 / 另存为。内容规则:≤ 2 MiB 的 UTF-8 文本一次读完,`Arc.CodeBlock` 只读着色显示;编辑用多行输入框(没有 Arc 的代码编辑组件),保存带读到的 `Revision`,对不上(`files.conflict`)时不丢编辑内容,让用户选「重新载入」或「保留我的修改」;更大的文本按 256 KiB 一块 `files.readRange` 读,只读;二进制 / 非 UTF-8 / 过大只提示,可「另存为」;图片(≤ 16 MiB)显示。「在文件管理器中显示 / 用默认程序打开 / 另存为 / 复制路径」是客户端本机的动作(`ILocalFiles`),只对「本机设备 + 本机环境」的项目开放「显示 / 打开」。
 - **终端**:本机和 SSH 项目同一条握手路径。键盘输入「没有写在途就立刻发,写在途期间的输入合成下一个命令」(`TerminalInputPump`,单次 ≤ 64 KiB,写失败丢弃攒着的输入而不是重放),大小变化只发最新的(`TerminalResizePump`)。设备断开时标签是「未知」(不判成结束、不接受输入、没有计时),重连后由连接层按游标续传(补发错过的批,续不上就整个缓冲重置显示);已退出的终端终态压过一切。
 - **子代理转录**:点开才订阅子会话(子 Run 还在跑时再订阅 `run/<childRunId>`),行由和主对话同一个 `TranscriptBuilder` 从 Store 派生;只靠回执重建的旧卡片(没有子会话 id)点不开,给明确的提示而不是静默没反应。
@@ -270,7 +273,7 @@ record ProjectAppearance(ProjectRef Ref, string? Icon, string? Color, string? Al
   - **重新生成**:AI 回复的工具条上,只出现在**最近一轮的最后一段、已写完**的回复上(`MarkRegenerable`;更早的回复后面还有对话,重跑会把后面全部截掉)。它和「编辑后重新运行」是同一个入口,提问的文字和附件原样重发,旧回复被截断移除;重发失败时历史已经截断,原提问放回输入框。
   - **重跑带上原附件**:编辑后重新运行 / 重新生成要用同样的输入重发,所以从原消息还原附件(`MessageInputs.FilesOf`:图片 → 附件引用,`file_ref` → 项目文件引用)。Agent 侧为此改了一处:**为重发而截断时**(`sessions.editMessage` 的 `truncate:true`),被移除消息的会话附件**降回草稿**而不是随消息级联删除(`IMessageWriteObserver.OnMessagesRemoving`),文件和 `ncw://` 引用都保留,新消息提交时重新认领;删除一轮 / 只改文字不受影响。「引用别的消息附件」的 `:managed:` 行直接删。
   - **图片缩略图与灯箱**:用户消息里的图片显示 112px 缩略图(`UserRowViewModel.Images`),**行滚进视野才向设备取字节**(`AttachedToVisualTree` → `ImageThumbViewModel.EnsureLoadedAsync`,虚拟化列表只实例化视野附近的行);引用是 `data:` URL(本机解码)或 `ncw://` 附件(`attachments.read` 分块,单张 ≤ 32 MiB,成功的结果按设备 + 引用缓存最多 32 张,失败不缓存)。加载中转圈,失败显示「无法加载图片」并可点击重试。点缩略图进灯箱(盖住对话区,点空白 / 关闭 / Esc 关,打开期间 WebView 小组件让出空域)。解码用 `Bitmap.DecodeToWidth`(缩略图 320、灯箱 1600),不把原图整张解成大位图。字节不进 Store;`Ncw.Client` 不依赖 Avalonia,位图转换在 `ImageBytesConverter`。取不到引用时(旧快照)退化成「N 张图片」。
-  - **没做**:回滚到这一轮(`review.undo`,要先定「只回代码 / 只回对话」的交互)、灯箱里的「另存为 / 复制图片」、助手回复里生成图片的显示。
+  - **没做**:回滚到这一轮(`review.undo`,要先定「只回代码 / 只回对话」的交互)、灯箱里的「另存为 / 复制图片」。
 - **输入框**的状态机是纯函数 `ComposerLogic`:空闲时发送;运行中有文字则排队(`queue.enqueue`)或「立即插话」(`runs.steer`),没文字则停止;已排队的消息可以逐条「插话」(`queue.promote` 开关)或移除;
   设备断开 / 只读角色 / 没有模型时不能发送。发送失败不丢草稿。模型候选来自设备算好的 `providers.models.list`(含上下文窗口、图片 / 思考能力,停用的显示为不可用),
   权限档位 `full` 只有 owner 可选,思考档位随模型声明的强度收窄。`@` 文件引用出 `files.suggest` 的候选;`/` 斜杠命令见上文「输入区」(内置本地动作 + 设备命令清单)。
@@ -306,6 +309,7 @@ record ProjectAppearance(ProjectRef Ref, string? Icon, string? Color, string? Al
   **差异**:计划批准目前只有「批准 / 要求修改 / 驳回」,「在新会话中批准执行」随计划执行入口一起做。
 - **标签栏**现在有会话标签和文件标签(打开了哪些标签是按项目记的纯 UI 状态);终端、Diff 标签随各自功能加入。
 - **工具调用行**:转录里的工具调用不是卡片,是一行文字,严格单行(图标 | 工具名:至少 44、至多 160,常见短名各行对齐,`visualize_read_me` / MCP 工具这类长名不被截成「visuali…」| 目标:路径是文件名在前、目录淡色在后,命令取第一行 | 改动量 · 状态 · 环境 · 箭头,靠右)。
+  - **生成媒体**:图片、视频、音频结果不显示通用工具名称或扳手行，直接呈现媒体或对应状态。图片用 `NcwImageReveal`（Arc Special），无可靠进度时不估算步数；点击成品或「查看图片」打开大图，可复制原图到系统剪贴板或保存原始附件。视频用 Arc `VideoPlayer`，有原生播放后端的平台按需读取会话附件、不自动播放；仍可另存为。音频保留状态和「另存为」。媒体只经 `attachments.read` 读取，不自动加载外部 URL；读取失败可重试但不会重跑生成。媒体行不折进「工作区」。
   目标是 `*` 列里的**一个** `TextBlock`(文件名与目录是两个 `Run`,整体截断):此前文件名放在嵌套网格的 `Auto` 列,按内容宽度量,长命令会画到右侧的状态 / 环境标识上面(两段文字叠在一起)。执行环境标识(AGENTS.md §5)只在**非本机环境**(SSH 等)的行上画;默认的本机环境不画(每行都写「本机 · local」是噪音),它在整行的悬停提示里。结果一律默认收起(包括失败的,失败只把名称和目标标红),有摘要的才有展开箭头,点开在左侧一条线的缩进块里看。
 - **「工作区」分组**(参考 Codex 的「已处理」折叠):一轮(一条用户消息到下一条)**全部完成**之后,除最后一段回复文字以外的操作——思考、工具调用、子代理卡片与汇报、中间的文字——收成一行「工作区 · N 个操作(· M 个失败)」,默认收起,点开在下面平铺出成员(缩进一格)。
   - **派生在 `TranscriptBuilder`**(`groupFinishedWork: true`,只有主对话打开;子代理转录不分组):表头是 `WorkGroupRow`(`Members` / `Actions` / `Failed` 三个数,Client 不产出界面文字),它后面紧跟 `Members` 行就是成员。转录**仍然是平铺的**——面板的行高估算、跟随最新、容器回收都按平铺行工作,不做嵌套。
@@ -949,8 +953,11 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 - **平台**(`Ncw.Desktop/DesktopAttention.cs`):macOS = Dock 角标、Dock 弹跳一次、`NSUserNotificationCenter` 系统通知(委托是运行时建的 NSObject 子类,`UnmanagedCallersOnly` 回调;只有打成 .app 有 bundle identifier 时系统才给发,`dotnet run` 的开发进程如实报告不支持);
   Windows = 任务栏闪烁(`FlashWindowEx`),系统通知和角标没做(要 AUMID + WinRT toast),如实报告;Linux = 有 `notify-send` 就用它(点通知回不到具体条目)。Windows / Linux 没有真机验证。
 - **托盘(菜单栏)图标**:Avalonia `TrayIcon`,菜单里有「打开」「N 项等你处理」(= ⌘J)「M 个任务运行中」「部分设备未连接」「新建会话」「通知设置」「退出」。
+  macOS / Linux 的托盘菜单是系统菜单;**Windows 上 Avalonia 用自带控件画**(`TrayPopupRoot` 窗口 + `MenuFlyoutPresenter` + `NativeMenuItemPresenter`(样式键 `MenuItem`)+ `Separator`)。
+  Arc 给这三个控件的主题没有模板,菜单收成 0×0,右键「没反应」、也就退不出去(issue #200);`Themes/NcwTrayMenuTheme.axaml` 补上它们的模板(Arc token,随 Ncw.UI 的 Arc 资产包加载),
+  回归 `TrayMenuThemeTests` 按 Win32 的同样结构搭一份并点「退出」。另有不依赖托盘的退出入口:`AppCommand.Quit`(命令面板「退出 NextCoWork」,默认 Mod+Q)。
 - **关窗后继续运行**(D1 的好处终于能被用户用上):托盘开着(默认)时,点窗口的关闭按钮只是藏起窗口(`WindowCloseReason.WindowClosing` 且不是程序关的),`ShutdownMode` 改成 `OnExplicitShutdown`,本机 Agent 照常执行;
-  从托盘菜单、Dock 图标(`ActivationKind.Reopen`)、第二个实例的「回到前台」再打开;真正退出用托盘菜单的「退出」或 ⌘Q(应用退出、系统关机这类关闭照常进行)。关掉托盘开关时窗口若藏着会立刻回来,关窗回到「退出应用」。
+  从托盘菜单、Dock 图标(`ActivationKind.Reopen`)、第二个实例的「回到前台」再打开;真正退出用托盘菜单的「退出」、⌘Q / Ctrl+Q 或命令面板的「退出 NextCoWork」(应用退出、系统关机这类关闭照常进行)。关掉托盘开关时窗口若藏着会立刻回来,关窗回到「退出应用」。
 - **设置 · 本应用 · 通知**:三类系统通知、角标、托盘各一个开关(`UiPrefs.Attention`,缺省全开);做不到的平台如实写明。
 
 测试:`Ncw.Client.Tests/AttentionTests.cs`(规则、基线、去重、角标随开关、点通知打开会话)、`Ncw.UI.Tests/AttentionUiTests.cs`(文字、转发给宿主、通知设置页截图 `settings-notifications-*`)。
@@ -972,8 +979,14 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
 
 - **错误码对上了**:Agent 写进消息和 Run 终态的错误码是 `MessageCodec.CodeName` 那一套(`auth` / `rate_limit` / `context_length` / `network` / `provider` / `cache_unsupported` / `no_healthy_provider` / `conflict` / `tool_failed` / `aborted`),
   界面原来只认 `rate_limited` / `context_overflow` 两个(对不上),其余一律把设备的英文诊断原样显示。现在 `ErrorTextConverter.Text(code, messageKey)` 每个码一句人话(早期的别名照认,`run.*` 消息 key 也翻),认不出来给通用说明;
-  原文(错误码 · 诊断串)收在卡片的「详情」里,可选中复制。
+  原文(错误码 · 诊断串)收在卡片的「详情」里,可选中复制;上游给了 HTTP 状态码时一并显示(`provider · HTTP 400 · …`)。
+  诊断串尽量带上真正的原因(issue #200):聚合网关只给「Upstream rejected the request」这类套话时,错误对象里 message 以外的字段(如 OpenRouter 的 `metadata.raw`)截断后附在后面;
+  连接失败带上内层异常(DNS / 拒绝连接 / TLS),不只是「An error occurred while sending the request」。
+- **一张图不再毒死整个会话**(issue #200):带图片的一轮被上游以 400 / 413 / 415 / 422 拒掉后,之后的请求里那几条 user 消息的图片换成占位文字(`HistoryTransform`),
+  不然图片每轮都被重发、每轮都被同样拒掉;限流、鉴权、5xx、网络错误不算(重试时图片还在)。
 - **同一次失败只画一张**:失败的 Run 会把错误写进最后一条助手消息(持久化的 error 块),Run 终态也带着它;派生转录时(`TranscriptBuilder`)紧挨着的那条消息错误让给 Run 的那一张(它能重试)。Run 的那一张**只给这个会话最近的一个 Run**:之后又跑了 Run(成功或还在跑),旧的失败只剩消息里的 error 块、留在它发生的位置,不再钉在转录末尾(Store 不清理收口的 Run);收口的 Run 镜像里没落库的调用(被丢弃的消息、被改写的历史)也不再画到末尾。
+- **运行中一定有动静**(issue #200):`TranscriptBuilder` 的「生成中」状态行除了看 Run 镜像,也看设备的活动 Run 表(`SessionActivityView`,和停止按钮同一个真源),
+  队列 / 目标续跑 / 别的控制端发起、Run 镜像还没到的那一轮也有;重试 / 压缩 / 「运行中的工具」只看还在跑的 Run,收口时残留的状态不再压住之后每一轮的「生成中」,也不会让「正在重试」钉在空闲会话上;只有空白的流式文字不算「已经在动」。
 - **能做的事**:可重试的有「重试」;`auth` / `no_healthy_provider` / `cache_unsupported` 是供应商配置问题,给「供应商设置」直达(`ConversationViewModel.ProviderSettingsRequested` → 外壳打开设置的「模型与供应商」)。
 - **没有可用的模型**:输入框里那行提示旁边直接给「添加供应商」按钮(同一个意图)。
 - **空会话(2026-11-17 改版:输入框居中)**:空会话时**输入框在视觉中心**(大多数人一上来就打字,视线落点就是输入框),发出第一条消息后回到底部,和有内容的会话一样。

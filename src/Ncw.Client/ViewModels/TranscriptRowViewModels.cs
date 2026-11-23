@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Ncw.Client.Actions;
+using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Client.Transcript;
 using Ncw.Client.Widgets;
@@ -207,7 +209,8 @@ public sealed record DiffLine(string Text, bool IsAdded, bool IsRemoved);
 /// 一次工具调用(转录里的一行文字)。结果一律默认不展示(包括失败的:失败只用红色标出):
 /// 展开看摘要(diff 行 / 命令输出前几行)是纯 UI 状态,用户点开才看。状态、环境标识、统计来自派生行。
 /// </summary>
-public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName, Func<string?>? projectRoot = null, Action<string>? openFile = null) : RowViewModel<ToolRow>(row)
+public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> deviceName, Func<string?>? projectRoot = null, Action<string>? openFile = null,
+    string? deviceId = null, IImageSource? images = null, AttachmentActions? attachments = null) : RowViewModel<ToolRow>(row)
 {
     [ObservableProperty] public partial bool IsExpanded { get; set; }
 
@@ -285,6 +288,65 @@ public sealed partial class ToolRowViewModel(ToolRow row, Func<string, string> d
     public string TargetDirSuffix => TargetDir is { Length: > 0 } dir ? "  " + dir : "";
 
     public ToolKind Kind => Row.Kind;
+
+    public bool IsMedia => Row.MediaKind is not null;
+
+    private bool IsVideoMedia => Row.MediaKind == GeneratedMediaKind.Video;
+
+    public ToolRowViewModel? VideoPreview => IsVideoMedia && CanSaveMedia ? this : null;
+
+    public bool IsMediaUnknown => Row.Status == ToolRowStatus.Unknown;
+
+    public bool ShowsMediaActions => IsMedia && (CanViewMediaImage || CanSaveMedia || ShowsEnv);
+
+    private bool IsAudioMedia => Row.MediaKind == GeneratedMediaKind.Audio;
+
+    public bool HasGenericFailureLine => !IsMedia && HasFailureLine;
+
+    public bool ShowsNonImageMediaStatus => (IsVideoMedia || IsAudioMedia) && !IsDone;
+
+    public bool IsGeneratingVideo => IsVideoMedia && IsRunning && !IsQueued;
+
+    public bool IsGeneratingAudio => IsAudioMedia && IsRunning && !IsQueued;
+
+    public bool IsVideoGenerationFailed => IsVideoMedia && IsFailed;
+
+    public bool IsAudioGenerationFailed => IsAudioMedia && IsFailed;
+
+    public bool CanViewMediaImage => Row is { Status: ToolRowStatus.Done, MediaKind: GeneratedMediaKind.Image, Media: not null }
+        && deviceId is not null && images is not null;
+
+    public ToolRowViewModel? ImagePreview => Row.MediaKind == GeneratedMediaKind.Image ? this : null;
+
+    public bool IsGeneratingImage => ImagePreview is not null && IsRunning && !IsQueued;
+
+    public bool CanSaveMedia => attachments is not null && deviceId is not null && Row.Media is not null
+        && Row.Status == ToolRowStatus.Done && MediaFileExtension is not null;
+
+    public string? MediaFileExtension => Row.Media?.Mime.ToLowerInvariant() switch
+    {
+        "image/png" => ".png",
+        "image/jpeg" => ".jpg",
+        "image/webp" => ".webp",
+        "image/gif" => ".gif",
+        "video/mp4" => ".mp4",
+        "video/webm" => ".webm",
+        "video/quicktime" => ".mov",
+        "audio/mpeg" or "audio/mp3" => ".mp3",
+        _ => null,
+    };
+
+    public Task<ImageBytes?> LoadMediaImageAsync(string url, CancellationToken ct) =>
+        Row is { MediaKind: GeneratedMediaKind.Image, Media.Url: var current } && current == url && deviceId is not null && images is not null
+            ? images.LoadAsync(deviceId, url, ct)
+            : Task.FromResult<ImageBytes?>(null);
+
+    public async Task<bool> SaveMediaAsync(Stream destination, CancellationToken ct)
+    {
+        if (!CanSaveMedia || attachments is null || deviceId is null || Row.Media is not { } media) return false;
+
+        return (await attachments.DownloadAsync(deviceId, media.Url, destination, ct).ConfigureAwait(false)).IsOk;
+    }
 
     public bool IsCommand => Row.Kind == ToolKind.Command;
 
@@ -458,8 +520,15 @@ public sealed partial class ErrorRowViewModel(ErrorRow row, IAsyncRelayCommand r
 
     public IRelayCommand? OpenProvidersCommand { get; } = openProviders;
 
-    /// <summary>「详情」里的原文:错误码 + 设备给的诊断串。</summary>
-    public string Detail => Row.Message.Length > 0 ? $"{Row.Code} · {Row.Message}" : Row.Code;
+    /// <summary>「详情」里的原文:错误码 + 上游 HTTP 状态码 + 设备给的诊断串。</summary>
+    public string Detail
+    {
+        get
+        {
+            var head = Row.Status is { } status ? $"{Row.Code} · HTTP {status.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : Row.Code;
+            return Row.Message.Length > 0 ? $"{head} · {Row.Message}" : head;
+        }
+    }
 
     /// <summary>展开「详情」(纯 UI 状态)。</summary>
     [ObservableProperty] public partial bool IsDetailOpen { get; set; }

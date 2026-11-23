@@ -22,7 +22,11 @@ public static class TranscriptBuilder
     /// <param name="fallbackEnv">落库的旧调用没带环境标识时,用项目所在的环境兜底(设备 + 环境)。</param>
     /// <param name="deviceUnknown">设备断开:转录末尾加「状态未知」,运行中的东西不再当成还在跑(规则 7)。</param>
     /// <param name="groupFinishedWork">已完成的一轮把最后一段文字以外的操作收成「工作区」分组(<see cref="WorkGroupRow"/>)。主对话打开;子代理转录不分组。</param>
-    public static ImmutableArray<TranscriptRow> Build(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, DateTimeOffset now, bool deviceUnknown = false, bool groupFinishedWork = false)
+    /// <param name="sessionRunning">设备的活动 Run 表说这个会话在跑(Core 的 <c>SessionActivityView</c>,和停止按钮同一个真源)。
+    /// 队列 / 目标续跑 / 别的控制端发起的 Run,在 Run 镜像到达之前也要有「生成中」(issue #200)。</param>
+    public static ImmutableArray<TranscriptRow> Build(
+        ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, DateTimeOffset now, bool deviceUnknown = false, bool groupFinishedWork = false,
+        bool sessionRunning = false)
     {
         if (!state.Sessions.TryGetValue(session, out var view))
         {
@@ -64,6 +68,7 @@ public static class TranscriptBuilder
         var snapshotRunLive = view.ActiveRunId is { } snapshotRun
             && !runs.Any(r => r.Ref.RunId == snapshotRun && r.Phase is not (RunPhase.Running or RunPhase.Unknown));
         var anyRunActive = snapshotRunLive || runs.Any(r => r.Phase == RunPhase.Running);
+        var liveRuns = runs.Where(r => r.Phase is RunPhase.Running or RunPhase.Unknown).ToList();
         var rows = new List<TranscriptRow>();
         var emittedCalls = new HashSet<string>(StringComparer.Ordinal);
         var committed = view.Messages.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
@@ -105,10 +110,10 @@ public static class TranscriptBuilder
                         emittedCalls.Add(callId);
                         rows.Add(part.Name == SubagentReceipts.TaskToolName
                             ? SubagentRowOf(session, callId, subagentByCall, results, now, deviceUnknown)
-                            : ToolOrWidgetRow(part, results.GetValueOrDefault(callId), liveTools.GetValueOrDefault(callId), fallbackEnv, approvals, anyRunActive, widgets));
+                            : ToolOrWidgetRow(part, results.GetValueOrDefault(callId), liveTools.GetValueOrDefault(callId), fallbackEnv, approvals, anyRunActive, deviceUnknown, widgets));
                         break;
                     case "error":
-                        rows.Add(new ErrorRow($"{message.Id}:e{rows.Count}", part.ErrorCode ?? "unknown", part.ErrorMessage ?? "", part.ErrorKey, part.ErrorRetryable, false));
+                        rows.Add(new ErrorRow($"{message.Id}:e{rows.Count}", part.ErrorCode ?? "unknown", part.ErrorMessage ?? "", part.ErrorKey, part.ErrorRetryable, false, part.ErrorStatus));
                         break;
                     case "subagent" when part.CallId is { } reportCall && part.ChildRunId is { } child:
                         rows.Add(new SubagentReportRow($"{message.Id}:r{reportCall}", reportCall, child, part.Text));
@@ -147,7 +152,7 @@ public static class TranscriptBuilder
                 emittedCalls.Add(tool.CallId);
                 rows.Add(tool.Name == SubagentReceipts.TaskToolName
                     ? SubagentRowOf(session, tool.CallId, subagentByCall, results, now, deviceUnknown)
-                    : ToolOrWidgetRow(new ParsedPart("tool_call") { CallId = tool.CallId, Name = tool.Name, InputJson = tool.InputJson }, null, tool, fallbackEnv, approvals, anyRunActive, widgets));
+                    : ToolOrWidgetRow(new ParsedPart("tool_call") { CallId = tool.CallId, Name = tool.Name, InputJson = tool.InputJson }, null, tool, fallbackEnv, approvals, anyRunActive, deviceUnknown, widgets));
             }
         }
 
@@ -168,26 +173,25 @@ public static class TranscriptBuilder
                 rows.RemoveAt(rows.Count - 1);
             }
 
-            rows.Add(new ErrorRow($"run:{last.Ref.RunId}", error.Code, error.Message, error.MessageKey, error.Retryable, true));
+            rows.Add(new ErrorRow($"run:{last.Ref.RunId}", error.Code, error.Message, error.MessageKey, error.Retryable, true, error.Status));
         }
 
         if (deviceUnknown && (view.ActiveRunId is not null || runs.Any(r => r.Phase == RunPhase.Unknown)))
         {
             rows.Add(new StatusRow("status", RunStatusKind.Unknown, 0, 0));
         }
-        else if (runs.FirstOrDefault(r => r.Retry is not null) is { Retry: { } retry })
+        // 重试 / 压缩 / 运行中的工具都只看还在跑的 Run:Store 不清理收口的 Run,收口时残留的 Retry、没等到 tool_end 的工具
+        // 会让「生成中」在之后每一轮都出不来,或者让「正在重试」钉在空闲的会话上(issue #200)。
+        else if (liveRuns.FirstOrDefault(r => r.Retry is not null) is { Retry: { } retry })
         {
             rows.Add(new StatusRow("status", RunStatusKind.Retrying, retry.Attempt, retry.DelayMs));
         }
-        else if (runs.Any(r => r.CompactPhase == "compacting"))
+        else if (liveRuns.Any(r => r.CompactPhase == "compacting"))
         {
             rows.Add(new StatusRow("status", RunStatusKind.Compacting, 0, 0));
         }
-        else if (anyRunActive && pending.Count == 0 && !rows.Any(static r =>
-            r is ThinkingRow { IsStreaming: true } or AssistantRow { IsStreaming: true }
-                or ToolRow { Status: ToolRowStatus.Running } or SubagentRow { View.IsActive: true }
-                or WidgetRow { Phase: WidgetPhase.Loading or WidgetPhase.Ready }) &&
-            !runs.Any(static r => r.Tools.Values.Any(static t => t.Status == ToolCallStatus.Running)))
+        else if ((anyRunActive || sessionRunning) && pending.Count == 0 && !rows.Any(ShowsOwnActivity) &&
+            !liveRuns.Any(static r => r.Tools.Values.Any(static t => t.Status == ToolCallStatus.Running)))
         {
             rows.Add(new StatusRow("status", RunStatusKind.Generating, 0, 0));
         }
@@ -248,7 +252,13 @@ public static class TranscriptBuilder
         for (var i = from; i < to; i++)
         {
             var row = rows[i];
-            var inGroup = i < lastWork && row is ThinkingRow or ToolRow or SubagentRow or SubagentReportRow or AssistantRow;
+            if (i < lastWork && row is ToolRow { MediaKind: not null, Status: ToolRowStatus.Running or ToolRowStatus.WaitingApproval })
+            {
+                output.AddRange(rows.Skip(from).Take(to - from));
+                return;
+            }
+
+            var inGroup = i < lastWork && row is ThinkingRow or ToolRow { MediaKind: null } or SubagentRow or SubagentReportRow or AssistantRow;
             if (inGroup && row is ThinkingRow { IsStreaming: true } or AssistantRow { IsStreaming: true }
                 or ToolRow { Status: ToolRowStatus.Running or ToolRowStatus.WaitingApproval }
                 or SubagentRow { Unknown: true } or SubagentRow { View.IsActive: true })
@@ -281,6 +291,15 @@ public static class TranscriptBuilder
         output.AddRange(rest);
     }
 
+    /// <summary>这一行自己就在表明「还在干活」(流式的字、转着的工具、跑着的子代理、等输入的小组件),不需要再加「生成中」。只有空白的流式文字不算。</summary>
+    private static bool ShowsOwnActivity(TranscriptRow row) => row switch
+    {
+        ThinkingRow { IsStreaming: true } => true,
+        AssistantRow { IsStreaming: true } assistant => !string.IsNullOrWhiteSpace(assistant.Text),
+        ToolRow { Status: ToolRowStatus.Running } or SubagentRow { View.IsActive: true } or WidgetRow { Phase: WidgetPhase.Loading or WidgetPhase.Ready } => true,
+        _ => false,
+    };
+
     /// <summary>
     /// <see cref="Build"/> 读到的全部输入的「指纹」:这个会话的镜像、它的各个 Run、子代理表、这台设备的交互、兜底环境、断线标记——全部按引用比较
     /// (Store 是不可变记录,没变就是同一个实例)。指纹相同,派生结果一定相同,视图模型可以跳过整份重新派生:
@@ -295,22 +314,27 @@ public static class TranscriptBuilder
         private readonly DeviceInteractions? _interactions;
         private readonly EnvRefDto? _fallback;
         private readonly bool _unknown;
+        private readonly bool _sessionRunning;
 
-        private Inputs(SessionView? view, RunView[] runs, ImmutableDictionary<SubagentRef, SubagentEntry> subagents, DeviceInteractions? interactions, EnvRefDto? fallback, bool unknown) =>
-            (_view, _runs, _subagents, _interactions, _fallback, _unknown) = (view, runs, subagents, interactions, fallback, unknown);
+        private Inputs(
+            SessionView? view, RunView[] runs, ImmutableDictionary<SubagentRef, SubagentEntry> subagents, DeviceInteractions? interactions, EnvRefDto? fallback, bool unknown,
+            bool sessionRunning) =>
+            (_view, _runs, _subagents, _interactions, _fallback, _unknown, _sessionRunning) = (view, runs, subagents, interactions, fallback, unknown, sessionRunning);
 
-        public static Inputs Of(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, bool deviceUnknown) => new(
+        public static Inputs Of(ConversationState state, SessionRef session, EnvRefDto? fallbackEnv, bool deviceUnknown, bool sessionRunning = false) => new(
             state.Sessions.GetValueOrDefault(session),
             [.. state.Runs.Values.Where(r => r.Ref.DeviceId == session.DeviceId && r.SessionId == session.SessionId)],
             state.Subagents,
             state.Interactions.GetValueOrDefault(session.DeviceId),
             fallbackEnv,
-            deviceUnknown);
+            deviceUnknown,
+            sessionRunning);
 
         public bool SameAs(Inputs? other)
         {
             if (other is null || !ReferenceEquals(_view, other._view) || !ReferenceEquals(_subagents, other._subagents)
-                || !ReferenceEquals(_interactions, other._interactions) || _unknown != other._unknown || !Equals(_fallback, other._fallback)
+                || !ReferenceEquals(_interactions, other._interactions) || _unknown != other._unknown || _sessionRunning != other._sessionRunning
+                || !Equals(_fallback, other._fallback)
                 || _runs.Length != other._runs.Length)
             {
                 return false;
@@ -387,7 +411,7 @@ public static class TranscriptBuilder
         return data;
     }
 
-    private static TranscriptRow ToolOrWidgetRow(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive, WidgetContext widgets)
+    private static TranscriptRow ToolOrWidgetRow(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive, bool deviceUnknown, WidgetContext widgets)
     {
         var name = call.Name ?? live?.Name ?? "";
         if (string.Equals(name, "RunWorkflow", StringComparison.OrdinalIgnoreCase))
@@ -397,7 +421,7 @@ public static class TranscriptBuilder
 
         return IsWidgetTool(name)
             ? WidgetRowOf(call, result, live, fallbackEnv, anyRunActive, widgets)
-            : ToolRowOf(call, result, live, fallbackEnv, approvals, anyRunActive);
+            : ToolRowOf(call, result, live, fallbackEnv, approvals, anyRunActive, deviceUnknown);
     }
 
     private static WorkflowRow WorkflowRowOf(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, bool anyRunActive)
@@ -602,7 +626,7 @@ public static class TranscriptBuilder
 
     // ───────────────────────── 工具 ─────────────────────────
 
-    private static ToolRow ToolRowOf(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive)
+    private static ToolRow ToolRowOf(ParsedPart call, ParsedPart? result, ToolCallView? live, EnvRefDto? fallbackEnv, Dictionary<string, EnvRefDto> approvals, bool anyRunActive, bool deviceUnknown)
     {
         var name = call.Name ?? live?.Name ?? "";
         var input = call.InputJson ?? live?.InputJson ?? "{}";
@@ -631,8 +655,17 @@ public static class TranscriptBuilder
             env ??= approvalEnv;
         }
 
+        var mediaKind = GeneratedMedia.KindOf(name);
+        if (mediaKind is not null && deviceUnknown && status == ToolRowStatus.Running)
+        {
+            status = ToolRowStatus.Unknown;
+        }
+
+        var media = status == ToolRowStatus.Done && mediaKind is { } expected
+            ? GeneratedMedia.Read(result?.DetailsJson ?? live?.DetailsJson, expected)
+            : null;
         return new ToolRow($"call:{callId}", callId, name, kind, target, status, ResolveEnv(env, fallbackEnv), preview, more, added, removed,
-            Truncated: false, live?.QueuedAhead);
+            Truncated: false, live?.QueuedAhead, mediaKind, media);
     }
 
     /// <summary>一次工具调用解析过的结果(按入参 JSON 字符串实例缓存;摘要另按输出字符串缓存,命令在跑时输出会变)。</summary>
@@ -826,6 +859,7 @@ internal sealed record ParsedPart(string Type)
     public string? ErrorMessage { get; init; }
     public string? ErrorKey { get; init; }
     public bool ErrorRetryable { get; init; }
+    public int? ErrorStatus { get; init; }
     public bool Met { get; init; }
     public string? Reason { get; init; }
     public bool Failed { get; init; }
@@ -835,7 +869,7 @@ internal sealed record ParsedPart(string Type)
     public int PreTokens { get; init; }
     public int PostTokens { get; init; }
 
-    /// <summary>工具结果里 widget 卡片 / 数据卡的 Details 原文(别的工具的 Details 不进转录镜像)。</summary>
+    /// <summary>工具结果里可展示的结构化回执原文。</summary>
     public string? DetailsJson { get; init; }
 }
 
@@ -872,7 +906,7 @@ internal static class MessageParts
                     {
                         Content = e.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Object ? SubagentReceipts.Str(output, "content") : null,
                         IsError = Bool(e, "isError"),
-                        DetailsJson = e.TryGetProperty("output", out var out2) && out2.ValueKind == JsonValueKind.Object ? WidgetDetails(out2) : null,
+                        DetailsJson = e.TryGetProperty("output", out var out2) && out2.ValueKind == JsonValueKind.Object ? DisplayDetails(out2) : null,
                     },
                     "file_ref" => part with { Path = SubagentReceipts.Str(e, "path") },
                     "image" => part with { Mime = SubagentReceipts.Str(e, "mime"), DataRef = SubagentReceipts.Str(e, "dataRef") },
@@ -883,6 +917,7 @@ internal static class MessageParts
                         ErrorMessage = SubagentReceipts.Str(error, "message"),
                         ErrorKey = SubagentReceipts.Str(error, "messageKey"),
                         ErrorRetryable = Bool(error, "retryable"),
+                        ErrorStatus = error.TryGetProperty("status", out var status) && status.TryGetInt32(out var code) ? code : null,
                     },
                     "goal_status" => part with
                     {
@@ -908,8 +943,8 @@ internal static class MessageParts
         return parts;
     }
 
-    /// <summary>输出里的 <c>details</c>(2.x 叫 <c>card</c>),保留 widget 卡 / 数据卡和工作流运行卡的原文。</summary>
-    private static string? WidgetDetails(JsonElement output)
+    /// <summary>输出里的 <c>details</c>(2.x 叫 <c>card</c>),保留 widget 卡 / 数据卡、工作流运行卡和媒体生成回执的原文。</summary>
+    private static string? DisplayDetails(JsonElement output)
     {
         var details = output.TryGetProperty("details", out var d) ? d : output.TryGetProperty("card", out var c) ? c : default;
         if (details.ValueKind != JsonValueKind.Object)
@@ -917,7 +952,7 @@ internal static class MessageParts
             return null;
         }
 
-        if (details.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() is "widget" or "widgetData")
+        if (details.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() is "widget" or "widgetData" or "media-generation")
         {
             return details.GetRawText();
         }

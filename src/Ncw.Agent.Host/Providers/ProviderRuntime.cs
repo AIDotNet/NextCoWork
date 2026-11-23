@@ -60,7 +60,7 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
 
     public ProviderRuntime(
         AgentDatabase database, string dataRoot, TimeProvider clock, AgentServices services, TopicHub topics, ILoopDiagnostics log,
-        Ncw.Agent.Services.Settings.SettingsService? deviceSettings = null, Ncw.Agent.Host.Services.SettingsProxy? proxy = null)
+        Ncw.Agent.Services.Settings.SettingsService? deviceSettings = null, Ncw.Agent.Host.Services.SettingsProxy? proxy = null, IImageResolver? images = null)
     {
         _topics = topics;
         _log = log;
@@ -111,10 +111,12 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         DebugRuns = new ProviderDebugRuns(topics, log);
         Discovery = new Ncw.Agent.Catalog.Discovery.ProviderDiscovery(Providers, services.DiscoveryHost ?? Ncw.Agent.Catalog.Discovery.LocalDiscoveryHost.Instance);
         Presets = services.Presets ?? BuiltinProviderPresets.Instance;
+        Upstream = http;
+        Credentials = new CredentialResolver(vault, services.OAuth ?? new OAuthRegistry([]), http, clock, Providers.OnCredentialChanged);
         Router = new LlmRouter(
-            Config, http, new CredentialResolver(vault, services.OAuth ?? new OAuthRegistry([]), http, clock, Providers.OnCredentialChanged), clock,
+            Config, http, Credentials, clock,
             services.Ids, services.Delayer, routerOptions, Catalog.PriceBook, new UsageRecordSink(new UsageRepository(database)), Providers.AccountPool,
-            transport: services.Transport);
+            images: images, transport: services.Transport);
 
         Catalog.Changed += _ => PublishCatalog();
         Catalog.StatusChanged += _ => PublishCatalog();
@@ -140,6 +142,10 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
     public IProviderPresets Presets { get; }
 
     public LlmRouter Router { get; }
+
+    internal IUpstreamHttp Upstream { get; }
+
+    internal CredentialResolver Credentials { get; }
 
     public ProviderFileStore File { get; }
 

@@ -8,7 +8,7 @@ using Ncw.Protocol.Methods;
 
 namespace Ncw.Client.ViewModels;
 
-/// <summary>「通用 / 设备」页里的哪一项辅助模型。</summary>
+/// <summary>「通用 / 设备」页里的模型设置项。</summary>
 public enum ModelPickField
 {
     Default,
@@ -18,17 +18,27 @@ public enum ModelPickField
     Completion,
     InlineCompletion,
     Image,
+    Video,
+    Audio,
     Subagent,
 }
 
-/// <summary>一行「模型 + 供应商」选择(跟随默认 = 空)。选中即写入设备;显示的值始终以设备推回来的为准。</summary>
+/// <summary>一行「模型 + 供应商」选择。选中即写入设备;显示的值始终以设备推回来的为准。</summary>
 public sealed partial class ModelPickRow(GeneralSettingsViewModel owner, ModelPickField field) : ObservableObject
 {
     public ModelPickField Field { get; } = field;
 
+    public string? MediaKind => Field switch
+    {
+        ModelPickField.Image => ProviderKinds.Image,
+        ModelPickField.Video => ProviderKinds.Video,
+        ModelPickField.Audio => ProviderKinds.Audio,
+        _ => null,
+    };
+
     public ObservableCollection<ChoiceItem> Choices { get; } = [];
 
-    /// <summary>选中项的 key(<see cref="GeneralSettingsViewModel.PickKey"/>);空串 = 跟随默认。</summary>
+    /// <summary>选中项的 key(<see cref="GeneralSettingsViewModel.PickKey"/>);空串 = 没选。</summary>
     [ObservableProperty] public partial string Key { get; set; } = "";
 
     internal bool Syncing { get; set; }
@@ -80,8 +90,11 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
     /// <summary>默认模型:页面最上面「常用」里的那一项(docs/design/03 §11.6)。</summary>
     public ModelPickRow DefaultPick => Picks[0];
 
-    /// <summary>其余辅助模型(权限审查、目标评估、压缩、补全、图像、子代理):收在「高级」里。</summary>
-    public IReadOnlyList<ModelPickRow> AuxPicks => [.. Picks.Skip(1)];
+    /// <summary>其余文本辅助模型:收在「高级」里。</summary>
+    public IReadOnlyList<ModelPickRow> AuxPicks => [.. Picks.Skip(1).Where(p => p.MediaKind is null)];
+
+    /// <summary>媒体生成模型:各有自己的供应商类型,不会跟随默认模型。</summary>
+    public IReadOnlyList<ModelPickRow> MediaPicks => [.. Picks.Where(p => p.MediaKind is not null)];
 
     /// <summary>展开「高级」(纯 UI 状态,不持久化)。</summary>
     [ObservableProperty] public partial bool ShowAdvanced { get; set; }
@@ -98,6 +111,10 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
     public bool Failover => Settings?.Failover ?? false;
 
     public bool AutoCompact => Settings?.AutoCompact ?? false;
+
+    public bool ImageGeneration => Settings?.ImageGeneration ?? false;
+
+    public bool SupportsMediaTools => Scope.DeviceId is { } device && _commands.SupportsMediaTools(device);
 
     public string PermissionMode => Settings?.DefaultPermissionMode ?? "ask";
 
@@ -166,7 +183,11 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
 
     public bool PersonalizationTooLong => PersonName.Length > NameMax || Background.Length > BackgroundMax || Instructions.Length > InstructionsMax;
 
-    protected override void OnGatesChanged() => OnPropertyChanged(nameof(PasswordGate));
+    protected override void OnGatesChanged()
+    {
+        OnPropertyChanged(nameof(PasswordGate));
+        OnPropertyChanged(nameof(SupportsMediaTools));
+    }
 
     private void RefreshGates() => RaiseGates();
 
@@ -312,7 +333,7 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
 
     // ───────────────────────── 辅助模型 ─────────────────────────
 
-    /// <summary>「模型 + 供应商」的下拉 key(空串 = 跟随默认)。</summary>
+    /// <summary>「模型 + 供应商」的下拉 key(空串 = 没选)。</summary>
     public static string PickKey(ModelPickDto? pick) => pick is { Model.Length: > 0 } ? $"{pick.ProviderId}\n{pick.Model}" : "";
 
     private static ModelPickDto ParseKey(string key)
@@ -336,6 +357,8 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
         ModelPickField.Completion => Settings.Completion,
         ModelPickField.InlineCompletion => Settings.InlineCompletionModel,
         ModelPickField.Image => Settings.Image,
+        ModelPickField.Video => Settings.Video,
+        ModelPickField.Audio => Settings.Audio,
         _ => Settings.Subagent.Model,
     };
 
@@ -348,11 +371,10 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
 
         var enabled = _stores.Providers.State.Of(device).Options.Where(o => o.Enabled && o.ProviderEnabled).ToList();
         var chatOptions = enabled.Where(o => o.IsChatModel).ToList();
-        var imageOptions = enabled.Where(o => o.Kind == ProviderKinds.Image).ToList();
         foreach (var row in Picks)
         {
             var current = Current(row.Field);
-            var options = row.Field == ModelPickField.Image ? imageOptions : chatOptions;
+            var options = row.MediaKind is { } kind ? enabled.Where(o => o.Kind == kind) : chatOptions;
             var items = new List<ChoiceItem> { new("", null) };
             items.AddRange(options.Select(o => new ChoiceItem(PickKey(new ModelPickDto(o.Alias, o.ProviderId)), $"{o.DisplayName} · {o.ProviderName}")));
             var key = PickKey(current);
@@ -384,7 +406,7 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
 
     internal async Task SetPickAsync(ModelPickRow row, string key)
     {
-        if (Scope.DeviceId is not { } device || !CanWrite || key == PickKey(Current(row.Field)))
+        if (Scope.DeviceId is not { } device || !CanWrite || (row.MediaKind is not null && !SupportsMediaTools) || key == PickKey(Current(row.Field)))
         {
             SyncChoices();
             return;
@@ -400,6 +422,8 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
             ModelPickField.Completion => new DeviceSettingsPatchDto(Completion: pick),
             ModelPickField.InlineCompletion => new DeviceSettingsPatchDto(InlineCompletionModel: pick),
             ModelPickField.Image => new DeviceSettingsPatchDto(Image: pick),
+            ModelPickField.Video => new DeviceSettingsPatchDto(Video: pick),
+            ModelPickField.Audio => new DeviceSettingsPatchDto(Audio: pick),
             _ => new DeviceSettingsPatchDto(Subagent: new SubagentSettingsPatchDto(Model: pick)),
         };
         await Act(_commands.UpdateAsync(device, patch));
@@ -423,6 +447,7 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
             nameof(AccountRotation) => new DeviceSettingsPatchDto(AccountRotation: on),
             nameof(Failover) => new DeviceSettingsPatchDto(Failover: on),
             nameof(AutoCompact) => new DeviceSettingsPatchDto(AutoCompact: on),
+            nameof(ImageGeneration) => new DeviceSettingsPatchDto(ImageGeneration: on),
             nameof(PermissionMode) => new DeviceSettingsPatchDto(DefaultPermissionMode: value),
             nameof(ModelProposedGoals) => new DeviceSettingsPatchDto(ModelProposedGoals: value),
             nameof(CompactThinking) => new DeviceSettingsPatchDto(CompactThinking: value),
@@ -449,6 +474,9 @@ public sealed partial class GeneralSettingsViewModel : ManagementPageViewModel
 
     [RelayCommand]
     private Task ToggleAutoCompactAsync() => SetBoolAsync(nameof(AutoCompact), !AutoCompact);
+
+    [RelayCommand]
+    private Task ToggleImageGenerationAsync() => SupportsMediaTools ? SetBoolAsync(nameof(ImageGeneration), !ImageGeneration) : Task.CompletedTask;
 
     // 下拉框的双向绑定入口:选中即写入设备,显示的值以设备推回来的为准
     public string PermissionModeValue

@@ -259,29 +259,61 @@ public sealed class GeneralSettingsTests
         Assert.Equal("be brief", kit.Settings.Patches.Single().Personalization!.Instructions);
     }
 
-    [Fact]
-    public async Task Image_auxiliary_picker_offers_only_image_models_while_chat_pickers_exclude_media_models()
+    [Theory]
+    [InlineData(ModelPickField.Image, "image", "openai-images")]
+    [InlineData(ModelPickField.Video, "video", "openai-videos")]
+    [InlineData(ModelPickField.Audio, "audio", "openai-audio")]
+    public async Task Each_media_picker_only_offers_enabled_models_of_its_kind_and_can_clear_its_selection(ModelPickField field, string kind, string protocol)
     {
         var kit = new ManagementKit();
+        var matching = new ModelOptionDto("provider", "Media", "model", "Media Model", "upstream",
+            0, 0, true, true, false, false, null, null, protocol, kind);
         kit.Rig.SeedModels(
-            ManagementRig.Option("nextcowork", "claude-sonnet-4-5", "Claude Sonnet 4.5"),
-            new ModelOptionDto("nextcowork-image", "NextCoWork", "doubao-seedream-4-5-251128", "Seedream 4.5", "doubao-seedream-4-5-251128",
-                0, 0, true, true, false, false, null, null, "openai-images", "image"),
-            new ModelOptionDto("nextcowork-video", "NextCoWork", "sora-2", "Sora 2", "sora-2",
-                0, 0, true, true, false, false, null, null, "openai-videos", "video"));
+            ManagementRig.Option("text", "text-model", "Text Model"),
+            matching,
+            matching with { ProviderId = "second-provider" },
+            matching with { Alias = "disabled-model", Enabled = false },
+            matching with { Alias = "disabled-provider", ProviderEnabled = false },
+            matching with { Alias = "other-kind", Kind = kind == "image" ? "video" : "image" });
         kit.Settings.Push(FakeSettings.Defaults() with { DefaultModel = ModelPickDto.None });
         await kit.Pages.General.ActivateAsync();
 
-        var defaultPick = kit.Pages.General.Picks.Single(p => p.Field == ModelPickField.Default);
-        Assert.Equal(["", "nextcowork\nclaude-sonnet-4-5"], defaultPick.Choices.Select(c => c.Value).ToArray());
+        var page = kit.Pages.General;
+        Assert.Equal(["", "text\ntext-model"], page.DefaultPick.Choices.Select(c => c.Value).ToArray());
+        Assert.DoesNotContain(page.AuxPicks, p => p.Field == field);
+        var row = page.MediaPicks.Single(p => p.Field == field);
+        Assert.Equal(["", "provider\nmodel", "second-provider\nmodel"], row.Choices.Select(c => c.Value).ToArray());
 
-        var imagePick = kit.Pages.General.Picks.Single(p => p.Field == ModelPickField.Image);
-        Assert.Equal(["", "nextcowork-image\ndoubao-seedream-4-5-251128"], imagePick.Choices.Select(c => c.Value).ToArray());
-
-        imagePick.Key = "nextcowork-image\ndoubao-seedream-4-5-251128";
+        row.Key = "second-provider\nmodel";
         await Task.Yield();
-        var written = Assert.Single(kit.Settings.Patches).Image!;
-        Assert.Equal(("doubao-seedream-4-5-251128", "nextcowork-image"), (written.Model, written.ProviderId));
+        Assert.Equal(new ModelPickDto("model", "second-provider"), MediaPick(Assert.Single(kit.Settings.Patches), field));
+
+        row.Key = "";
+        await Task.Yield();
+        Assert.Equal(ModelPickDto.None, MediaPick(kit.Settings.Patches[1], field));
+    }
+
+    private static ModelPickDto? MediaPick(DeviceSettingsPatchDto patch, ModelPickField field) => field switch
+    {
+        ModelPickField.Image => patch.Image,
+        ModelPickField.Video => patch.Video,
+        _ => patch.Audio,
+    };
+
+    [Fact]
+    public async Task The_image_switch_writes_device_settings_without_clearing_the_model()
+    {
+        var kit = new ManagementKit();
+        var image = new ModelPickDto("image", "provider");
+        kit.Settings.Push(FakeSettings.Defaults() with { Image = image, ImageGeneration = true });
+        var page = kit.Pages.General;
+        await page.ActivateAsync();
+
+        await page.ToggleImageGenerationCommand.ExecuteAsync(null);
+
+        Assert.False(Assert.Single(kit.Settings.Patches).ImageGeneration);
+        Assert.False(page.ImageGeneration);
+        Assert.Equal(image, page.Settings!.Image);
     }
 }
 

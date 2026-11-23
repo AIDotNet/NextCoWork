@@ -281,6 +281,12 @@ public static class ThinkingAdapter
             ?? throw new ThinkingAdapterException("The model declares thinking support but the request has no resolved thinking configuration.", "thinking.unresolved");
         var kind = KindFor(input);
 
+        // 自适应思考的 Claude(4.6+):档位就近收敛、Off 按模型的方式表达,不走下面两道「不支持就报错」的通用闸。
+        if (kind == Kind.Anthropic && ClaudeThinking.For(input.UpstreamModel) is { } claude)
+        {
+            return ApplyClaudeAdaptive(next, reasoning, claude);
+        }
+
         if (reasoning is { Enabled: true, Effort: { } requested } && input.ReasoningEfforts is { } supported && !supported.Contains(requested))
         {
             throw new ThinkingAdapterException($"The model does not support reasoning effort '{Wire(requested)}'.", "thinking.effortUnsupported");
@@ -415,6 +421,82 @@ public static class ThinkingAdapter
         }
 
         return next;
+    }
+
+    /// <summary>
+    /// Claude 4.6+ 的自适应思考(issue #202):开启 = <c>thinking: {type: "adaptive"}</c> + <c>output_config.effort</c>,从不发 <c>budget_tokens</c>
+    /// (Opus 4.7+ / Sonnet 5+ 直接 400)。Auto 只开自适应、不指定档位,用模型自己的默认档(各型号默认档不同)。
+    /// 显式 Off 按模型:<c>disabled</c> / <c>between_tools</c> / 关不掉的模型省略字段并降到最低档;Auto 下目录默认关闭时什么都不发。
+    /// </summary>
+    private static JsonObject ApplyClaudeAdaptive(JsonObject next, ResolvedThinking reasoning, ClaudeThinkingProfile claude)
+    {
+        foreach (var key in new[] { "thinking", "reasoning", "reasoning_effort", "enable_thinking", "thinking_budget" })
+        {
+            next.Remove(key);
+        }
+
+        var outputConfig = next["output_config"] as JsonObject ?? new JsonObject();
+        outputConfig.Remove("effort");
+
+        if (reasoning.Enabled)
+        {
+            var thinking = new JsonObject { ["type"] = "adaptive" };
+            if (claude.DisplayDefaultsToOmitted)
+            {
+                // 这些模型默认只回空的思考块,界面上的思考行会一直是空的。
+                thinking["display"] = "summarized";
+            }
+
+            next["thinking"] = thinking;
+            if (reasoning.Explicit)
+            {
+                var requested = reasoning.Effort ?? EffortForBudget(reasoning.BudgetTokens);
+                outputConfig["effort"] = Wire(ClaudeThinking.Clamp(requested, claude.Efforts));
+            }
+
+            // 思考开启时 Anthropic 不接受自定义 temperature。
+            StripSampling(next);
+        }
+        else if (reasoning.Explicit)
+        {
+            switch (claude.Off)
+            {
+                case ClaudeOffMode.Disabled:
+                    next["thinking"] = new JsonObject { ["type"] = "disabled" };
+                    break;
+                case ClaudeOffMode.BetweenTools:
+                    // between_tools 不能带 display / budget_tokens,只在 high 及以下可用(不发 effort = 默认 high)。
+                    next["thinking"] = new JsonObject { ["type"] = "between_tools" };
+                    break;
+                default:
+                    // 关不掉:最接近 Off 的是最低档。
+                    outputConfig["effort"] = Wire(claude.Efforts.Min());
+                    break;
+            }
+        }
+
+        if (claude.SamplingRejected)
+        {
+            StripSampling(next);
+        }
+
+        if (outputConfig.Count == 0)
+        {
+            next.Remove("output_config");
+        }
+        else if (outputConfig.Parent is null)
+        {
+            next["output_config"] = outputConfig;
+        }
+
+        return next;
+    }
+
+    private static void StripSampling(JsonObject body)
+    {
+        body.Remove("temperature");
+        body.Remove("top_p");
+        body.Remove("top_k");
     }
 
     private static JsonObject ApplyOpenAi(JsonObject next, ThinkingAdapterInput input, ThinkingConfig config, ResolvedThinking reasoning, bool responses)

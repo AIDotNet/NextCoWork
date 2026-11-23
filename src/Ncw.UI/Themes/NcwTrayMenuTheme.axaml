@@ -1,0 +1,72 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+                    x:Class="Ncw.UI.Themes.NcwTrayMenuTheme">
+  <!--
+    Windows 托盘右键菜单(issue #200)。Avalonia 在 Windows 上不用系统菜单,而是弹一个 Window(TrayPopupRoot,SizeToContent),
+    内容是 MenuFlyoutPresenter,菜单项是 NativeMenuItemPresenter(样式键 MenuItem)和 Separator。
+    Arc 给 MenuFlyoutPresenter / MenuItem / Separator 的主题都没有模板(Arc 的菜单用自己的 MenuSurface),于是菜单一项都画不出来、
+    窗口按内容收成 0×0:右键「没有反应」,也就找不到「退出」。这里补上这三个的模板(Window 的 Arc 主题本身可用,不动)。
+    和 NcwTheme 一样经 Arc 的生成资产包(NcwAppSetup 的 UsePackage("Ncw.UI"))随应用加载;应用里别处不用这几个 Avalonia 自带控件
+    (之前它们没有模板,用了也画不出来),所以不影响别的界面。回归见 TrayMenuThemeTests。
+    颜色全部来自 Arc token。
+  -->
+  <ControlTheme x:Key="{x:Type MenuFlyoutPresenter}" TargetType="MenuFlyoutPresenter">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="MinWidth" Value="200" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type MenuItem}" TargetType="MenuItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}" />
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_Root"
+                Background="{TemplateBinding Background}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Name="PART_HeaderPresenter"
+                            Content="{TemplateBinding Header}"
+                            ContentTemplate="{TemplateBinding HeaderTemplate}"
+                            VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover, ^:selected">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type Separator}" TargetType="Separator">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Margin" Value="6,4" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+</ResourceDictionary>

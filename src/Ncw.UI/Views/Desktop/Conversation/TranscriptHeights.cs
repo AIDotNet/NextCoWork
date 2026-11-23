@@ -27,6 +27,9 @@ public sealed class TranscriptHeights : IRowHeightEstimator
         UserRowViewModel u => 12 + 18 + Plain(u.Text, Math.Min(width, UserBubbleMax) - 26, BodyLine)
                               + (u.HasFiles ? HintLine + 6 : 0) + (u.HasThumbs ? 124 : u.HasImageCountOnly ? HintLine + 6 : 0) + ToolbarRow,
         ThinkingRowViewModel t => OneLineRow + (t.IsExpanded ? Math.Min(Plain(t.Text.Length > ThinkingEstimateChars ? t.Text[..ThinkingEstimateChars] : t.Text, width - 22, HintLine), NcwThinkingView.MaxBodyHeight) + 4 : 0),
+        ToolRowViewModel { ImagePreview: not null } image => 10 + (image.ShowsMediaActions ? ToolbarRow : 0)
+            + Math.Min(NcwImageReveal.PreviewMaxWidth, Math.Max(0, width)) / NcwImageReveal.InitialAspectRatio,
+        ToolRowViewModel { VideoPreview: not null } => 2 * ToolbarRow,
         ToolRowViewModel t => OneLineRow + (t.IsExpanded ? (t.PreviewLines.Count + (t.HasMore ? 1 : 0)) * HintLine + 6 : 0),
         WorkGroupRowViewModel => OneLineRow,
         WidgetRowViewModel => 44 + 160,

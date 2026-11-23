@@ -11,7 +11,7 @@
              x:DataType="vm:GeneralSettingsViewModel">
   <!--
     设置 · 设备 · 通用(docs/design/07 §3「Agent 配置」、03 §11.6):先是「常用」(默认模型、默认权限档位)和个性化指令;
-    其余(辅助模型、目标与 Shell、账号轮换与故障转移、压缩与上下文、超时与上限、代理)收在「高级」里,点开才出现。
+    媒体工具独立显示,其余(辅助模型、目标与 Shell、账号轮换与故障转移、压缩与上下文、超时与上限、代理)收在「高级」里,点开才出现。
     值来自 settings 主题的镜像;开关与下拉立即写入,数字 / 文本在草稿里改、点「应用」整块写入。读取 member 起,写入 owner。
   -->
   <StackPanel Spacing="8">
@@ -45,6 +45,30 @@
         </StackPanel>
       </Border>
 
+      <!-- 媒体工具与聊天辅助模型独立,未配置时不继承默认模型。 -->
+      <StackPanel Spacing="8" IsVisible="{Binding SupportsMediaTools}">
+        <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralMediaToolsTitle}" />
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <TextBlock Classes="hint" Text="{l:NcwText GeneralMediaToolsHint}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <TextBlock VerticalAlignment="Center" Text="{l:NcwText GeneralImageGenerationEnabled}" />
+              <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ImageGeneration, Mode=OneWay}"
+                            Command="{Binding ToggleImageGenerationCommand}" AutomationProperties.Name="{l:NcwText GeneralImageGenerationEnabled}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding MediaPicks}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="12" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ModelPickRow">
+                  <ui:NcwSelect ItemsSource="{Binding Choices}" SelectedValue="{Binding Key, Mode=TwoWay}" NullText="{l:NcwText GeneralMediaNotConfigured}"
+                                Label="{Binding Field, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=PickField}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
       <!-- 高级:收起时只是一行按钮,点开才出现其余各段 -->
       <ui:PlainButton Margin="0,8,0,0" Padding="4,6" HorizontalAlignment="Left" Command="{Binding ToggleAdvancedCommand}" AutomationProperties.Name="{l:NcwText GeneralAdvancedTitle}">
         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -55,7 +79,7 @@
       </ui:PlainButton>
       <ui:NcwCollapsible IsOpen="{Binding ShowAdvanced}">
         <StackPanel Spacing="8">
-          <!-- 辅助模型(权限审查、目标评估、压缩、补全、图像、子代理) -->
+          <!-- 辅助模型(权限审查、目标评估、压缩、补全、子代理) -->
           <TextBlock Classes="sectionTitle" Text="{l:NcwText GeneralModelsTitle}" />
           <TextBlock Classes="hint" Text="{l:NcwText GeneralModelsHint}" />
           <Border Classes="card">

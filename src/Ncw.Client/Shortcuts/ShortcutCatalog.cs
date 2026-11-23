@@ -34,6 +34,9 @@ public enum AppCommand
     SelectProject7,
     SelectProject8,
     SelectProject9,
+
+    /// <summary>退出应用(让本机 Agent 收尾)。托盘开着时关窗只是藏起窗口,Windows / Linux 上需要一个不依赖托盘菜单的退出入口(issue #200)。</summary>
+    Quit,
 }
 
 /// <summary>一条生效的快捷键:意图 + 按键组合(Avalonia <c>KeyGesture</c> 的文本写法,比如 <c>Meta+K</c>)。<see cref="IsCustom"/> = 用户改过。</summary>
@@ -72,6 +75,7 @@ public static class ShortcutCatalog
         [AppCommand.SelectProject7] = "Mod+D7",
         [AppCommand.SelectProject8] = "Mod+D8",
         [AppCommand.SelectProject9] = "Mod+D9",
+        [AppCommand.Quit] = "Mod+Q",
     }.ToImmutableDictionary();
 
     /// <summary>命令面板里不列出的意图(打开面板自己、⌘P 也是打开面板、按序号选项目——面板里直接列项目)。</summary>

@@ -32,6 +32,8 @@ public sealed record DeviceSettingsPatch
     public ModelPick? Completion { get; init; }
     public ModelPick? InlineCompletionModel { get; init; }
     public ModelPick? Image { get; init; }
+    public ModelPick? Video { get; init; }
+    public ModelPick? Audio { get; init; }
     public string? DefaultPermissionMode { get; init; }
     public string? ModelProposedGoals { get; init; }
     public bool? AutoCompact { get; init; }
@@ -166,6 +168,8 @@ public sealed class SettingsService(SettingsRepository repository)
         SetPick(root, "completionModel", "completionModelProviderId", p.Completion);
         SetPick(root, "inlineCompletionModel", "inlineCompletionModelProviderId", p.InlineCompletionModel);
         SetPick(root, "imageModel", "imageModelProviderId", p.Image);
+        SetPick(root, "videoModel", "videoModelProviderId", p.Video);
+        SetPick(root, "audioModel", "audioModelProviderId", p.Audio);
         Set(root, "compactThinking", p.CompactThinking);
         Set(root, "defaultPermissionMode", p.DefaultPermissionMode);
         Set(root, "modelProposedGoals", p.ModelProposedGoals);
@@ -249,7 +253,8 @@ public sealed class SettingsService(SettingsRepository repository)
         foreach (var (field, pick) in new (string, ModelPick?)[]
         {
             ("defaultModel", p.DefaultModel), ("permissionReviewer", p.PermissionReviewer), ("goalEvaluator", p.GoalEvaluator), ("compact", p.Compact),
-            ("completion", p.Completion), ("inlineCompletionModel", p.InlineCompletionModel), ("image", p.Image), ("subagent.model", p.Subagent?.Model),
+            ("completion", p.Completion), ("inlineCompletionModel", p.InlineCompletionModel), ("image", p.Image),
+            ("video", p.Video), ("audio", p.Audio), ("subagent.model", p.Subagent?.Model),
         })
         {
             if (pick is not null && (pick.Model.Length > 256 || (pick.ProviderId?.Length ?? 0) > 256 || pick.Model.Trim() != pick.Model))

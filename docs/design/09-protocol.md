@@ -431,7 +431,7 @@ public interface ITransportListener            // 设备:每种承载一个监�
 **线上格式**:每个 DTO 的键 = 属性名(PascalCase);构造函数里**没有默认值**的参数必须出现(可空的写 `null`),缺键是 `invalid_request`(消息里带缺的字段名);带默认值的可以省略。
 
 **设置**。三种作用域:设备 / 项目走 Agent,应用级(主题、语言、窗口)只在客户端本地,不经协议。设置存在 2.x 的 `settings` 行(JSON,未知键保留,补丁深合并,整份补丁先校验再写)。**每次现读**:改完设置,下一个 Run 就用新值(指令目录、各辅助模型、空闲超时、账号轮换、故障转移、目标检查间隔、代理),没有缓存。
-`settings` 主题是全量类型 `DeviceSettingsState(Rev, Settings)`,首帧和 `settings.changed` 同一个类型,`Rev` 单调(规则 5)。
+`settings` 主题是全量类型 `DeviceSettingsState(Rev, Settings)`,首帧和 `settings.changed` 同一个类型,`Rev` 单调(规则 5)。设备媒体模型用 `Image` / `Video` / `Audio` 三个 `ModelPickDto` 配对表示(别名 + 可选供应商);未配置时 `Image` 为空模型,`Video` / `Audio` 为 `null` 或缺省。补丁里的空模型表示清除配置,缺省表示不改。`ImageGeneration` 保留为图片生成开关。设备通过 `settings.media` 声明支持完整的媒体工具设置;客户端仅在设备支持时显示该分区。旧设备缺少的字段按 `null` 解码,旧客户端忽略新字段。
 
 | 方法 | 种类 | 角色 | 说明 |
 |---|---|---|---|

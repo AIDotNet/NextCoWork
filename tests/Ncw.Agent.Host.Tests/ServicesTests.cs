@@ -75,6 +75,28 @@ public sealed class ServicesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Media_settings_round_trip_through_the_update_result_query_and_subscription()
+    {
+        Assert.Contains(Capabilities.SettingsMedia, _owner.Welcome.Features);
+        var topic = await Watch<DeviceSettingsState>.OpenAsync(_owner, SettingsMethods.Topic);
+        await topic.WaitAsync(() => topic.HasSnapshot, "settings snapshot");
+        Assert.Null(topic.Snapshot.Settings.Video);
+        Assert.Null(topic.Snapshot.Settings.Audio);
+        var video = new ModelPickDto("video", "video-provider");
+        var audio = new ModelPickDto("audio", "audio-provider");
+
+        var updated = await _owner.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(new DeviceSettingsPatchDto(Video: video, Audio: audio)));
+        await topic.WaitAsync(() => topic.Decoded<DeviceSettingsState>(SettingsEvents.Changed).Contains(updated), "settings.changed");
+        var read = await _owner.CallAsync(SettingsMethods.Get, Unit.Value);
+
+        Assert.Equal((video, audio), (updated.Settings.Video, updated.Settings.Audio));
+        Assert.Equal(updated, read);
+        var cleared = await _owner.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(new DeviceSettingsPatchDto(Video: ModelPickDto.None)));
+        Assert.Null(cleared.Settings.Video);
+        Assert.Equal(audio, cleared.Settings.Audio);
+    }
+
+    [Fact]
     public async Task A_bad_patch_is_invalid_request_with_a_stable_key_and_nothing_is_written()
     {
         var before = await _owner.CallAsync(SettingsMethods.Get, Unit.Value);

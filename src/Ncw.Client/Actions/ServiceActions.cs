@@ -34,6 +34,9 @@ internal static class ServiceCall
 /// </summary>
 public sealed class SettingsActions(DeviceRegistry devices) : ISettingsCommands
 {
+    public bool SupportsMediaTools(string deviceId) =>
+        devices.Find(deviceId) is { IsConnected: true } link && link.Features.Contains(Capabilities.SettingsMedia);
+
     public Task<ActionResult<DeviceSettingsState>> UpdateAsync(string deviceId, DeviceSettingsPatchDto patch, CancellationToken ct = default) =>
         ServiceCall.RunAsync(devices, deviceId, link => link.CallAsync(SettingsMethods.Update, new SettingsUpdateParams(patch), ct, idem: ServiceCall.Idem("settings", "update")));
 
