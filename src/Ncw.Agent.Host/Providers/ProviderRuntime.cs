@@ -100,10 +100,19 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
             new ProviderCredentialVault(new CredentialStore(database, dataRoot, NoLegacySecrets.Instance), File), () => _account.AccessToken);
         var accounts = new ProviderAccountRepository(database, vault, clock);
         Catalog = new ModelCatalogService(http, services.CatalogStore ?? new FileCatalogStore(dataRoot), new KvOverrideStore(_kv), clock, services.CatalogDelayer, effective);
+        var transport = services.Transport is null
+            ? ManagedProviderTransport.Instance
+            : services.Transport is ManagedProviderTransport ? services.Transport : new ManagedProviderTransport(services.Transport);
         // 设置页的几项每次现读:账号轮换(同一家的多个登录账号)、故障转移(这家挂了换另一家)、上游空闲超时。注入了自己的参数(测试)就以注入的为准。
         var providerOptions = services.ProviderOptions ?? (deviceSettings is null ? null : new ProviderServiceOptions { RotationEnabled = () => deviceSettings.Current().AccountRotation });
-        var routerOptions = services.Router ?? (deviceSettings is null ? null : new LlmRouterOptions { IdleTimeout = LlmRouterOptions.IdleTimeoutFromSettings(() => deviceSettings.Current().UpstreamIdleTimeoutSeconds) });
-        Providers = new ProviderService(File, vault, accounts, http, Catalog, clock, services.Presets, services.Transport, providerOptions)
+        var routerOptions = services.Router ?? new LlmRouterOptions
+        {
+            UserAgent = providerOptions?.UserAgent ?? "NextCoWork/3.x",
+            IdleTimeout = deviceSettings is null
+                ? () => TimeSpan.FromSeconds(600)
+                : LlmRouterOptions.IdleTimeoutFromSettings(() => deviceSettings.Current().UpstreamIdleTimeoutSeconds),
+        };
+        Providers = new ProviderService(File, vault, accounts, http, Catalog, clock, services.Presets, transport, providerOptions)
         {
             OAuthLogins = services.OAuthLogins ?? (_ => null),
         };
@@ -116,7 +125,7 @@ internal sealed class ProviderRuntime : HostModelResolver, IAsyncDisposable
         Router = new LlmRouter(
             Config, http, Credentials, clock,
             services.Ids, services.Delayer, routerOptions, Catalog.PriceBook, new UsageRecordSink(new UsageRepository(database)), Providers.AccountPool,
-            images: images, transport: services.Transport);
+            images: images, transport: transport);
 
         Catalog.Changed += _ => PublishCatalog();
         Catalog.StatusChanged += _ => PublishCatalog();

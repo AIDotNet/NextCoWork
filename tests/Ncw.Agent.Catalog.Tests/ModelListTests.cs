@@ -254,6 +254,18 @@ public class ModelListTests
         Assert.False(request.Headers.ContainsKey("authorization"));
     }
 
+    [Fact]
+    public void Managed_provider_transport_replaces_x_api_key_with_bearer_on_anthropic_model_list_probes()
+    {
+        var managed = new ProviderConfig("nextcowork", "NextCoWork", ManagedProvider.DefaultBaseUrl, WireProtocol.Anthropic, 1, true, "provider:nextcowork");
+        var request = ModelList.RequestFor(managed, WireProtocol.Anthropic, new ApiKeyCredential("jwt-1"), ManagedProviderTransport.Instance, new RequestContext("w"));
+
+        Assert.Equal("https://nextco.work/v1/models?limit=1000", request.Url);
+        Assert.Equal("Bearer jwt-1", request.Headers["authorization"]);
+        Assert.Equal("2023-06-01", request.Headers["anthropic-version"]);
+        Assert.False(request.Headers.ContainsKey("x-api-key"));
+    }
+
     // ── 脱敏 ──
 
     [Fact]

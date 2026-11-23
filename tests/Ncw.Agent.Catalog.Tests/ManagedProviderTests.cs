@@ -1,4 +1,9 @@
+using System.Net;
+using System.Text;
+using Ncw.Agent.Llm;
+using Ncw.Agent.Llm.Auth;
 using Ncw.Agent.Llm.Media;
+using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Wire;
 
 namespace Ncw.Agent.Catalog.Tests;
@@ -303,5 +308,73 @@ public sealed class ManagedProviderTests : IDisposable
             ],
             Service.Aliases("nextcowork-video").Select(a => a.Alias).ToArray());
         Assert.Equal(["seed-tts-2.0"], Service.Aliases("nextcowork-audio").Select(a => a.Alias).ToArray());
+    }
+
+    // ── 平台登录态鉴权(2.x transport.ts platformLoginAuth) ──
+
+    [Fact]
+    public void Managed_provider_transport_authenticates_with_bearer_and_drops_x_api_key_while_leaving_other_providers_untouched()
+    {
+        var managed = new ProviderConfig("nextcowork", "NextCoWork", ManagedProvider.DefaultBaseUrl, WireProtocol.Anthropic, 1, true, "provider:nextcowork");
+        var decoration = ManagedProviderTransport.Instance.Decorate(managed, WireProtocol.Anthropic, new ApiKeyCredential("jwt-1"), new RequestContext("w"));
+
+        Assert.Equal("Bearer jwt-1", decoration.Headers!["authorization"]);
+        Assert.Contains("x-api-key", decoration.DropHeaders!);
+
+        var custom = new ProviderConfig("anthropic", "Anthropic", "https://api.anthropic.com", WireProtocol.Anthropic, 50, true, "provider:anthropic");
+        var untouched = ManagedProviderTransport.Instance.Decorate(custom, WireProtocol.Anthropic, new ApiKeyCredential("sk-ant"), new RequestContext("w"));
+
+        Assert.Null(untouched.Headers);
+        Assert.Null(untouched.DropHeaders);
+    }
+
+    [Fact]
+    public async Task Debugging_managed_claude_and_listing_models_use_bearer_without_x_api_key()
+    {
+        const string AnthropicSse =
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-4-5\",\"usage\":{\"input_tokens\":3}}}\n\n"
+            + "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+            + "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"OK\"}}\n\n"
+            + "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+            + "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n"
+            + "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        const string ResponsesSse =
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"OK\"}\n\n"
+            + "data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5\",\"status\":\"completed\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n"
+            + "data: [DONE]\n\n";
+
+        _fx.Http.Ok(Models);
+        await Service.SyncManagedAsync();
+        _fx.Http.Requests.Clear();
+
+        _fx.Http.Reply((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(AnthropicSse, Encoding.UTF8, "text/event-stream") }))
+            .Reply((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ResponsesSse, Encoding.UTF8, "text/event-stream") }));
+
+        var claude = await Service.DebugAsync(new DebugRequest(
+            new DebugTarget("nextcowork"), ProviderProtocol.Anthropic, "claude-opus-4-5", "Reply OK", 64, ThinkingLevel.Auto, false));
+        var gpt = await Service.DebugAsync(new DebugRequest(
+            new DebugTarget("nextcowork"), ProviderProtocol.OpenAiResponses, "gpt-5", "Reply OK", 64, ThinkingLevel.Auto, false));
+
+        Assert.True(claude.Ok, claude.Failure?.Message);
+        Assert.Equal("https://nextco.work/v1/messages", _fx.Http.Requests[0].Url);
+        Assert.Equal("Bearer tok-1", _fx.Http.Requests[0].Header("authorization"));
+        Assert.Null(_fx.Http.Requests[0].Header("x-api-key"));
+        Assert.Equal("2023-06-01", _fx.Http.Requests[0].Header("anthropic-version"));
+
+        Assert.True(gpt.Ok, gpt.Failure?.Message);
+        Assert.Equal("https://nextco.work/v1/responses", _fx.Http.Requests[1].Url);
+        Assert.Equal("Bearer tok-1", _fx.Http.Requests[1].Header("authorization"));
+        Assert.Null(_fx.Http.Requests[1].Header("x-api-key"));
+
+        _fx.Http.Requests.Clear();
+        _fx.Http.Ok(Models).Ok(Models);
+        var listing = await Service.ListModelsAsync(new DebugTarget("nextcowork"));
+
+        Assert.Equal(2, listing.Attempts.Count);
+        Assert.All(_fx.Http.Requests, r =>
+        {
+            Assert.Equal("Bearer tok-1", r.Header("authorization"));
+            Assert.Null(r.Header("x-api-key"));
+        });
     }
 }

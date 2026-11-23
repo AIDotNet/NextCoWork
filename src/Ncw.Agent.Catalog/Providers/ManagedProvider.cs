@@ -1,5 +1,7 @@
+using Ncw.Agent.Llm;
 using Ncw.Agent.Llm.Auth;
 using Ncw.Agent.Llm.Media;
+using Ncw.Agent.Llm.Routing;
 using Ncw.Agent.Llm.Wire;
 
 namespace Ncw.Agent.Catalog;
@@ -94,5 +96,40 @@ public sealed class ManagedCredentialVault(ICredentialVault inner, Func<string?>
         {
             inner.Remove(credentialRef);
         }
+    }
+}
+
+/// <summary>
+/// 托管 NextCoWork 供应商的传输装饰(移植自 2.x <c>kernel/upstream/transport.ts</c> 的 <c>platformLoginAuth</c>):
+/// 托管供应商(<c>nextcowork*</c>)的凭据是账户登录 / 委托令牌(JWT),不是平台 API Key。
+/// 平台网关按请求头分流:<c>x-api-key</c> 去查 API Key 表,<c>Authorization: Bearer</c> 才验登录态;
+/// 实测只要 <c>x-api-key</c> 存在且非空就会落进 API Key 分支返回 401,即使同时带了合法的 Bearer 也一样。
+/// 因此对托管供应商必须写 <c>Authorization: Bearer &lt;token&gt;</c> 并删掉 <c>x-api-key</c>(Claude 系强制走 Anthropic 协议时编码器默认发 <c>x-api-key</c>);
+/// 其余供应商与非 API Key 形态凭据原样透传。
+/// </summary>
+public sealed class ManagedProviderTransport(ITransportDecorator? inner = null) : ITransportDecorator
+{
+    public static readonly ManagedProviderTransport Instance = new();
+
+    private static readonly IReadOnlyList<string> DropXApiKey = ["x-api-key"];
+
+    public TransportDecoration Decorate(ProviderConfig provider, WireProtocol protocol, ProviderCredential credential, RequestContext context)
+    {
+        var baseDecoration = inner?.Decorate(provider, protocol, credential, context) ?? new TransportDecoration();
+        if (credential is not ApiKeyCredential key || !ProviderRefs.IsManagedProviderId(provider.Id) || baseDecoration.Signer is not null)
+        {
+            return baseDecoration;
+        }
+
+        var headers = baseDecoration.Headers is { Count: > 0 } existing
+            ? new Dictionary<string, string>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        headers["authorization"] = "Bearer " + key.ApiKey;
+
+        IReadOnlyList<string> dropHeaders = baseDecoration.DropHeaders is { Count: > 0 } existingDrops
+            ? existingDrops.Contains("x-api-key", StringComparer.OrdinalIgnoreCase) ? existingDrops : [.. existingDrops, "x-api-key"]
+            : DropXApiKey;
+
+        return baseDecoration with { Headers = headers, DropHeaders = dropHeaders };
     }
 }

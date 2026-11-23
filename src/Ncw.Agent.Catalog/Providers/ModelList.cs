@@ -69,32 +69,52 @@ public static partial class ModelList
     /// </summary>
     public static ListRequest RequestFor(ProviderConfig provider, WireProtocol protocol, ProviderCredential? credential, ITransportDecorator transport, RequestContext context)
     {
-        var signer = credential is OAuthCredential
-            ? transport.Decorate(provider, protocol, credential, context).Signer
+        var decoration = credential is not null
+            ? transport.Decorate(provider, protocol, credential, context)
             : null;
+        var signer = credential is OAuthCredential ? decoration?.Signer : null;
         var key = credential is null or SignatureCredential || signer is not null ? null : CredentialFormat.BearerOf(credential);
         var request = Request(protocol, provider.BaseUrl, key);
-        if (signer is null)
+        var hasHeaders = decoration?.Headers is { Count: > 0 };
+        var hasDrops = decoration?.DropHeaders is { Count: > 0 };
+        if (signer is null && !hasHeaders && !hasDrops)
         {
             return request;
         }
 
-        var target = new UriBuilder(request.Url);
-        var signed = signer.Sign("GET", new Uri(request.Url).AbsolutePath);
-        var query = System.Web.HttpUtility.ParseQueryString(target.Query);
-        foreach (var (name, value) in signed.Query ?? new Dictionary<string, string>())
+        var url = request.Url;
+        SignedRequest? signed = null;
+        if (signer is not null)
         {
-            query[name] = value;
+            var target = new UriBuilder(request.Url);
+            signed = signer.Sign("GET", new Uri(request.Url).AbsolutePath);
+            var query = System.Web.HttpUtility.ParseQueryString(target.Query);
+            foreach (var (name, value) in signed.Query ?? new Dictionary<string, string>())
+            {
+                query[name] = value;
+            }
+
+            target.Query = query.ToString();
+            url = target.Uri.ToString();
         }
 
-        target.Query = query.ToString();
         var headers = new Dictionary<string, string>(request.Headers, StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, value) in signed.Headers ?? new Dictionary<string, string>())
+        foreach (var (name, value) in decoration?.Headers ?? new Dictionary<string, string>())
         {
             headers[name] = value;
         }
 
-        return new ListRequest(target.Uri.ToString(), headers);
+        foreach (var (name, value) in signed?.Headers ?? new Dictionary<string, string>())
+        {
+            headers[name] = value;
+        }
+
+        foreach (var drop in decoration?.DropHeaders ?? [])
+        {
+            headers.Remove(drop);
+        }
+
+        return new ListRequest(url, headers);
     }
 
     [GeneratedRegex(@"-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----")]

@@ -864,6 +864,40 @@ public sealed class RouterTests
         Assert.Equal(AgentErrorCode.Auth, LastError(events).Error.Code);
     }
 
+    private sealed class BearerAuthTransport : ITransportDecorator
+    {
+        public TransportDecoration Decorate(ProviderConfig provider, WireProtocol protocol, ProviderCredential credential, RequestContext context) =>
+            credential is ApiKeyCredential key
+                ? new TransportDecoration(
+                    Headers: new Dictionary<string, string> { ["authorization"] = "Bearer " + key.ApiKey, ["user-agent"] = "CustomAgent/1.0" },
+                    DropHeaders: ["x-api-key"])
+                : new TransportDecoration();
+    }
+
+    [Fact]
+    public async Task Transport_decoration_replaces_existing_headers_without_duplicating_them_and_drops_x_api_key()
+    {
+        var h = new Harness();
+        h.Config.Add("a", WireProtocol.Anthropic, 1, "claude-a-up", alias: "claude")
+            .Add("b", WireProtocol.OpenAiChat, 1, "gpt-b-up", alias: "gpt");
+        h.Store.Put("provider:a", "jwt-a").Put("provider:b", "jwt-b");
+        h.Build(transport: new BearerAuthTransport());
+        h.Upstream.Enqueue(() => AnthropicText()).Enqueue(() => ChatText());
+
+        await h.RunAsync(Msg.Request("hi"), "claude");
+        await h.RunAsync(Msg.Request("hi"), "gpt");
+
+        var anthropic = h.Upstream.Requests[0];
+        Assert.Equal("Bearer jwt-a", anthropic.Header("authorization"));
+        Assert.Null(anthropic.Header("x-api-key"));
+        Assert.Equal("CustomAgent/1.0", anthropic.Header("user-agent"));
+
+        var openai = h.Upstream.Requests[1];
+        Assert.Equal("Bearer jwt-b", openai.Header("authorization"));
+        Assert.Null(openai.Header("x-api-key"));
+        Assert.Equal("CustomAgent/1.0", openai.Header("user-agent"));
+    }
+
     // ───────────────────────── 账户池 ─────────────────────────
 
     private static (Harness H, FakePort Port) WithAccounts(int accounts = 2)

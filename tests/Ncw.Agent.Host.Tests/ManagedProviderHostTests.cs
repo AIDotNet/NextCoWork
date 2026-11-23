@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Ncw.Agent.Catalog;
 using Ncw.Agent.Host.Conversation;
@@ -181,5 +182,76 @@ public sealed class ManagedProviderHostTests : IAsyncLifetime
         await _owner.CallAsync(AccountMethods.DetachDelegatedToken, Unit.Value, idem: Guid.NewGuid().ToString("N"));
         var afterDetach = await _owner.CallAsync(ProvidersMethods.List, Unit.Value);
         Assert.Equal(["my-ark-img"], afterDetach.Providers.Select(p => p.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task Running_a_managed_claude_model_uses_bearer_without_x_api_key_while_custom_anthropic_keeps_x_api_key()
+    {
+        const string AnthropicSse =
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-4-5\",\"usage\":{\"input_tokens\":10}}}\n\n"
+            + "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+            + "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi from claude\"}}\n\n"
+            + "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+            + "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":4}}\n\n"
+            + "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        const string ResponsesSse =
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"hi from gpt\"}\n\n"
+            + "data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5\",\"status\":\"completed\",\"usage\":{\"input_tokens\":10,\"output_tokens\":4}}}\n\n"
+            + "data: [DONE]\n\n";
+
+        var project = (await _owner.CallAsync(DeviceMethods.ProjectsList, Unit.Value)).Projects.Single();
+        var topic = await Watch<ProvidersTopicState>.OpenAsync(_owner, ProvidersMethods.Topic);
+        _up.On(ModelsUrl, () => Replies.Json(PlatformModels));
+        _up.On("nextco.work/v1/messages", () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(AnthropicSse, Encoding.UTF8, "text/event-stream") });
+        _up.On("nextco.work/v1/responses", () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ResponsesSse, Encoding.UTF8, "text/event-stream") });
+        _up.On("api.anthropic.example/v1/messages", () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(AnthropicSse, Encoding.UTF8, "text/event-stream") });
+
+        await AttachAsync(_owner);
+        await topic.WaitAsync(() => topic.Decoded<ProvidersTopicState>(ProvidersEvents.Changed).Any(HasManaged), "providers.changed with the built-in provider");
+
+        // 1. 托管供应商的 Claude 模型走 Anthropic /v1/messages,但鉴权必须是 Authorization: Bearer 且不能带 x-api-key(平台网关有 x-api-key 就判 401)。
+        var claudeSession = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(project.WorkspaceId, Model: "claude-opus-4-5"));
+        var claudeStart = await _owner.CallAsync(ConversationMethods.RunsStart,
+            new RunsStartParams(Guid.NewGuid().ToString("N"), claudeSession.Id, Guid.NewGuid().ToString("N"),
+                [new InputPartDto(InputPartKinds.Text, "hello")], new SendOptionsDto("claude-opus-4-5", ModelProviderId: "nextcowork", PermissionMode: "ask")));
+        var claudeRun = await RunWatch.OpenAsync(_owner, claudeStart.RunId);
+        await claudeRun.SettledAsync();
+
+        Assert.Equal("done", claudeRun.Of<RunEndEventDto>().Single().Status);
+        var claudeReq = Assert.Single(_up.To("nextco.work/v1/messages"));
+        Assert.Equal("Bearer " + Token, claudeReq.Headers["authorization"]);
+        Assert.False(claudeReq.Headers.ContainsKey("x-api-key"));
+        Assert.Equal("2023-06-01", claudeReq.Headers["anthropic-version"]);
+        Assert.StartsWith("NextCoWork/", claudeReq.Headers["user-agent"], StringComparison.Ordinal);
+
+        // 2. 托管供应商的非 Claude 模型走 Responses,Authorization 不能被装饰器重复追加。
+        var gptSession = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(project.WorkspaceId, Model: "gpt-5"));
+        var gptStart = await _owner.CallAsync(ConversationMethods.RunsStart,
+            new RunsStartParams(Guid.NewGuid().ToString("N"), gptSession.Id, Guid.NewGuid().ToString("N"),
+                [new InputPartDto(InputPartKinds.Text, "hello")], new SendOptionsDto("gpt-5", ModelProviderId: "nextcowork", PermissionMode: "ask")));
+        var gptRun = await RunWatch.OpenAsync(_owner, gptStart.RunId);
+        await gptRun.SettledAsync();
+
+        Assert.Equal("done", gptRun.Of<RunEndEventDto>().Single().Status);
+        var gptReq = Assert.Single(_up.To("nextco.work/v1/responses"));
+        Assert.Equal("Bearer " + Token, gptReq.Headers["authorization"]);
+        Assert.False(gptReq.Headers.ContainsKey("x-api-key"));
+        Assert.StartsWith("NextCoWork/", gptReq.Headers["user-agent"], StringComparison.Ordinal);
+
+        // 3. 用户自己配的 Anthropic 供应商零回归:仍发 x-api-key,不发 Authorization。
+        await _owner.CallAsync(ProvidersMethods.Upsert, new ProvidersUpsertParams("my-ant", "My Anthropic", "anthropic", "https://api.anthropic.example"), idem: Guid.NewGuid().ToString("N"));
+        await _owner.CallAsync(ProvidersMethods.CredentialSet, new CredentialSetParams("my-ant", "sk-ant-custom"), idem: Guid.NewGuid().ToString("N"));
+        await _owner.CallAsync(ProvidersMethods.ModelsSetAliases, new SetAliasesParams("my-ant", ["claude-opus-4-5"]), idem: Guid.NewGuid().ToString("N"));
+        var customSession = await _owner.CallAsync(ConversationMethods.SessionsCreate, new SessionsCreateParams(project.WorkspaceId, Model: "claude-opus-4-5"));
+        var customStart = await _owner.CallAsync(ConversationMethods.RunsStart,
+            new RunsStartParams(Guid.NewGuid().ToString("N"), customSession.Id, Guid.NewGuid().ToString("N"),
+                [new InputPartDto(InputPartKinds.Text, "hello")], new SendOptionsDto("claude-opus-4-5", ModelProviderId: "my-ant", PermissionMode: "ask")));
+        var customRun = await RunWatch.OpenAsync(_owner, customStart.RunId);
+        await customRun.SettledAsync();
+
+        Assert.Equal("done", customRun.Of<RunEndEventDto>().Single().Status);
+        var customReq = Assert.Single(_up.To("api.anthropic.example/v1/messages"));
+        Assert.Equal("sk-ant-custom", customReq.Headers["x-api-key"]);
+        Assert.False(customReq.Headers.ContainsKey("authorization"));
     }
 }

@@ -79,7 +79,9 @@ public sealed partial class ProviderService
         _catalog = catalog;
         _clock = clock ?? TimeProvider.System;
         _presets = presets ?? BuiltinProviderPresets.Instance;
-        _transport = transport ?? NoTransportDecoration.Instance;
+        _transport = transport is null
+            ? ManagedProviderTransport.Instance
+            : transport is ManagedProviderTransport ? transport : new ManagedProviderTransport(transport);
         _options = options ?? new ProviderServiceOptions();
         AccountPortImpl = new AccountPoolPort(accounts, _clock, _options.RotationEnabled);
         AccountPool = new AccountPool(AccountPortImpl);

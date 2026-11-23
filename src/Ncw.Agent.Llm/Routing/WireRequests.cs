@@ -59,12 +59,19 @@ public static class WireRequests
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json"),
         };
+        static void SetHeader(HttpRequestMessage req, string key, string value)
+        {
+            req.Headers.Remove(key);
+            req.Headers.TryAddWithoutValidation(key, value);
+        }
+
         message.Headers.TryAddWithoutValidation("user-agent", userAgent);
+        message.Headers.TryAddWithoutValidation("accept", "text/event-stream");
         foreach (var (key, value) in fixedHeaders)
         {
             if (!key.Equals("content-type", StringComparison.OrdinalIgnoreCase))
             {
-                message.Headers.TryAddWithoutValidation(key, value);
+                SetHeader(message, key, value);
             }
         }
 
@@ -72,17 +79,18 @@ public static class WireRequests
         {
             var bearer = bearerOverride ?? CredentialFormat.BearerOf(credential);
             var (name, headerValue) = protocol.AuthHeader(bearer);
-            message.Headers.TryAddWithoutValidation(name, headerValue);
+            SetHeader(message, name, headerValue);
         }
 
+        // 传输装饰和签名器允许覆盖已有头(如 authorization / user-agent):HttpRequestHeaders.TryAddWithoutValidation 会追加重名头而非替换,必须先删再加。
         foreach (var (key, value) in decoration.Headers ?? new Dictionary<string, string>())
         {
-            message.Headers.TryAddWithoutValidation(key, value);
+            SetHeader(message, key, value);
         }
 
         foreach (var (key, value) in signed?.Headers ?? new Dictionary<string, string>())
         {
-            message.Headers.TryAddWithoutValidation(key, value);
+            SetHeader(message, key, value);
         }
 
         foreach (var drop in decoration.DropHeaders ?? [])
@@ -90,7 +98,6 @@ public static class WireRequests
             message.Headers.Remove(drop);
         }
 
-        message.Headers.TryAddWithoutValidation("accept", "text/event-stream");
         return message;
     }
 
