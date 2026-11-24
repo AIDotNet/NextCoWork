@@ -47,7 +47,7 @@
   <!--
     Ncw.UI 引用 TKCode.Arc.Terminal(终端页签,桌面用)。它带的 libghostty-vt.so 是 glibc 的 linux 构建:在 Android(bionic)上不能加载,
     也没有 16 KB 页对齐(XA0141)。手机宿主没有本机 Agent、也不提供终端页签,所以从 APK 里去掉它(平板宽屏走桌面外壳时终端页签不可用,见 docs/design/11 §6)。
-    Arc Video.Native 1.3.0 同样只发布桌面原生库;手机保留保存视频操作,不打包 Linux 的视频解码库。
+    Arc Video.Native 1.3.1 同样只发布桌面原生库;手机保留保存视频操作,不打包 Linux 的视频解码库。
   -->
   <Target Name="NcwDropDesktopOnlyNative" AfterTargets="ResolvePackageAssets">
     <ItemGroup>

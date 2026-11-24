@@ -20,7 +20,7 @@ M0(设计)、M1(骨架与界面)已完成;M2(协议与 Agent 骨架)基本完成
 
 ## 2. 技术栈(必须)
 
-- .NET 11(`global.json`,SDK 11.0.100);Avalonia **锁定** `12.1.6`(Arc 1.2.0 要求 ≥ 12.1.6,所有 Avalonia 包保持一致);TKCode.Arc 全家 **锁定** `1.3.0`(Markdown 与语法高亮自 1.2.0 起是独立包 `TKCode.Arc.Markdown` / `TKCode.Arc.Highlighting`,在 `NcwAppSetup` 里注册)。所有版本只写在 `Directory.Packages.props` 里(MSBuild SDK 的版本例外,只能写在 `global.json` 的 `msbuild-sdks` 里)。
+- .NET 11(`global.json`,SDK 11.0.100);Avalonia **锁定** `12.2.0`(Arc 1.3.1 要求 ≥ 12.2.0,所有 Avalonia 包保持一致);TKCode.Arc 全家 **锁定** `1.3.1`(Markdown 与语法高亮自 1.2.0 起是独立包 `TKCode.Arc.Markdown` / `TKCode.Arc.Highlighting`,在 `NcwAppSetup` 里注册)。所有版本只写在 `Directory.Packages.props` 里(MSBuild SDK 的版本例外,只能写在 `global.json` 的 `msbuild-sdks` 里)。
 - 唯一的例外:内联可视化的 WebView 用官方 MIT 包 `Avalonia.Controls.WebView`(版本号与 Avalonia 核心包不同步,单独锁 12.1.2,同样只写在 `Directory.Packages.props`);整个仓库只有 `src/Ncw.UI/Controls/NcwWidgetSurface.cs` 可以引用 `NativeWebView`(评估见 `docs/design/03-ui-layout.md` §8)。
 - 注册方式是 `AppBuilder.UseArc(arc => arc.UseArcControls() …)`,`App.axaml` 里不放 Fluent 或 Simple 主题。
 - 业务视图只引用 `Ncw.UI.Controls` 封装,不直接引用 `arc:` 控件(封装层自己除外)。

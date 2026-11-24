@@ -4,7 +4,7 @@
 
 1. **3.0 整个技术栈都用 C#(.NET 11;2026-11 从 .NET 10 升级)**:客户端、Agent、中继服务、插件运行时、构建和发布工具全部用 C# 实现,
    仓库里不再有 Node / TypeScript 运行时依赖。需要执行 JS 的地方(插件)一律用 [Jaunt](https://github.com/AIDotNet/Jaunt)。
-   - 客户端:Avalonia 12(≥ 12.1.6,< 13)+ TKCode.Arc(锁定正式版 `1.3.0`,Avalonia 锁定 `12.1.6`),一套代码覆盖
+   - 客户端:Avalonia 12(≥ 12.2.0,< 13)+ TKCode.Arc(锁定正式版 `1.3.1`,Avalonia 锁定 `12.2.0`),一套代码覆盖
      macOS / Windows / Linux / iOS / Android。浏览器(WASM)先不做,但架构上不堵死。
    - Agent:用 C# 重写,NativeAOT 发布为原生可执行文件 `ncw-agent`(旁边只带一个 e_sqlite3 原生库),不再内置 Node。
 2. **Agent 运行时单独设计**:Agent 是一个独立的服务进程,对客户端类型无感知。
