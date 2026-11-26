@@ -195,10 +195,14 @@ public static partial class HistoryTransform
         return message with { Parts = parts };
     }
 
+    [GeneratedRegex("insufficient_quota|billing|balance", RegexOptions.IgnoreCase)]
+    private static partial Regex QuotaOrBilling();
+
     /// <summary>
-    /// 哪些 user 消息的图片不再重发(issue #200):紧挨在一条以 400 / 413 / 415 / 422 失败的助手消息之前、带着图片的那几条 user 消息。
-    /// 上游因为图片(格式、大小、模型不收图)拒掉请求时,失败的助手消息虽然被跳过,图片还留在历史里,之后每一轮都会被同样拒掉,
-    /// 整个会话就再也发不出去。限流、鉴权、5xx、网络错误不算:那些和图片无关,重试时图片应该还在。
+    /// 哪些 user 消息的图片不再重发(issue #200):紧挨在一条以 400 / 413 / 415 / 422、流内请求错误(HTTP 200 SSE 里透传的
+    /// <c>invalid_request_error</c> 等,<c>Status == null</c>)或本地读图失败(<see cref="LlmErrorKeys.ImageInput"/>)失败的助手消息之前、
+    /// 带着图片的那几条 user 消息。上游因为图片(格式、大小、模型不收图)拒掉请求时,失败的助手消息虽然被跳过,图片还留在历史里,
+    /// 之后每一轮都会被同样拒掉,整个会话就再也发不出去。限流、鉴权、配额、5xx、网络错误不算:那些和图片无关,重试时图片应该还在。
     /// </summary>
     private static HashSet<int> TurnsRejectedWithImages(IReadOnlyList<Message> messages)
     {
@@ -206,7 +210,8 @@ public static partial class HistoryTransform
         for (var i = 0; i < messages.Count; i++)
         {
             if (messages[i] is not { Role: Role.Assistant } failed
-                || failed.Parts.OfType<ErrorPart>().FirstOrDefault() is not { Error.Status: 400 or 413 or 415 or 422 })
+                || failed.Parts.OfType<ErrorPart>().FirstOrDefault() is not { Error: var error }
+                || !IsImageRejection(error))
             {
                 continue;
             }
@@ -222,6 +227,11 @@ public static partial class HistoryTransform
 
         return rejected;
     }
+
+    private static bool IsImageRejection(AgentError error) =>
+        error.Status is 400 or 413 or 415 or 422
+        || error.MessageKey == LlmErrorKeys.ImageInput
+        || (error is { Code: AgentErrorCode.Provider, Retryable: false, Status: null, MessageKey: null } && !QuotaOrBilling().IsMatch(error.Message));
 
     private static Part StripImages(Part part, HistoryTarget target, bool rejected = false)
     {

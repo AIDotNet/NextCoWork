@@ -92,7 +92,9 @@ public static class OpenAiResponsesEncoder
                         content.Add(new JsonObject { ["type"] = isUser ? "input_text" : "output_text", ["text"] = text.Text });
                         break;
                     case ImagePart image:
-                        content.Add(InputImage(image.DataRef));
+                        content.Add(DataUrls.TryNormalizeImageUrl(image.DataRef, out var imageUrl)
+                            ? InputImage(imageUrl)
+                            : new JsonObject { ["type"] = isUser ? "input_text" : "output_text", ["text"] = DataUrls.UnavailableImagePlaceholder });
                         break;
                     case FileRefPart file:
                         content.Add(new JsonObject { ["type"] = isUser ? "input_text" : "output_text", ["text"] = FileRefs.Markdown(file) });
@@ -113,18 +115,32 @@ public static class OpenAiResponsesEncoder
                     case ToolResultPart result:
                     {
                         Flush();
-                        var images = result.Output.Images ?? [];
-                        JsonNode output;
-                        if (images.Count == 0)
+                        var validImages = new List<string>();
+                        var omitted = 0;
+                        foreach (var image in result.Output.Images ?? [])
                         {
-                            output = result.Output.Content;
+                            if (DataUrls.TryNormalizeImageUrl(image.DataRef, out var toolImageUrl))
+                            {
+                                validImages.Add(toolImageUrl);
+                            }
+                            else
+                            {
+                                omitted++;
+                            }
+                        }
+
+                        var text = AnthropicEncoder.AppendOmittedImages(result.Output.Content, omitted);
+                        JsonNode output;
+                        if (validImages.Count == 0)
+                        {
+                            output = text;
                         }
                         else
                         {
-                            var array = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = result.Output.Content });
-                            foreach (var image in images)
+                            var array = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text });
+                            foreach (var toolImageUrl in validImages)
                             {
-                                array.Push(InputImage(image.DataRef));
+                                array.Push(InputImage(toolImageUrl));
                             }
 
                             output = array;

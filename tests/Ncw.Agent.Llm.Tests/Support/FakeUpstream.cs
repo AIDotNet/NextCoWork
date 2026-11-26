@@ -425,6 +425,17 @@ public static partial class StrictRequest
                     return "assistant tool_calls must be followed immediately by tool messages for every call";
                 }
             }
+
+            if (message.Prop("content") is { ValueKind: JsonValueKind.Array } parts)
+            {
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.Str("type") == "image_url" && !IsValidImageDataUrl(part.Obj("image_url").Str("url")))
+                    {
+                        return "invalid image_url format in chat message";
+                    }
+                }
+            }
         }
 
         return null;
@@ -477,11 +488,46 @@ public static partial class StrictRequest
 
                     break;
                 }
+
+                case "function_call_output":
+                    if (item.Prop("output") is { ValueKind: JsonValueKind.Array } outputs)
+                    {
+                        foreach (var part in outputs.EnumerateArray())
+                        {
+                            if (part.Str("type") == "input_image" && !IsValidImageDataUrl(part.Str("image_url")))
+                            {
+                                return $"Invalid 'input[{i}].output[].image_url'. Expected a valid URL, but got a value with an invalid format.";
+                            }
+                        }
+                    }
+
+                    break;
+                default:
+                    if (item.Prop("content") is { ValueKind: JsonValueKind.Array } content)
+                    {
+                        for (var j = 0; j < content.GetArrayLength(); j++)
+                        {
+                            var part = content[j];
+                            if (part.Str("type") == "input_image" && !IsValidImageDataUrl(part.Str("image_url")))
+                            {
+                                return $"Invalid 'input[{i}].content[{j}].image_url'. Expected a valid URL, but got a value with an invalid format.";
+                            }
+                        }
+                    }
+
+                    break;
             }
         }
 
         return null;
     }
+
+    private static bool IsValidImageDataUrl(string? url) =>
+        url is { Length: > 0 }
+        && url.StartsWith("data:image/", StringComparison.Ordinal)
+        && url.Contains(";base64,", StringComparison.Ordinal)
+        && !url.EndsWith(";base64,", StringComparison.Ordinal)
+        && !url.Any(char.IsWhiteSpace);
 }
 
 /// <summary>把所有协议的单元测试里常用的「完整请求 + 路由 + 假上游」装配在一起。</summary>

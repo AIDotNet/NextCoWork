@@ -330,4 +330,58 @@ public sealed class EncoderTests
         Assert.Equal("a", input[1]!["content"]!.GetValue<string>()); // assistant 的 content 是拼好的字符串
         Assert.Equal("result", input[4]!["output"]!.GetValue<string>());
     }
+
+    [Theory]
+    [InlineData("/missing/imported-image.png")]
+    [InlineData("file:///Users/test/a.png")]
+    [InlineData("ncw://attachments/sessions/s1/a.png")]
+    [InlineData("data:image/png;base64,")]
+    [InlineData("data:image/png;base64,not!valid!")]
+    [InlineData("data:image/svg+xml;base64,PHN2Zz4=")]
+    [InlineData("https://example.com/a.png")]
+    public void Invalid_image_urls_become_placeholders_across_all_three_encoders(string invalidRef)
+    {
+        var messages = new[]
+        {
+            Msg.User(new TextPart("look"), new ImagePart("image/png", invalidRef)),
+            Msg.Assistant(Msg.Call("call_1", "Shot")),
+            Msg.User(new ToolResultPart("call_1", new ToolOutput("shot", [new ToolOutputImage("image/png", invalidRef)]), false)),
+        };
+
+        var responsesInput = ResponsesInput(messages);
+        var userContent = (JsonArray)responsesInput[0]!["content"]!;
+        Assert.Equal(["input_text", "input_text"], userContent.Select(p => p!["type"]!.GetValue<string>()));
+        Assert.Contains("image omitted", userContent[1]!["text"]!.GetValue<string>());
+        Assert.Equal("shot\n" + "[image omitted: image data is unavailable]", responsesInput[2]!["output"]!.GetValue<string>());
+
+        var chatMessages = (JsonArray)OpenAiChatEncoder.Encode(Msg.Request(messages), "gpt-5").Body["messages"]!;
+        Assert.Equal("look[image omitted: image data is unavailable]", chatMessages[1]!["content"]!.GetValue<string>());
+        Assert.Equal("shot\n[image omitted: image data is unavailable]", chatMessages[3]!["content"]!.GetValue<string>());
+        Assert.Equal(4, chatMessages.Count); // 工具结果里没有合法图片,不再凭空多出一条 user 消息
+
+        var anthropicMessages = (JsonArray)AnthropicBody(Msg.Request(messages))["messages"]!;
+        var anthropicUser = (JsonArray)anthropicMessages[0]!["content"]!;
+        Assert.Equal(["text", "text"], anthropicUser.Select(b => b!["type"]!.GetValue<string>()));
+        Assert.Equal("[image omitted: image data is unavailable]", anthropicUser[1]!["text"]!.GetValue<string>());
+        var anthropicResult = ((JsonArray)anthropicMessages[2]!["content"]!)[0]!;
+        Assert.Equal("shot\n[image omitted: image data is unavailable]", anthropicResult["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Image_data_urls_normalize_mime_aliases_and_strip_base64_whitespace_across_encoders()
+    {
+        var request = Msg.Request([Msg.User(new TextPart("look"), new ImagePart("image/jpg", "  data:image/jpg;base64,QU\nJD  "))]);
+
+        var responsesUser = (JsonArray)((JsonArray)OpenAiResponsesEncoder.Encode(request, "gpt-5", Options).Body["input"]!)[0]!["content"]!;
+        Assert.Equal("input_image", responsesUser[1]!["type"]!.GetValue<string>());
+        Assert.Equal("data:image/jpeg;base64,QUJD", responsesUser[1]!["image_url"]!.GetValue<string>());
+
+        var chatUser = (JsonArray)((JsonArray)OpenAiChatEncoder.Encode(request, "gpt-5").Body["messages"]!)[1]!["content"]!;
+        Assert.Equal("data:image/jpeg;base64,QUJD", chatUser[1]!["image_url"]!["url"]!.GetValue<string>());
+
+        var anthropicUser = (JsonArray)((JsonArray)AnthropicBody(request)["messages"]!)[0]!["content"]!;
+        Assert.Equal("image", anthropicUser[1]!["type"]!.GetValue<string>());
+        Assert.Equal("image/jpeg", anthropicUser[1]!["source"]!["media_type"]!.GetValue<string>());
+        Assert.Equal("QUJD", anthropicUser[1]!["source"]!["data"]!.GetValue<string>());
+    }
 }

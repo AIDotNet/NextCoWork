@@ -79,18 +79,36 @@ public static partial class OpenAiChatEncoder
                 switch (part)
                 {
                     case ToolResultPart result:
-                        output.Push(new JsonObject { ["role"] = "tool", ["tool_call_id"] = result.CallId, ["content"] = result.Output.Content });
+                    {
+                        var omitted = 0;
                         foreach (var image in result.Output.Images ?? [])
                         {
-                            content.Add(ImageContent(image.DataRef));
+                            if (DataUrls.TryNormalizeImageUrl(image.DataRef, out var toolImageUrl))
+                            {
+                                content.Add(ImageContent(toolImageUrl));
+                            }
+                            else
+                            {
+                                omitted++;
+                            }
                         }
 
+                        output.Push(new JsonObject
+                        {
+                            ["role"] = "tool",
+                            ["tool_call_id"] = result.CallId,
+                            ["content"] = AnthropicEncoder.AppendOmittedImages(result.Output.Content, omitted),
+                        });
                         break;
+                    }
+
                     case TextPart { Text.Length: > 0 } text:
                         content.Add(new JsonObject { ["type"] = "text", ["text"] = text.Text });
                         break;
                     case ImagePart image:
-                        content.Add(ImageContent(image.DataRef));
+                        content.Add(DataUrls.TryNormalizeImageUrl(image.DataRef, out var imageUrl)
+                            ? ImageContent(imageUrl)
+                            : new JsonObject { ["type"] = "text", ["text"] = DataUrls.UnavailableImagePlaceholder });
                         break;
                     case FileRefPart file:
                         content.Add(new JsonObject { ["type"] = "text", ["text"] = FileRefs.Markdown(file) });

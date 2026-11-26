@@ -1302,6 +1302,33 @@ public sealed class RouterTests
         Assert.Empty(h.Upstream.Requests);
     }
 
+    [Fact]
+    public async Task Responses_replaces_unresolvable_legacy_path_images_and_resolves_case_insensitive_ncw_refs()
+    {
+        var h = new Harness();
+        h.Config.Add("openai", WireProtocol.OpenAiResponses, 1, "gpt-5");
+        h.Store.Put("provider:openai", "k");
+        h.Build(images: new FakeImages());
+        h.Upstream.Enqueue(() => Reply.Sample("openai-responses-reasoning-tool.sse"));
+        var history = new[]
+        {
+            Msg.User(new TextPart("from 2.x"), new ImagePart("image/png", "/Users/old/screenshot.png")),
+            Msg.Assistant(new TextPart("ok")),
+            Msg.User(new TextPart("current"), new ImagePart("image/jpg", "NCW://attachments/sessions/s1/IMG.jpg")),
+        };
+
+        var events = await h.RunAsync(Msg.Request(history));
+
+        Assert.Contains(events, e => e is MessageEnd);
+        var input = Assert.Single(h.Upstream.Requests).Json.Arr("input");
+        var firstContent = input[0].Arr("content");
+        Assert.Equal("input_text", firstContent[1].Str("type"));
+        Assert.Contains("image omitted", firstContent[1].Str("text"));
+        var secondContent = input[2].Arr("content");
+        Assert.Equal("input_image", secondContent[1].Str("type"));
+        Assert.Equal("data:image/jpeg;base64,UkVTT0xWRUQ=", secondContent[1].Str("image_url"));
+    }
+
     // ───────────────────────── 跨模型切换(端到端) ─────────────────────────
 
     [Fact]

@@ -245,6 +245,42 @@ public sealed class HistoryTransformTests
     }
 
     [Fact]
+    public void Stream_provider_rejections_and_unreadable_image_errors_also_stop_replaying_the_image_but_quota_errors_keep_it()
+    {
+        var streamRejected = new[]
+        {
+            Msg.User(new TextPart("fix this"), new ImagePart("image/png", "data:image/png;base64,QQ==")),
+            Msg.Assistant(ModelA, new ErrorPart(AgentError.Create(
+                AgentErrorCode.Provider,
+                """OpenAI response error: {"error":{"code":"invalid_value","message":"Invalid 'input[55].content[1].image_url'."}}""",
+                false))),
+            Msg.User("try again"),
+        };
+        var localImageError = new[]
+        {
+            Msg.User(new TextPart("look"), new ImagePart("image/png", "ncw://attachments/sessions/s1/gone.png")),
+            Msg.Assistant(ModelA, new ErrorPart(AgentError.Create(AgentErrorCode.Provider, "The session image attachment could not be read.", false, messageKey: LlmErrorKeys.ImageInput))),
+            Msg.User("continue"),
+        };
+        var quotaFailed = new[]
+        {
+            Msg.User(new TextPart("look"), new ImagePart("image/png", "data:image/png;base64,QQ==")),
+            Msg.Assistant(ModelA, new ErrorPart(AgentError.Create(AgentErrorCode.Provider, "insufficient_quota: out of balance", false))),
+            Msg.User("retry after top-up"),
+        };
+
+        var preparedStream = HistoryTransform.Prepare(streamRejected, TargetA);
+        var preparedLocal = HistoryTransform.Prepare(localImageError, TargetA);
+        var preparedQuota = HistoryTransform.Prepare(quotaFailed, TargetA);
+
+        Assert.DoesNotContain(preparedStream.SelectMany(m => m.Parts), p => p is ImagePart);
+        Assert.Contains(preparedStream[0].Parts, p => p is TextPart { Text: HistoryTransform.RejectedImagePlaceholder });
+        Assert.DoesNotContain(preparedLocal.SelectMany(m => m.Parts), p => p is ImagePart);
+        Assert.Contains(preparedLocal[0].Parts, p => p is TextPart { Text: HistoryTransform.RejectedImagePlaceholder });
+        Assert.Contains(preparedQuota.SelectMany(m => m.Parts), p => p is ImagePart);
+    }
+
+    [Fact]
     public void Images_are_kept_when_the_target_supports_them()
     {
         var history = new[] { Msg.User(new ImagePart("image/png", "data:image/png;base64,QQ==")) };

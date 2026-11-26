@@ -32,6 +32,11 @@ internal sealed class SessionImageResolver(AttachmentService attachments) : IIma
                 buffer.Write(part.Data);
                 if (part.Eof)
                 {
+                    if (buffer.Length == 0)
+                    {
+                        break;
+                    }
+
                     return ValueTask.FromResult($"data:{part.Mime};base64,{Convert.ToBase64String(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))}");
                 }
             }

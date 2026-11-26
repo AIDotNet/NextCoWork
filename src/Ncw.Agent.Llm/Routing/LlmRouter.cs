@@ -800,16 +800,28 @@ public sealed class LlmRouter : ILlmClient
                 switch (part)
                 {
                     case ImagePart { DataRef: var r } image when IsRef(r):
-                        parts.Add(image with { DataRef = await _images.ResolveAsync(r, image.Mime, context, ct).ConfigureAwait(false) });
+                    {
+                        var resolvedRef = await _images.ResolveAsync(r, image.Mime, context, ct).ConfigureAwait(false);
+                        var resolvedMime = DataUrls.TryParseImage(resolvedRef, out var mime, out _) ? mime : image.Mime;
+                        parts.Add(image with { Mime = resolvedMime, DataRef = resolvedRef });
                         break;
+                    }
+
                     case ToolResultPart { Output.Images: { } images } result when images.Any(i => IsRef(i.DataRef)):
                     {
                         var resolved = new List<ToolOutputImage>();
                         foreach (var image in images)
                         {
-                            resolved.Add(IsRef(image.DataRef)
-                                ? image with { DataRef = await _images.ResolveAsync(image.DataRef, image.Mime, context, ct).ConfigureAwait(false) }
-                                : image);
+                            if (IsRef(image.DataRef))
+                            {
+                                var resolvedRef = await _images.ResolveAsync(image.DataRef, image.Mime, context, ct).ConfigureAwait(false);
+                                var resolvedMime = DataUrls.TryParseImage(resolvedRef, out var mime, out _) ? mime : image.Mime;
+                                resolved.Add(image with { Mime = resolvedMime, DataRef = resolvedRef });
+                            }
+                            else
+                            {
+                                resolved.Add(image);
+                            }
                         }
 
                         parts.Add(result with { Output = result.Output with { Images = resolved } });
@@ -828,7 +840,7 @@ public sealed class LlmRouter : ILlmClient
         return output;
     }
 
-    private static bool IsRef(string dataRef) => dataRef.StartsWith("ncw://", StringComparison.Ordinal);
+    private static bool IsRef(string dataRef) => dataRef.StartsWith("ncw://", StringComparison.OrdinalIgnoreCase);
 
     private static bool HasUnresolvedImage(Message message) => message.Parts.Any(p =>
         p is ImagePart image && IsRef(image.DataRef)

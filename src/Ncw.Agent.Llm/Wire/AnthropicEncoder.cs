@@ -145,15 +145,29 @@ public static class AnthropicEncoder
 
             case ToolResultPart result:
             {
+                var images = new List<JsonNode>();
+                var omitted = 0;
+                foreach (var image in result.Output.Images ?? [])
+                {
+                    if (ImageBlock(image.DataRef) is { } block)
+                    {
+                        images.Add(block);
+                    }
+                    else
+                    {
+                        omitted++;
+                    }
+                }
+
+                var text = AppendOmittedImages(result.Output.Content, omitted);
                 JsonNode content;
-                var images = (result.Output.Images ?? []).Select(i => ImageBlock(i.Mime, i.DataRef)).OfType<JsonNode>().ToList();
                 if (images.Count == 0)
                 {
-                    content = result.Output.Content;
+                    content = text;
                 }
                 else
                 {
-                    var array = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = result.Output.Content });
+                    var array = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text });
                     foreach (var image in images)
                     {
                         array.Push(image);
@@ -172,7 +186,7 @@ public static class AnthropicEncoder
             }
 
             case ImagePart image:
-                return ImageBlock(image.Mime, image.DataRef);
+                return ImageBlock(image.DataRef) ?? new JsonObject { ["type"] = "text", ["text"] = DataUrls.UnavailableImagePlaceholder };
 
             case FileRefPart file:
                 // 不读文件、不传字节:只把路径当 markdown 链接告诉模型,它自己用工具去读。
@@ -184,37 +198,27 @@ public static class AnthropicEncoder
         }
     }
 
-    private static JsonNode? ImageBlock(string mime, string dataRef) =>
-        DataUrls.TryGetBase64(dataRef, mime, out var data)
+    private static JsonNode? ImageBlock(string dataRef) =>
+        DataUrls.TryParseImage(dataRef, out var mime, out var data)
             ? new JsonObject
             {
                 ["type"] = "image",
                 ["source"] = new JsonObject { ["type"] = "base64", ["media_type"] = mime, ["data"] = data },
             }
             : null;
+
+    internal static string AppendOmittedImages(string text, int omitted) =>
+        omitted == 0
+            ? text
+            : text.Length == 0
+                ? string.Join('\n', Enumerable.Repeat(DataUrls.UnavailableImagePlaceholder, omitted))
+                : text + "\n" + string.Join('\n', Enumerable.Repeat(DataUrls.UnavailableImagePlaceholder, omitted));
 }
 
 internal static class FileRefs
 {
     /// <summary>用标准 markdown 链接语法:模型对 <c>[text](target)</c> 训练得多。</summary>
     public static string Markdown(FileRefPart file) => $"[{file.Name}]({file.Path})";
-}
-
-internal static class DataUrls
-{
-    /// <summary>只认 <c>data:{mime};base64,...</c>;<c>ncw://</c> 由路由在发出去的副本上解析,编码器永远看不到。</summary>
-    public static bool TryGetBase64(string dataRef, string mime, out string data)
-    {
-        var prefix = $"data:{mime};base64,";
-        if (dataRef.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            data = dataRef[prefix.Length..];
-            return true;
-        }
-
-        data = "";
-        return false;
-    }
 }
 
 /// <summary>
