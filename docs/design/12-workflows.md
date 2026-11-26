@@ -59,7 +59,7 @@ src/
 - `Ncw.Agent.Workflows` 只依赖 `Ncw.Core`、`Ncw.Agent.Runs`、`Ncw.Agent.Extensions`、`Ncw.Agent.Environments`、`Ncw.Agent.Storage`、`Ncw.Agent.Tools`、`Ncw.Agent.Subagents`(复用子代理定义与模型选择)、`Ncw.Agent.Plugins`(仅抽象接口)。**不引用** `Ncw.Protocol`、`Ncw.Agent.Host`、Avalonia 或任何客户端项目。
 - 文件与进程访问一律经 `IExecutionEnvironment`,不得直接碰本机 `System.IO` / `Process`(全局 `<数据根>/workflows` 经本机环境实例访问)。
 - 全部项目零反射序列化,NativeAOT 发布零裁剪警告。
-- **包版本锁定**:`Directory.Packages.props` 新增 `<PackageVersion Include="TKCode.Arc.Workflow" Version="1.3.1" />`,与 `TKCode.Arc` 全家版本完全一致(AGENTS.md §2)。
+- **包版本锁定**:`Directory.Packages.props` 新增 `<PackageVersion Include="TKCode.Arc.Workflow" Version="1.3.2-preview.4" />`,与 `TKCode.Arc` 全家版本完全一致(AGENTS.md §2)。
 
 ---
 
@@ -500,7 +500,7 @@ CREATE TABLE IF NOT EXISTS workflow_node_runs (
 ### 10.2 分阶段实施路线
 
 - **Phase 1(MVP:核心引擎 + 只读实时画布)**
-  1. `Directory.Packages.props` 锁定 `TKCode.Arc.Workflow 1.3.1`,`NcwAppSetup` 注册 `.UseArcWorkflow()`。
+  1. `Directory.Packages.props` 锁定 `TKCode.Arc.Workflow 1.3.2-preview.4`,`NcwAppSetup` 注册 `.UseArcWorkflow()`。
   2. `Ncw.Core/Domain/Workflows.cs` + `Ncw.Agent.Storage` V3 迁移。
   3. `Ncw.Agent.Workflows` 调度引擎 + 核心节点(`Trigger` / `Agent` / `Tool` / `Condition` / `Approval` / `Output`)+ `RunWorkflow` 工具。
   4. `Ncw.Protocol/Methods/WorkflowMethods.cs` + `Ncw.Agent.Host/Workflows` 接线。

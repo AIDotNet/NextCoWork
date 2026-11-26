@@ -4,6 +4,6 @@
     "rollForward": "latestFeature"
   },
   "msbuild-sdks": {
-    "PublishWithSatoriGC": "11.0.1-satori.44435881482.1"
+    "PublishWithSatoriGC": "11.0.1-satori.44643583273.1"
   }
 }
