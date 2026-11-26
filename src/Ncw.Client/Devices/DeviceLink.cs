@@ -41,6 +41,8 @@ public sealed class DeviceLink : IAsyncDisposable
 
     /// <summary>每个被订阅的 Run 收到的最后一个 seq:这条连接的传输层游标,重连后按它续传(镜像里的 <c>RunView.Seq</c> 是同一个数,但 Store 只能在 UI 线程上读)。</summary>
     private readonly ConcurrentDictionary<string, long> _runCursors = new(StringComparer.Ordinal);
+    private readonly ConcurrentQueue<Func<ConversationState, ConversationState>> _pendingConversationUpdates = new();
+    private int _conversationFlushScheduled;
     private Task _loop = Task.CompletedTask;
     private DeviceClient? _client;
     private readonly StartupSignals _startup;
@@ -508,17 +510,54 @@ public sealed class DeviceLink : IAsyncDisposable
         }
     }
 
+    private void PostConversationUpdate(Func<ConversationState, ConversationState> change)
+    {
+        _pendingConversationUpdates.Enqueue(change);
+        if (Interlocked.Exchange(ref _conversationFlushScheduled, 1) == 0)
+        {
+            _ui.Post(FlushConversationUpdates);
+        }
+    }
+
+    private void FlushConversationUpdates()
+    {
+        const int maxBatch = 256;
+        Interlocked.Exchange(ref _conversationFlushScheduled, 0);
+        if (!_pendingConversationUpdates.TryDequeue(out var first))
+        {
+            return;
+        }
+
+        _stores.Conversations.Update(state =>
+        {
+            state = first(state);
+            var count = 1;
+            while (count < maxBatch && _pendingConversationUpdates.TryDequeue(out var next))
+            {
+                state = next(state);
+                count++;
+            }
+
+            return state;
+        });
+
+        if (!_pendingConversationUpdates.IsEmpty && Interlocked.Exchange(ref _conversationFlushScheduled, 1) == 0)
+        {
+            _ui.Post(FlushConversationUpdates);
+        }
+    }
+
     private Task SubscribeInteractionsAsync(DeviceClient client)
     {
         var deviceId = DeviceId;
         return client.SubscribeAsync(ConversationMethods.InteractionsTopic,
-            (state, _) => _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyInteractions(c, deviceId, state))),
+            (state, _) => PostConversationUpdate(c => ConversationReducer.ApplyInteractions(c, deviceId, state)),
             evt =>
             {
                 if (evt.Type == InteractionEvents.Changed)
                 {
                     var state = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<InteractionsDto>());
-                    _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyInteractions(c, deviceId, state)));
+                    PostConversationUpdate(c => ConversationReducer.ApplyInteractions(c, deviceId, state));
                 }
             }, _lifetime.Token);
     }
@@ -527,13 +566,13 @@ public sealed class DeviceLink : IAsyncDisposable
     {
         var deviceId = DeviceId;
         return client.SubscribeAsync(OrchestrationMethods.GoalTopic,
-            (state, _) => _ui.Post(() => _stores.Conversations.Update(c => OrchestrationReducer.ApplyGoalsSnapshot(c, deviceId, state))),
+            (state, _) => PostConversationUpdate(c => OrchestrationReducer.ApplyGoalsSnapshot(c, deviceId, state)),
             evt =>
             {
                 if (evt.Type == GoalEvents.Changed)
                 {
                     var change = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<GoalChangeDto>());
-                    _ui.Post(() => _stores.Conversations.Update(c => OrchestrationReducer.ApplyGoalChange(c, deviceId, change)));
+                    PostConversationUpdate(c => OrchestrationReducer.ApplyGoalChange(c, deviceId, change));
                 }
             }, _lifetime.Token);
     }
@@ -543,39 +582,39 @@ public sealed class DeviceLink : IAsyncDisposable
         var deviceId = DeviceId;
         var session = new SessionRef(deviceId, sessionId);
         return client.SubscribeAsync(ConversationMethods.SessionTopic(sessionId),
-            (state, _) => _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplySession(c, deviceId, state, KnownRev()))),
+            (state, _) => PostConversationUpdate(c => ConversationReducer.ApplySession(c, deviceId, state, KnownRev())),
             evt =>
             {
                 switch (evt.Type)
                 {
                     case SubagentEvents.Report:
                         var report = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<SubagentReportDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => OrchestrationReducer.ApplySubagentReport(c, deviceId, report)));
+                        PostConversationUpdate(c => OrchestrationReducer.ApplySubagentReport(c, deviceId, report));
                         break;
                     case SubagentEvents.Stopped:
                         var stopped = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<SubagentStoppedDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => OrchestrationReducer.ApplySubagentStopped(c, deviceId, stopped, KnownRev())));
+                        PostConversationUpdate(c => OrchestrationReducer.ApplySubagentStopped(c, deviceId, stopped, KnownRev()));
                         break;
                     case SessionEvents.Updated:
                         var meta = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<SessionDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplySessionUpdated(c, deviceId, meta)));
+                        PostConversationUpdate(c => ConversationReducer.ApplySessionUpdated(c, deviceId, meta));
                         _ui.Post(() => _stores.Workspace.Update(w => SessionListReducer.ApplyMeta(w, deviceId, meta)));
                         break;
                     case SessionEvents.QueueUpdated:
                         var queue = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<QueueDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyQueue(c, deviceId, queue)));
+                        PostConversationUpdate(c => ConversationReducer.ApplyQueue(c, deviceId, queue));
                         break;
                     case SessionEvents.MessageCommitted:
                         var message = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<MessageDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyMessage(c, session, message, KnownRev())));
+                        PostConversationUpdate(c => ConversationReducer.ApplyMessage(c, session, message, KnownRev()));
                         break;
                     case SessionEvents.HistoryReset:
                         var page = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<SessionPageDto>());
-                        _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyHistoryReset(c, deviceId, page, KnownRev())));
+                        PostConversationUpdate(c => ConversationReducer.ApplyHistoryReset(c, deviceId, page, KnownRev()));
                         break;
                     case SessionEvents.Deleted:
                         UnwatchSession(sessionId);
-                        _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.RemoveSession(c, session)));
+                        PostConversationUpdate(c => ConversationReducer.RemoveSession(c, session));
                         _ui.Post(() => _stores.Workspace.Update(w => SessionListReducer.Remove(w, deviceId, sessionId)));
                         break;
                 }
@@ -592,13 +631,13 @@ public sealed class DeviceLink : IAsyncDisposable
                 (snapshot, seq) =>
                 {
                     _runCursors[runId] = seq;
-                    _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyRunSnapshot(c, deviceId, snapshot, KnownRev())));
+                    PostConversationUpdate(c => ConversationReducer.ApplyRunSnapshot(c, deviceId, snapshot, KnownRev()));
                 },
                 evt =>
                 {
                     var dto = FrameCodec.DecodePayload(evt.Data, PayloadShapes.GetShape<RunEventDto>());
                     _runCursors[runId] = evt.Seq;
-                    _ui.Post(() => _stores.Conversations.Update(c => ConversationReducer.ApplyRunEvent(c, deviceId, runId, evt.Seq, dto, KnownRev())));
+                    PostConversationUpdate(c => ConversationReducer.ApplyRunEvent(c, deviceId, runId, evt.Seq, dto, KnownRev()));
                     if (dto is RunSettledEventDto)
                     {
                         _tools.OnRunSettled(client, runId);

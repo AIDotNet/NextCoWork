@@ -295,6 +295,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         DeviceConnection connection, string? role, IEnumerable<ModelOptionDto> options)
     {
         var changedSession = session != _session;
+        var canUseFullBefore = CanUseFull;
         _session = session;
         _activeRunId = activeRunId;
         _activity = activity;
@@ -332,7 +333,10 @@ public sealed partial class ComposerViewModel : ObservableObject
         Thinking = ComposerLogic.ClampThinking(_preferredThinking, CurrentOption());
         Sync(PermissionChoices, ComposerLogic.PermissionModesFor(role));
         Sync(ThinkingChoices, ComposerLogic.ThinkingLevels(CurrentOption()));
-        OnPropertyChanged(nameof(CanUseFull));
+        if (CanUseFull != canUseFullBefore)
+        {
+            OnPropertyChanged(nameof(CanUseFull));
+        }
 
         Sync(Queue, queue?.Items.Select(i => new QueueItemView(i.Id, string.Concat(i.Parts.Where(p => p.Kind == InputPartKinds.Text).Select(p => p.Text)), i.State == QueueStates.Promoted)).ToList() ?? []);
         OnPropertyChanged(nameof(HasQueue));
@@ -401,7 +405,6 @@ public sealed partial class ComposerViewModel : ObservableObject
             // 附件还在上传:现在发出去会丢掉它,等传完(停止不受影响)
             State = State with { CanSend = false, CanQueue = false, CanSteer = false };
         }
-        OnPropertyChanged(nameof(CanUseFull));
     }
 
     private void UpdateTriggers(string draft)

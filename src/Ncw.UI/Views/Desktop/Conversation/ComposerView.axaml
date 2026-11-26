@@ -72,6 +72,34 @@
     <Style Selector="ui|PlainButton.suggestRow.active">
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
     </Style>
+    <Style Selector="ui|PlainButton.modelGroupHeader">
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
+    </Style>
+    <Style Selector="ui|PlainButton.modelGroupHeader:pointerover">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+    </Style>
+    <Style Selector="ui|PlainButton.modelRow">
+      <Setter Property="Padding" Value="12,4,8,4" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ui|PlainButton.modelRow:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="TextBlock.modelGroupName, TextBlock.modelRowTitle, TextBlock.modelGroupCount, TextBlock.modelRowHint">
+      <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+    </Style>
+    <Style Selector="TextBlock.modelGroupCount, TextBlock.modelRowHint">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextMuted}" />
+    </Style>
+    <Style Selector="lucide|LucideIcon.modelRowCheck">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Accent}" />
+    </Style>
   </UserControl.Styles>
   <Panel>
   <Border x:Name="Card" Classes="panel" Padding="12,10,10,10" CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}" BorderThickness="1"
@@ -207,20 +235,17 @@
             </ui:NcwDropdownMenu.Trigger>
           </ui:NcwDropdownMenu>
           <Border Classes="vsep" Width="1" Height="16" Margin="4,0" VerticalAlignment="Center" Background="{arc:ArcDesignTokenResource Border}" />
-          <!-- 模型:供应商首字母 + 模型名;菜单按供应商分组,行尾是上下文窗口和能力 -->
-          <ui:NcwDropdownMenu x:Name="ModelMenu" MaxDropDownHeight="360">
-            <ui:NcwDropdownMenu.Trigger>
-              <ui:PlainButton x:Name="ModelButton" Classes="tool" Height="28" Padding="6,0,8,0" AutomationProperties.Name="{l:NcwText ModelPickerLabel}" arc:Tooltip.Tip="{l:NcwText ModelPickerLabel}">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Border Classes="glyph" VerticalAlignment="Center">
-                    <TextBlock x:Name="ModelGlyph" />
-                  </Border>
-                  <TextBlock x:Name="ModelText" Classes="modelName" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
-                  <lucide:LucideIcon Classes="chev" Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
-                </StackPanel>
-              </ui:PlainButton>
-            </ui:NcwDropdownMenu.Trigger>
-          </ui:NcwDropdownMenu>
+          <!-- 模型:供应商首字母 + 模型名;弹层按供应商分组并支持折叠/展开 -->
+          <ui:PlainButton x:Name="ModelButton" Classes="tool" Height="28" Padding="6,0,8,0" Click="OnModelButtonClick"
+                          AutomationProperties.Name="{l:NcwText ModelPickerLabel}" arc:Tooltip.Tip="{l:NcwText ModelPickerLabel}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Classes="glyph" VerticalAlignment="Center">
+                <TextBlock x:Name="ModelGlyph" />
+              </Border>
+              <TextBlock x:Name="ModelText" Classes="modelName" FontSize="{arc:ArcDesignTokenResource TypeXS}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
+              <lucide:LucideIcon Classes="chev" Kind="ChevronDown" Size="12" VerticalAlignment="Center" />
+            </StackPanel>
+          </ui:PlainButton>
           <!-- 思考:刻度条 + 短名;模型不支持思考时灰掉 -->
           <ui:NcwDropdownMenu x:Name="ThinkingMenu">
             <ui:NcwDropdownMenu.Trigger>
@@ -346,6 +371,15 @@
           </ItemsControl>
         </ScrollViewer>
       </StackPanel>
+    </Border>
+  </Popup>
+
+  <Popup x:Name="ModelPopup" PlacementTarget="{Binding #ModelButton}" Placement="TopEdgeAlignedLeft" VerticalOffset="-6"
+         IsLightDismissEnabled="True" ShouldUseOverlayLayer="True">
+    <Border Classes="suggest" MinWidth="280" MaxWidth="420">
+      <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel x:Name="ModelListPanel" Spacing="2" />
+      </ScrollViewer>
     </Border>
   </Popup>
 

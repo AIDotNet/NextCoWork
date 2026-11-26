@@ -2291,4 +2291,7 @@ public enum NcwTextKind
     ErrEnvPathNotFound,
     ErrEnvPermissionDenied,
     ErrEnvGeneric,
+    QuitConfirmTitle,
+    QuitConfirmRunning,
+    QuitConfirmAction,
 }

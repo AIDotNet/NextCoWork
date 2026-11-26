@@ -174,4 +174,30 @@ public class ComposerModelTests
 
         Assert.Equal([(B, "auto", null, null)], commands.PermissionWrites);
     }
+
+    [Fact]
+    public void CanUseFull_only_notifies_when_owner_role_actually_changes()
+    {
+        var composer = new ComposerViewModel(new Commands());
+        Show(composer, A, Meta(A, "haiku", "anthropic"), role: "owner");
+
+        var canUseFullEvents = 0;
+        composer.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ComposerViewModel.CanUseFull))
+            {
+                canUseFullEvents++;
+            }
+        };
+
+        // 同角色反复刷新、打字都不应触发 CanUseFull(避免菜单反复重建,issue #204)
+        Show(composer, A, Meta(A, "haiku", "anthropic"), role: "owner", activeRunId: "run-1");
+        Show(composer, A, Meta(A, "haiku", "anthropic"), role: "owner", activeRunId: "run-1");
+        composer.Draft = "streaming update";
+        Assert.Equal(0, canUseFullEvents);
+
+        // 角色真正变化时才通知
+        Show(composer, A, Meta(A, "haiku", "anthropic"), role: "member", activeRunId: "run-1");
+        Assert.Equal(1, canUseFullEvents);
+    }
 }

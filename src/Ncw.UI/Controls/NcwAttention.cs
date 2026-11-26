@@ -8,6 +8,7 @@ using Ncw.Client.Shortcuts;
 using Ncw.Client.ViewModels;
 using Ncw.Core.Domain;
 using Ncw.UI.Localization;
+using TKCode.Arc;
 
 namespace Ncw.UI.Controls;
 
@@ -55,6 +56,8 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     private NativeMenuItem? _runningItem;
     private NativeMenuItem? _unknownItem;
     private AttentionSummary _summary = new(0, 0, false);
+    private bool _confirmedShutdown;
+    private bool _confirmDialogOpen;
 
     public NcwAttention(ShellViewModel shell, Window window, IClassicDesktopStyleApplicationLifetime? desktop, INativeAttention? native,
         NativeTrayFactory? nativeTray = null)
@@ -74,9 +77,17 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
         }
 
         window.Closing += OnWindowClosing;
+        if (desktop is not null)
+        {
+            desktop.ShutdownRequested += OnShutdownRequested;
+        }
+
         shell.Stores.Prefs.Changed += ApplyTrayPreference;
         ApplyTrayPreference();
     }
+
+    /// <summary>有任务运行时弹出退出确认(测试可替换)。</summary>
+    internal Func<int, Task<bool>>? ConfirmQuitAsync { get; set; }
 
     /// <summary>托盘图标此刻是否存在(测试用)。</summary>
     public bool HasTray => _tray is not null || _nativeTray is not null;
@@ -84,9 +95,17 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     /// <summary>最近一次托盘提示文字(测试用)。</summary>
     public string TrayToolTip => HasTray ? _trayToolTip : "";
 
+    /// <summary>程序化重启(例如自动更新安装)调用,跳过退出二次确认。</summary>
+    public void BypassQuitConfirmation() => _confirmedShutdown = true;
+
     public void Dispose()
     {
         _window.Closing -= OnWindowClosing;
+        if (_desktop is not null)
+        {
+            _desktop.ShutdownRequested -= OnShutdownRequested;
+        }
+
         _shell.Stores.Prefs.Changed -= ApplyTrayPreference;
         if (_native is not null)
         {
@@ -174,6 +193,87 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
             e.Cancel = true;
             _window.Hide();
         }
+    }
+
+    /// <summary>⌘Q / 菜单退出 / 托盘退出:有任务在跑时拦截并弹窗二次确认(issue #205)。</summary>
+    private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
+    {
+        if (TryInterceptShutdown())
+        {
+            e.Cancel = true;
+        }
+    }
+
+    /// <summary>当前是否有需要拦截的退出请求。返回 true 表示已拦截并触发确认弹窗。</summary>
+    internal bool TryInterceptShutdown()
+    {
+        if (_confirmedShutdown)
+        {
+            return false;
+        }
+
+        var running = CountRunningTasks();
+        if (running <= 0)
+        {
+            return false;
+        }
+
+        if (_confirmDialogOpen)
+        {
+            ShowWindow();
+            return true;
+        }
+
+        _confirmDialogOpen = true;
+        ShowWindow();
+        _ = RunQuitConfirmationAsync(running);
+        return true;
+    }
+
+    private int CountRunningTasks()
+    {
+        var fromStore = _shell.Stores.Workspace.State.Devices.Values
+            .Where(static d => d.Connection == DeviceConnection.Connected)
+            .Sum(static d => d.Index?.Runs.Length ?? 0);
+        return Math.Max(_summary.Running, fromStore);
+    }
+
+    private async Task RunQuitConfirmationAsync(int running)
+    {
+        try
+        {
+            var confirmed = ConfirmQuitAsync is { } custom
+                ? await custom(running)
+                : await ShowQuitConfirmDialogAsync(running);
+            if (confirmed)
+            {
+                _confirmedShutdown = true;
+                _desktop?.Shutdown();
+            }
+        }
+        catch (Exception)
+        {
+            // 对话框异常关闭时不强制退出
+        }
+        finally
+        {
+            _confirmDialogOpen = false;
+        }
+    }
+
+    private async Task<bool> ShowQuitConfirmDialogAsync(int running)
+    {
+        var dialog = new Dialog
+        {
+            Title = NcwTexts.Get(NcwTextKind.QuitConfirmTitle),
+            Description = NcwTexts.Format(NcwTextKind.QuitConfirmRunning, running),
+            Actions = Dialog.BuildActions(
+            [
+                new DialogAction(NcwTexts.Get(NcwTextKind.Cancel), false),
+                new DialogAction(NcwTexts.Get(NcwTextKind.QuitConfirmAction), true, ButtonVariant.Danger),
+            ]),
+        };
+        return await dialog.ShowAsync(_window) is true;
     }
 
     private void ApplyTrayPreference()

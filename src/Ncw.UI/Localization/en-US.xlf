@@ -2262,5 +2262,8 @@
     <unit id="ErrEnvPathNotFound"><segment><source>The remote path was not found.</source><target state="final">The remote path was not found.</target></segment></unit>
     <unit id="ErrEnvPermissionDenied"><segment><source>Permission denied on the remote host.</source><target state="final">Permission denied on the remote host.</target></segment></unit>
     <unit id="ErrEnvGeneric"><segment><source>The SSH environment operation failed.</source><target state="final">The SSH environment operation failed.</target></segment></unit>
+    <unit id="QuitConfirmTitle"><segment><source>Quit NextCoWork?</source><target state="final">Quit NextCoWork?</target></segment></unit>
+    <unit id="QuitConfirmRunning"><segment><source>{0} task(s) are currently running. Quitting now will interrupt them.</source><target state="final">{0} task(s) are currently running. Quitting now will interrupt them.</target></segment></unit>
+    <unit id="QuitConfirmAction"><segment><source>Quit Anyway</source><target state="final">Quit Anyway</target></segment></unit>
   </file>
 </xliff>

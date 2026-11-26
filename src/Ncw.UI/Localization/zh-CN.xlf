@@ -2262,5 +2262,8 @@
     <unit id="ErrEnvPathNotFound"><segment><source>The remote path was not found.</source><target state="translated">找不到指定的远程路径。</target></segment></unit>
     <unit id="ErrEnvPermissionDenied"><segment><source>Permission denied on the remote host.</source><target state="translated">远程主机拒绝访问此路径。</target></segment></unit>
     <unit id="ErrEnvGeneric"><segment><source>The SSH environment operation failed.</source><target state="translated">SSH 环境操作失败。</target></segment></unit>
+    <unit id="QuitConfirmTitle"><segment><source>Quit NextCoWork?</source><target state="translated">确定退出 NextCoWork？</target></segment></unit>
+    <unit id="QuitConfirmRunning"><segment><source>{0} task(s) are currently running. Quitting now will interrupt them.</source><target state="translated">当前有 {0} 个任务正在运行，现在退出将会中断它们。</target></segment></unit>
+    <unit id="QuitConfirmAction"><segment><source>Quit Anyway</source><target state="translated">仍要退出</target></segment></unit>
   </file>
 </xliff>

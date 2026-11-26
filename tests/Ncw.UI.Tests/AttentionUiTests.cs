@@ -89,6 +89,44 @@ public class AttentionUiTests
         Assert.False(window.IsVisible);
     }
 
+    [AvaloniaFact]
+    public void Quit_is_intercepted_when_tasks_are_running_and_allowed_after_confirm_or_bypass()
+    {
+        var vm = new ShellViewModel(new Ncw.Client.Stores.ClientStores());
+        var window = new Window { Width = 1200, Height = 800, Content = new DesktopShell { DataContext = vm, Chrome = new WindowChrome(78, false) } };
+        window.Show();
+        Dispatch();
+        var native = new FakeNative();
+        using var attention = new NcwAttention(vm, window, desktop: null, native);
+
+        // 没有运行中任务时不拦截
+        attention.SetSummary(new AttentionSummary(0, 0, false));
+        Assert.False(attention.TryInterceptShutdown());
+
+        // 有任务运行时拦截并弹出确认;用户点取消后仍拦截
+        var promptedCounts = new List<int>();
+        var confirmResult = false;
+        attention.ConfirmQuitAsync = count =>
+        {
+            promptedCounts.Add(count);
+            return Task.FromResult(confirmResult);
+        };
+        attention.SetSummary(new AttentionSummary(0, 2, false));
+        Assert.True(attention.TryInterceptShutdown());
+        Dispatch();
+        Assert.Equal([2], promptedCounts);
+
+        // 用户确认后下次放行
+        confirmResult = true;
+        Assert.True(attention.TryInterceptShutdown());
+        Dispatch();
+        Assert.Equal([2, 2], promptedCounts);
+        Assert.False(attention.TryInterceptShutdown());
+
+        window.Close();
+        Dispatch();
+    }
+
     [AvaloniaTheory]
     [InlineData(1500, "light")]
     [InlineData(1500, "dark")]

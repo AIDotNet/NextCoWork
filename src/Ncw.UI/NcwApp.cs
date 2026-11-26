@@ -194,7 +194,11 @@ public class NcwApp : Application
             {
                 // 退出请求走应用自己的退出流程(窗口关闭、Exit 事件里让 Agent 收尾);必须在 UI 线程上调 Shutdown
                 _updates = UpdateServiceFactory?.Invoke(new NcwUpdateContext(stores, AvaloniaUiDispatcher.Instance,
-                    () => Avalonia.Threading.Dispatcher.UIThread.Post(() => desktop.Shutdown())));
+                    () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        _attention?.BypassQuitConfirmation();
+                        desktop.Shutdown();
+                    })));
             }
 
             var host = new MobileHostServices
