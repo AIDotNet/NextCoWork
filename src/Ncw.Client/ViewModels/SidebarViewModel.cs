@@ -70,6 +70,7 @@ public sealed partial class SidebarViewModel : ObservableObject
         _rows = new SessionRowIntents(sessions, _dialogs, _text);
         stores.Layout.Changed += Rebuild;
         stores.Workspace.Changed += Rebuild;
+        stores.Environments.Changed += Rebuild;
         stores.Selection.Changed += OnSelectionChanged;
         if (inbox is not null)
         {
@@ -346,7 +347,10 @@ public sealed partial class SidebarViewModel : ObservableObject
         workspace.Projects.TryGetValue(project, out var info);
         workspace.Devices.TryGetValue(project.DeviceId, out var device);
         layout.Appearance.TryGetValue(project, out var appearance);
-        vm.Tile.Update(info, device, appearance, workspace.ActivityOf(project), project == selection.Project);
+        var sshEnv = info is { Environment: EnvironmentKind.Ssh, EnvironmentId: { } envId }
+            ? _stores.Environments.State.Find(project.DeviceId, envId)
+            : null;
+        vm.Tile.Update(info, device, appearance, workspace.ActivityOf(project), project == selection.Project, sshEnv);
 
         var connection = device?.Connection ?? DeviceConnection.Connecting;
         var expanded = _expanded.Contains(project);

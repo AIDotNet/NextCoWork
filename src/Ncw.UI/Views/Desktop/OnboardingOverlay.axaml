@@ -151,13 +151,13 @@
                   <TextBlock Text="{l:NcwText OnboardingOpenFolder}" TextWrapping="Wrap" />
                 </StackPanel>
               </ui:NcwButton>
-              <Border Classes="card" Padding="14,10" Opacity="0.7">
+              <ui:NcwButton HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Variant="Secondary" Command="{Binding ConnectSshCommand}">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                  <lucide:LucideIcon Kind="Terminal" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                  <lucide:LucideIcon Kind="Server" Size="15" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
                   <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:NcwText OnboardingConnectSsh}" />
-                  <Border Grid.Column="2" Classes="chip"><TextBlock Classes="hint" Text="{l:NcwText OnboardingLater}" /></Border>
+                  <lucide:LucideIcon Grid.Column="2" Kind="ChevronRight" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                 </Grid>
-              </Border>
+              </ui:NcwButton>
               <Border Classes="card" Padding="14,10" Opacity="0.7">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                   <lucide:LucideIcon Kind="Cloud" Size="16" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />

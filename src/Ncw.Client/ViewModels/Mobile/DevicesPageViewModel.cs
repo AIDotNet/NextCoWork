@@ -36,15 +36,19 @@ public sealed partial class DevicesPageViewModel : ObservableObject
     private readonly DeviceActions _actions;
     private readonly MobileNavigationViewModel _navigation;
 
-    public DevicesPageViewModel(ClientStores stores, DeviceActions actions, MobileNavigationViewModel navigation)
+    public DevicesPageViewModel(ClientStores stores, DeviceActions actions, MobileNavigationViewModel navigation, SshInteractionsViewModel? sshInteractions = null)
     {
         _stores = stores;
         _actions = actions;
         _navigation = navigation;
+        SshInteractions = sshInteractions;
         stores.Workspace.Changed += Refresh;
         stores.Paired.Changed += Refresh;
         Refresh();
     }
+
+    /// <summary>设备上挂起的 SSH 主机指纹与凭据提问(从收件箱点开设备级待办后直接在这里应答)。</summary>
+    public SshInteractionsViewModel? SshInteractions { get; }
 
     public ObservableCollection<DeviceRow> Items { get; } = [];
 

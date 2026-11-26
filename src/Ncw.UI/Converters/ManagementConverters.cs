@@ -104,8 +104,8 @@ public sealed class ToneConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value?.ToString() switch
     {
-        "Connected" or "success" or "ok" => "ok",
-        "Connecting" or "queued" or "running" or "skipped" => "warn",
+        "Connected" or "Ready" or "success" or "ok" => "ok",
+        "Connecting" or "Reconnecting" or "queued" or "running" or "skipped" => "warn",
         "Failed" or "error" or "aborted" => "bad",
         _ => "mute",
     };
@@ -270,6 +270,7 @@ public sealed class FormProblemTextConverter : IValueConverter
         IEnumerable<ScheduleProblem> list => Join(list.Select(p => KeyText.Get("SchedProblem", p.ToString()))),
         IEnumerable<HookProblem> list => Join(list.Select(p => KeyText.Get("HookProblem", p.ToString()))),
         IEnumerable<McpProblem> list => Join(list.Select(p => KeyText.Get("McpProblem", p.ToString()))),
+        IEnumerable<EnvironmentProblem> list => Join(list.Select(p => KeyText.Get("EnvProblem", p.ToString()))),
         _ => null,
     };
 

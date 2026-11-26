@@ -1,0 +1,458 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             xmlns:m="using:Ncw.UI.Views.Desktop.Management"
+             x:Class="Ncw.UI.Views.Desktop.Management.EnvironmentsPage"
+             x:DataType="vm:EnvironmentsViewModel">
+  <!--
+    设置 · 设备 · 执行环境(docs/design/06 §7 / §10):SSH 服务器列表、实时连接状态(environments 主题全量权威)、
+    新增 / 编辑(手工填写 / SSH config 别名、认证方式、跳板机、代理)、测试连接、从 ~/.ssh/config 导入、已知主机指纹管理。
+    密码 / 口令 / 私钥路径只写不读。读取与连接 member 起,配置写入 / 测试 / 导入 / 已知主机 owner。
+  -->
+  <StackPanel Spacing="8">
+    <m:PageHeader Title="{l:NcwText SettingsEnvironments}" Hint="{l:NcwText SettingsEnvironmentsHint}" ScopeText="{l:NcwText ScopeDevice}" />
+    <m:PageStatus />
+
+    <StackPanel Spacing="8" IsVisible="{Binding ShowsContent}" ui:NcwMotion.ShowMotion="Fade">
+      <!-- 发起连接位置说明 + 顶部操作栏 -->
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBlock Classes="hint" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Text="{Binding Scope.DeviceName, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=EnvOriginHint}" />
+        <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+          <ui:NcwButton Variant="Ghost" Command="{Binding ToggleKnownHostsCommand}" IsEnabled="{Binding CanWrite}"
+                        arc:Tooltip.Tip="{Binding WriteGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Fingerprint" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText EnvKnownHosts}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton Variant="Secondary" Command="{Binding OpenImportCommand}" IsEnabled="{Binding CanWrite}"
+                        arc:Tooltip.Tip="{Binding WriteGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="FileDown" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText EnvImportSshConfig}" />
+            </StackPanel>
+          </ui:NcwButton>
+          <ui:NcwButton Variant="Primary" Command="{Binding NewCommand}" IsEnabled="{Binding CanWrite}"
+                        arc:Tooltip.Tip="{Binding WriteGate, Converter={x:Static cv:GateTextConverter.Instance}}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Plus" Size="14" VerticalAlignment="Center" />
+              <TextBlock Text="{l:NcwText EnvAdd}" />
+            </StackPanel>
+          </ui:NcwButton>
+        </WrapPanel>
+      </Grid>
+
+      <!-- 默认环境不是本机时提供恢复默认按钮 -->
+      <Border Classes="card" Padding="12,10" IsVisible="{Binding IsDefaultRemote}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText EnvDefaultRemoteHint}" />
+          <ui:NcwButton Grid.Column="1" Variant="Ghost" Command="{Binding ResetDefaultToLocalCommand}" IsEnabled="{Binding CanWrite}"
+                        Content="{l:NcwText EnvResetDefaultLocal}" />
+        </Grid>
+      </Border>
+
+      <!-- 删除确认 -->
+      <ui:NcwCollapsible IsOpen="{Binding HasPendingRemove}">
+        <Border Classes="card danger">
+          <StackPanel Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PendingRemove.Subject, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=EnvRemoveTitle}" />
+            <TextBlock Classes="hint" Text="{l:NcwText EnvRemoveHint}" />
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Danger" Command="{Binding ConfirmRemoveCommand}" Content="{l:NcwText DeleteLabel}" />
+              <ui:NcwButton Variant="Ghost" Command="{Binding CancelRemoveCommand}" Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
+
+      <!-- 新建 / 编辑表单 -->
+      <ui:NcwCollapsible IsOpen="{Binding Editor.IsOpen}">
+        <Border Classes="card">
+          <StackPanel Spacing="12" DataContext="{Binding Editor}" x:DataType="vm:EnvironmentEditorViewModel">
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsNew}" Text="{l:NcwText EnvNewTitle}" />
+            <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsEditing}" Text="{l:NcwText EnvEditTitle}" />
+
+            <!-- 基本信息 -->
+            <Grid ColumnDefinitions="*,12,*">
+              <ui:NcwInput Text="{Binding Name, Mode=TwoWay}" Label="{l:NcwText EnvName}" Placeholder="dev-server" />
+              <ui:NcwSelect Grid.Column="2" ChoiceSet="SshTargetKind" SelectedValue="{Binding TargetKind, Mode=TwoWay}" Label="{l:NcwText EnvTargetKind}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,12,110" IsVisible="{Binding IsManual}">
+              <ui:NcwInput Text="{Binding Host, Mode=TwoWay}" Label="{l:NcwText EnvHost}" Placeholder="192.168.1.10" />
+              <ui:NcwInput Grid.Column="2" Text="{Binding Port, Mode=TwoWay}" Label="{l:NcwText EnvPort}" Placeholder="22" />
+            </Grid>
+
+            <StackPanel Spacing="8" IsVisible="{Binding IsConfig}">
+              <ui:NcwInput Text="{Binding Host, Mode=TwoWay}" Label="{l:NcwText EnvAlias}" Description="{l:NcwText EnvAliasHint}" Placeholder="my-server" />
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom" Margin="8,0,0,0">
+                  <ui:NcwButton Variant="Secondary"
+                                IsVisible="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).CanPickLocalFile}"
+                                Command="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).PickConfigFileCommand}"
+                                Content="{l:NcwText EnvBrowseFile}" />
+                  <ui:NcwCheckbox IsVisible="{Binding HasSavedConfigFile}" IsChecked="{Binding ClearConfigFile, Mode=TwoWay}"
+                                  Content="{l:NcwText EnvClearSaved}" VerticalAlignment="Center" />
+                </StackPanel>
+                <ui:NcwInput Text="{Binding ConfigFile, Mode=TwoWay}" Label="{l:NcwText EnvConfigFile}"
+                             Placeholder="{l:NcwText EnvConfigFilePlaceholder}" />
+              </DockPanel>
+              <TextBlock Classes="hint" IsVisible="{Binding HasSavedConfigFile}" Text="{l:NcwText EnvSavedPathKeepHint}" />
+            </StackPanel>
+
+            <!-- 认证方式 -->
+            <Border Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+            <StackPanel Spacing="8">
+              <ui:NcwSelect ChoiceSet="SshAuthMethod" SelectedValue="{Binding AuthMethod, Mode=TwoWay}" Label="{l:NcwText EnvAuthMethod}"
+                            Description="{Binding AuthMethod, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SshAuthHint}" />
+
+              <ui:NcwInput IsVisible="{Binding IsManual}" Text="{Binding Username, Mode=TwoWay}" Label="{l:NcwText EnvUsername}" Placeholder="root" />
+
+              <StackPanel Spacing="6" IsVisible="{Binding UsesIdentity}">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom" Margin="8,0,0,0">
+                    <ui:NcwButton Variant="Secondary"
+                                  IsVisible="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).CanPickLocalFile}"
+                                  Command="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).PickIdentityFileCommand}"
+                                  Content="{l:NcwText EnvBrowseFile}" />
+                    <ui:NcwCheckbox IsVisible="{Binding HasSavedIdentityFile}" IsChecked="{Binding ClearIdentityFile, Mode=TwoWay}"
+                                    Content="{l:NcwText EnvClearSaved}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <ui:NcwInput Text="{Binding IdentityFile, Mode=TwoWay}" Label="{l:NcwText EnvIdentityFile}"
+                               Placeholder="{l:NcwText EnvIdentityFilePlaceholder}" />
+                </DockPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding HasSavedIdentityFile}" Text="{l:NcwText EnvSavedPathKeepHint}" />
+
+                <DockPanel>
+                  <ui:NcwCheckbox DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                  IsVisible="{Binding IsEditing}" IsChecked="{Binding ClearKeyPassphrase, Mode=TwoWay}"
+                                  Content="{l:NcwText EnvClearSaved}" />
+                  <ui:NcwInput Text="{Binding KeyPassphrase, Mode=TwoWay}" PasswordChar="•" Label="{l:NcwText EnvKeyPassphrase}"
+                               Description="{l:NcwText EnvKeyPassphraseHint}" Placeholder="{l:NcwText EnvOptional}" />
+                </DockPanel>
+              </StackPanel>
+
+              <StackPanel Spacing="4" IsVisible="{Binding UsesPassword}">
+                <DockPanel>
+                  <ui:NcwCheckbox DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                  IsVisible="{Binding HasSavedPassword}" IsChecked="{Binding ClearPassword, Mode=TwoWay}"
+                                  Content="{l:NcwText EnvClearSaved}" />
+                  <ui:NcwInput Text="{Binding Password, Mode=TwoWay}" PasswordChar="•" IsEnabled="{Binding !ClearPassword}"
+                               Label="{l:NcwText EnvPassword}" Description="{l:NcwText EnvPasswordHint}"
+                               Placeholder="{l:NcwText EnvPasswordPlaceholder}" />
+                </DockPanel>
+                <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding HasSavedPassword}" Text="{l:NcwText EnvPasswordAlreadySaved}" />
+              </StackPanel>
+            </StackPanel>
+
+            <!-- 连接选项与代理 -->
+            <Border Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+            <Grid ColumnDefinitions="*,12,*">
+              <ui:NcwInput IsVisible="{Binding IsManual}" Text="{Binding ProxyJump, Mode=TwoWay}" Label="{l:NcwText EnvProxyJump}" Placeholder="bastion.example.com" />
+              <ui:NcwSelect Grid.Column="2" ChoiceSet="SshPlatform" SelectedValue="{Binding Platform, Mode=TwoWay}" Label="{l:NcwText EnvPlatform}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:NcwText EnvProxyToggle}" />
+                <TextBlock Classes="hint" Text="{l:NcwText EnvProxyHint}" />
+              </StackPanel>
+              <ui:NcwSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" AutomationProperties.Name="{l:NcwText EnvProxyToggle}" />
+            </Grid>
+
+            <StackPanel Spacing="8" IsVisible="{Binding ProxyEnabled}">
+              <Grid ColumnDefinitions="130,12,*,12,100">
+                <ui:NcwSelect ChoiceSet="SshProxyKind" SelectedValue="{Binding ProxyKind, Mode=TwoWay}" Label="{l:NcwText EnvProxyKind}" />
+                <ui:NcwInput Grid.Column="2" Text="{Binding ProxyHost, Mode=TwoWay}" Label="{l:NcwText EnvProxyHost}" Placeholder="127.0.0.1" />
+                <ui:NcwInput Grid.Column="4" Text="{Binding ProxyPort, Mode=TwoWay}" Label="{l:NcwText EnvProxyPort}" Placeholder="1080" />
+              </Grid>
+              <Grid ColumnDefinitions="*,12,*">
+                <ui:NcwInput Text="{Binding ProxyUsername, Mode=TwoWay}" Label="{l:NcwText EnvProxyUsername}" Placeholder="{l:NcwText EnvOptional}" />
+                <DockPanel Grid.Column="2">
+                  <ui:NcwCheckbox DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                  IsVisible="{Binding HasSavedProxyPassword}" IsChecked="{Binding ClearProxyPassword, Mode=TwoWay}"
+                                  Content="{l:NcwText EnvClearSaved}" />
+                  <ui:NcwInput Text="{Binding ProxyPassword, Mode=TwoWay}" PasswordChar="•" IsEnabled="{Binding !ClearProxyPassword}"
+                               Label="{l:NcwText EnvProxyPassword}" Placeholder="{l:NcwText EnvOptional}" />
+                </DockPanel>
+              </Grid>
+            </StackPanel>
+
+            <!-- 目标变更二次确认 -->
+            <Border Classes="card danger" Padding="12,10" IsVisible="{Binding NeedsTargetChangeConfirm}">
+              <StackPanel Spacing="8">
+                <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" Text="{l:NcwText EnvTargetChangeWarning}" />
+                <ui:NcwCheckbox IsChecked="{Binding ConfirmTargetChange, Mode=TwoWay}" Content="{l:NcwText EnvConfirmTargetChange}" />
+              </StackPanel>
+            </Border>
+
+            <!-- 表单校验与保存错误 -->
+            <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" IsVisible="{Binding HasProblems}"
+                       Text="{Binding Problems, Converter={x:Static cv:FormProblemTextConverter.Instance}}" />
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap"
+                       IsVisible="{Binding SaveFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{Binding SaveFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+
+            <WrapPanel Orientation="Horizontal">
+              <ui:NcwButton Margin="0,0,8,0" Variant="Primary"
+                            Command="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).SaveCommand}"
+                            IsEnabled="{Binding CanSave}" IsLoading="{Binding IsSaving}" Content="{l:NcwText Save}" />
+              <ui:NcwButton Margin="0,0,8,0" Variant="Secondary"
+                            Command="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).TestDraftCommand}"
+                            IsEnabled="{Binding CanTest}" Content="{l:NcwText EnvTest}" />
+              <ui:NcwButton Variant="Ghost"
+                            Command="{Binding $parent[UserControl].((vm:EnvironmentsViewModel)DataContext).CloseEditorCommand}"
+                            Content="{l:NcwText Cancel}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
+
+      <!-- 测试连接进行中 -->
+      <Border Classes="card" Padding="12,10" IsVisible="{Binding IsTesting}" ui:NcwMotion.ShowMotion="Fade">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="hint" VerticalAlignment="Center" Text="{l:NcwText EnvTesting}" />
+          <ui:NcwButton Grid.Column="2" Variant="Ghost" Command="{Binding CancelTestCommand}" Content="{l:NcwText Cancel}" />
+        </Grid>
+      </Border>
+
+      <!-- 测试连接结果 -->
+      <Border Classes="card" IsVisible="{Binding HasTestResult}" ui:NcwMotion.ShowMotion="Rise">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="4">
+              <lucide:LucideIcon Kind="CircleCheck" Size="15" Foreground="{arc:ArcDesignTokenResource Success}" IsVisible="{Binding TestResult.Ok}" />
+              <lucide:LucideIcon Kind="CircleAlert" Size="15" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding !TestResult.Ok}" />
+              <TextBlock FontWeight="SemiBold" IsVisible="{Binding TestResult.Ok}" Text="{l:NcwText EnvTestOk}" />
+              <TextBlock FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding !TestResult.Ok}"
+                         Text="{Binding TestResult.Error.Key, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center"
+                         IsVisible="{Binding TestResult.LatencyMs, Converter={x:Static ObjectConverters.IsNotNull}}"
+                         Text="{Binding TestResult.LatencyMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+            </WrapPanel>
+            <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding DismissTestResultCommand}" AutomationProperties.Name="{l:NcwText Dismiss}">
+              <lucide:LucideIcon Kind="X" Size="13" />
+            </ui:NcwButton>
+          </Grid>
+          <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                     IsVisible="{Binding TestFactsSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                     Text="{Binding TestFactsSummary}" />
+          <Border Classes="card danger" Padding="10,8" IsVisible="{Binding TestHasHostKeyMismatch}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" Text="{l:NcwText EnvHostKeyChangedDetail}" />
+              <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding TestResult.Error.HostKey.Presented}" />
+              <ui:NcwButton HorizontalAlignment="Left" Variant="Danger" Command="{Binding ForgetTestMismatchHostKeyCommand}" Content="{l:NcwText EnvForgetHostKey}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- 从 ~/.ssh/config 导入 -->
+      <ui:NcwCollapsible IsOpen="{Binding IsImportOpen}">
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock FontWeight="SemiBold" Text="{l:NcwText EnvImportTitle}" />
+                <TextBlock Classes="hint" Text="{l:NcwText EnvImportHint}" />
+              </StackPanel>
+              <ui:NcwButton Grid.Column="1" Classes="icon" Variant="Ghost" Command="{Binding CloseImportCommand}" AutomationProperties.Name="{l:NcwText Close}">
+                <lucide:LucideIcon Kind="X" Size="14" />
+              </ui:NcwButton>
+            </Grid>
+
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom" Margin="8,0,0,0">
+                <ui:NcwButton Variant="Secondary" IsVisible="{Binding CanPickLocalFile}" Command="{Binding PickImportConfigFileCommand}" Content="{l:NcwText EnvBrowseFile}" />
+                <ui:NcwButton Variant="Secondary" Command="{Binding LoadImportCandidatesCommand}" IsLoading="{Binding IsImporting}" Content="{l:NcwText Refresh}" />
+              </StackPanel>
+              <ui:NcwInput Text="{Binding ImportConfigFile, Mode=TwoWay}" Label="{l:NcwText EnvConfigFile}" Placeholder="~/.ssh/config" />
+            </DockPanel>
+
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap"
+                       IsVisible="{Binding ImportFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{Binding ImportFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+
+            <ItemsControl ItemsSource="{Binding ImportWarnings}" IsVisible="{Binding HasImportWarnings}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" TextWrapping="Wrap"
+                             Text="{Binding Converter={x:Static cv:DiagnosticTextConverter.Instance}}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="hint" IsVisible="{Binding ShowsImportEmpty}" Text="{l:NcwText EnvImportEmpty}" />
+
+            <ItemsControl ItemsSource="{Binding ImportCandidates}" IsVisible="{Binding HasImportCandidates}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SshConfigCandidateRowViewModel">
+                  <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                      <StackPanel Spacing="2">
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding Alias}" />
+                          <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding HostSummary}" />
+                          <Border Classes="chip" IsVisible="{Binding HasIdentityFile}"><TextBlock Classes="hint" Text="{l:NcwText EnvChipKey}" /></Border>
+                          <Border Classes="chip" IsVisible="{Binding HasProxyJump}"><TextBlock Classes="hint" Text="{Binding ProxyJump}" /></Border>
+                        </WrapPanel>
+                        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding HasWarnings}"
+                                   Text="{Binding Warnings, Converter={x:Static cv:JoinConverter.Instance}}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:NcwButton Variant="Secondary" IsVisible="{Binding CanImport}" Command="{Binding ImportCommand}" Content="{l:NcwText EnvImportOne}" />
+                        <TextBlock Classes="hint" IsVisible="{Binding AlreadyImported}" Text="{l:NcwText EnvImported}" />
+                        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Warning}" IsVisible="{Binding !Importable}" Text="{l:NcwText EnvNotImportable}" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
+
+      <!-- 已知主机指纹管理 -->
+      <ui:NcwCollapsible IsOpen="{Binding IsKnownHostsOpen}">
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock FontWeight="SemiBold" Text="{l:NcwText EnvKnownHostsTitle}" />
+                <TextBlock Classes="hint" Text="{l:NcwText EnvKnownHostsHint}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <ui:NcwButton Variant="Ghost" Command="{Binding LoadKnownHostsCommand}" IsLoading="{Binding IsLoadingKnownHosts}" Content="{l:NcwText Refresh}" />
+                <ui:NcwButton Classes="icon" Variant="Ghost" Command="{Binding ToggleKnownHostsCommand}" AutomationProperties.Name="{l:NcwText Close}">
+                  <lucide:LucideIcon Kind="X" Size="14" />
+                </ui:NcwButton>
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap"
+                       IsVisible="{Binding KnownHostsFailure, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{Binding KnownHostsFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+
+            <TextBlock Classes="hint" IsVisible="{Binding ShowsKnownHostsEmpty}" Text="{l:NcwText EnvKnownHostsEmpty}" />
+
+            <ItemsControl ItemsSource="{Binding KnownHosts}" IsVisible="{Binding HasKnownHosts}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:KnownHostRowViewModel">
+                  <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                      <StackPanel Spacing="2">
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="6">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding HostName}" />
+                          <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding Algorithm}" /></Border>
+                        </WrapPanel>
+                        <SelectableTextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding DisplayFingerprint}" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ui:NcwButton Grid.Column="1" Variant="Ghost" VerticalAlignment="Center" Command="{Binding ForgetCommand}" Content="{l:NcwText EnvForgetHostKey}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </ui:NcwCollapsible>
+
+      <!-- 空状态 -->
+      <Border Classes="card" IsVisible="{Binding ShowsEmpty}" ui:NcwMotion.ShowMotion="Fade">
+        <StackPanel Spacing="6" HorizontalAlignment="Center" Margin="0,12">
+          <lucide:LucideIcon Kind="Server" Size="24" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+          <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="{l:NcwText EnvEmptyTitle}" />
+          <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText EnvEmptyHint}" />
+        </StackPanel>
+      </Border>
+
+      <!-- SSH 服务器列表 -->
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:EnvironmentRowViewModel">
+            <Border Classes="card" Padding="14,12">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <ui:NcwStatusDot VerticalAlignment="Top" Margin="0,6,0,0" Tone="{Binding DisplayState, Converter={x:Static cv:ToneConverter.Instance}}" />
+                  <StackPanel Grid.Column="1" Spacing="3">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+                      <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                      <Border Classes="chip" IsVisible="{Binding IsDefault}"><TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Accent}" Text="{l:NcwText EnvDefaultChip}" /></Border>
+                      <Border Classes="chip"><TextBlock Classes="hint" Text="{Binding TargetKind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SshTargetKind}" /></Border>
+                      <Border Classes="chip" IsVisible="{Binding HasIdentityFile}"><TextBlock Classes="hint" Text="{l:NcwText EnvChipKey}" /></Border>
+                      <Border Classes="chip" IsVisible="{Binding HasSavedPassword}"><TextBlock Classes="hint" Text="{l:NcwText EnvChipPassword}" /></Border>
+                      <Border Classes="chip" IsVisible="{Binding HasProxy}"><TextBlock Classes="hint" Text="{Binding ProxySummary}" /></Border>
+                      <TextBlock Classes="hint" VerticalAlignment="Center" Text="{Binding DisplayState, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=EnvState}" />
+                      <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding HasLatency}"
+                                 Text="{Binding LatencyMs, Converter={x:Static cv:DurationTextConverter.Instance}}" />
+                    </WrapPanel>
+                    <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding TargetSummary}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="hint" IsVisible="{Binding HasProxyJump}"
+                               Text="{Binding ProxyJump, Converter={x:Static cv:TextFormatConverter.Instance}, ConverterParameter=EnvViaJump}" />
+                    <TextBlock Classes="hint" IsVisible="{Binding FactsSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Text="{Binding FactsSummary}" />
+                    <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}"
+                               IsVisible="{Binding ErrorKey, Converter={x:Static ObjectConverters.IsNotNull}}"
+                               Text="{Binding ErrorKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+                  </StackPanel>
+                  <ui:NcwSwitch Grid.Column="2" VerticalAlignment="Top" IsChecked="{Binding IsEnabled, Mode=OneWay}" Command="{Binding ToggleCommand}"
+                                IsEnabled="{Binding $parent[ItemsControl].((vm:EnvironmentsViewModel)DataContext).CanWrite}"
+                                AutomationProperties.Name="{l:NcwText EnvEnabled}" arc:Tooltip.Tip="{l:NcwText EnvEnabled}" />
+                </Grid>
+
+                <!-- 主机指纹变化警告卡片(拒绝连接且不自动覆盖,唯一出口是忘记旧指纹) -->
+                <Border Classes="card danger" Padding="10,8" IsVisible="{Binding HasHostKeyMismatch}">
+                  <StackPanel Spacing="6">
+                    <TextBlock FontWeight="SemiBold" Foreground="{arc:ArcDesignTokenResource Danger}" Text="{l:NcwText EnvHostKeyChangedTitle}" />
+                    <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText EnvHostKeyChangedDetail}" />
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="hint" Text="{l:NcwText EnvPresentedFingerprint}" />
+                      <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding HostKeyMismatch.Presented}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2" IsVisible="{Binding PinnedFingerprints, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                      <TextBlock Classes="hint" Text="{l:NcwText EnvPinnedFingerprint}" />
+                      <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding PinnedFingerprints}" />
+                    </StackPanel>
+                    <ui:NcwButton HorizontalAlignment="Left" Variant="Danger" Command="{Binding ForgetMismatchHostKeyCommand}"
+                                  IsEnabled="{Binding $parent[ItemsControl].((vm:EnvironmentsViewModel)DataContext).CanWrite}"
+                                  Content="{l:NcwText EnvForgetHostKey}" />
+                  </StackPanel>
+                </Border>
+
+                <!-- 主操作 + 「⋯」菜单 -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <ui:NcwButton Variant="Secondary" Command="{Binding ConnectCommand}" IsVisible="{Binding PrimaryIsConnect}"
+                                IsEnabled="{Binding CanConnect}"
+                                Content="{l:NcwText EnvConnect}" />
+                  <ui:NcwButton Variant="Secondary" Command="{Binding DisconnectCommand}" IsVisible="{Binding PrimaryIsDisconnect}"
+                                IsEnabled="{Binding CanDisconnect}"
+                                Content="{l:NcwText EnvDisconnect}" />
+                  <ui:NcwButton Variant="Ghost" Command="{Binding CancelConnectCommand}" IsVisible="{Binding PrimaryIsCancel}"
+                                Content="{l:NcwText Cancel}" />
+                  <ui:NcwDropdownMenu DataContextChanged="OnRowMenuDataContext" IsEnabled="{Binding $parent[ItemsControl].((vm:EnvironmentsViewModel)DataContext).CanWrite}">
+                    <ui:NcwDropdownMenu.Trigger>
+                      <ui:NcwButton Classes="icon" Variant="Ghost" AutomationProperties.Name="{l:NcwText More}" arc:Tooltip.Tip="{l:NcwText More}">
+                        <lucide:LucideIcon Kind="Ellipsis" Size="16" />
+                      </ui:NcwButton>
+                    </ui:NcwDropdownMenu.Trigger>
+                  </ui:NcwDropdownMenu>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

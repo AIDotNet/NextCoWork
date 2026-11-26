@@ -17,6 +17,12 @@ public enum FilePickKind
 
     /// <summary>数据导出的保存位置。</summary>
     ExportData,
+
+    /// <summary>SSH 私钥文件(设备本机路径;仅本机设备可用)。</summary>
+    SshIdentityFile,
+
+    /// <summary>SSH 配置文件(如 <c>~/.ssh/config</c>,设备本机路径;仅本机设备可用)。</summary>
+    SshConfigFile,
 }
 
 /// <summary>用户选中的一个文件。<see cref="Path"/> 是本机路径(沙盒平台可能为 null);<see cref="OpenRead"/> 按需打开,大文件不会被一次读进内存。</summary>

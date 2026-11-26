@@ -1,7 +1,7 @@
 namespace Ncw.Client.ViewModels;
 
 /// <summary>
-/// 设置页导航里的一项(docs/design/07 §3「信息架构」,方案 D)。17 个分区(<see cref="SettingsSection"/>)合成 11 个导航项;
+/// 设置页导航里的一项(docs/design/07 §3「信息架构」,方案 D)。18 个分区(<see cref="SettingsSection"/>)合成 12 个导航项;
 /// 有多个分区的导航项,分区在列表栏里列出来(子分区)。
 /// </summary>
 public enum SettingsPage
@@ -14,6 +14,7 @@ public enum SettingsPage
     General,
     Models,
     Extensions,
+    Environments,
     Connection,
     Data,
     Project,
@@ -46,6 +47,7 @@ public static class SettingsNav
         SettingsPage.General => [SettingsSection.General],
         SettingsPage.Models => [SettingsSection.Models],
         SettingsPage.Extensions => ExtensionSections,
+        SettingsPage.Environments => [SettingsSection.Environments],
         SettingsPage.Connection => ConnectionSections,
         SettingsPage.Data => DataSections,
         SettingsPage.Project => [SettingsSection.Project],
@@ -63,6 +65,7 @@ public static class SettingsNav
         SettingsSection.General => SettingsPage.General,
         SettingsSection.Models => SettingsPage.Models,
         SettingsSection.Skills or SettingsSection.Commands or SettingsSection.Hooks or SettingsSection.Mcp or SettingsSection.Plugins => SettingsPage.Extensions,
+        SettingsSection.Environments => SettingsPage.Environments,
         SettingsSection.Remote or SettingsSection.Gateway or SettingsSection.Devices => SettingsPage.Connection,
         SettingsSection.Usage or SettingsSection.Storage => SettingsPage.Data,
         SettingsSection.Project => SettingsPage.Project,

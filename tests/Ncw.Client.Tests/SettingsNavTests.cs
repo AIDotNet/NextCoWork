@@ -21,7 +21,7 @@ public class SettingsNavTests
             Assert.Single(SettingsNav.Pages, p => SettingsNav.SectionsOf(p).Contains(section));
         }
 
-        Assert.Equal(11, SettingsNav.Pages.Count);
+        Assert.Equal(12, SettingsNav.Pages.Count);
         Assert.Equal(Enum.GetValues<SettingsSection>().Length, SettingsNav.Pages.Sum(p => SettingsNav.SectionsOf(p).Count));
     }
 

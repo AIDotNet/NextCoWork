@@ -1,11 +1,20 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ncw.Client.Actions;
 using Ncw.Client.Services;
 using Ncw.Client.Stores;
 using Ncw.Core.Domain;
+using Ncw.Protocol.Methods;
 
 namespace Ncw.Client.ViewModels;
+
+/// <summary>「新建项目」来源:本机目录或 SSH 主机上的远程目录(docs/design/03 §1、06 §7)。</summary>
+public enum NewProjectSource
+{
+    Local,
+    Ssh,
+}
 
 /// <summary>「新建项目」窗口为什么没能添加(界面按它出文字;<see cref="NewProjectViewModel.ErrorDetail"/> 是设备给的英文说明)。</summary>
 public enum NewProjectError
@@ -26,10 +35,13 @@ public enum NewProjectError
     Failed,
 }
 
+/// <summary>「新建项目」里的一个可选 SSH 环境。</summary>
+public sealed record SshEnvironmentChoice(string Id, string Name, string State);
+
 /// <summary>
-/// 「新建项目」窗口(docs/design/03 §1「栏 1」):选一台已连接的设备,填那台设备上的文件夹路径(本机设备可以浏览),可选地起个名字。
-/// 设备列表只读 <see cref="ClientStores.Workspace"/>(打开时取一次,窗口开着时设备上下线会跟着刷新);提交走 <see cref="ProjectActions.AddAsync"/>。
-/// 路径、名字、错误都是这个窗口自己的纯 UI 状态,关掉就丢。
+/// 「新建项目」窗口(docs/design/03 §1「栏 1」、06 §7):选一台已连接的设备,选择本机目录或 SSH 主机,
+/// 填目录路径(本机可以系统浏览,SSH 支持远程目录浏览与面包屑导航),可选地起个名字。
+/// 设备与环境列表只读 <see cref="ClientStores.Workspace"/> / <see cref="ClientStores.Environments"/>;提交走 <see cref="ProjectActions.AddAsync"/> 或 <see cref="IEnvironmentCommands.AddProjectAsync"/>。
 /// </summary>
 public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
 {
@@ -37,16 +49,44 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
     private readonly ProjectActions _actions;
     private readonly Func<IDialogService> _dialogs;
     private readonly Func<IClientText> _text;
+    private readonly IEnvironmentCommands? _environments;
+    private readonly Action? _openEnvironments;
+    private CancellationTokenSource? _browseCts;
+    private CancellationTokenSource? _submitCts;
+    private bool _disposed;
 
-    public NewProjectViewModel(ClientStores stores, ProjectActions actions, Func<IDialogService> dialogs, Func<IClientText> text, string? preferredDeviceId = null)
+    public NewProjectViewModel(
+        ClientStores stores,
+        ProjectActions actions,
+        Func<IDialogService> dialogs,
+        Func<IClientText> text,
+        string? preferredDeviceId = null,
+        IEnvironmentCommands? environments = null,
+        SshInteractionsViewModel? sshInteractions = null,
+        Action? openEnvironments = null,
+        NewProjectSource initialSource = NewProjectSource.Local)
     {
         _stores = stores;
         _actions = actions;
         _dialogs = dialogs;
         _text = text;
+        _environments = environments;
+        SshInteractions = sshInteractions;
+        _openEnvironments = openEnvironments;
+        Source = environments is not null ? initialSource : NewProjectSource.Local;
         RefreshDevices(preferredDeviceId);
         stores.Workspace.Changed += OnWorkspaceChanged;
+        stores.Environments.Changed += OnEnvironmentsChanged;
+        if (IsSshSource && EnvironmentId is not null)
+        {
+            _ = BrowseRemoteAsync(null);
+        }
     }
+
+    /// <summary>内联 SSH 指纹 / 凭据交互(远程浏览或添加项目时触发,直接显示在窗口内避免被对话框遮罩盖住)。</summary>
+    public SshInteractionsViewModel? SshInteractions { get; }
+
+    public bool SupportsSsh => _environments is not null;
 
     /// <summary>可以添加项目的设备:已连接、角色不是 viewer(<c>projects.add</c> 要 member 起)。本机在前。</summary>
     [ObservableProperty] public partial IReadOnlyList<DeviceChoice> Devices { get; private set; } = [];
@@ -55,6 +95,15 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanBrowse), nameof(IsRemoteDevice))]
     [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
     public partial string? DeviceId { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLocalSource), nameof(IsSshSource))]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
+    public partial NewProjectSource Source { get; set; }
+
+    public bool IsLocalSource => Source == NewProjectSource.Local;
+
+    public bool IsSshSource => Source == NewProjectSource.Ssh;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
@@ -66,13 +115,66 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(HasError))]
     public partial NewProjectError? Error { get; private set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasErrorKey))]
+    public partial string? ErrorKey { get; private set; }
+
     [ObservableProperty] public partial string? ErrorDetail { get; private set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
     public partial bool IsBusy { get; private set; }
 
-    public bool HasError => Error is not null;
+    // ── SSH 环境与远程目录浏览 ──
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSshEnvironments))]
+    public partial IReadOnlyList<SshEnvironmentChoice> SshEnvironments { get; private set; } = [];
+
+    public bool HasSshEnvironments => SshEnvironments.Count > 0;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCommand), nameof(BrowseRemoteHomeCommand), nameof(GoToRemotePathCommand), nameof(RefreshRemoteCommand))]
+    public partial string? EnvironmentId { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCommand), nameof(GoToRemotePathCommand), nameof(GoToParentCommand), nameof(RefreshRemoteCommand))]
+    public partial bool IsBrowsing { get; private set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDirectory), nameof(CanGoUp), nameof(HasMultipleRoots), nameof(IsTruncated), nameof(HasEntries), nameof(ShowsEmptyDirectory))]
+    public partial RemoteDirectoryDto? CurrentDirectory { get; private set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBrowseFailure))]
+    public partial Failure? BrowseFailure { get; private set; }
+
+    [ObservableProperty] public partial bool ShowHidden { get; set; }
+
+    public ObservableCollection<RemoteDirEntryDto> Entries { get; } = [];
+
+    public ObservableCollection<RemoteCrumbDto> Breadcrumbs { get; } = [];
+
+    public ObservableCollection<string> Roots { get; } = [];
+
+    public bool HasDirectory => CurrentDirectory is not null;
+
+    public bool CanGoUp => !IsBrowsing && CurrentDirectory?.Parent is not null;
+
+    public bool HasMultipleRoots => Roots.Count > 1;
+
+    public bool IsTruncated => CurrentDirectory?.Truncated == true;
+
+    public bool HasEntries => Entries.Count > 0;
+
+    public bool ShowsEmptyDirectory => HasDirectory && !IsBrowsing && Entries.Count == 0;
+
+    public bool HasBrowseFailure => BrowseFailure is not null;
+
+    public bool CanOpenEnvironments => _openEnvironments is not null;
+
+    public bool HasError => Error is not null || HasErrorKey;
+
+    public bool HasErrorKey => !string.IsNullOrEmpty(ErrorKey);
 
     public bool HasDevices => Devices.Count > 0;
 
@@ -90,10 +192,77 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
     /// <summary>添加成功:界面据此关窗口。</summary>
     public event Action? Completed;
 
+    /// <summary>用户点了「管理 SSH 服务器」:关掉弹窗并跳转到设置页。</summary>
+    public event Action? ManageEnvironmentsRequested;
+
     /// <summary>出错时弹窗的标题(没有界面的回退路径用)。</summary>
     public string FailureTitle => _text().AddProjectFailedTitle;
 
-    private bool CanSubmit() => !IsBusy && DeviceId is not null && Selected is not null;
+    partial void OnDeviceIdChanged(string? value)
+    {
+        RefreshSshEnvironments();
+        if (IsSshSource)
+        {
+            ResetRemoteBrowser();
+            if (EnvironmentId is not null)
+            {
+                _ = BrowseRemoteAsync(null);
+            }
+        }
+    }
+
+    partial void OnSourceChanged(NewProjectSource value)
+    {
+        SetError(null, null, null);
+        if (value == NewProjectSource.Ssh)
+        {
+            RefreshSshEnvironments();
+            if (CurrentDirectory is null && EnvironmentId is not null)
+            {
+                _ = BrowseRemoteAsync(null);
+            }
+        }
+        else
+        {
+            CancelBrowse();
+        }
+    }
+
+    partial void OnEnvironmentIdChanged(string? value)
+    {
+        if (!IsSshSource)
+        {
+            return;
+        }
+
+        ResetRemoteBrowser();
+        if (value is not null)
+        {
+            _ = BrowseRemoteAsync(null);
+        }
+    }
+
+    partial void OnShowHiddenChanged(bool value) => RebuildEntries();
+
+    private bool CanSubmit() => !IsBusy && DeviceId is not null && Selected is not null && (IsLocalSource || EnvironmentId is not null);
+
+    [RelayCommand]
+    private void SelectSource(NewProjectSource source)
+    {
+        if (source == NewProjectSource.Ssh && !SupportsSsh)
+        {
+            return;
+        }
+
+        Source = source;
+    }
+
+    [RelayCommand]
+    private void ManageEnvironments()
+    {
+        ManageEnvironmentsRequested?.Invoke();
+        _openEnvironments?.Invoke();
+    }
 
     [RelayCommand]
     private async Task BrowseAsync()
@@ -102,8 +271,136 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(path))
         {
             Path = path;
-            Error = null;
+            SetError(null, null, null);
         }
+    }
+
+    [RelayCommand]
+    private Task BrowseRemoteHomeAsync() => BrowseRemoteAsync(null);
+
+    [RelayCommand]
+    private Task GoToRemotePathAsync() => BrowseRemoteAsync(string.IsNullOrWhiteSpace(Path) ? null : Path.Trim());
+
+    [RelayCommand]
+    private Task GoToParentAsync() => CurrentDirectory?.Parent is { } parent ? BrowseRemoteAsync(parent) : Task.CompletedTask;
+
+    [RelayCommand]
+    private Task NavigateToAsync(string? path) => string.IsNullOrWhiteSpace(path) ? Task.CompletedTask : BrowseRemoteAsync(path);
+
+    [RelayCommand]
+    private Task RefreshRemoteAsync() => BrowseRemoteAsync(CurrentDirectory?.Path ?? (string.IsNullOrWhiteSpace(Path) ? null : Path.Trim()));
+
+    [RelayCommand]
+    private void CancelBrowse()
+    {
+        if (_browseCts is not null)
+        {
+            _browseCts.Cancel();
+            _browseCts.Dispose();
+            _browseCts = null;
+        }
+    }
+
+    private async Task BrowseRemoteAsync(string? targetPath)
+    {
+        if (_environments is null || DeviceId is not { } deviceId || EnvironmentId is not { } envId || _disposed)
+        {
+            return;
+        }
+
+        CancelBrowse();
+        var cts = new CancellationTokenSource();
+        _browseCts = cts;
+        IsBrowsing = true;
+        BrowseFailure = null;
+        SetError(null, null, null);
+        try
+        {
+            var result = await _environments.BrowseAsync(deviceId, envId, targetPath, cts.Token);
+            if (_disposed || !ReferenceEquals(_browseCts, cts))
+            {
+                return;
+            }
+
+            if (!result.IsOk)
+            {
+                if (!cts.IsCancellationRequested)
+                {
+                    BrowseFailure = Failure.Of(result);
+                }
+
+                return;
+            }
+
+            ApplyDirectory(result.Value!);
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户取消浏览
+        }
+        finally
+        {
+            if (ReferenceEquals(_browseCts, cts))
+            {
+                _browseCts = null;
+                IsBrowsing = false;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private void ApplyDirectory(RemoteDirectoryDto directory)
+    {
+        CurrentDirectory = directory;
+        Path = directory.Path;
+        Breadcrumbs.Clear();
+        foreach (var crumb in directory.Breadcrumbs)
+        {
+            Breadcrumbs.Add(crumb);
+        }
+
+        Roots.Clear();
+        foreach (var root in directory.Roots)
+        {
+            Roots.Add(root);
+        }
+
+        RebuildEntries();
+        OnPropertyChanged(nameof(HasMultipleRoots));
+        OnPropertyChanged(nameof(CanGoUp));
+    }
+
+    private void RebuildEntries()
+    {
+        Entries.Clear();
+        if (CurrentDirectory is { } dir)
+        {
+            foreach (var entry in dir.Entries)
+            {
+                if (ShowHidden || !entry.Name.StartsWith('.'))
+                {
+                    Entries.Add(entry);
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(HasEntries));
+        OnPropertyChanged(nameof(ShowsEmptyDirectory));
+    }
+
+    private void ResetRemoteBrowser()
+    {
+        CancelBrowse();
+        CurrentDirectory = null;
+        BrowseFailure = null;
+        Path = "";
+        Entries.Clear();
+        Breadcrumbs.Clear();
+        Roots.Clear();
+        OnPropertyChanged(nameof(HasEntries));
+        OnPropertyChanged(nameof(ShowsEmptyDirectory));
+        OnPropertyChanged(nameof(HasMultipleRoots));
     }
 
     [RelayCommand(CanExecute = nameof(CanSubmit))]
@@ -120,15 +417,42 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
         var path = Path.Trim();
         if (path.Length == 0)
         {
-            SetError(NewProjectError.PathRequired, null);
+            SetError(NewProjectError.PathRequired, null, null);
             return false;
         }
 
         IsBusy = true;
-        SetError(null, null);
+        SetError(null, null, null);
+        _submitCts?.Cancel();
+        _submitCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _submitCts = cts;
         try
         {
-            var result = await _actions.AddAsync(deviceId, path, Name);
+            if (IsSshSource)
+            {
+                if (_environments is null || EnvironmentId is not { } envId)
+                {
+                    SetError(NewProjectError.Failed, EnvironmentErrorKeys.NotFound, null);
+                    return false;
+                }
+
+                var name = string.IsNullOrWhiteSpace(Name) ? null : Name.Trim();
+                var sshResult = await _environments.AddProjectAsync(deviceId, envId, path, name, cts.Token);
+                if (sshResult.IsOk)
+                {
+                    var project = new ProjectRef(deviceId, sshResult.Value!.WorkspaceId);
+                    _stores.Selection.Update(_ => new SelectionState(project, null));
+                    Created = project;
+                    Completed?.Invoke();
+                    return true;
+                }
+
+                SetError(MapOutcome(sshResult.Outcome), sshResult.ErrorKey, sshResult.Detail);
+                return false;
+            }
+
+            var result = await _actions.AddAsync(deviceId, path, Name, cts.Token);
             if (result.IsOk)
             {
                 Created = result.Value;
@@ -136,32 +460,56 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
                 return true;
             }
 
-            SetError(result.Outcome switch
-            {
-                ActionOutcome.Unavailable => NewProjectError.NotConnected,
-                ActionOutcome.NotFound => NewProjectError.NotFound,
-                ActionOutcome.Forbidden => NewProjectError.Forbidden,
-                _ => NewProjectError.Failed,
-            }, result.Detail);
+            SetError(MapOutcome(result.Outcome), result.ErrorKey, result.Detail);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
             return false;
         }
         finally
         {
+            if (ReferenceEquals(_submitCts, cts))
+            {
+                _submitCts = null;
+            }
+
+            cts.Dispose();
             IsBusy = false;
         }
     }
 
+    private static NewProjectError MapOutcome(ActionOutcome outcome) => outcome switch
+    {
+        ActionOutcome.Unavailable => NewProjectError.NotConnected,
+        ActionOutcome.NotFound => NewProjectError.NotFound,
+        ActionOutcome.Forbidden => NewProjectError.Forbidden,
+        _ => NewProjectError.Failed,
+    };
+
     public IAsyncRelayCommand SubmitCommand => SubmitCoreCommand;
 
-    public void Dispose() => _stores.Workspace.Changed -= OnWorkspaceChanged;
+    public void Dispose()
+    {
+        _disposed = true;
+        CancelBrowse();
+        _submitCts?.Cancel();
+        _submitCts?.Dispose();
+        _submitCts = null;
+        _stores.Workspace.Changed -= OnWorkspaceChanged;
+        _stores.Environments.Changed -= OnEnvironmentsChanged;
+    }
 
-    private void SetError(NewProjectError? error, string? detail)
+    private void SetError(NewProjectError? error, string? key, string? detail)
     {
         Error = error;
+        ErrorKey = key;
         ErrorDetail = detail;
     }
 
     private void OnWorkspaceChanged() => RefreshDevices(DeviceId);
+
+    private void OnEnvironmentsChanged() => RefreshSshEnvironments();
 
     private void RefreshDevices(string? preferred)
     {
@@ -181,10 +529,31 @@ public sealed partial class NewProjectViewModel : ObservableObject, IDisposable
         }
         else
         {
-            // 同一台设备的类型 / 连接变了也要刷新「浏览」是否可用
             OnPropertyChanged(nameof(CanBrowse));
             OnPropertyChanged(nameof(IsRemoteDevice));
             SubmitCoreCommand.NotifyCanExecuteChanged();
+        }
+
+        RefreshSshEnvironments();
+    }
+
+    private void RefreshSshEnvironments()
+    {
+        var list = DeviceId is { } deviceId
+            ? _stores.Environments.State.Of(deviceId).Environments
+                .Where(static e => e.Kind == EnvironmentKindNames.Ssh && e.Enabled)
+                .OrderBy(static e => e.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(static e => new SshEnvironmentChoice(e.Id, e.Name, e.State))
+                .ToList()
+            : [];
+        if (!list.SequenceEqual(SshEnvironments))
+        {
+            SshEnvironments = list;
+        }
+
+        if (EnvironmentId is null || list.All(e => e.Id != EnvironmentId))
+        {
+            EnvironmentId = list.FirstOrDefault()?.Id;
         }
     }
 

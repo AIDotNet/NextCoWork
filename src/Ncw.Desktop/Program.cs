@@ -73,6 +73,7 @@ internal static class Program
         NcwApp.RefreshTokenVaultFactory = static () => new AccountVault(NcwApp.ClientDirectory);
         Ncw.UI.Controls.NcwMotion.SystemReducesMotionProbe = SystemMotionProbe.ReducesMotion;   // 「动效 · 跟随系统」读系统的「减少动态效果」
         NcwApp.NativeWindowBackground = NativeWindowBackground.Apply;
+        NcwApp.NativeTrayFactory = WindowsTray.Create;   // Windows 用系统托盘和系统菜单(Avalonia 自己画的托盘菜单真机右键弹不出来,issue #200);其他平台返回 null 照旧
         NcwApp.NativeAttentionFactory = DesktopAttention.Create;   // 系统通知、Dock 角标、请求注意(docs/design/03 §11.2)   // 窗口第一帧就是加载界面的底色(docs/design/03 §10.6)
         BuildAvaloniaApp().AfterSetup(static _ => MacDockIcon.ApplyWhenUnbundled()).StartWithClassicDesktopLifetime(args);   // Dock 图标:不是从 .app 启动时(dotnet run)自己设
         return 0;

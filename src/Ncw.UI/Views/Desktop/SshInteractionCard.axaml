@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.SshInteractionCard"
+             x:DataType="vm:SshInteractionPromptViewModel">
+  <!--
+    SSH 设备级交互卡片(docs/design/06 §10.4):主机指纹首次确认(ssh_host_key)与密码 / 私钥口令 / 键盘交互式问答(ssh_credential)。
+    复用在三处:桌面全局浮层(SshInteractionOverlay)、新建项目窗口内联(避免被弹窗遮罩盖住)、手机设备页顶部。
+  -->
+  <Border Classes="card attention" Padding="16">
+    <StackPanel Spacing="12">
+      <!-- ═══ 主机指纹确认 ═══ -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsHostKey}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="Fingerprint" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Warning}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Text="{l:NcwText SshHostKeyTitle}" />
+        </StackPanel>
+
+        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+          <Border Classes="chip">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <lucide:LucideIcon Kind="Link" Size="11" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Classes="hint" Text="{Binding EnvLabel}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="chip">
+            <TextBlock Classes="hint" Text="{Binding Algorithm}" />
+          </Border>
+        </WrapPanel>
+
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText SshHostKeyHint}" />
+
+        <Border Padding="10,8" CornerRadius="8" Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="hint" Text="{Binding HostName}" />
+            <SelectableTextBlock Classes="mono" Text="{Binding DisplayFingerprint}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
+          <ui:NcwButton Variant="Primary" Command="{Binding TrustCommand}" IsLoading="{Binding IsBusy}" Content="{l:NcwText SshHostKeyTrust}" />
+          <ui:NcwButton Variant="Secondary" Command="{Binding RejectCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText SshHostKeyReject}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- ═══ 凭据提问(密码 / 私钥口令 / 键盘交互式) ═══ -->
+      <StackPanel Spacing="10" IsVisible="{Binding IsCredential}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <lucide:LucideIcon Kind="KeyRound" Size="18" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource Accent}" />
+          <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                     Text="{Binding PromptKind, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=SshCredTitle}" />
+        </StackPanel>
+
+        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+          <Border Classes="chip">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <lucide:LucideIcon Kind="Link" Size="11" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock Classes="hint" Text="{Binding EnvLabel}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="chip" IsVisible="{Binding HostName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{Binding HostName}" />
+          </Border>
+          <Border Classes="chip" IsVisible="{Binding UserName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{Binding UserName}" />
+          </Border>
+          <Border Classes="chip" IsVisible="{Binding HasKeyName}">
+            <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextSecondary}" Text="{Binding KeyName}" />
+          </Border>
+        </WrapPanel>
+
+        <Border Classes="card danger" Padding="10,8" IsVisible="{Binding PreviousRejected}">
+          <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" Text="{l:NcwText SshCredPreviousRejected}" />
+        </Border>
+
+        <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding HasInstruction}" Text="{Binding Instruction}" />
+
+        <ItemsControl ItemsSource="{Binding Prompts}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SshPromptFieldViewModel">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="hint" IsVisible="{Binding HasPrompt}" Text="{Binding Prompt}" TextWrapping="Wrap" />
+                <ui:NcwInput IsVisible="{Binding Echo}" Text="{Binding Value, Mode=TwoWay}" KeyDown="OnInputKeyDown" />
+                <ui:NcwInput IsVisible="{Binding !Echo}" Text="{Binding Value, Mode=TwoWay}" PasswordChar="•" KeyDown="OnInputKeyDown" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ui:NcwCheckbox IsVisible="{Binding CanRemember}" IsChecked="{Binding Remember, Mode=TwoWay}" Content="{l:NcwText SshCredRemember}" />
+
+        <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
+          <ui:NcwButton Variant="Primary" Command="{Binding SubmitCommand}" IsLoading="{Binding IsBusy}" Content="{l:NcwText SshCredConfirm}" />
+          <ui:NcwButton Variant="Ghost" Command="{Binding CancelCommand}" IsEnabled="{Binding !IsBusy}" Content="{l:NcwText Cancel}" />
+        </WrapPanel>
+      </StackPanel>
+
+      <!-- 回答没成功(例如已被另一台设备抢先处理 / 断线) -->
+      <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasProblem}"
+                 Text="{Binding Problem, Converter={x:Static cv:InteractionProblemConverter.Instance}}" />
+    </StackPanel>
+  </Border>
+</UserControl>

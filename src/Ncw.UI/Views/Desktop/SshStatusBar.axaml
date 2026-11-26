@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Ncw.UI.Localization"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
+             xmlns:ui="using:Ncw.UI.Controls"
+             xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:vm="using:Ncw.Client.ViewModels"
+             x:Class="Ncw.UI.Views.Desktop.SshStatusBar"
+             x:DataType="vm:SshStatusBarViewModel"
+             IsVisible="{Binding IsVisible}">
+  <!-- 当前 SSH 项目的连接状态条(对齐 2.x ConnectionDialogs 顶部栏):连接中 / 重连中 / 失败 / 未知时出现。 -->
+  <Border Padding="12,7" BorderThickness="0,0,0,1"
+          BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+          Background="{arc:ArcDesignTokenResource SurfaceMuted}">
+    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+      <Panel VerticalAlignment="Center">
+        <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" IsVisible="{Binding IsConnecting}" Foreground="{arc:ArcDesignTokenResource Warning}" />
+        <lucide:LucideIcon Kind="CircleAlert" Size="14" IsVisible="{Binding IsFailed}" Foreground="{arc:ArcDesignTokenResource Danger}" />
+        <lucide:LucideIcon Kind="WifiOff" Size="14" IsVisible="{Binding IsUnknown}" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+      </Panel>
+      <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" ItemSpacing="8" LineSpacing="2">
+        <TextBlock FontWeight="SemiBold" Text="{Binding EnvironmentName}" />
+        <TextBlock Classes="hint" Text="{Binding State, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=EnvState}" />
+        <TextBlock Classes="hint" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasErrorKey}"
+                   Text="{Binding ErrorKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+        <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding RemotePath}" TextTrimming="CharacterEllipsis" />
+      </WrapPanel>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <ui:NcwButton Variant="Secondary" Command="{Binding ReconnectCommand}" IsVisible="{Binding CanReconnect}" Content="{l:NcwText EnvReconnect}" />
+        <ui:NcwButton Variant="Ghost" Command="{Binding CancelConnectCommand}" IsVisible="{Binding CanCancel}" Content="{l:NcwText Cancel}" />
+        <ui:NcwButton Variant="Ghost" Command="{Binding OpenSettingsCommand}" Content="{l:NcwText EnvManage}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

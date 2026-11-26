@@ -57,6 +57,7 @@ public sealed class SettingsSectionIconConverter : IValueConverter
         SettingsSection.Commands => LucideIconKind.SquareSlash,
         SettingsSection.Hooks => LucideIconKind.Webhook,
         SettingsSection.Mcp => LucideIconKind.Plug,
+        SettingsSection.Environments => LucideIconKind.Server,
         SettingsSection.Plugins => LucideIconKind.Puzzle,
         SettingsSection.Usage => LucideIconKind.ChartColumn,
         SettingsSection.Storage => LucideIconKind.HardDrive,

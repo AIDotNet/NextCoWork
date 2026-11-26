@@ -42,6 +42,11 @@ public class NcwApp : Application
     /// </summary>
     public static Func<INativeAttention?>? NativeAttentionFactory { get; set; }
 
+    /// <summary>
+    /// 宿主在启动前设置:用系统托盘代替 Avalonia 的 <c>TrayIcon</c>(现在只有 Windows,docs/design/03 §11.2)。为 null 或返回 null 时用 Avalonia 的托盘。
+    /// </summary>
+    public static NativeTrayFactory? NativeTrayFactory { get; set; }
+
     /// <summary>宿主在启动前设置:创建连接设备的后端。为 null 时没有设备(只用于预览)。</summary>
     public static Func<INcwBackend>? BackendFactory { get; set; }
 
@@ -221,7 +226,7 @@ public class NcwApp : Application
             }
 
             // 提醒:系统通知、角标、托盘(菜单栏)图标;托盘开着时关窗只是藏起窗口,本机 Agent 继续运行(docs/design/03 §11.2)
-            _attention = new NcwAttention(shell, window, desktop, NativeAttentionFactory?.Invoke());
+            _attention = new NcwAttention(shell, window, desktop, NativeAttentionFactory?.Invoke(), NativeTrayFactory);
             if (OperatingSystem.IsMacOS())
             {
                 InstallMacAppMenu(shell);

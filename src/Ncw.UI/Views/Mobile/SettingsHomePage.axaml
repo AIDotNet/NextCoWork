@@ -48,6 +48,9 @@
       <ui:NcwListItem Tag="Mcp" Content="{l:NcwText SettingsMcp}" ShowChevron="True" Click="OnSectionClick">
         <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Plug" Size="18" /></ui:NcwListItem.Leading>
       </ui:NcwListItem>
+      <ui:NcwListItem Tag="Environments" Content="{l:NcwText SettingsEnvironments}" ShowChevron="True" Click="OnSectionClick">
+        <ui:NcwListItem.Leading><lucide:LucideIcon Kind="Server" Size="18" /></ui:NcwListItem.Leading>
+      </ui:NcwListItem>
       <ui:NcwListItem Tag="Usage" Content="{l:NcwText SettingsUsage}" ShowChevron="True" Click="OnSectionClick">
         <ui:NcwListItem.Leading><lucide:LucideIcon Kind="ChartColumn" Size="18" /></ui:NcwListItem.Leading>
       </ui:NcwListItem>

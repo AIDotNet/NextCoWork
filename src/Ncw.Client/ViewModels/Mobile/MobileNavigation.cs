@@ -247,7 +247,7 @@ public static class MobileSettingsMenu
     public static readonly IReadOnlyList<SettingsSection> Device =
     [
         SettingsSection.General, SettingsSection.Models, SettingsSection.Skills, SettingsSection.Commands,
-        SettingsSection.Hooks, SettingsSection.Mcp, SettingsSection.Usage, SettingsSection.Storage,
+        SettingsSection.Hooks, SettingsSection.Mcp, SettingsSection.Environments, SettingsSection.Usage, SettingsSection.Storage,
     ];
 
     public static readonly IReadOnlyList<SettingsSection> Project = [SettingsSection.Project];

@@ -39,6 +39,9 @@ public enum SettingsSection
     /// <summary>设备:MCP 服务器。</summary>
     Mcp,
 
+    /// <summary>设备:执行环境(SSH 服务器、导入 ssh_config、已知主机指纹;docs/design/06)。</summary>
+    Environments,
+
     /// <summary>设备:用量统计。</summary>
     Usage,
 

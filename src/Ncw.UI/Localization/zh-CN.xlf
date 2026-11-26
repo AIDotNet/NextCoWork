@@ -2105,5 +2105,162 @@
     <unit id="FilePinTab"><segment><source>Pin tab</source><target state="translated">固定标签</target></segment></unit>
     <unit id="PinSession"><segment><source>Pin session</source><target state="translated">置顶会话</target></segment></unit>
     <unit id="UnpinSession"><segment><source>Unpin session</source><target state="translated">取消置顶</target></segment></unit>
+    <unit id="SettingsEnvironments"><segment><source>Environments</source><target state="translated">执行环境</target></segment></unit>
+    <unit id="SettingsEnvironmentsHint"><segment><source>Configure SSH servers connected from this device, import from ~/.ssh/config, and manage known host keys.</source><target state="translated">配置从这台设备发起连接的 SSH 服务器、从 ~/.ssh/config 导入，以及管理已知主机指纹。</target></segment></unit>
+    <unit id="SshTargetKindManual"><segment><source>Manual</source><target state="translated">手工填写</target></segment></unit>
+    <unit id="SshTargetKindConfig"><segment><source>SSH config</source><target state="translated">SSH config</target></segment></unit>
+    <unit id="SshAuthMethodAuto"><segment><source>Automatic</source><target state="translated">自动</target></segment></unit>
+    <unit id="SshAuthMethodPassword"><segment><source>Password</source><target state="translated">密码</target></segment></unit>
+    <unit id="SshAuthMethodKey"><segment><source>Private key</source><target state="translated">私钥</target></segment></unit>
+    <unit id="SshAuthMethodInteractive"><segment><source>Keyboard interactive</source><target state="translated">交互认证</target></segment></unit>
+    <unit id="SshAuthMethodAsk"><segment><source>Ask every time</source><target state="translated">每次询问</target></segment></unit>
+    <unit id="SshAuthHintAuto"><segment><source>Follow SSH config and ssh-agent first, then fall back to private key or password if needed.</source><target state="translated">优先使用 SSH config 与本机 ssh-agent，必要时再使用私钥或询问密码。</target></segment></unit>
+    <unit id="SshAuthHintPassword"><segment><source>Authenticate with a password encrypted in the device credential store, or prompted when connecting.</source><target state="translated">使用加密保存在设备上的密码认证，或在连接时按需询问。</target></segment></unit>
+    <unit id="SshAuthHintKey"><segment><source>Authenticate with an OpenSSH private key file. If encrypted, you will be prompted for the passphrase when needed.</source><target state="translated">使用 OpenSSH 私钥文件认证；若私钥受口令保护，连接时按需询问。</target></segment></unit>
+    <unit id="SshAuthHintInteractive"><segment><source>Answer server prompts (such as two-factor authentication) when connecting.</source><target state="translated">连接时按服务器返回的问题完成验证（如两步验证）。</target></segment></unit>
+    <unit id="SshAuthHintAsk"><segment><source>Prompt for credentials on each connection without saving them.</source><target state="translated">每次连接都询问认证信息，不保存本次输入。</target></segment></unit>
+    <unit id="SshPlatformAuto"><segment><source>Auto-detect</source><target state="translated">自动检测</target></segment></unit>
+    <unit id="SshPlatformLinux"><segment><source>Linux</source><target state="translated">Linux</target></segment></unit>
+    <unit id="SshPlatformMacos"><segment><source>macOS</source><target state="translated">macOS</target></segment></unit>
+    <unit id="SshPlatformWindows"><segment><source>Windows</source><target state="translated">Windows</target></segment></unit>
+    <unit id="SshProxyKindSocks5"><segment><source>SOCKS5</source><target state="translated">SOCKS5</target></segment></unit>
+    <unit id="SshProxyKindSocks4"><segment><source>SOCKS4</source><target state="translated">SOCKS4</target></segment></unit>
+    <unit id="SshProxyKindHttp"><segment><source>HTTP</source><target state="translated">HTTP</target></segment></unit>
+    <unit id="EnvStateUnknown"><segment><source>Unknown</source><target state="translated">状态未知</target></segment></unit>
+    <unit id="EnvStateIdle"><segment><source>Idle</source><target state="translated">未连接</target></segment></unit>
+    <unit id="EnvStateConnecting"><segment><source>Connecting…</source><target state="translated">正在连接…</target></segment></unit>
+    <unit id="EnvStateReady"><segment><source>Connected</source><target state="translated">已连接</target></segment></unit>
+    <unit id="EnvStateReconnecting"><segment><source>Reconnecting…</source><target state="translated">正在重连…</target></segment></unit>
+    <unit id="EnvStateFailed"><segment><source>Connection failed</source><target state="translated">连接失败</target></segment></unit>
+    <unit id="EnvProblemName"><segment><source>Enter a valid name</source><target state="translated">请填写有效的名称</target></segment></unit>
+    <unit id="EnvProblemHost"><segment><source>Enter a valid host or alias</source><target state="translated">请填写有效的主机名或别名</target></segment></unit>
+    <unit id="EnvProblemPort"><segment><source>Port must be between 1 and 65535</source><target state="translated">端口必须在 1–65535 之间</target></segment></unit>
+    <unit id="EnvProblemUsername"><segment><source>Enter a valid username</source><target state="translated">请填写有效的用户名</target></segment></unit>
+    <unit id="EnvProblemProxyHost"><segment><source>Enter a valid proxy host</source><target state="translated">请填写有效的代理主机</target></segment></unit>
+    <unit id="EnvProblemProxyPort"><segment><source>Proxy port must be between 1 and 65535</source><target state="translated">代理端口必须在 1–65535 之间</target></segment></unit>
+    <unit id="SshCredTitlePassword"><segment><source>SSH password required</source><target state="translated">需要输入 SSH 密码</target></segment></unit>
+    <unit id="SshCredTitleKeyPassphrase"><segment><source>Private key passphrase required</source><target state="translated">需要输入私钥口令</target></segment></unit>
+    <unit id="SshCredTitleKeyboardInteractive"><segment><source>SSH authentication prompt</source><target state="translated">需要完成 SSH 验证</target></segment></unit>
+    <unit id="EnvPickIdentityFile"><segment><source>Choose private key file</source><target state="translated">选择私钥文件</target></segment></unit>
+    <unit id="EnvPickConfigFile"><segment><source>Choose SSH config file</source><target state="translated">选择 SSH 配置文件</target></segment></unit>
+    <unit id="EnvOriginHint"><segment><source>SSH connections are initiated from {0}.</source><target state="translated">SSH 连接将从「{0}」发起。</target></segment></unit>
+    <unit id="EnvKnownHosts"><segment><source>Known hosts</source><target state="translated">已知主机</target></segment></unit>
+    <unit id="EnvImportSshConfig"><segment><source>Import ~/.ssh/config</source><target state="translated">导入 ~/.ssh/config</target></segment></unit>
+    <unit id="EnvAdd"><segment><source>Add server</source><target state="translated">添加服务器</target></segment></unit>
+    <unit id="EnvDefaultRemoteHint"><segment><source>An SSH server is currently set as the default environment on this device.</source><target state="translated">当前设备的默认执行环境已设为一台 SSH 服务器。</target></segment></unit>
+    <unit id="EnvResetDefaultLocal"><segment><source>Reset default to local</source><target state="translated">恢复默认本机</target></segment></unit>
+    <unit id="EnvRemoveTitle"><segment><source>Delete SSH server "{0}"?</source><target state="translated">删除 SSH 服务器「{0}」？</target></segment></unit>
+    <unit id="EnvRemoveHint"><segment><source>This removes the saved configuration and credentials on this device. Remote files are untouched.</source><target state="translated">仅删除设备上的连接配置和已存凭据，不会删除服务器文件。</target></segment></unit>
+    <unit id="EnvNewTitle"><segment><source>Add SSH server</source><target state="translated">添加 SSH 服务器</target></segment></unit>
+    <unit id="EnvEditTitle"><segment><source>Edit SSH server</source><target state="translated">编辑 SSH 服务器</target></segment></unit>
+    <unit id="EnvName"><segment><source>Name</source><target state="translated">名称</target></segment></unit>
+    <unit id="EnvTargetKind"><segment><source>Configuration mode</source><target state="translated">连接配置</target></segment></unit>
+    <unit id="EnvHost"><segment><source>Host</source><target state="translated">主机</target></segment></unit>
+    <unit id="EnvPort"><segment><source>Port</source><target state="translated">端口</target></segment></unit>
+    <unit id="EnvAlias"><segment><source>Host alias</source><target state="translated">Host 别名</target></segment></unit>
+    <unit id="EnvAliasHint"><segment><source>Use a Host alias defined in the device's SSH config file.</source><target state="translated">填写设备 SSH 配置文件中定义的 Host 别名。</target></segment></unit>
+    <unit id="EnvBrowseFile"><segment><source>Choose file</source><target state="translated">选择文件</target></segment></unit>
+    <unit id="EnvClearSaved"><segment><source>Clear saved</source><target state="translated">清除已存</target></segment></unit>
+    <unit id="EnvConfigFile"><segment><source>Config file</source><target state="translated">配置文件</target></segment></unit>
+    <unit id="EnvConfigFilePlaceholder"><segment><source>Optional (defaults to ~/.ssh/config)</source><target state="translated">可选（默认 ~/.ssh/config）</target></segment></unit>
+    <unit id="EnvSavedPathKeepHint"><segment><source>A file path is already saved on the device. Leave blank to keep it.</source><target state="translated">设备上已保存路径，留空则保持不变。</target></segment></unit>
+    <unit id="EnvAuthMethod"><segment><source>Authentication</source><target state="translated">认证方式</target></segment></unit>
+    <unit id="EnvUsername"><segment><source>Username</source><target state="translated">用户名</target></segment></unit>
+    <unit id="EnvIdentityFile"><segment><source>Private key file</source><target state="translated">私钥文件</target></segment></unit>
+    <unit id="EnvIdentityFilePlaceholder"><segment><source>Optional path on the device</source><target state="translated">可选，填写设备上的私钥路径</target></segment></unit>
+    <unit id="EnvKeyPassphrase"><segment><source>Key passphrase</source><target state="translated">私钥口令</target></segment></unit>
+    <unit id="EnvKeyPassphraseHint"><segment><source>Write-only. Leave blank to keep any saved passphrase or be prompted when connecting.</source><target state="translated">只写不读。留空则保持已存口令，或在连接时按需询问。</target></segment></unit>
+    <unit id="EnvOptional"><segment><source>Optional</source><target state="translated">可选</target></segment></unit>
+    <unit id="EnvPassword"><segment><source>Password</source><target state="translated">账户密码</target></segment></unit>
+    <unit id="EnvPasswordHint"><segment><source>Encrypted on the device and never sent back to clients.</source><target state="translated">加密保存在设备上，永远不会回传给控制端。</target></segment></unit>
+    <unit id="EnvPasswordPlaceholder"><segment><source>Leave blank to keep or prompt when connecting</source><target state="translated">留空则保持不变或在连接时询问</target></segment></unit>
+    <unit id="EnvPasswordAlreadySaved"><segment><source>A password is saved on this device.</source><target state="translated">设备上已保存密码。</target></segment></unit>
+    <unit id="EnvProxyJump"><segment><source>ProxyJump</source><target state="translated">跳板机</target></segment></unit>
+    <unit id="EnvPlatform"><segment><source>Remote OS</source><target state="translated">服务器系统</target></segment></unit>
+    <unit id="EnvProxyToggle"><segment><source>Connect through proxy</source><target state="translated">经代理连接</target></segment></unit>
+    <unit id="EnvProxyHint"><segment><source>Tunnel the first SSH hop through an HTTP or SOCKS proxy.</source><target state="translated">第一跳 SSH 连接先经过 HTTP 或 SOCKS 代理。</target></segment></unit>
+    <unit id="EnvProxyKind"><segment><source>Proxy type</source><target state="translated">代理类型</target></segment></unit>
+    <unit id="EnvProxyHost"><segment><source>Proxy host</source><target state="translated">代理主机</target></segment></unit>
+    <unit id="EnvProxyPort"><segment><source>Proxy port</source><target state="translated">代理端口</target></segment></unit>
+    <unit id="EnvProxyUsername"><segment><source>Proxy username</source><target state="translated">代理用户名</target></segment></unit>
+    <unit id="EnvProxyPassword"><segment><source>Proxy password</source><target state="translated">代理密码</target></segment></unit>
+    <unit id="EnvTargetChangeWarning"><segment><source>Changing the connection target will repoint existing projects bound to this SSH server. Verify the server identity before saving.</source><target state="translated">连接目标将发生改变，绑定到此环境的项目路径将指向新目标。请确认服务器身份后再保存。</target></segment></unit>
+    <unit id="EnvConfirmTargetChange"><segment><source>Confirm changing the connection target</source><target state="translated">确认更改连接目标</target></segment></unit>
+    <unit id="EnvTest"><segment><source>Test connection</source><target state="translated">测试连接</target></segment></unit>
+    <unit id="EnvTesting"><segment><source>Testing SSH connection…</source><target state="translated">正在测试 SSH 连接…</target></segment></unit>
+    <unit id="EnvTestOk"><segment><source>SSH connection succeeded</source><target state="translated">SSH 连接测试成功</target></segment></unit>
+    <unit id="EnvHostKeyChangedTitle"><segment><source>Host key changed — connection refused</source><target state="translated">主机指纹已变化，已拒绝连接</target></segment></unit>
+    <unit id="EnvHostKeyChangedDetail"><segment><source>The remote host presented a different key than the one pinned on this device. Verify the server before forgetting the old key.</source><target state="translated">远程主机出示的指纹与设备钉扎的不一致。确认不是中间人攻击后再忘记旧指纹并重试。</target></segment></unit>
+    <unit id="EnvPresentedFingerprint"><segment><source>Presented fingerprint</source><target state="translated">本次出示的指纹</target></segment></unit>
+    <unit id="EnvPinnedFingerprint"><segment><source>Pinned fingerprint</source><target state="translated">已钉扎的指纹</target></segment></unit>
+    <unit id="EnvForgetHostKey"><segment><source>Forget host key</source><target state="translated">忘记主机指纹</target></segment></unit>
+    <unit id="EnvImportTitle"><segment><source>Import from ~/.ssh/config</source><target state="translated">从 ~/.ssh/config 导入</target></segment></unit>
+    <unit id="EnvImportHint"><segment><source>Reads Host aliases on the device without connecting to any server.</source><target state="translated">仅读取设备上的 Host 别名，不会主动发起任何连接。</target></segment></unit>
+    <unit id="EnvImportEmpty"><segment><source>No importable Host entries found.</source><target state="translated">没有找到可导入的 Host 条目。</target></segment></unit>
+    <unit id="EnvChipKey"><segment><source>Key</source><target state="translated">私钥</target></segment></unit>
+    <unit id="EnvChipPassword"><segment><source>Saved password</source><target state="translated">已存密码</target></segment></unit>
+    <unit id="EnvImportOne"><segment><source>Import</source><target state="translated">导入</target></segment></unit>
+    <unit id="EnvImported"><segment><source>Imported</source><target state="translated">已导入</target></segment></unit>
+    <unit id="EnvNotImportable"><segment><source>Unsupported</source><target state="translated">暂不支持</target></segment></unit>
+    <unit id="EnvKnownHostsTitle"><segment><source>Known host keys</source><target state="translated">已知主机指纹</target></segment></unit>
+    <unit id="EnvKnownHostsHint"><segment><source>Fingerprints pinned on this device for SSH hosts and jump hosts.</source><target state="translated">此设备已钉扎的 SSH 主机与跳板机指纹。</target></segment></unit>
+    <unit id="EnvKnownHostsEmpty"><segment><source>No pinned SSH host keys yet.</source><target state="translated">还没有已钉扎的主机指纹。</target></segment></unit>
+    <unit id="EnvEmptyTitle"><segment><source>No SSH servers configured</source><target state="translated">还没有 SSH 服务器</target></segment></unit>
+    <unit id="EnvEmptyHint"><segment><source>Add an SSH server or import aliases from ~/.ssh/config to run tools and open projects on remote machines.</source><target state="translated">添加 SSH 服务器或从 ~/.ssh/config 导入别名，即可在远程主机上打开项目并运行工具。</target></segment></unit>
+    <unit id="EnvDefaultChip"><segment><source>Default</source><target state="translated">默认</target></segment></unit>
+    <unit id="EnvViaJump"><segment><source>Jump host: {0}</source><target state="translated">跳板机：{0}</target></segment></unit>
+    <unit id="EnvEnabled"><segment><source>Enabled</source><target state="translated">启用</target></segment></unit>
+    <unit id="EnvConnect"><segment><source>Connect</source><target state="translated">连接</target></segment></unit>
+    <unit id="EnvReconnect"><segment><source>Reconnect</source><target state="translated">重新连接</target></segment></unit>
+    <unit id="EnvDisconnect"><segment><source>Disconnect</source><target state="translated">断开连接</target></segment></unit>
+    <unit id="EnvSetDefault"><segment><source>Set as default</source><target state="translated">设为默认</target></segment></unit>
+    <unit id="EnvManage"><segment><source>Manage SSH servers</source><target state="translated">管理 SSH 服务器</target></segment></unit>
+    <unit id="SshHostKeyTitle"><segment><source>Verify SSH host key</source><target state="translated">确认 SSH 主机指纹</target></segment></unit>
+    <unit id="SshHostKeyHint"><segment><source>This is the first time this device is connecting to this host. Confirm that the fingerprint matches the server before trusting it.</source><target state="translated">设备首次连接此主机。请核对指纹与目标服务器一致后再信任并继续。</target></segment></unit>
+    <unit id="SshHostKeyTrust"><segment><source>Trust and continue</source><target state="translated">信任并继续</target></segment></unit>
+    <unit id="SshHostKeyReject"><segment><source>Reject</source><target state="translated">拒绝</target></segment></unit>
+    <unit id="SshCredPreviousRejected"><segment><source>The saved credential was rejected by the server. Please enter it again.</source><target state="translated">已保存的凭据被服务器拒绝，请重新输入。</target></segment></unit>
+    <unit id="SshCredRemember"><segment><source>Save encrypted credential on this device</source><target state="translated">加密保存到设备凭据库</target></segment></unit>
+    <unit id="SshCredConfirm"><segment><source>Continue</source><target state="translated">继续</target></segment></unit>
+    <unit id="NewProjectSourceLocal"><segment><source>Local folder</source><target state="translated">本机文件夹</target></segment></unit>
+    <unit id="NewProjectSourceSsh"><segment><source>SSH host</source><target state="translated">SSH 主机</target></segment></unit>
+    <unit id="NewProjectNoSshEnvironments"><segment><source>No enabled SSH servers on this device yet. Add one in Settings → Environments first.</source><target state="translated">这台设备上还没有已启用的 SSH 服务器，请先在「设置 → 执行环境」中添加。</target></segment></unit>
+    <unit id="NewProjectSshServer"><segment><source>SSH server</source><target state="translated">SSH 服务器</target></segment></unit>
+    <unit id="EnvBrowseParent"><segment><source>Parent folder</source><target state="translated">上级目录</target></segment></unit>
+    <unit id="EnvBrowseGo"><segment><source>Go</source><target state="translated">转到</target></segment></unit>
+    <unit id="EnvRemotePath"><segment><source>Remote directory</source><target state="translated">远程目录</target></segment></unit>
+    <unit id="EnvBrowsing"><segment><source>Loading remote directory…</source><target state="translated">正在读取远程目录…</target></segment></unit>
+    <unit id="EnvBrowseRoots"><segment><source>Drives</source><target state="translated">磁盘卷</target></segment></unit>
+    <unit id="EnvShowHiddenDirs"><segment><source>Show hidden</source><target state="translated">显示隐藏目录</target></segment></unit>
+    <unit id="EnvEmptyDirectory"><segment><source>No subdirectories</source><target state="translated">没有子目录</target></segment></unit>
+    <unit id="EnvDirectoryTruncated"><segment><source>This directory is large; only the first part is shown.</source><target state="translated">目录条目较多，仅显示前面部分。</target></segment></unit>
+    <unit id="ProjectEnvironmentTitle"><segment><source>Execution environment</source><target state="translated">执行环境</target></segment></unit>
+    <unit id="ProjectEnvironmentLocal"><segment><source>Local device</source><target state="translated">本机设备</target></segment></unit>
+    <unit id="ProjectEnvironmentSsh"><segment><source>SSH</source><target state="translated">SSH</target></segment></unit>
+    <unit id="ErrEnvNotFound"><segment><source>The SSH environment was not found.</source><target state="translated">找不到该 SSH 环境。</target></segment></unit>
+    <unit id="ErrEnvInvalidProfile"><segment><source>Invalid SSH configuration. Check the host, port, username, and paths.</source><target state="translated">SSH 配置无效，请检查主机、端口、用户名及路径。</target></segment></unit>
+    <unit id="ErrEnvConflict"><segment><source>The configuration changed on another client. Refresh and try again.</source><target state="translated">配置已在其他控制端被修改，请刷新后重试。</target></segment></unit>
+    <unit id="ErrEnvInUse"><segment><source>Projects are still bound to this SSH environment. Remove those projects first.</source><target state="translated">仍有项目绑定到此 SSH 环境，请先移除相关项目。</target></segment></unit>
+    <unit id="ErrEnvBusy"><segment><source>This SSH environment is currently in use by an active run, terminal, or background shell.</source><target state="translated">此 SSH 环境正在被运行中的任务、终端或后台命令使用。</target></segment></unit>
+    <unit id="ErrEnvDisabled"><segment><source>This SSH environment is disabled.</source><target state="translated">此 SSH 环境已禁用。</target></segment></unit>
+    <unit id="ErrEnvNotConnected"><segment><source>The SSH environment is not connected yet.</source><target state="translated">SSH 环境尚未连接。</target></segment></unit>
+    <unit id="ErrEnvLocalImmutable"><segment><source>The built-in local environment cannot be modified or removed.</source><target state="translated">内置本机环境不可修改或删除。</target></segment></unit>
+    <unit id="ErrEnvNotRemote"><segment><source>This operation is only available for SSH environments.</source><target state="translated">此操作仅适用于 SSH 环境。</target></segment></unit>
+    <unit id="ErrEnvTargetChangeNeedsConfirm"><segment><source>Confirm changing the connection target before saving.</source><target state="translated">请先确认更改连接目标后再保存。</target></segment></unit>
+    <unit id="ErrEnvSecretsUnavailable"><segment><source>Unable to access the device credential store to save secrets.</source><target state="translated">无法访问设备凭据库，凭据未保存。</target></segment></unit>
+    <unit id="ErrEnvNoSshServices"><segment><source>SSH environments are not available on this device.</source><target state="translated">此设备未启用 SSH 环境服务。</target></segment></unit>
+    <unit id="ErrEnvAuthentication"><segment><source>SSH authentication failed. Check your username, key, or password.</source><target state="translated">SSH 认证失败，请检查用户名、私钥或密码。</target></segment></unit>
+    <unit id="ErrEnvHostKeyChanged"><segment><source>The server host key changed. Verify the host and forget the old key before reconnecting.</source><target state="translated">服务器主机指纹已变化。核实后请先忘记旧指纹再重新连接。</target></segment></unit>
+    <unit id="ErrEnvHostKeyRejected"><segment><source>The server host key was rejected.</source><target state="translated">已拒绝服务器主机指纹。</target></segment></unit>
+    <unit id="ErrEnvCancelled"><segment><source>The SSH operation was cancelled.</source><target state="translated">已取消 SSH 操作。</target></segment></unit>
+    <unit id="ErrEnvConnectionFailed"><segment><source>Could not connect to the SSH server. Check the network and server settings.</source><target state="translated">无法连接到 SSH 服务器，请检查网络和服务器配置。</target></segment></unit>
+    <unit id="ErrEnvTimeout"><segment><source>The SSH connection or operation timed out.</source><target state="translated">SSH 连接或操作超时。</target></segment></unit>
+    <unit id="ErrEnvDisconnected"><segment><source>The SSH connection was lost.</source><target state="translated">SSH 连接已断开。</target></segment></unit>
+    <unit id="ErrEnvUnsupportedPlatform"><segment><source>The remote host operating system or shell is not supported.</source><target state="translated">无法识别或暂不支持该远程主机系统。</target></segment></unit>
+    <unit id="ErrEnvUnsupported"><segment><source>This SSH option or operation is not supported (for example, ProxyCommand).</source><target state="translated">暂不支持该 SSH 配置或操作（例如 ProxyCommand）。</target></segment></unit>
+    <unit id="ErrEnvInvalidPath"><segment><source>The remote path is invalid or not a directory.</source><target state="translated">远程路径无效或不是目录。</target></segment></unit>
+    <unit id="ErrEnvPathNotFound"><segment><source>The remote path was not found.</source><target state="translated">找不到指定的远程路径。</target></segment></unit>
+    <unit id="ErrEnvPermissionDenied"><segment><source>Permission denied on the remote host.</source><target state="translated">远程主机拒绝访问此路径。</target></segment></unit>
+    <unit id="ErrEnvGeneric"><segment><source>The SSH environment operation failed.</source><target state="translated">SSH 环境操作失败。</target></segment></unit>
   </file>
 </xliff>

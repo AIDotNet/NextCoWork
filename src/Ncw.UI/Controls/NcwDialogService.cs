@@ -72,6 +72,8 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
             FilePickKind.SkillZip => (NcwTextKind.FilePickSkillZip, new FilePickerFileType("ZIP") { Patterns = ["*.zip"] }),
             FilePickKind.PluginZip => (NcwTextKind.PluginFilePickTitle, new FilePickerFileType("ZIP") { Patterns = ["*.zip"] }),
             FilePickKind.ImportData => (NcwTextKind.FilePickImport, new FilePickerFileType("JSON") { Patterns = ["*.json"] }),
+            FilePickKind.SshIdentityFile => (NcwTextKind.EnvPickIdentityFile, null),
+            FilePickKind.SshConfigFile => (NcwTextKind.EnvPickConfigFile, null),
             _ => (NcwTextKind.FilePickBackup, null),
         };
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -118,9 +120,12 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
             Description = NcwTexts.Get(NcwTextKind.NewProjectDescription),
             Content = content,
             Actions = ActionRow(CancelButton(), submit),
+            Size = form.SupportsSsh ? ControlSize.Large : ControlSize.Medium,
         };
         void Close() => dialog.Close(true);
+        void CloseCancel() => dialog.Close(false);
         form.Completed += Close;
+        form.ManageEnvironmentsRequested += CloseCancel;
         dialog.Opened += (_, _) => Dispatcher.UIThread.Post(content.FocusPath, DispatcherPriority.Input);
         try
         {
@@ -129,6 +134,7 @@ public sealed class NcwDialogService(Visual owner) : IDialogService
         finally
         {
             form.Completed -= Close;
+            form.ManageEnvironmentsRequested -= CloseCancel;
         }
     }
 

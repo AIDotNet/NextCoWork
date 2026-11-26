@@ -149,6 +149,14 @@
               <TextBlock Classes="navText" Text="{l:NcwText SettingsExtensions}" VerticalAlignment="Center" />
             </StackPanel>
           </ui:PlainButton>
+          <ui:PlainButton x:Name="NavEnvironments" Classes="navItem" Command="{Binding ShowPageCommand}" CommandParameter="{x:Static vm:SettingsPage.Environments}"
+                          Classes.active="{Binding Page, Converter={x:Static cv:SettingsPageIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsPage.Environments}}"
+                          AutomationProperties.Name="{l:NcwText SettingsEnvironments}" arc:Tooltip.Tip="{l:NcwText SettingsEnvironments}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <lucide:LucideIcon Kind="Server" Size="15" VerticalAlignment="Center" />
+              <TextBlock Classes="navText" Text="{l:NcwText SettingsEnvironments}" VerticalAlignment="Center" />
+            </StackPanel>
+          </ui:PlainButton>
           <ui:PlainButton x:Name="NavConnection" Classes="navItem" Command="{Binding ShowPageCommand}" CommandParameter="{x:Static vm:SettingsPage.Connection}"
                           Classes.active="{Binding Page, Converter={x:Static cv:SettingsPageIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsPage.Connection}}"
                           AutomationProperties.Name="{l:NcwText SettingsConnection}" arc:Tooltip.Tip="{l:NcwText SettingsConnection}">
@@ -268,6 +276,10 @@
         <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Plugins}" ui:NcwMotion.ShowMotion="Fade"
              IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Plugins}}">
           <DataTemplate x:DataType="vm:SettingsViewModel"><m:PluginsPage DataContext="{Binding Pages.Plugins}" /></DataTemplate>
+        </ui:NcwDeferred>
+        <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Environments}" ui:NcwMotion.ShowMotion="Fade"
+             IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Environments}}">
+          <DataTemplate x:DataType="vm:SettingsViewModel"><m:EnvironmentsPage DataContext="{Binding Pages.Environments}" /></DataTemplate>
         </ui:NcwDeferred>
         <ui:NcwDeferred Classes="page" Tag="{x:Static vm:SettingsSection.Remote}" ui:NcwMotion.ShowMotion="Fade"
              IsVisible="{Binding $parent[desktop:SettingsOverlay].((vm:SettingsViewModel)DataContext).Section, Converter={x:Static cv:SettingsSectionIsConverter.Instance}, ConverterParameter={x:Static vm:SettingsSection.Remote}}">

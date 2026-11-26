@@ -13,13 +13,36 @@ namespace Ncw.Client.Actions;
 /// 项目相关的用户意图。项目栏的「+」、项目面板空状态里的按钮、首次引导都调 <see cref="NewProjectAsync"/>(AGENTS.md §3 规则 4);
 /// 侧边栏菜单的「从侧边栏移除」调 <see cref="RemoveAsync"/>。
 /// </summary>
-public sealed class ProjectActions(ClientStores stores, DeviceRegistry devices, Func<IDialogService> dialogs, Func<IClientText> text)
+public sealed class ProjectActions(
+    ClientStores stores,
+    DeviceRegistry devices,
+    Func<IDialogService> dialogs,
+    Func<IClientText> text,
+    IEnvironmentCommands? environments = null,
+    SshInteractionsViewModel? sshInteractions = null,
+    Action? openEnvironments = null)
 {
-    /// <summary>「新建项目」:弹窗选设备、填文件夹路径(本机设备可以浏览),添加成功后选中新项目。</summary>
-    public async Task NewProjectAsync()
+    /// <summary>「新建项目」:弹窗选设备、本机文件夹或 SSH 主机远程目录,添加成功后选中新项目。</summary>
+    public async Task NewProjectAsync(NewProjectSource initialSource = NewProjectSource.Local)
     {
-        using var form = new NewProjectViewModel(stores, this, dialogs, text, stores.Selection.State.Project?.DeviceId);
-        await dialogs().ShowNewProjectAsync(form);
+        using var form = new NewProjectViewModel(stores, this, dialogs, text, stores.Selection.State.Project?.DeviceId,
+            environments, sshInteractions, openEnvironments, initialSource);
+        if (sshInteractions is not null)
+        {
+            sshInteractions.SuppressGlobalOverlay = true;
+        }
+
+        try
+        {
+            await dialogs().ShowNewProjectAsync(form);
+        }
+        finally
+        {
+            if (sshInteractions is not null)
+            {
+                sshInteractions.SuppressGlobalOverlay = false;
+            }
+        }
     }
 
     /// <summary>在 <paramref name="deviceId"/> 上把 <paramref name="path"/>(那台设备上的文件夹)登记为项目,并选中它。</summary>

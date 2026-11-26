@@ -27,6 +27,7 @@ public sealed partial class RailViewModel : ObservableObject
         _text = text ?? (() => DefaultClientText.Instance);
         stores.Layout.Changed += Rebuild;
         stores.Workspace.Changed += Rebuild;
+        stores.Environments.Changed += Rebuild;
         stores.Selection.Changed += Rebuild;
         Rebuild();
     }
@@ -107,7 +108,10 @@ public sealed partial class RailViewModel : ObservableObject
         workspace.Projects.TryGetValue(project, out var info);
         workspace.Devices.TryGetValue(project.DeviceId, out var device);
         layout.Appearance.TryGetValue(project, out var appearance);
-        vm.Update(info, device, appearance, workspace.ActivityOf(project), project == selected);
+        var envDto = info is { Environment: EnvironmentKind.Ssh, EnvironmentId: { } envId }
+            ? _stores.Environments.State.Find(project.DeviceId, envId)
+            : null;
+        vm.Update(info, device, appearance, workspace.ActivityOf(project), project == selected, envDto);
         return vm;
     }
 
@@ -195,6 +199,7 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
     [ObservableProperty] public partial int PendingCount { get; private set; }
     [ObservableProperty] public partial bool HasPending { get; private set; }
     [ObservableProperty] public partial bool IsOffline { get; private set; }
+    [ObservableProperty] public partial bool IsEnvironmentDisconnected { get; private set; }
     [ObservableProperty] public partial bool IsMissing { get; private set; }
     [ObservableProperty] public partial DeviceKind DeviceKind { get; private set; }
     [ObservableProperty] public partial bool IsSsh { get; private set; }
@@ -240,7 +245,7 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
 
     public bool CanEditIcon => _editIcon is not null;
 
-    internal void Update(ProjectInfo? info, DeviceInfo? device, ProjectAppearance? appearance, ProjectActivity activity, bool selected)
+    internal void Update(ProjectInfo? info, DeviceInfo? device, ProjectAppearance? appearance, ProjectActivity activity, bool selected, Ncw.Protocol.Methods.EnvironmentDto? sshEnv = null)
     {
         Name = info?.Name ?? Project.WorkspaceId;
         Glyph = appearance?.Glyph ?? Initials(Name);
@@ -251,7 +256,10 @@ public sealed partial class RailProjectViewModel : RailItemViewModel
         IsRunning = activity.IsRunning;
         PendingCount = activity.PendingInteractions;
         HasPending = activity.PendingInteractions > 0;
-        IsOffline = device is null || device.Connection is DeviceConnection.Offline or DeviceConnection.Connecting or DeviceConnection.Revoked || activity.Unknown;
+        var deviceOffline = device is null || device.Connection is DeviceConnection.Offline or DeviceConnection.Connecting or DeviceConnection.Revoked || activity.Unknown;
+        IsEnvironmentDisconnected = !deviceOffline && info?.Environment == EnvironmentKind.Ssh
+            && sshEnv is { State: Ncw.Protocol.Methods.EnvironmentStateNames.Failed or Ncw.Protocol.Methods.EnvironmentStateNames.Reconnecting };
+        IsOffline = deviceOffline || IsEnvironmentDisconnected;
         IsMissing = info is null;
         DeviceKind = device?.Kind ?? DeviceKind.Remote;
         OnPropertyChanged(nameof(IsCloud));

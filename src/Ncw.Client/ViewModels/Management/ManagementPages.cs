@@ -21,7 +21,8 @@ public sealed class ManagementPages
         Func<IUrlLauncher> launcher,
         TimeProvider clock,
         IPluginsCommands? plugins = null,
-        IDataRollbackCommands? rollback = null)
+        IDataRollbackCommands? rollback = null,
+        IEnvironmentCommands? environments = null)
     {
         Scope = new SettingsScope(stores);
         General = new GeneralSettingsViewModel(Scope, stores, settings);
@@ -30,6 +31,7 @@ public sealed class ManagementPages
         Commands = new CommandsViewModel(Scope, stores, commands);
         Hooks = new HooksViewModel(Scope, stores, hooks);
         Mcp = new McpViewModel(Scope, stores, mcp);
+        Environments = new EnvironmentsViewModel(Scope, stores, environments ?? UnavailableEnvironmentCommands.Instance, dialogs);
         Usage = new UsageViewModel(Scope, usage, clock);
         Storage = new StorageViewModel(Scope, stores, storage, settings, dialogs, clock, rollback);
         Gateway = new GatewayViewModel(Scope, stores, gateway, settings, launcher);
@@ -49,6 +51,8 @@ public sealed class ManagementPages
     public HooksViewModel Hooks { get; }
 
     public McpViewModel Mcp { get; }
+
+    public EnvironmentsViewModel Environments { get; }
 
     public UsageViewModel Usage { get; }
 
@@ -74,6 +78,7 @@ public sealed class ManagementPages
             SettingsSection.Commands => Commands.ActivateAsync(),
             SettingsSection.Hooks => Hooks.ActivateAsync(),
             SettingsSection.Mcp => Mcp.ActivateAsync(),
+            SettingsSection.Environments => Environments.ActivateAsync(),
             SettingsSection.Usage => Usage.ActivateAsync(),
             SettingsSection.Storage => Storage.ActivateAsync(),
             SettingsSection.Gateway => Gateway.ActivateAsync(),

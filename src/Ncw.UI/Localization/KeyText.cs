@@ -226,6 +226,32 @@ public static class KeyText
         ["account.unreachable"] = NcwTextKind.ErrAccountUnreachable,
         ["account.rejected"] = NcwTextKind.ErrAccountRejected,
         ["account.team.invalid"] = NcwTextKind.ErrAccountTeamInvalid,
+        // environments(执行环境 / SSH;稳定 key 来自 Ncw.Protocol.Methods.EnvironmentErrorKeys)
+        ["environments.notFound"] = NcwTextKind.ErrEnvNotFound,
+        ["environments.invalidProfile"] = NcwTextKind.ErrEnvInvalidProfile,
+        ["environments.conflict"] = NcwTextKind.ErrEnvConflict,
+        ["environments.inUse"] = NcwTextKind.ErrEnvInUse,
+        ["environments.busy"] = NcwTextKind.ErrEnvBusy,
+        ["environments.disabled"] = NcwTextKind.ErrEnvDisabled,
+        ["environments.notConnected"] = NcwTextKind.ErrEnvNotConnected,
+        ["environments.localImmutable"] = NcwTextKind.ErrEnvLocalImmutable,
+        ["environments.notRemote"] = NcwTextKind.ErrEnvNotRemote,
+        ["environments.targetChangeNeedsConfirm"] = NcwTextKind.ErrEnvTargetChangeNeedsConfirm,
+        ["environments.secretsUnavailable"] = NcwTextKind.ErrEnvSecretsUnavailable,
+        ["environments.noSshServices"] = NcwTextKind.ErrEnvNoSshServices,
+        ["environments.authentication"] = NcwTextKind.ErrEnvAuthentication,
+        ["environments.hostKeyChanged"] = NcwTextKind.ErrEnvHostKeyChanged,
+        ["environments.hostKeyRejected"] = NcwTextKind.ErrEnvHostKeyRejected,
+        ["environments.cancelled"] = NcwTextKind.ErrEnvCancelled,
+        ["environments.connectionFailed"] = NcwTextKind.ErrEnvConnectionFailed,
+        ["environments.timeout"] = NcwTextKind.ErrEnvTimeout,
+        ["environments.disconnected"] = NcwTextKind.ErrEnvDisconnected,
+        ["environments.unsupportedPlatform"] = NcwTextKind.ErrEnvUnsupportedPlatform,
+        ["environments.unsupported"] = NcwTextKind.ErrEnvUnsupported,
+        ["environments.invalidPath"] = NcwTextKind.ErrEnvInvalidPath,
+        ["environments.pathNotFound"] = NcwTextKind.ErrEnvPathNotFound,
+        ["environments.permissionDenied"] = NcwTextKind.ErrEnvPermissionDenied,
+        ["environments.internal"] = NcwTextKind.ErrEnvGeneric,
     };
 
     private static readonly (string Prefix, NcwTextKind Kind)[] ErrorPrefixes =
@@ -239,5 +265,6 @@ public static class KeyText
         ("skills.", NcwTextKind.ErrSkillsGeneric),
         ("hooks.", NcwTextKind.ErrHooksGeneric),
         ("hooks.diagnostic.", NcwTextKind.ErrHooksGeneric),
+        ("environments.", NcwTextKind.ErrEnvGeneric),
     ];
 }

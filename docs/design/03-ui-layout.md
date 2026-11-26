@@ -103,7 +103,7 @@
   - **设备**:下拉框只列已连接、角色不是 viewer 的设备(`projects.add` 要 member 起),本机在前;默认是当前选中项目所在的设备,没有就本机。窗口开着时设备掉线,自动换到还能用的设备。
   - **文件夹路径**:本机设备旁边有「浏览…」(系统文件夹选择框只能选这台电脑上的文件夹);其他设备 / 云端手填那台设备上的绝对路径(协议里还没有浏览设备本机目录的方法,`environments.browse` 只给 SSH 环境用)。**名称**可选,缺省用文件夹名。
   - 提交走 `ProjectActions.AddAsync(deviceId, path, name)`(`projects.add`,带幂等键);成功后选中新项目、关窗口。失败**不关窗口**,按结局在窗口里给出原因(没填路径 / 设备没连接 / 文件夹不存在 / 没有权限 / 其他),设备给的英文诊断不直接给用户看。
-  - SSH 环境里的项目、克隆仓库(`projects.add` 已支持 `environmentId` / `cloneUrl`)暂不在这个窗口里,以后作为「来源」加入。
+  - **SSH 主机来源已接入**:选择设备后可切换「本机文件夹 / SSH 主机」,列出设备上已启用的 SSH 环境,支持远程目录浏览(`environments.browse`,含面包屑、上级目录、Windows 磁盘卷、隐藏目录开关、取消/重试),连接触发的指纹/凭据提问直接内联显示在窗口内;提交走 `EnvironmentActions.AddProjectAsync`(`projects.add` 带 `environmentId`)。克隆仓库(`cloneUrl`)仍待后续加入。
 - **「更改图标…」= 弹出「项目图标」窗口**:三种设置——无(默认,不画图标,预览是空占位)/ 文字或 emoji(最多 2 个字符,按文本元素截断,emoji 组合不会被截半)/ 图片;文字可选底色(同一组 8 色)。「保存」「恢复默认」经 `LayoutActions.SetAppearance` 写进 `LayoutStore`;选「无」不留外观记录(以前只存了底色的旧记录打开时当成「无」,保存即清掉)。
   - **图片压缩(尽量少占内存)**:先只读文件头(最多 512 KB)拿格式、尺寸、EXIF 方向,超预算直接拒绝、不解码——文件 ≤ 20 MB;PNG / GIF / BMP 要按原尺寸解码,≤ 2500 万像素;JPEG / WebP 的解码器能直接按缩小后的尺寸解码(JPEG 最多 1/8),≤ 2 亿像素。然后按「短边 = 96」解码、居中裁成 96×96、按 EXIF 方向摆正,立刻释放解码出的大图;没有透明像素存 JPEG(质量 85,通常几 KB),有透明像素才存 PNG。解码在线程池上做。
   - **显示**:每个图片图标常驻 96×96×4 ≈ 36 KB;转换器按字符串缓存(弱引用),侧边栏、手机项目列表、窗口预览共用一份位图;图片做成画刷铺在圆角方块里(跟着圆角裁切),下面垫中性底色,透明图标不会透出项目色。布局里超过 256 K 字符的图片当坏数据,不解码。
@@ -965,8 +965,13 @@ Avalonia 12.1.5 的 `NativeControlHost.GetAbsoluteBounds()` 按控件的**完整
   Windows = 任务栏闪烁(`FlashWindowEx`),系统通知和角标没做(要 AUMID + WinRT toast),如实报告;Linux = 有 `notify-send` 就用它(点通知回不到具体条目)。Windows / Linux 没有真机验证。
 - **托盘(菜单栏)图标**:Avalonia `TrayIcon`,菜单里有「打开」「N 项等你处理」(= ⌘J)「M 个任务运行中」「部分设备未连接」「新建会话」「通知设置」「退出」。
   macOS / Linux 的托盘菜单是系统菜单;**Windows 上 Avalonia 用自带控件画**(`TrayPopupRoot` 窗口 + `MenuFlyoutPresenter` + `NativeMenuItemPresenter`(样式键 `MenuItem`)+ `Separator`)。
-  Arc 给这三个控件的主题没有模板,菜单收成 0×0,右键「没反应」、也就退不出去(issue #200);`Themes/NcwTrayMenuTheme.axaml` 补上它们的模板(Arc token,随 Ncw.UI 的 Arc 资产包加载),
-  回归 `TrayMenuThemeTests` 按 Win32 的同样结构搭一份并点「退出」。另有不依赖托盘的退出入口:`AppCommand.Quit`(命令面板「退出 NextCoWork」,默认 Mod+Q)。
+  Arc 给这三个控件的主题没有模板,菜单收成 0×0,右键「没反应」、也就退不出去(issue #200);3.0.5 用 `Themes/NcwTrayMenuTheme.axaml` 补上它们的模板(回归 `TrayMenuThemeTests`),
+  但用户在 Windows 真机上右键仍然弹不出菜单(无界面测试里能画出来、能点,真机上的原因没有定位到)。所以 **Windows 不再用 Avalonia 的 `TrayIcon`**:
+  宿主经 `NcwApp.NativeTrayFactory` 给一个系统托盘(`Ncw.Desktop/WindowsTray`:不显示的顶层窗口接 `Shell_NotifyIcon` 的回调,右键时 `SetForegroundWindow` → `TrackPopupMenuEx` → 补发 `WM_NULL`,
+  和 WinForms `NotifyIcon` 的做法一样;图标取 exe 内嵌的应用图标;资源管理器重启(`TaskbarCreated`)时重新添加)。菜单仍是 `NcwAttention` 的同一份 `NativeMenu`,
+  每次右键时经 `NativeTrayMenu.Snapshot` 摊平(跳过隐藏项、不留悬空分隔线),选中项和左键单击都投递回 UI 线程执行;系统菜单的外观跟随系统,不走 Arc token。
+  系统托盘建不起来时退回 Avalonia 的 `TrayIcon`(`NcwTrayMenuTheme` 保留)。回归 `NativeTrayTests`(假托盘)、`WindowsTrayTests`(菜单文字转义);Win32 部分没有真机自动化。
+  另有不依赖托盘的退出入口:`AppCommand.Quit`(命令面板「退出 NextCoWork」,默认 Mod+Q)。
 - **关窗后继续运行**(D1 的好处终于能被用户用上):托盘开着(默认)时,点窗口的关闭按钮只是藏起窗口(`WindowCloseReason.WindowClosing` 且不是程序关的),`ShutdownMode` 改成 `OnExplicitShutdown`,本机 Agent 照常执行;
   从托盘菜单、Dock 图标(`ActivationKind.Reopen`)、第二个实例的「回到前台」再打开;真正退出用托盘菜单的「退出」、⌘Q / Ctrl+Q 或命令面板的「退出 NextCoWork」(应用退出、系统关机这类关闭照常进行)。关掉托盘开关时窗口若藏着会立刻回来,关窗回到「退出应用」。
 - **设置 · 本应用 · 通知**:三类系统通知、角标、托盘各一个开关(`UiPrefs.Attention`,缺省全开);做不到的平台如实写明。

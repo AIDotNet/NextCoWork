@@ -5,14 +5,16 @@
              xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
              xmlns:ui="using:Ncw.UI.Controls"
              xmlns:cv="using:Ncw.UI.Converters"
+             xmlns:desktop="using:Ncw.UI.Views.Desktop"
+             xmlns:p="using:Ncw.Protocol.Methods"
              xmlns:vm="using:Ncw.Client.ViewModels"
              x:Class="Ncw.UI.Views.Dialogs.NewProjectDialog"
              x:DataType="vm:NewProjectViewModel">
   <!--
-    「新建项目」窗口的内容(docs/design/03 §1「栏 1」;标题、按钮由 NcwDialogService 的 Arc Dialog 提供):
-    设备(已连接、能添加项目的)→ 那台设备上的文件夹路径(本机可以「浏览…」,其他设备手填绝对路径)→ 可选的名字。出错不关窗口,原因显示在下面。
+    「新建项目」窗口的内容(docs/design/03 §1「栏 1」、06 §7;标题、按钮由 NcwDialogService 的 Arc Dialog 提供):
+    设备 → 来源(本机目录 / SSH 主机)→ 路径或远程目录浏览 → 可选名称。SSH 连接触发的指纹 / 凭据提问直接内联显示在窗口里。
   -->
-  <StackPanel Spacing="14" Margin="0,4,0,0">
+  <StackPanel Spacing="12" Margin="0,4,0,0">
     <!-- 没有可用的设备 -->
     <Border Classes="card" IsVisible="{Binding !HasDevices}">
       <StackPanel Orientation="Horizontal" Spacing="8">
@@ -26,8 +28,29 @@
                   ItemsSource="{Binding Devices}" SelectedValue="{Binding DeviceId, Mode=TwoWay}"
                   AutomationProperties.Name="{l:NcwText NewProjectDevice}" />
 
+    <!-- 来源切换:本机文件夹 vs SSH 主机 -->
     <StackPanel Spacing="6" IsVisible="{Binding HasDevices}">
-      <DockPanel>
+      <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding SupportsSsh}">
+        <ui:NcwButton Variant="Secondary" Classes.active="{Binding IsLocalSource}"
+                      Command="{Binding SelectSourceCommand}" CommandParameter="{x:Static vm:NewProjectSource.Local}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon Kind="FolderOpen" Size="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:NcwText NewProjectSourceLocal}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:NcwButton>
+        <ui:NcwButton Variant="Secondary" Classes.active="{Binding IsSshSource}"
+                      Command="{Binding SelectSourceCommand}" CommandParameter="{x:Static vm:NewProjectSource.Ssh}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon Kind="Server" Size="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:NcwText NewProjectSourceSsh}" VerticalAlignment="Center" />
+          </StackPanel>
+        </ui:NcwButton>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- ═══ 本机目录 ═══ -->
+    <StackPanel Spacing="6" IsVisible="{Binding IsLocalSource}">
+      <DockPanel IsVisible="{Binding HasDevices}">
         <ui:NcwButton DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Bottom" Variant="Secondary"
                       IsVisible="{Binding CanBrowse}" Command="{Binding BrowseCommand}">
           <StackPanel Orientation="Horizontal" Spacing="6">
@@ -41,11 +64,149 @@
       <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding IsRemoteDevice}" Text="{l:NcwText NewProjectRemotePathHint}" />
     </StackPanel>
 
+    <!-- ═══ SSH 主机 + 远程目录浏览器 ═══ -->
+    <StackPanel Spacing="10" IsVisible="{Binding IsSshSource}">
+      <!-- 内联 SSH 主机指纹 / 凭据交互卡片(不让弹窗遮罩挡住认证) -->
+      <desktop:SshInteractionCard DataContext="{Binding SshInteractions.Current}"
+                                  IsVisible="{Binding $parent[UserControl].((vm:NewProjectViewModel)DataContext).SshInteractions.HasPending, FallbackValue=False}" />
+
+      <!-- 还没有启用中的 SSH 环境 -->
+      <Border Classes="card" IsVisible="{Binding !HasSshEnvironments}">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="hint" TextWrapping="Wrap" Text="{l:NcwText NewProjectNoSshEnvironments}" />
+          <ui:NcwButton HorizontalAlignment="Left" Variant="Secondary" IsVisible="{Binding CanOpenEnvironments}"
+                        Command="{Binding ManageEnvironmentsCommand}" Content="{l:NcwText EnvManage}" />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Spacing="8" IsVisible="{Binding HasSshEnvironments}">
+        <DockPanel>
+          <ui:NcwButton DockPanel.Dock="Right" Margin="8,0,0,0" VerticalAlignment="Bottom" Variant="Ghost"
+                        IsVisible="{Binding CanOpenEnvironments}" Command="{Binding ManageEnvironmentsCommand}"
+                        Content="{l:NcwText EnvManage}" />
+          <ui:NcwSelect x:Name="SshEnvSelect" HorizontalAlignment="Stretch"
+                        Label="{l:NcwText NewProjectSshServer}"
+                        ItemsSource="{Binding SshEnvironments}" SelectedValue="{Binding EnvironmentId, Mode=TwoWay}"
+                        AutomationProperties.Name="{l:NcwText NewProjectSshServer}" />
+        </DockPanel>
+
+        <!-- 远程路径栏 + 上级 / 刷新 / 转到 -->
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Bottom" Margin="8,0,0,0">
+            <ui:NcwButton Classes="icon" Variant="Secondary" Command="{Binding GoToParentCommand}" IsEnabled="{Binding CanGoUp}"
+                          AutomationProperties.Name="{l:NcwText EnvBrowseParent}" arc:Tooltip.Tip="{l:NcwText EnvBrowseParent}">
+              <lucide:LucideIcon Kind="ArrowUp" Size="14" />
+            </ui:NcwButton>
+            <ui:NcwButton Classes="icon" Variant="Secondary" Command="{Binding RefreshRemoteCommand}" IsEnabled="{Binding !IsBrowsing}"
+                          AutomationProperties.Name="{l:NcwText Refresh}" arc:Tooltip.Tip="{l:NcwText Refresh}">
+              <lucide:LucideIcon Kind="RefreshCw" Size="14" />
+            </ui:NcwButton>
+            <ui:NcwButton Variant="Secondary" Command="{Binding GoToRemotePathCommand}" IsEnabled="{Binding !IsBrowsing}"
+                          Content="{l:NcwText EnvBrowseGo}" />
+          </StackPanel>
+          <ui:NcwInput x:Name="RemotePathInput" Label="{l:NcwText EnvRemotePath}" Text="{Binding Path, Mode=TwoWay}"
+                       Placeholder="/srv/project" KeyDown="OnRemotePathKeyDown" />
+        </DockPanel>
+
+        <!-- 浏览中 -->
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding IsBrowsing}">
+          <lucide:LucideIcon Classes="spin" Kind="LoaderCircle" Size="14" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="hint" VerticalAlignment="Center" Text="{l:NcwText EnvBrowsing}" />
+          <ui:NcwButton Grid.Column="2" Variant="Ghost" Command="{Binding CancelBrowseCommand}" Content="{l:NcwText Cancel}" />
+        </Grid>
+
+        <!-- 浏览失败 -->
+        <Border Classes="card danger" Padding="10,8" IsVisible="{Binding HasBrowseFailure}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Foreground="{arc:ArcDesignTokenResource Danger}" TextWrapping="Wrap" VerticalAlignment="Center"
+                       Text="{Binding BrowseFailure, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+            <ui:NcwButton Grid.Column="1" Variant="Secondary" Command="{Binding RefreshRemoteCommand}" Content="{l:NcwText Retry}" />
+          </Grid>
+        </Border>
+
+        <!-- Windows 磁盘卷切换(多根时显示) -->
+        <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4" IsVisible="{Binding HasMultipleRoots}">
+          <TextBlock Classes="hint" VerticalAlignment="Center" Text="{l:NcwText EnvBrowseRoots}" />
+          <ItemsControl ItemsSource="{Binding Roots}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <ui:NcwButton Variant="Ghost" Padding="6,2"
+                              Command="{Binding $parent[UserControl].((vm:NewProjectViewModel)DataContext).NavigateToCommand}"
+                              CommandParameter="{Binding}" Content="{Binding}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </WrapPanel>
+
+        <!-- 面包屑 + 显示隐藏目录 -->
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasDirectory}">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="p:RemoteCrumbDto">
+                  <StackPanel Orientation="Horizontal" Spacing="2">
+                    <ui:PlainButton Padding="4,2" CornerRadius="4"
+                                    Command="{Binding $parent[UserControl].((vm:NewProjectViewModel)DataContext).NavigateToCommand}"
+                                    CommandParameter="{Binding Path}">
+                      <TextBlock Classes="hint" Text="{Binding Name}" />
+                    </ui:PlainButton>
+                    <lucide:LucideIcon Kind="ChevronRight" Size="11" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <ui:NcwCheckbox Grid.Column="1" IsChecked="{Binding ShowHidden, Mode=TwoWay}" Content="{l:NcwText EnvShowHiddenDirs}" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- 子目录列表 -->
+        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}" Height="200" IsVisible="{Binding HasDirectory}">
+          <Panel>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasEntries}">
+              <ItemsControl ItemsSource="{Binding Entries}" Margin="4">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="1" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="p:RemoteDirEntryDto">
+                    <ui:PlainButton Padding="8,6" CornerRadius="6" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Command="{Binding $parent[UserControl].((vm:NewProjectViewModel)DataContext).NavigateToCommand}"
+                                    CommandParameter="{Binding Path}">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <lucide:LucideIcon Kind="Folder" Size="14" VerticalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </ui:PlainButton>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Classes="hint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding ShowsEmptyDirectory}" Text="{l:NcwText EnvEmptyDirectory}" />
+          </Panel>
+        </Border>
+
+        <TextBlock Classes="hint" IsVisible="{Binding IsTruncated}" Text="{l:NcwText EnvDirectoryTruncated}" />
+      </StackPanel>
+    </StackPanel>
+
     <ui:NcwInput IsVisible="{Binding HasDevices}" Label="{l:NcwText NewProjectName}" Text="{Binding Name, Mode=TwoWay}"
                  Placeholder="{l:NcwText NewProjectNamePlaceholder}" />
 
-    <!-- 出错:按原因出文字(设备给的英文诊断只进日志,不直接给用户看) -->
-    <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasError}"
-               Text="{Binding Error, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=NewProjectError}" />
+    <!-- 出错:优先按稳定 ErrorKey 翻译,否则按粗粒度 NewProjectError -->
+    <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}" IsVisible="{Binding HasErrorKey}"
+               Text="{Binding ErrorKey, Converter={x:Static cv:FailureTextConverter.Instance}}" />
+    <TextBlock TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource Danger}">
+      <TextBlock.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="HasError" />
+          <Binding Path="!HasErrorKey" />
+        </MultiBinding>
+      </TextBlock.IsVisible>
+      <TextBlock.Text>
+        <Binding Path="Error" Converter="{x:Static cv:KeyTextConverter.Instance}" ConverterParameter="NewProjectError" />
+      </TextBlock.Text>
+    </TextBlock>
   </StackPanel>
 </UserControl>

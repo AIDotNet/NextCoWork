@@ -628,7 +628,56 @@ public sealed partial class ProjectSettingsViewModel : ManagementPageViewModel
         _stores = stores;
         _commands = commands;
         stores.Providers.Changed += SyncChoices;
-        stores.Workspace.Changed += RaiseGates;
+        stores.Workspace.Changed += OnStoreChanged;
+        stores.Environments.Changed += SyncEnvironment;
+    }
+
+    /// <summary>用户点了项目执行环境旁的「管理执行环境」。</summary>
+    public event Action? OpenEnvironmentsRequested;
+
+    [ObservableProperty] public partial bool IsSshProject { get; private set; }
+
+    [ObservableProperty] public partial string? ProjectEnvironmentName { get; private set; }
+
+    [ObservableProperty] public partial string ProjectRootPath { get; private set; } = "";
+
+    [ObservableProperty] public partial EnvironmentDisplayState ProjectEnvironmentState { get; private set; } = EnvironmentDisplayState.Idle;
+
+    [RelayCommand]
+    private void OpenEnvironments() => OpenEnvironmentsRequested?.Invoke();
+
+    private void OnStoreChanged()
+    {
+        RaiseGates();
+        SyncEnvironment();
+    }
+
+    private void SyncEnvironment()
+    {
+        if (Scope.DeviceId is not { } device || Scope.WorkspaceId is not { } workspace
+            || !_stores.Workspace.State.Projects.TryGetValue(new ProjectRef(device, workspace), out var info))
+        {
+            IsSshProject = false;
+            ProjectEnvironmentName = null;
+            ProjectRootPath = "";
+            ProjectEnvironmentState = EnvironmentDisplayState.Idle;
+            return;
+        }
+
+        IsSshProject = info.Environment == EnvironmentKind.Ssh;
+        ProjectEnvironmentName = info.EnvironmentName;
+        ProjectRootPath = info.Path;
+        if (!IsSshProject)
+        {
+            ProjectEnvironmentState = EnvironmentDisplayState.Ready;
+            return;
+        }
+
+        var mirror = _stores.Environments.State.Of(device);
+        var dto = info.EnvironmentId is { } envId ? mirror.Find(envId) : null;
+        ProjectEnvironmentState = !Scope.IsConnected || !mirror.Known || dto is null
+            ? EnvironmentDisplayState.Unknown
+            : EnvironmentStates.Of(true, dto.State);
     }
 
     public ObservableCollection<ChoiceItem> ModelChoices { get; } = [];
@@ -701,6 +750,7 @@ public sealed partial class ProjectSettingsViewModel : ManagementPageViewModel
     protected override async Task LoadAsync()
     {
         OnPropertyChanged(nameof(HasProjects));
+        SyncEnvironment();
         if (Scope.DeviceId is not { } device || Scope.WorkspaceId is not { } workspace)
         {
             Settings = null;

@@ -23,6 +23,26 @@
           <TextBlock Classes="hint" HorizontalAlignment="Center" TextAlignment="Center" Text="{l:NcwText ProjectSettingsNoProjectHint}" />
         </StackPanel>
       </Border>
+      <Border Classes="card" IsVisible="{Binding HasProjects}" Padding="14,12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <StackPanel Spacing="3">
+            <TextBlock Classes="hint" Text="{l:NcwText ProjectEnvironmentTitle}" />
+            <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="4">
+              <lucide:LucideIcon Kind="Monitor" Size="14" VerticalAlignment="Center" IsVisible="{Binding !IsSshProject}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <lucide:LucideIcon Kind="Server" Size="14" VerticalAlignment="Center" IsVisible="{Binding IsSshProject}" Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+              <TextBlock FontWeight="SemiBold" IsVisible="{Binding !IsSshProject}" Text="{l:NcwText ProjectEnvironmentLocal}" />
+              <TextBlock FontWeight="SemiBold" IsVisible="{Binding IsSshProject}" Text="{Binding ProjectEnvironmentName}" />
+              <Border Classes="chip" IsVisible="{Binding IsSshProject}"><TextBlock Classes="hint" Text="{l:NcwText ProjectEnvironmentSsh}" /></Border>
+              <ui:NcwStatusDot VerticalAlignment="Center" IsVisible="{Binding IsSshProject}" Tone="{Binding ProjectEnvironmentState, Converter={x:Static cv:ToneConverter.Instance}}" />
+              <TextBlock Classes="hint" VerticalAlignment="Center" IsVisible="{Binding IsSshProject}"
+                         Text="{Binding ProjectEnvironmentState, Converter={x:Static cv:KeyTextConverter.Instance}, ConverterParameter=EnvState}" />
+            </WrapPanel>
+            <TextBlock Classes="mono" Foreground="{arc:ArcDesignTokenResource TextMuted}" Text="{Binding ProjectRootPath}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <ui:NcwButton Grid.Column="1" VerticalAlignment="Center" Variant="Ghost" IsVisible="{Binding IsSshProject}"
+                        Command="{Binding OpenEnvironmentsCommand}" Content="{l:NcwText EnvManage}" />
+        </Grid>
+      </Border>
       <Border Classes="card" IsVisible="{Binding HasProjects}" IsEnabled="{Binding CanWrite}">
         <StackPanel Spacing="12">
           <ui:NcwSelect ChoiceSet="PermissionMode" SelectedValue="{Binding PermissionMode, Mode=TwoWay}" Label="{l:NcwText ProjectPermissionMode}" Description="{l:NcwText ProjectPermissionModeHint}" />

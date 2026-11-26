@@ -47,18 +47,23 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     private readonly Window _window;
     private readonly IClassicDesktopStyleApplicationLifetime? _desktop;
     private readonly INativeAttention? _native;
+    private readonly NativeTrayFactory? _nativeTrayFactory;
     private TrayIcon? _tray;
+    private INativeTray? _nativeTray;
+    private string _trayToolTip = "";
     private NativeMenuItem? _pendingItem;
     private NativeMenuItem? _runningItem;
     private NativeMenuItem? _unknownItem;
     private AttentionSummary _summary = new(0, 0, false);
 
-    public NcwAttention(ShellViewModel shell, Window window, IClassicDesktopStyleApplicationLifetime? desktop, INativeAttention? native)
+    public NcwAttention(ShellViewModel shell, Window window, IClassicDesktopStyleApplicationLifetime? desktop, INativeAttention? native,
+        NativeTrayFactory? nativeTray = null)
     {
         _shell = shell;
         _window = window;
         _desktop = desktop;
         _native = native;
+        _nativeTrayFactory = nativeTray;
         shell.Settings.Notifications.IsSystemNotificationSupported = native?.SupportsNotifications ?? false;
         shell.Settings.Notifications.IsBadgeSupported = native?.SupportsBadge ?? false;
         shell.IsWindowActive = () => _window.IsActive && _window.IsVisible;
@@ -74,10 +79,10 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     }
 
     /// <summary>托盘图标此刻是否存在(测试用)。</summary>
-    public bool HasTray => _tray is not null;
+    public bool HasTray => _tray is not null || _nativeTray is not null;
 
     /// <summary>最近一次托盘提示文字(测试用)。</summary>
-    public string TrayToolTip => _tray?.ToolTipText ?? "";
+    public string TrayToolTip => HasTray ? _trayToolTip : "";
 
     public void Dispose()
     {
@@ -164,7 +169,7 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     /// <summary>托盘开着时,用户点关闭按钮只是藏起窗口(本机 Agent 照常运行);应用退出、系统关机这类关闭照常进行。</summary>
     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (_tray is not null && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
+        if (HasTray && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
         {
             e.Cancel = true;
             _window.Hide();
@@ -174,11 +179,11 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
     private void ApplyTrayPreference()
     {
         var wanted = _shell.Stores.Prefs.State.AttentionOrDefault.Tray && _desktop is not null;
-        if (wanted && _tray is null)
+        if (wanted && !HasTray)
         {
             CreateTray();
         }
-        else if (!wanted && _tray is not null)
+        else if (!wanted && HasTray)
         {
             RemoveTray();
             if (!_window.IsVisible)
@@ -189,7 +194,7 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
 
         if (_desktop is not null)
         {
-            _desktop.ShutdownMode = _tray is not null ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnLastWindowClose;
+            _desktop.ShutdownMode = HasTray ? ShutdownMode.OnExplicitShutdown : ShutdownMode.OnLastWindowClose;
         }
     }
 
@@ -211,6 +216,22 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
             new NativeMenuItemSeparator(),
             new NativeMenuItem(NcwTexts.Get(NcwTextKind.TrayQuit)) { Command = new Relay(() => _desktop?.Shutdown()) },
         };
+
+        // 宿主给了系统托盘(Windows)就用它:Avalonia 在 Windows 上自己画的托盘菜单真机右键弹不出来(issue #200)
+        try
+        {
+            _nativeTray = _nativeTrayFactory?.Invoke("NextCoWork", () => NativeTrayMenu.Snapshot(menu), ShowWindow);
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _nativeTray = null; // 建不起来就退回 Avalonia 的托盘
+        }
+
+        if (_nativeTray is not null)
+        {
+            UpdateTrayTexts();
+            return;
+        }
 
         // 提示文字必须在挂上之前就有:macOS 的原生托盘在挂上时直接读它,null 会抛(真实启动冒烟里发现)
         _tray = new TrayIcon { Menu = menu, Command = new Relay(ShowWindow), ToolTipText = "NextCoWork" };
@@ -246,6 +267,12 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
 
     private void RemoveTray()
     {
+        if (_nativeTray is not null)
+        {
+            _nativeTray.Dispose();
+            _nativeTray = null;
+        }
+
         if (_tray is null)
         {
             return;
@@ -263,7 +290,7 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
 
     private void UpdateTrayTexts()
     {
-        if (_tray is null)
+        if (!HasTray)
         {
             return;
         }
@@ -274,7 +301,13 @@ public sealed class NcwAttention : IAttentionSink, IDisposable
         _runningItem!.Header = NcwTexts.Format(NcwTextKind.TrayRunning, s.Running);
         _runningItem.IsVisible = s.Running > 0;
         _unknownItem!.IsVisible = s.Unknown;
-        _tray.ToolTipText = NcwTexts.Format(NcwTextKind.TrayTooltip, s.Pending, s.Running);
+        _trayToolTip = NcwTexts.Format(NcwTextKind.TrayTooltip, s.Pending, s.Running);
+        if (_tray is not null)
+        {
+            _tray.ToolTipText = _trayToolTip;
+        }
+
+        _nativeTray?.SetToolTip(_trayToolTip);
     }
 
     private sealed class Relay(Action action) : System.Windows.Input.ICommand

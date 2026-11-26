@@ -5,6 +5,7 @@
             xmlns:lucide="https://github.com/AIDotNet/TKCode.Arc/lucide"
             xmlns:ui="using:Ncw.UI.Controls"
             xmlns:cv="using:Ncw.UI.Converters"
+            xmlns:desktop="using:Ncw.UI.Views.Desktop"
             xmlns:vm="using:Ncw.Client.ViewModels"
             x:Class="Ncw.UI.Views.Mobile.DevicesPage"
             x:DataType="vm:DevicesPageViewModel">
@@ -18,6 +19,19 @@
 
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="16,8,16,24" Spacing="14">
+      <!-- 设备级 SSH 指纹 / 凭据交互(从收件箱点开设备级待办后直接在这里应答) -->
+      <ItemsControl ItemsSource="{Binding SshInteractions.Items}"
+                    IsVisible="{Binding SshInteractions.HasPending, FallbackValue=False}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SshInteractionPromptViewModel">
+            <desktop:SshInteractionCard />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
       <!-- 添加设备 -->
       <Grid ColumnDefinitions="*,10,*">
         <ui:NcwButton Variant="Primary" MinHeight="44" HorizontalAlignment="Stretch" Command="{Binding AddByQrCommand}" AutomationProperties.Name="{l:NcwText DevicesAddByQr}">

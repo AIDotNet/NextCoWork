@@ -30,15 +30,18 @@ public sealed partial class OnboardingViewModel : ObservableObject
     private readonly DataGateViewModel _data;
     private readonly SettingsViewModel _settings;
     private readonly Func<Task>? _addProject;
+    private readonly Action? _connectSsh;
     private bool _active;
     private bool _finished;
 
-    public OnboardingViewModel(ClientStores stores, AccountViewModel account, DataGateViewModel data, SettingsViewModel settings, Func<Task>? addProject = null)
+    public OnboardingViewModel(ClientStores stores, AccountViewModel account, DataGateViewModel data, SettingsViewModel settings,
+        Func<Task>? addProject = null, Action? connectSsh = null)
     {
         _stores = stores;
         _data = data;
         _settings = settings;
         _addProject = addProject;
+        _connectSsh = connectSsh;
         Account = account;
         stores.Account.Changed += Refresh;
         data.PropertyChanged += (_, _) => RaiseDataState();
@@ -163,6 +166,22 @@ public sealed partial class OnboardingViewModel : ObservableObject
         if (_addProject is not null)
         {
             await _addProject();
+        }
+    }
+
+    /// <summary>完成:前往连接 SSH 主机(打开执行环境设置页),结束首次引导。</summary>
+    [RelayCommand]
+    private void ConnectSsh()
+    {
+        Finish();
+        if (_connectSsh is not null)
+        {
+            _connectSsh();
+        }
+        else
+        {
+            _settings.Section = SettingsSection.Environments;
+            _settings.OpenCommand.Execute(null);
         }
     }
 

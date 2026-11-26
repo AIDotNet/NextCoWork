@@ -110,6 +110,9 @@
     <!-- 设置页:整窗覆盖(数据页优先,所以排在它前面) -->
     <desktop:SettingsOverlay DataContext="{Binding Settings}" />
 
+    <!-- SSH 主机指纹与凭据交互:盖在工作区、首次启动与设置页之上(新建项目弹窗内联显示同一份 ViewModel) -->
+    <desktop:SshInteractionOverlay DataContext="{Binding SshInteractions}" />
+
     <!-- 启动时的数据页:本机数据没就绪(接管 2.x 数据中 / 被挡住)时盖住整个窗口 -->
     <desktop:DataGateOverlay DataContext="{Binding DataGate}" />
 

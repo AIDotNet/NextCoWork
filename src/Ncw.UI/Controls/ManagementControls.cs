@@ -75,6 +75,10 @@ public static class ChoiceSets
         "ScheduleKind" => Make("SchedKind", "once", "daily", "weekly"),
         "InstallScope" => Make("InstallScope", "global", "project"),
         "ProjectMode" => Make("ProjectMode", "code", "plan"),
+        "SshTargetKind" => Make("SshTargetKind", "manual", "config"),
+        "SshAuthMethod" => Make("SshAuthMethod", "auto", "password", "key", "interactive", "ask"),
+        "SshPlatform" => Make("SshPlatform", "auto", "linux", "macos", "windows"),
+        "SshProxyKind" => Make("SshProxyKind", "socks5", "socks4", "http"),
         _ => [],
     };
 }

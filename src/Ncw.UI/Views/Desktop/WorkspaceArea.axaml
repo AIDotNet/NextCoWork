@@ -15,8 +15,8 @@
       <Setter Property="FontStyle" Value="Italic" />
     </Style>
   </UserControl.Styles>
-  <!-- 栏 3:主工作区。标签栏 + 会话内容(转录、待办、目标条、输入框)。 -->
-  <Grid RowDefinitions="40,*,Auto">
+  <!-- 栏 3:主工作区。标签栏 + SSH 连接状态条(仅 SSH 异常 / 重连中显示) + 会话内容(转录、待办、目标条、输入框)。 -->
+  <Grid RowDefinitions="40,Auto,*,Auto">
     <!-- 标签栏 = 窗口顶部这一行(空白处拖动窗口)。左右留白由外壳按左侧区域、检查器的显隐设置。 -->
     <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}">
       <Grid x:Name="TabRow" ColumnDefinitions="*,Auto" Margin="8,0">
@@ -78,9 +78,12 @@
       </Grid>
     </Border>
 
+    <!-- SSH 连接状态条(连接中 / 重连中 / 失败 / 未知时自动出现) -->
+    <desk:SshStatusBar Grid.Row="1" DataContext="{Binding SshStatusBar}" />
+
     <!-- 内容:当前会话;没有打开的会话时是空状态(与项目面板的「+」是同一个意图:新建会话) -->
-    <conv:ConversationView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Conversation}" IsVisible="{Binding HasSession}" ui:NcwMotion.ShowMotion="Fade" />
-    <StackPanel Grid.Row="1" Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="520" Margin="24"
+    <conv:ConversationView Grid.Row="2" Grid.RowSpan="2" DataContext="{Binding Conversation}" IsVisible="{Binding HasSession}" ui:NcwMotion.ShowMotion="Fade" />
+    <StackPanel Grid.Row="2" Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="520" Margin="24"
                 IsVisible="{Binding !Conversation.HasSession}" ui:NcwMotion.ShowMotion="Fade">
       <lucide:LucideIcon Kind="MessageSquare" Size="28" HorizontalAlignment="Center" Foreground="{arc:ArcDesignTokenResource TextMuted}" />
       <TextBlock HorizontalAlignment="Center" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap"
@@ -88,10 +91,10 @@
       <ui:NcwButton HorizontalAlignment="Center" Variant="Primary" Command="{Binding Panel.NewSessionCommand}" IsVisible="{Binding Panel.HasProject}" Content="{l:NcwText NewSession}" />
     </StackPanel>
     <!-- 文件标签页:盖在会话上(当前标签是文件时) -->
-    <desk:FileTabView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Workspace.ActiveFile}"
+    <desk:FileTabView Grid.Row="2" Grid.RowSpan="2" DataContext="{Binding Workspace.ActiveFile}"
                       IsVisible="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Workspace.ActiveFile, Converter={x:Static ObjectConverters.IsNotNull}}"
                       ui:NcwMotion.ShowMotion="Fade" />
     <!-- 侧栏「定时任务」页:盖在内容区上(选了别的会话就让位) -->
-    <mgmt:SchedulesPage Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding ScheduledTasks}" IsVisible="{Binding IsOpen}" ui:NcwMotion.ShowMotion="Fade" />
+    <mgmt:SchedulesPage Grid.Row="2" Grid.RowSpan="2" DataContext="{Binding ScheduledTasks}" IsVisible="{Binding IsOpen}" ui:NcwMotion.ShowMotion="Fade" />
   </Grid>
 </UserControl>

@@ -18,7 +18,8 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
 {
     public ShellViewModel(ClientStores stores, TimeProvider? clock = null, IDialogService? dialogs = null, DeviceRegistry? devices = null, InspectorServices? inspector = null, IComposerLookups? lookups = null,
         ManagementPages? management = null, SchedulesViewModel? scheduledTasks = null, MobileHostServices? host = null,
-        AccountService? account = null, LinkRouter? links = null, IAttachmentUploader? attachmentUploader = null, Ncw.Client.Updates.IUpdateService? updates = null)
+        AccountService? account = null, LinkRouter? links = null, IAttachmentUploader? attachmentUploader = null, Ncw.Client.Updates.IUpdateService? updates = null,
+        IEnvironmentCommands? environments = null)
     {
         Stores = stores;
         Host = host ?? new MobileHostServices();
@@ -26,8 +27,11 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Dialogs = dialogs ?? NoDialogs.Instance;
         Devices = devices ?? new DeviceRegistry();
         Actions = new LayoutActions(stores, () => Text);
-        Projects = new ProjectActions(stores, Devices, () => Dialogs, () => Text);
         Conversations = new ConversationActions(Devices, Ledger);
+        Environments = environments ?? new EnvironmentActions(Devices, Conversations);
+        SshInteractions = new SshInteractionsViewModel(stores, Environments);
+        SshStatusBar = new SshStatusBarViewModel(stores, Environments, () => OpenSettingsSection(SettingsSection.Environments));
+        Projects = new ProjectActions(stores, Devices, () => Dialogs, () => Text, Environments, SshInteractions, () => OpenSettingsSection(SettingsSection.Environments));
         Subagents = new SubagentActions(Devices);
         Goals = new GoalActions(Devices);
         Catalog = new CatalogActions(Devices);
@@ -95,17 +99,18 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
         Settings = new SettingsViewModel(stores, Devices, DeviceActions,
             new ModelsSettingsViewModel(stores, Providers, Catalog, () => Dialogs, () => Text, () => Launcher, clock),
             management ?? new ManagementPages(stores, SettingsActions, Extensions.Skills, Extensions.Commands, Extensions.Hooks, Extensions.Mcp, Usage, Storage, Gateway,
-                () => Dialogs, () => Launcher, clock ?? TimeProvider.System, Extensions.Plugins, DataActions),
+                () => Dialogs, () => Launcher, clock ?? TimeProvider.System, Extensions.Plugins, DataActions, Environments),
             Account, new AboutViewModel(stores, new UpdateActions(updates), clock));
-        Onboarding = new OnboardingViewModel(stores, Account, DataGate, Settings, () => Projects.NewProjectAsync());
+        Onboarding = new OnboardingViewModel(stores, Account, DataGate, Settings, () => Projects.NewProjectAsync(), () => OpenSettingsSection(SettingsSection.Environments));
         // 插件市场安装需要账户令牌(plugins.authRequired):提示卡上的「去登录」打开设置的「账户」标签
         Settings.Pages.Plugins.SignInRequested += () => OpenAccountSettingsCommand.Execute(null);
+        Settings.Pages.Project.OpenEnvironmentsRequested += () => OpenSettingsSection(SettingsSection.Environments);
         ScheduledTasks = scheduledTasks ?? new SchedulesViewModel(stores, Schedules, clock ?? TimeProvider.System);
         Panel.ScheduledTasksRequested += () => ScheduledTasks.OpenCommand.Execute(null);
         // 手机壳(docs/design/03 §3):同一套 ViewModel,导航栈、收件箱、设备页、扫码配对、推送登记只是多出来的几个
         Navigation = new MobileNavigationViewModel(Sessions, Actions, Conversation, Settings);
         Inbox = new InboxViewModel(stores, Navigation, Ledger, clock);
-        DevicesPage = new DevicesPageViewModel(stores, DeviceActions, Navigation);
+        DevicesPage = new DevicesPageViewModel(stores, DeviceActions, Navigation, SshInteractions);
         QrPairing = new QrPairingViewModel(() => Host.QrScanner, DeviceActions.PairWithQrAsync, clock);
         Push = new PushViewModel(stores, new PushActions(Devices), () => Host.Push, typeof(ShellViewModel).Assembly.GetName().Version?.ToString());
         Palette = new CommandPaletteViewModel(stores, inspectorServices.Files);
@@ -452,6 +457,15 @@ public sealed partial class ShellViewModel : ObservableObject, ISidebarHost
     public WidgetActions Widgets { get; }
 
     public GatewayActions Gateway { get; }
+
+    /// <summary>执行环境(SSH 服务器):配置、连接 / 断开、测试、远程目录浏览、导入 ssh_config、已知主机、指纹与凭据交互。</summary>
+    public IEnvironmentCommands Environments { get; }
+
+    /// <summary>全局 SSH 设备级交互(主机指纹确认、密码 / 口令 / 键盘交互式问答)。</summary>
+    public SshInteractionsViewModel SshInteractions { get; }
+
+    /// <summary>当前选中 SSH 项目的连接状态条(连接中 / 重连中 / 失败 / 未知)。</summary>
+    public SshStatusBarViewModel SshStatusBar { get; }
 
     /// <summary>供应商:配置、凭据(只写不读)、模型别名、账号、OAuth(经由设备;状态经 <c>providers</c> 主题进 <c>ClientStores.Providers</c>)。</summary>
     public ProvidersActions Providers { get; }
